@@ -1,15 +1,16 @@
 # Author: Ozzy Houck
 # Date Created 5/26/2024
 
-# Purpose download IFS and ai generated forecast data for a specific date
+# Purpose download ERA5 and ai generated forecast data for a specific date
+# To do: Add in IFS forecast download and move configuration to a config file
 
 from ecmwfapi import ECMWFDataServer
 import cdsapi # to download ERA5 data
 import os
 
 output_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/"
-num_days = 5 
-date = "2024-01-01"
+num_days = 10 
+date = "2024-04-01"
 time_start = "00:00"
 bbox = [90, -180, -90, 180]
 variables = ['2m_temperature', 'total_precipitation']
@@ -50,10 +51,7 @@ fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai
 os.system(fourcastnet_command)
 
 pangu_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/pangu_{date}.grib --download-assets panguweather"
-
-
-exit()
-
+os.system(pangu_command)
 
 c = cdsapi.Client()
 
@@ -72,4 +70,4 @@ c.retrieve(
         ],
         'area': bbox,
     },
-    output_path + 'ERA5' + date + '.grib')
+    output_path + 'ERA5_' + date + '.grib')
