@@ -77,18 +77,17 @@ def download_era5(date, variables, bbox):
         },
         output_path + '/era5_' + date + '.grib')
 
+
 # Download the IFS forecast and ERA5 data
-download_ifs_forecast(date, step_list, bbox)
-exit()
+# download_ifs_forecast(date, step_list, bbox)
 # download_era5(date, variables, bbox)
 
-# Download the FourCastNet forecast (need to have set asset path before running) mine is set in my zshrc
-fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
-# download pangu forecast
+# Commands to download ai-models forecasts
+# fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
 pangu_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/pangu_{date}.grib --download-assets panguweather"
-# download forecastnetv2
-fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
+# fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
 
+# Download the ai-models forecasts
 # os.system(fourcastnet_command)
-# os.system(pangu_command)
-os.system(fourcastnetv2_command)
+os.system(pangu_command)
+# os.system(fourcastnetv2_command)

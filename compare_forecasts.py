@@ -13,6 +13,7 @@ import cartopy.feature as cfeature
 forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
 fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures"
 date = "2024-04-01" # eventually should be part of config file
+date2 = "2023-04-01"
 
 # whole world
 lon_min, lon_max = -180, 180 
@@ -33,37 +34,6 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-def plot_era5_first_timestep(date, bbox, path, fig_path):
-    era5_path = f"{path}/ERA5_{date}.grib"
-    era5 = xr.open_dataset(era5_path, engine='cfgrib')
-    era5 = era5.sel(longitude=slice(bbox[0], bbox[2]), latitude=slice(bbox[3], bbox[1]))
-
-    # Drop unnecessary variables
-    era5 = era5.drop_vars(['number', 'surface', 'valid_time', 'step'])
-
-    # Convert temperature to Celsius
-    era5['t2m'] = era5['t2m'] - 273.15
-
-    # Set the coordinates
-    era5 = era5.set_coords(['latitude', 'longitude', 'time'])
-
-    # Select the first time step
-    era5_first_timestep = era5.isel(time=0)
-
-    # Create the plot
-    plt.figure(figsize=(10, 5))
-    ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.add_feature(cfeature.COASTLINE)
-    ax.add_feature(cfeature.BORDERS, linestyle=':')
-
-    # Plot the data
-    plt.contourf(era5_first_timestep['longitude'], era5_first_timestep['latitude'], era5_first_timestep['t2m'], transform=ccrs.PlateCarree())
-    plt.colorbar(label='Temperature (C)')
-    plt.title('ERA5 Forecast - First Timestep')
-    plt.savefig(f"{fig_path}/era5_forecast_first_timestep.png")
-    plt.clf()
-
-# plot_era5_first_timestep(date, bbox, forecast_path, fig_path)
 
 #-------------------------------------------
 # Helper functions to load in and process forecasts
@@ -102,10 +72,10 @@ def load_ifs_forecast(date, bbox, path):
     # drop unnecessary variables
     ifs = ifs.drop_vars(['surface', 'heightAboveGround', 'time', 'step'])
 
+    ifs = ifs.swap_dims({'step': 'time'})
+
     # rename 'valid_time' dimension to 'time'
     ifs = ifs.rename({'valid_time': 'time'})
-
-    ifs = ifs.rename({'step': 'time'})
 
     # set the coordinates
     ifs = ifs.set_coords(['latitude', 'longitude', 'time'])
@@ -122,8 +92,12 @@ def load_pangu(date, bbox, path):
     # filter by paramId 167 which is 2m temperature
     pangu = xr.open_dataset(pangu_path, engine='cfgrib', backend_kwargs={'filter_by_keys': {'paramId': 167}})
 
-    # longitude range is 0-360 so need to shift to -180 to 180
-    pangu = pangu.assign_coords(longitude=(pangu.longitude + 180) % 360 - 180) 
+
+    # Shift the data along the longitude dimension (not totally sure why I need to do this for pangu but not for IFS)
+    pangu = pangu.roll(longitude=pangu.longitude.size // 2, roll_coords=True)
+
+    # Adjust the longitude values to the -180 to 180 range
+    pangu['longitude'] = (pangu['longitude'] + 180) % 360 - 180
 
     # filter by bbox
     pangu = pangu.where((pangu.longitude >= bbox[0]) & (pangu.longitude <= bbox[2]), drop=True)
@@ -138,13 +112,18 @@ def load_pangu(date, bbox, path):
     pangu = pangu.rename({'valid_time': 'time'})
 
     # rename 'step' dimension to 'time' (this feels weird but it gets the correct dimension name for the merge later on)
-    pangu = pangu.rename({'step': 'time'})
+    pangu = pangu.swap_dims({'step': 'time'})
 
     # set the coordinates
     pangu = pangu.set_coords(['latitude', 'longitude', 'time'])
 
     # convert to celsius
     pangu['t2m'] = pangu['t2m'] - 273.15
+
+    print(pangu)
+    print(pangu.time.values)
+    print(len(pangu.time.values))
+    exit()
 
     return pangu
 
@@ -196,15 +175,16 @@ ifs_t2m = ifs['t2m']
 
 # foucastnet = load_FourCastNet(date, bbox, forecast_path)
 # fourcastnet_t2m = foucastnet['t2m']
-pangu = load_pangu(date, bbox, forecast_path)
+# XX Fix date
+pangu = load_pangu(date2, bbox, forecast_path)
 pangu_t2m = pangu['t2m']
 
 # Check if the 'time' coordinates are equal
 if not np.array_equal(ifs_t2m.time.values, era5_t2m.time.values):
-    print("Time dimensions do not match")
+    print("Time dimensions do not match: IFS and ERA5")
     exit()
 if not np.array_equal(pangu_t2m.time.values, era5_t2m.time.values):
-    print("Time dimensions do not match")
+    print("Time dimensions do not match: PanguWeather and ERA5")
     exit()
 # if not np.array_equal(fourcastnet_t2m.time.values, era5_t2m.time.values):
 #     print("Time dimensions do not match")
@@ -214,6 +194,8 @@ if not np.array_equal(pangu_t2m.time.values, era5_t2m.time.values):
 era5_t2m = era5_t2m.rename('era5_t2m')
 ifs_t2m = ifs_t2m.rename('ifs_t2m')
 pangu_t2m = pangu_t2m.rename('pangu_t2m')
+
+
 # fourcastnet_t2m = fourcastnet_t2m.rename('fourcastnet_t2m')
 
 print("ERA5 coordinates and dimensions:")
@@ -242,12 +224,27 @@ print("Longitude range for PanguWeather:", pangu_t2m.longitude.min().values, pan
 # Merge the data
 #-------------------------------------------
 
+print("era5 shape")
+print(era5_t2m.shape)
+
+print("ifs shape")
+print(ifs_t2m.shape)
+
+print("pangu shape")
+print(pangu_t2m.shape)
+
 # merge on lat, lon, and valid_time
 combined = xr.merge([pangu_t2m, era5_t2m], join='inner')
+
+print('combined')
+print(combined['pangu_t2m'].shape)
 combined = xr.merge([combined, ifs_t2m], join='inner')
 
-print("combined")
-print(combined)
+print('combined')
+print(combined['pangu_t2m'].shape)
+
+exit()
+
 
 # merge on lat, lon, and valid_time
 # combined = xr.merge([combined, fourcastnet_t2m], join='inner')
