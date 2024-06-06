@@ -83,11 +83,11 @@ def download_era5(date, variables, bbox):
 # download_era5(date, variables, bbox)
 
 # Commands to download ai-models forecasts
-# fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
+fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
 pangu_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/pangu_{date}.grib --download-assets panguweather"
-# fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
+fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
 
 # Download the ai-models forecasts
-# os.system(fourcastnet_command)
-os.system(pangu_command)
+os.system(fourcastnet_command)
+# os.system(pangu_command)
 # os.system(fourcastnetv2_command)
