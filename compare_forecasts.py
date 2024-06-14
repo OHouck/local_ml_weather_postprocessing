@@ -53,12 +53,12 @@ def make_forecast_gif(data_array, forecast, title, fig_path, file_name):
 # Alternative Loss Functions 
 #-------------------------------------------
 def unexpected_freeze_loss(y_true, y_pred):
+    '''
+    RMSE loss function that doubles the penalty for unexpected freezes
+    '''
 
     # Initialize an empty list to store the loss for each time step
     loss_list = []
-
-    print(y_true.shape)
-    print(y_pred.shape)
 
     # Loop over the first dimension of the arrays
     for t in range(y_true.shape[0]):
@@ -89,7 +89,7 @@ fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/a
 date = "2024-04-01" # eventually should be part of config file
 
 # supported regions: 'Global', 'Midwest', 'Pakistan'
-region = "Global"
+region = "Midwest"
 
 # Set bounding box for the data
 if region == "Global":
@@ -132,33 +132,32 @@ combined['pangue_error_squared'] = combined['pangu_error']**2
 combined['ifs_error_squared'] = combined['ifs_error']**2
 
 # Plot the first time step for each forecast
-# make_forecast_gif(data_array = combined, forecast = 'era5_t2m', 
-#                   title = f'{region} ERA5 Forecast', fig_path =fig_path,
-#                   file_name = f'era5_{region}_{date}')
-# make_forecast_gif(data_array = combined, forecast='ifs_t2m', 
-#                   title=f'{region} IFS Forecast', fig_path=fig_path,
-#                   file_name = f'ifs_forecast_{region}_{date}')
-# make_forecast_gif(data_array=combined, forecast='pangu_t2m', 
-#                   title=f'{region} Pangu Forecast', fig_path=fig_path,
-#                   file_name = f'pangu_forecast_{region}_{date}')
+make_forecast_gif(data_array = combined, forecast = 'era5_t2m', 
+                  title = f'{region} ERA5 Forecast', fig_path =fig_path,
+                  file_name = f'era5_{region}_{date}')
+make_forecast_gif(data_array = combined, forecast='ifs_t2m', 
+                  title=f'{region} IFS Forecast', fig_path=fig_path,
+                  file_name = f'ifs_forecast_{region}_{date}')
+make_forecast_gif(data_array=combined, forecast='pangu_t2m', 
+                  title=f'{region} Pangu Forecast', fig_path=fig_path,
+                  file_name = f'pangu_forecast_{region}_{date}')
 make_forecast_gif(data_array=combined, forecast='fourcastnet_t2m', 
                   title=f'{region} Fourcastnet Forecast', fig_path=fig_path,
                   file_name = f'fourcastnet_forecast_{region}_{date}')
 
-exit()
-
-# make gifs of pangu and ifs error
 make_forecast_gif(data_array=combined, forecast='ifs_error', 
                   title=f'{region} IFS Error', fig_path=fig_path,
                   file_name = f'ifs_error_{region}_{date}')
 make_forecast_gif(data_array=combined, forecast='pangu_error',
                     title=f'{region} Pangu Error', fig_path=fig_path,
                     file_name = f'pangu_error_{region}_{date}')
-exit()
+make_forecast_gif(data_array=combined, forecast='fourcastnet_error',
+                    title=f'{region} Fourcastnet Error', fig_path=fig_path,
+                    file_name = f'fourcastnet_error_{region}_{date}')
 
+# Estimate loss over time using RMSE and custom loss functions
 ifs_error_avg = combined['ifs_error'].mean(dim='latitude').mean(dim='longitude')
 pangu_error_avg = combined['pangu_error'].mean(dim='latitude').mean(dim='longitude')
-# fourcastnet_diff_avg = combined['fourcastnet_diff'].mean(dim='latitude').mean(dim='longitude')
 
 ifs_rmse = np.sqrt(combined['ifs_error_squared'].mean(dim='latitude').mean(dim='longitude'))
 pangu_rmse = np.sqrt(combined['pangue_error_squared'].mean(dim='latitude').mean(dim='longitude'))
@@ -170,19 +169,7 @@ pangu_freeze_loss = unexpected_freeze_loss(y_true = combined['era5_t2m'].values,
 
 # time in hours
 time = combined['era5_t2m'].time.values
-# time_hours = combined['era5_t2m'].time.values / 3600
-# Assuming `time` is your datetime series
 time_hours = (time - time[0]).astype('timedelta64[h]')
-
-# plot average error in the bbox across time
-plt.plot(time_hours, ifs_error_avg, label='IFS', color = "lightgreen")
-plt.plot(time_hours, pangu_error_avg, label='Pangu', color = "darkgreen")
-plt.xlabel('Time (Hours)')
-plt.ylabel('Temperature Difference (C)')
-plt.title('Mean Error By Time')
-plt.legend()
-plt.savefig(f"{fig_path}/mean_error_by_time.png")
-plt.clf()
 
 # plot RMSE in the bbox across time
 plt.plot(time_hours, ifs_rmse, label='IFS', color = "lightgreen")
@@ -193,11 +180,8 @@ plt.xlabel('Time (Hours)')
 plt.ylabel('RMSE (C)')
 plt.title('RMSE By Time')
 plt.legend()
-plt.savefig(f"{fig_path}/rmse_by_time.png")
+plt.savefig(f"{fig_path}/rmse_by_time_{region}.png")
 plt.clf()
-
-#-------------------------------------------
-# difference ways to measure accuracy
 
 
 
