@@ -9,7 +9,12 @@ import cdsapi # to download ERA5 data
 import os
 
 
-output_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
+# local output
+#output_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
+
+# anvil output path
+output_path = "/anvil/projects/x-atm170020/ohouck/output/forecasts"
+
 num_days = 10 # 240 hours
 step_length = 6
 date = "2024-04-01"
@@ -78,9 +83,6 @@ def download_era5(date, variables, bbox):
         output_path + '/era5_' + date + '.grib')
 
 
-# Download the IFS forecast and ERA5 data
-# download_ifs_forecast(date, step_list, bbox)
-# download_era5(date, variables, bbox)
 
 # Commands to download ai-models forecasts
 fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
@@ -88,26 +90,30 @@ pangu_command = f"ai-models --input cds --date {ai_models_date} --time {ai_model
 fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
 
 
-weather_bench2_command = f"python scripts/evaluate.py \
-    --forecast_path=gs://weatherbench2/datasets/hres/2016-2022-0012-64x32_equiangular_with_poles_conservative.zarr \
-    --obs_path=gs://weatherbench2/datasets/era5/1959-2022-6h-64x32_equiangular_with_poles_conservative.zarr \
-    --climatology_path=gs://weatherbench2/datasets/era5-hourly-climatology/1990-2017_6h_64x32_equiangular_with_poles_conservative.zarr \
-    --output_dir=gs://$BUCKET/datasets/evals/$USER/5.625-deterministic-results/ \
-    --input_chunks=time=1,lead_time=1 \
-    --eval_configs=deterministic \
-    --use_beam=True \
-    --runner=DataflowRunner \
-    -- \
-    --project=$PROJECT \
-    --region=$REGION \
-    --temp_location=gs://$BUCKET/tmp/ \
-    --setup_file=./setup.py \
-    --requirements_file=./scripts/dataflow-requirements.txt \
-    --job_name=eval-ohouck"
+#weather_bench2_command = f"python scripts/evaluate.py \
+    #--forecast_path=gs://weatherbench2/datasets/hres/2016-2022-0012-64x32_equiangular_with_poles_conservative.zarr \
+    #--obs_path=gs://weatherbench2/datasets/era5/1959-2022-6h-64x32_equiangular_with_poles_conservative.zarr \
+    #--climatology_path=gs://weatherbench2/datasets/era5-hourly-climatology/1990-2017_6h_64x32_equiangular_with_poles_conservative.zarr \
+    #--output_dir=gs://$BUCKET/datasets/evals/$USER/5.625-deterministic-results/ \
+    #--input_chunks=time=1,lead_time=1 \
+    #--eval_configs=deterministic \
+    #--use_beam=True \
+    #--runner=DataflowRunner \
+    #-- \
+    #--project=$PROJECT \
+    #--region=$REGION \
+    #--temp_location=gs://$BUCKET/tmp/ \
+    #--setup_file=./setup.py \
+    #--requirements_file=./scripts/dataflow-requirements.txt \
+    #--job_name=eval-ohouck"
 
 # Download the ai-models forecasts
-# os.system(fourcastnet_command)
+os.system(fourcastnet_command)
 # os.system(pangu_command)
 # os.system(fourcastnetv2_command)
-os.system(weather_bench2_command)
+#os.system(weather_bench2_command)
+
+# Download the IFS forecast and ERA5 data
+# download_ifs_forecast(date, step_list, bbox)
+# download_era5(date, variables, bbox)
 
