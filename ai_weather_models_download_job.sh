@@ -3,7 +3,7 @@
 
 #SBATCH --account=atm170020-gpu # Allocation name
 #SBATCH -p gpu # GPU partition
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --mem-per-cpu=6G #32total
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1 # Number of GPUs per node
