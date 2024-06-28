@@ -353,7 +353,7 @@ def main(argv: list[str]) -> None:
           lat_slice=slice(24, 37), lon_slice=slice(60, 78)
       ),
       'small_test': SliceRegion( # Added by OH
-          lat_slice=slice(24, 25), lon_slice=slice(60, 61)
+          lat_slice=slice(23, 25), lon_slice=slice(60, 62)
       ),
       'arctic': SliceRegion(lat_slice=slice(60, 90)),
       'antarctic': SliceRegion(lat_slice=slice(-90, -60)),

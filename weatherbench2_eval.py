@@ -25,48 +25,53 @@ REGION = 'us-central1'
 
 
 def eval_forecast(forecast_name, forecast_path, obs_path, climatology_path, 
-                  variables, region):
+                  variables, region, time_start, time_stop):
     print(forecast_name)
     cmd = [
         'python3', 'evaluate.py',
         f'--forecast_path={forecast_path}',
-        f'--variables={variables}',
-        f'--regions={region}',
-        f'--output_file_prefix={forecast_name}_{region}_',
         f'--obs_path={obs_path}',
         f'--climatology_path={climatology_path}',
         f'--output_dir={output_dir}',
-        '--input_chunks=time=1,lead_time=1',
+        f'--output_file_prefix={forecast_name}_{region}_',
+        '--input_chunks=init_time=1,lead_time=1',
         '--eval_configs=deterministic',
+        f'--time_start={time_start}',
+        f'--time_stop={time_stop}',
+        f'--variables={variables}',
+        f'--regions={region}',
         '--use_beam=True',
-        '--beam_runner=DirectRunner'
-        '--',
-        '--direct_num_workers 2'
+        '--runner=DirectRunner'
     ]
     subprocess.run(cmd, check=True)
 
-#output_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/weatherbench2_output"
-output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
-code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
+output_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/weatherbench2_output"
+code_dir = "/Users/ohouck/vc/ai_weather_ag/"
+
+# output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
+# code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
 # list of supported regions in evaluate.py
-region = "pakistan"
+region = "small_test"
 
 # coarse resolution for testing
 era5_64x32 = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr'
 era5_64x32_climatology = 'gs://weatherbench2/datasets/era5-hourly-climatology/1990-2019_6h_64x32_equiangular_conservative.zarr'
 pangu_test_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr'
-pangu_test_vars = '2m_temperature, temperature'
+pangu_test_vars = 'temperature'
+time_start = '2020-01-01'
+time_stop= '2020-07-01'
 
 # start timer
-#test_start = time.time()
+test_start = time.time()
 # test pangu
-#eval_forecast(forecast_name = 'pangu',forecast_path = pangu_test, obs_path = era5_64x32, 
-#              climatology_path = era5_64x32_climatology, variables = pangu_vars,
-#              region = region)
-#test_end = time.time()
+eval_forecast(forecast_name = 'pangu',forecast_path = pangu_test_path, obs_path = era5_64x32, 
+             climatology_path = era5_64x32_climatology, variables = pangu_test_vars,
+             region = region, time_start=time_start, time_stop=time_stop)
+test_end = time.time()
 # time elapsed in hours and minutes
-#test_elapsed = test_end - test_start
-#print(f"Test elapsed time: {test_elapsed/3600} hours")
+test_elapsed = test_end - test_start
+print(f"Test elapsed time: {test_elapsed/3600} hours")
+exit()
 
 # 0.25 degree resolution
 era5_1440x721_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-wb13-6h-1440x721_with_derived_variables.zarr'
@@ -138,35 +143,3 @@ file = open(code_dir + "run_times.txt", "w")
 output = "neural gcm time: " + neural_time 
 file.write(output)
 file.close()
-
-# load in pangu results
-#pangu_results = xr.open_dataset(f'{output_dir}/pangu_deterministic.nc')
-#hres_results = xr.open_dataset(f'{output_dir}/hres_deterministic.nc')
-
-#print("PANGU")
-#print(pangu_results)
-
-#print("HRES")
-#print(hres_results)
-
-# rename geopotential variables and merge
-#pangu_results = pangu_results.rename_vars({'geopotential': 'pangu_geopotential'})
-#hres_results = hres_results.rename_vars({'geopotential': 'hres_geopotential'})
-
-#results = xr.merge([pangu_results, hres_results])
-#print("MERGED")
-#print(results)
-
-# print metricds
-#print("METRICS")
-#print(results.metric)
-
-# make plot comparing MSE of geoportential at 500 hPa
-
-#import matplotlib.pyplot as plt
-#print("PLOTS")
-#results['pangu_geopotential'].sel(level=500).sel(metric='mse').plot(label='pangu')
-#results['hres_geopotential'].sel(level=500).sel(metric='mse').plot(label='hres')
-#plt.legend()
-#plt.show()
-
