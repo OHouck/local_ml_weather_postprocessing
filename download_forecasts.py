@@ -90,12 +90,12 @@ fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {
 graphcast_command= f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/graphcast_{date}.grib --download-assets graphcast"
 
 # Download the ai-models forecasts
-os.system(fourcastnet_command)
-os.system(pangu_command)
+#os.system(fourcastnet_command)
+#os.system(pangu_command)
 os.system(fourcastnetv2_command)
-os.system(graphcast_command)
+#os.system(graphcast_command)
 
 # Download the IFS forecast and ERA5 data
-download_ifs_forecast(date, step_list, bbox)
-download_era5(date, variables, bbox)
+#download_ifs_forecast(date, step_list, bbox)
+#download_era5(date, variables, bbox)
 

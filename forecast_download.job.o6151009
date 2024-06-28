@@ -1,0 +1,79 @@
+2024-06-27 23:32:21 ECMWF API python library 1.6.3
+2024-06-27 23:32:21 ECMWF API at https://api.ecmwf.int/v1
+2024-06-27 23:32:23 Welcome Ozzy Houck
+2024-06-27 23:32:24 In case of problems, please check https://confluence.ecmwf.int/display/WEBAPI/Web+API+FAQ or contact servicedesk@ecmwf.int
+2024-06-27 23:32:24 ------------ WARNING ------------
+2024-06-27 23:32:24 Access to this dataset is transitioning to a new interface, dates to be announced soon
+2024-06-27 23:32:24 For more information on how to access this data in the future, visit https://confluence.ecmwf.int/x/-wUiEw
+2024-06-27 23:32:24 ---------------------------------
+2024-06-27 23:32:25 Request submitted
+2024-06-27 23:32:25 Request id: 667e2ec96ac78d00a7a89f5c
+2024-06-27 23:32:25 Request is submitted
+2024-06-27 23:32:26 Request is active
+2024-06-27 23:32:32 Calling 'nice mars /tmp/20240628-0330/9a/tmp-_mars-anulYg.req'
+2024-06-27 23:32:32 Forcing MIR_CACHE_PATH=/data/ec_coeff
+2024-06-27 23:32:32 mars - WARN -
+2024-06-27 23:32:32 mars - WARN -
+2024-06-27 23:32:32 MIR environment variables:
+2024-06-27 23:32:32 MIR_CACHE_PATH=/data/ec_coeff
+2024-06-27 23:32:32 MIR_LSM_NAMED=1km.climate.v013
+2024-06-27 23:32:32 Using MARS binary: /usr/local/apps/mars/versions/6.33.17.3/bin/mars.bin
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Welcome to MARS
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - MARS Client build stamp: 20240223110756
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - MARS Client bundle version: 6.33.17.3
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package mars-client version: 6.33.17
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package mir version: 1.19.0
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package odc version: 1.5.0
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package fdb version: 5.11.29
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package metkit version: 1.11.4
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package eckit version: 1.25.2
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - package eccodes version: 2.33.2
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Maximum retrieval size is 50.00 G
+2024-06-27 23:32:32 retrieve,origin=ecmf,area=90/-180/-90/180,levtype=sfc,expver=prod,padding=0,step=0/6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186/192/198/204/210/216/222/228/234/240,grid=0.25/0.25,param=167/228228,time=00:00:00,date=2024-04-01,type=fc,class=timars - INFO   - 20240628.033231 - Automatic split on dates is on
+2024-06-27 23:32:32 
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Processing request 1
+2024-06-27 23:32:32 sh: /usr/bin/mailx: No such file or directory
+2024-06-27 23:32:32 
+2024-06-27 23:32:32 RETRIEVE,
+2024-06-27 23:32:32     CLASS      = TI,
+2024-06-27 23:32:32     TYPE       = FC,
+2024-06-27 23:32:32     STREAM     = OPER,
+2024-06-27 23:32:32     EXPVER     = prod,
+2024-06-27 23:32:32     REPRES     = SH,
+2024-06-27 23:32:32     LEVTYPE    = SFC,
+2024-06-27 23:32:32     PARAM      = 167/228228,
+2024-06-27 23:32:32     TIME       = 0000,
+2024-06-27 23:32:32     STEP       = 0/6/12/18/24/30/36/42/48/54/60/66/72/78/84/90/96/102/108/114/120/126/132/138/144/150/156/162/168/174/180/186/192/198/204/210/216/222/228/234/240,
+2024-06-27 23:32:32     ORIGIN     = ECMF,
+2024-06-27 23:32:32     RESOL      = AUTO,
+2024-06-27 23:32:32     AREA       = 90/-180/-90/180,
+2024-06-27 23:32:32     GRID       = 0.25/0.25,
+2024-06-27 23:32:32     PADDING    = 0,
+2024-06-27 23:32:32     PROCESS    = LOCAL,
+2024-06-27 23:32:32     DATE       = 20240401
+2024-06-27 23:32:32 
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Web API request id: 667e2ec96ac78d00a7a89f5c
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Requesting 82 fields
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Setting SO_SNDBUF to 33554432 (32.00 M)
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Current value is 8192 (8.00 K)
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Setting SO_RCVBUF to 33554432 (32.00 M)
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Current value is 43690 (42.67 K)
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Calling mars on 'marsth-core', local port is 42229
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Server task is 910 [marsth]
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Request cost: 82 fields, 320.279 Mbytes online, nodes: mvr000 mvr001 [marsth]
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - The efficiency of your requests in the last 12 hours is 100% [marsth]
+2024-06-27 23:32:32 mars - INFO   - 20240628.033231 - Transfering 335836872 bytes
+2024-06-27 23:32:43 mars - INFO   - 20240628.033241 - 82 fields retrieved from 'marsth'
+2024-06-27 23:32:43 mars - INFO   - 20240628.033241 - 82 fields have been interpolated
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 - Request time:  wall: 11 sec  cpu: 6 sec
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 -   Read from network: 320.28 Mbyte(s) in 3 sec  [94.41 Mbyte/sec]
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 -   Visiting marsth: wall: 10 sec
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 -   Post-processing: wall: 6 sec cpu: 6 sec
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 -   Writing to target file: 200.02 Mbyte(s) in < 1 sec [286.00 Mbyte/sec]
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 - Memory used: 137.30 Mbyte(s)
+2024-06-27 23:32:43 mars - INFO   - 20240628.033242 - No errors reported
+2024-06-27 23:32:43 Process '['nice', 'mars', '/tmp/20240628-0330/9a/tmp-_mars-anulYg.req']' finished
+2024-06-27 23:32:43 Request is complete
+2024-06-27 23:32:43 Transfering 200.024 Mbytes into /anvil/projects/x-atm170020/ohouck/output/forecasts/ifs_forecast_2024-04-01.grib
+2024-06-27 23:32:43 From https://apps.ecmwf.int/api/streaming/public/blue/01/20240628-0330/ce/_mars-bol-webmars-public-svc-blue-002-94cc8f88d4868f71816187936ef374f7-pl1FWk.grib
+2024-06-27 23:32:59 Transfer rate 12.2878 Mbytes/s
