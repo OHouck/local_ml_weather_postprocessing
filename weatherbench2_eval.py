@@ -34,14 +34,16 @@ def eval_forecast(forecast_name, forecast_path, obs_path, climatology_path,
         f'--climatology_path={climatology_path}',
         f'--output_dir={output_dir}',
         f'--output_file_prefix={forecast_name}_{region}_',
-        '--input_chunks=init_time=1,lead_time=1',
+        '--input_chunks=init_time=1',
         '--eval_configs=deterministic',
         f'--time_start={time_start}',
         f'--time_stop={time_stop}',
         f'--variables={variables}',
         f'--regions={region}',
         '--use_beam=True',
-        '--runner=DirectRunner'
+        '--runner=DirectRunner',
+        '--',
+        '--direct_num_workers=4'
     ]
     subprocess.run(cmd, check=True)
 
@@ -51,7 +53,7 @@ code_dir = "/Users/ohouck/vc/ai_weather_ag/"
 # output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
 # code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
 # list of supported regions in evaluate.py
-region = "small_test"
+region = "global"
 
 # coarse resolution for testing
 era5_64x32 = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr'

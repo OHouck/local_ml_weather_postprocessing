@@ -15,13 +15,13 @@ code_dir = "/Users/ohouck/vc/ai_weather_ag/"
 # code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
 
 # load in test results
-test_results = xr.open_dataset(f'{output_dir}/pangu_small_test_deterministic.nc')
+test_results = xr.open_dataset(f'{output_dir}/pangu_global_deterministic.nc')
 print("TEST RESULTS")
 print(test_results)
 
 # print MSE for 2m temperature
-print("MSE 2m temperature")
-print(test_results['2m_temperature'].sel(metric='mae').values)
+print("MSE temperature")
+print(test_results['temperature'].sel(metric='mae').values)
 
 # plot mse of 2m temperature
 # test_results['2m_temperature'].sel(metric='mse').plot()
