@@ -8,11 +8,11 @@
 import xarray as xr
 import matplotlib.pyplot as plt
 
-output_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/weatherbench2_output"
-code_dir = "/Users/ohouck/vc/ai_weather_ag/"
+#output_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/weatherbench2_output"
+#code_dir = "/Users/ohouck/vc/ai_weather_ag/"
 
-# output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
-# code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
+output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
+code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
 
 # load in test results
 test_results = xr.open_dataset(f'{output_dir}/pangu_global_deterministic.nc')

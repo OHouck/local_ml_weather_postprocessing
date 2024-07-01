@@ -3,14 +3,14 @@
 
 #SBATCH --account=atm170020-gpu # Allocation name
 #SBATCH -p gpu # GPU partition
-#SBATCH --time=01:00:00
+#SBATCH --time=03:00:00
 #SBATCH --mem-per-cpu=6G #24G total
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1 # Number of GPUs per node
 
-#SBATCH --ntasks-per-node=1 # total number of nodes
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --ntasks-per-node=4 # total number of nodes
+#SBATCH --ntasks=4
+#SBATCH --cpus-per-task=8
 
 #SBATCH --job-name weatherbench2 
 #SBATCH -e weatherbench_job.e%j
@@ -26,4 +26,8 @@ conda activate /home/x-ohouck/aiw_env
 # move to code directory
 cd /anvil/projects/x-atm170020/ohouck/ai_weather_ag
 
-python3 weatherbench2_eval.py
+set -x
+srun -u  \
+    bash -c "
+    TORCH_USE_CUDA_DSA=1 python weatherbench2_eval.py
+    "
