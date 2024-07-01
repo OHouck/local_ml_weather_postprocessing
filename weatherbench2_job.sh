@@ -3,14 +3,14 @@
 
 #SBATCH --account=atm170020-gpu # Allocation name
 #SBATCH -p gpu # GPU partition
-#SBATCH --time=03:00:00
-#SBATCH --mem-per-cpu=6G #512GB total
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=6G #24G total
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1 # Number of GPUs per node
 
 #SBATCH --ntasks-per-node=1 # total number of nodes
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 
 #SBATCH --job-name weatherbench2 
 #SBATCH -e weatherbench_job.e%j
