@@ -24,34 +24,16 @@ PROJECT = 'my-project'
 REGION = 'us-central1'
 
 
-def eval_forecast(forecast_name, forecast_path, obs_path, climatology_path, 
-                  variables, region, time_start, time_stop):
-    print(forecast_name)
-    cmd = [
-        'python3', 'evaluate.py',
-        f'--forecast_path={forecast_path}',
-        f'--obs_path={obs_path}',
-        f'--climatology_path={climatology_path}',
-        f'--output_dir={output_dir}',
-        f'--output_file_prefix={forecast_name}_{region}_',
-        '--input_chunks=init_time=1,lead_time=1',
-        '--eval_configs=deterministic',
-        f'--time_start={time_start}',
-        f'--time_stop={time_stop}',
-        f'--variables={variables}',
-        f'--regions={region}',
-        '--use_beam=True',
-        '--runner=DirectRunner',
-        '--',
-        '--direct_num_workers=2'
-    ]
-    subprocess.run(cmd, check=True)
-
+# set up file paths and variables
 output_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/weatherbench2_output"
 code_dir = "/Users/ohouck/vc/ai_weather_ag/"
 
 # output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
 # code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
+
+time_start = '2020-01-01'
+time_stop= '2020-07-01'
+
 # list of supported regions in evaluate.py
 region = "pakistan"
 
@@ -60,20 +42,6 @@ era5_64x32 = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangu
 era5_64x32_climatology = 'gs://weatherbench2/datasets/era5-hourly-climatology/1990-2019_6h_64x32_equiangular_conservative.zarr'
 pangu_test_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr'
 pangu_test_vars = 'temperature'
-time_start = '2020-01-01'
-time_stop= '2020-07-01'
-
-# start timer
-test_start = time.time()
-# test pangu
-eval_forecast(forecast_name = 'pangu',forecast_path = pangu_test_path, obs_path = era5_64x32, 
-             climatology_path = era5_64x32_climatology, variables = pangu_test_vars,
-             region = region, time_start=time_start, time_stop=time_stop)
-test_end = time.time()
-# time elapsed in hours and minutes
-test_elapsed = test_end - test_start
-print(f"Test elapsed time: {test_elapsed/3600} hours")
-exit()
 
 # 0.25 degree resolution
 era5_1440x721_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-wb13-6h-1440x721_with_derived_variables.zarr'
@@ -100,6 +68,48 @@ fuxi_vars = '2m_temperature, temperature, total_precipitation_24hr'
 
 neural_gcm_deterministic_path = 'gs://weatherbench2/datasets/neuralgcm_deterministic/2020-240x121_equiangular_with_poles_conservative.zarr'
 neural_gcm_deterministic_vars = 'temperature, P_minus_E_cumulative'
+
+# Define flags
+FLAGS = flags.FLAGS
+flags.DEFINE_string('input_chunks', 'time=1,lead_time=1', 'Chunk sizes for input data')
+flags.DEFINE_integer('direct_num_workers', 32, 'Number of direct workers for Beam')
+
+
+def main(argv):
+    cmd = [
+        'python3', 'evaluate.py',
+        f'--forecast_path={forecast_path}',
+        f'--obs_path={obs_path}',
+        f'--climatology_path={climatology_path}',
+        f'--output_dir={output_dir}',
+        f'--output_file_prefix={forecast_name}_{region}_',
+        '--input_chunks=init_time=1,lead_time=1',
+        '--eval_configs=deterministic',
+        f'--time_start={time_start}',
+        f'--time_stop={time_stop}',
+        f'--variables={variables}',
+        f'--regions={region}',
+        '--use_beam=True',
+        '--runner=DirectRunner',
+        '--',
+        '--direct_num_workers=2'
+    ]
+    subprocess.run(cmd, check=True)
+
+if __name__ == '__main__':
+    app.run(main)
+# start timer
+test_start = time.time()
+# test pangu
+eval_forecast(forecast_name = 'pangu',forecast_path = pangu_test_path, obs_path = era5_64x32, 
+             climatology_path = era5_64x32_climatology, variables = pangu_test_vars,
+             region = region, time_start=time_start, time_stop=time_stop)
+test_end = time.time()
+# time elapsed in hours and minutes
+test_elapsed = test_end - test_start
+print(f"Test elapsed time: {test_elapsed/3600} hours")
+exit()
+
 
 file = open('run_times.txt', 'w')
 output = "start tracking run times :}"
