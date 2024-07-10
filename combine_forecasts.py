@@ -8,8 +8,7 @@ import xarray as xr
 import numpy as np
 
 # Config 
-forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
-fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures"
+forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts/anvil_forecasts"
 date = "2024-04-01" # eventually should be part of config file
 
 #-------------------------------------------
@@ -119,6 +118,8 @@ def load_FourCastNet(date, path):
     fourcastnet = fourcastnet.swap_dims({'step': 'time'})
 
     # XX there are some weird na values in t2m 
+    fourcastnet['t2m'] = fourcastnet['t2m'] - 273.15
+
 
     return fourcastnet
 
@@ -163,5 +164,5 @@ combined = xr.merge([pangu_t2m, era5_t2m], join='inner')
 combined = xr.merge([combined, ifs_t2m], join='inner')
 combined = xr.merge([combined, fourcastnet_t2m], join='inner')
 
-# save the combined data to a grib file
-combined.to_netcdf(f"{forecast_path}/combined_forecasts_{date}.nc")
+# save the combined data to a grib file for use in compare_forecasts.py
+combined.to_netcdf(f"{forecast_path}/../combined_forecasts_{date}.nc")

@@ -3,7 +3,7 @@
 
 # Purpose: run the main functions to download, combine, and compare forecasts
 
-# 1. Download forecasts
+# 1. Download forecasts (this part should probably be run on the server)
 exec(open("download_forecasts.py").read())
 
 # 2. Combine forecasts

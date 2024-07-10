@@ -2,186 +2,239 @@
 # Date Created 5/27/2024
 
 # Purpose: Compare t2m measurements between ERA5, FourCastNet, and PanguWeather
+
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import numpy as np
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.animation import FuncAnimation # for creating gifs
+from matplotlib.animation import FuncAnimation
+from typing import Dict, List, Tuple
 
-#-------------------------------------------
-# Function to create forecast gifs 
-#-------------------------------------------
-def make_forecast_gif(data_array, forecast, title, fig_path, file_name):
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.add_feature(cfeature.COASTLINE)
-    ax.add_feature(cfeature.BORDERS, linestyle=':')
+class ForecastComparison:
+    """
+    A class to compare different weather forecast models.
+    """
 
-    # Get global min and max values for the color scale
-    vmin = data_array[forecast].min().values
-    vmax = data_array[forecast].max().values
+    def __init__(self, forecast_path: str, fig_path: str, date: str, region: str):
+        """
+        Initialize the ForecastComparison object.
 
-    # Initial plot
-    data = data_array[forecast].isel(time=0)
-    lons = data_array['longitude']
-    lats = data_array['latitude']
-    contour = ax.contourf(lons, lats, data, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
-    colorbar = fig.colorbar(contour, ax=ax, label='Temperature (C)')
+        :param forecast_path: Path to the forecast data files
+        :param fig_path: Path to save the output figures
+        :param date: Date of the forecast
+        :param region: Region of interest for the forecast
+        """
+        self.forecast_path = forecast_path
+        self.fig_path = fig_path
+        self.date = date
+        self.region = region
+        self.combined = None
+        self.bbox = self._set_bounding_box()
 
-    def animate(i):
-        ax.clear()
+    def _set_bounding_box(self) -> List[float]:
+        """
+        Set the bounding box for the region of interest.
+
+        :return: List of [lon_min, lat_min, lon_max, lat_max]
+        """
+        # Define bounding boxes for supported regions
+        region_bounds = {
+            "Global": (-90, 90, -180, 180),
+            "Midwest": (35, 50, -100, -80),
+            "Pakistan": (24, 37, 60, 78)
+        }
+        if self.region not in region_bounds:
+            raise ValueError("Region not supported")
+        lat_min, lat_max, lon_min, lon_max = region_bounds[self.region]
+        return [lon_min, lat_min, lon_max, lat_max]
+
+    def load_and_preprocess_data(self):
+        """
+        Load the forecast data and preprocess it.
+        """
+        # Load the data
+        self.combined = xr.open_dataset(f"{self.forecast_path}/combined_forecasts_{self.date}.nc")
+        # Remove the first time step
+        self.combined = self.combined.isel(time=slice(1, None))
+        self._filter_by_bbox()
+        self._calculate_errors()
+
+    def _filter_by_bbox(self):
+        """
+        Filter the data to only include the region of interest.
+        """
+        lon_min, lat_min, lon_max, lat_max = self.bbox
+        self.combined = self.combined.where(
+            (self.combined.longitude >= lon_min) & (self.combined.longitude <= lon_max) &
+            (self.combined.latitude >= lat_min) & (self.combined.latitude <= lat_max),
+            drop=True
+        )
+
+    def _calculate_errors(self):
+        """
+        Calculate the error and squared error for each forecast model.
+        """
+        for model in ['pangu', 'ifs', 'fourcastnet']:
+            self.combined[f'{model}_error'] = self.combined[f'{model}_t2m'] - self.combined['era5_t2m']
+            self.combined[f'{model}_error_squared'] = self.combined[f'{model}_error'] ** 2
+
+    def create_forecast_gifs(self):
+        """
+        Create GIF animations for each forecast and error.
+        """
+        forecasts = ['era5_t2m', 'ifs_t2m', 'pangu_t2m', 'fourcastnet_t2m', 
+                     'ifs_error', 'pangu_error', 'fourcastnet_error']
+        for forecast in forecasts:
+            self._make_forecast_gif(forecast)
+
+    def _make_forecast_gif(self, forecast: str):
+        """
+        Create a GIF animation for a specific forecast or error.
+
+        :param forecast: Name of the forecast variable
+        """
+        fig, ax = plt.subplots(figsize=(10, 5), subplot_kw={'projection': ccrs.PlateCarree()})
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+
+        data = self.combined[forecast].isel(time=0)
+        contour = ax.contourf(self.combined.longitude, self.combined.latitude, data, 
+                              transform=ccrs.PlateCarree())
+        plt.colorbar(contour, ax=ax, label='Temperature (C)')
+
+        def animate(i):
+            ax.clear()
+            ax.add_feature(cfeature.COASTLINE)
+            ax.add_feature(cfeature.BORDERS, linestyle=':')
+            data = self.combined[forecast].isel(time=i)
+            ax.contourf(self.combined.longitude, self.combined.latitude, data, 
+                        transform=ccrs.PlateCarree())
+            time = pd.to_datetime(data.time.values).round('h')
+            ax.set_title(f"{forecast} at time {time}")
+
+        anim = FuncAnimation(fig, animate, frames=len(self.combined.time), repeat=True)
+        anim.save(f"{self.fig_path}/{forecast}_{self.region}_{self.date}.gif", writer='pillow', fps=3)
+        plt.close(fig)
+
+    def calculate_losses(self) -> Dict[str, np.ndarray]:
+        """
+        Calculate RMSE and freeze loss for each forecast model.
+
+        :return: Dictionary of loss arrays for each model
+        """
+        losses = {}
+        for model in ['ifs', 'pangu', 'fourcastnet']:
+            losses[f'{model}_rmse'] = np.sqrt(self.combined[f'{model}_error_squared'].mean(dim=['latitude', 'longitude']))
+            losses[f'{model}_freeze_loss'] = self._unexpected_freeze_loss(
+                self.combined['era5_t2m'].values, 
+                self.combined[f'{model}_t2m'].values
+            )
+        return losses
+
+    @staticmethod
+    def _unexpected_freeze_loss(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        """
+        Calculate the unexpected freeze loss.
+
+        :param y_true: True temperature values
+        :param y_pred: Predicted temperature values
+        :return: Array of freeze loss values
+        """
+        loss_list = []
+        for t in range(y_true.shape[0]):
+            y_true_t, y_pred_t = y_true[t].flatten(), y_pred[t].flatten()
+            # Double the penalty for unexpected freezes
+            loss = np.where((y_true_t < 0) & (y_pred_t > 0), 
+                            ((y_true_t - y_pred_t) * 2) ** 2, 
+                            (y_true_t - y_pred_t) ** 2)
+            loss_list.append(np.sqrt(np.mean(loss)))
+        return np.array(loss_list)
+
+    def plot_rmse_over_time(self, losses: Dict[str, np.ndarray]):
+        """
+        Plot RMSE and freeze loss over time for each model.
+
+        :param losses: Dictionary of loss arrays for each model
+        """
+        time_hours = (self.combined.time.values - self.combined.time.values[0]).astype('timedelta64[h]')
+        plt.figure(figsize=(12, 6))
+        colors = {'ifs': 'lightgreen', 'pangu': 'darkgreen', 'fourcastnet': 'blue'}
+        for model, color in colors.items():
+            plt.plot(time_hours, losses[f'{model}_rmse'], label=f'{model.upper()}', color=color)
+            plt.plot(time_hours, losses[f'{model}_freeze_loss'], label=f'{model.upper()} Freeze Loss', 
+                     color=color, linestyle='dashed')
+        plt.xlabel('Time (Hours)')
+        plt.ylabel('RMSE (C)')
+        plt.title('RMSE By Time')
+        plt.legend()
+        plt.savefig(f"{self.fig_path}/rmse_by_time_{self.region}.png")
+        plt.close()
+
+    def plot_rmse_maps(self):
+        """
+        Create and save RMSE maps for each forecast model, focusing on the specified region.
+        """
+        rmse_time = {model: np.sqrt(self.combined[f'{model}_error_squared'].mean(dim='time'))
+                        for model in ['ifs', 'pangu', 'fourcastnet']}
+        vmin, vmax = min(map(np.min, rmse_time.values())), max(map(np.max, rmse_time.values()))
+
+        for model, data in rmse_time.items():
+            fig = self._plot_rmse_map(data, f'{model.upper()} RMSE Map', vmin=vmin, vmax=vmax)
+            fig.savefig(f"{self.fig_path}/{model}_rmse_map_{self.region}.png")
+            plt.close(fig)
+
+    def _plot_rmse_map(self, data: xr.DataArray, title: str, cmap: str = 'viridis', 
+                    vmin: float = None, vmax: float = None) -> plt.Figure:
+        """
+        Create an RMSE map for a single model, focusing on the specified region.
+
+        :param data: RMSE data for the model
+        :param title: Title of the plot
+        :param cmap: Colormap to use
+        :param vmin: Minimum value for the colorbar
+        :param vmax: Maximum value for the colorbar
+        :return: The created figure
+        """
+        fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+        
+        # Add map features
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=':')
         
-        # Select the data for the given time index and forecast variable
-        data = data_array[forecast].isel(time=i)
-
         # Plot the data
-        contour = ax.contourf(lons, lats, data, transform=ccrs.PlateCarree())
-
-        time = pd.to_datetime(data.time.values).round('h')
-        ax.set_title(f"{title} at time {time}")
-
-    anim = FuncAnimation(fig, animate, frames=len(data_array.time), repeat=True)
-
-    # Save the animation to a file
-    anim.save(f"{fig_path}/{file_name}.gif", writer='pillow', fps=3)
-
-#-------------------------------------------
-# Alternative Loss Functions 
-#-------------------------------------------
-def unexpected_freeze_loss(y_true, y_pred):
-    '''
-    RMSE loss function that doubles the penalty for unexpected freezes
-    '''
-
-    # Initialize an empty list to store the loss for each time step
-    loss_list = []
-
-    # Loop over the first dimension of the arrays
-    for t in range(y_true.shape[0]):
-        loss = 0
-        # Flatten the arrays for the current time step
-        y_true_t = y_true[t].flatten()
-        y_pred_t = y_pred[t].flatten()
-
-        for i in range(len(y_true_t)):
-            # If the actual is below 0 and the forecast is above 0 then increase the loss
-            # Returning squared loss
-            if y_true_t[i] < 0 and y_pred_t[i] > 0:
-                loss += ((y_true_t[i] - y_pred_t[i]) * 2) ** 2
-            else:
-                loss += (y_true_t[i] - y_pred_t[i]) ** 2
-        loss = np.sqrt(loss / len(y_true_t))
-        loss_list.append(loss)
-
-    # Convert the list of losses to a numpy array
-    loss_array = np.array(loss_list)
-    return loss_array
-
-#-------------------------------------------
-# Load the data and set up config
-#-------------------------------------------
-forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
-fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures"
-date = "2024-04-01" # eventually should be part of config file
-
-# supported regions: 'Global', 'Midwest', 'Pakistan'
-region = "Midwest"
-
-# Set bounding box for the data
-if region == "Global":
-    lat_min = -90   
-    lat_max = 90 
-    lon_min = -180
-    lon_max = 180 
-elif region == "Midwest":
-    lat_min = 35
-    lat_max = 50
-    lon_min = -100
-    lon_max = -80
-elif region == "Pakistan":
-    lat_min = 24
-    lat_max = 37
-    lon_min = 60
-    lon_max = 78
-else:
-    raise ValueError("Region not supported")
-
-bbox = [lon_min, lat_min, lon_max, lat_max]
-
-# Load the data
-combined = xr.open_dataset(f"{forecast_path}/combined_forecasts_{date}.nc")
-
-# filter by bbox
-combined = combined.where((combined.longitude >= bbox[0]) & (combined.longitude <= bbox[2]), drop=True)
-combined = combined.where((combined.latitude >= bbox[1]) & (combined.latitude <= bbox[3]), drop=True)
-
-#-------------------------------------------
-# EDA
-#-------------------------------------------
-
-# calculate the difference between ai fourcasts and "truth" (ERA5)
-combined['pangu_error'] = combined['pangu_t2m'] - combined['era5_t2m']
-combined['ifs_error'] = combined['ifs_t2m'] - combined['era5_t2m']
-combined['fourcastnet_error'] = combined['fourcastnet_t2m'] - combined['era5_t2m']
-
-combined['pangue_error_squared'] = combined['pangu_error']**2
-combined['ifs_error_squared'] = combined['ifs_error']**2
-
-# Plot the first time step for each forecast
-make_forecast_gif(data_array = combined, forecast = 'era5_t2m', 
-                  title = f'{region} ERA5 Forecast', fig_path =fig_path,
-                  file_name = f'era5_{region}_{date}')
-make_forecast_gif(data_array = combined, forecast='ifs_t2m', 
-                  title=f'{region} IFS Forecast', fig_path=fig_path,
-                  file_name = f'ifs_forecast_{region}_{date}')
-make_forecast_gif(data_array=combined, forecast='pangu_t2m', 
-                  title=f'{region} Pangu Forecast', fig_path=fig_path,
-                  file_name = f'pangu_forecast_{region}_{date}')
-make_forecast_gif(data_array=combined, forecast='fourcastnet_t2m', 
-                  title=f'{region} Fourcastnet Forecast', fig_path=fig_path,
-                  file_name = f'fourcastnet_forecast_{region}_{date}')
-
-make_forecast_gif(data_array=combined, forecast='ifs_error', 
-                  title=f'{region} IFS Error', fig_path=fig_path,
-                  file_name = f'ifs_error_{region}_{date}')
-make_forecast_gif(data_array=combined, forecast='pangu_error',
-                    title=f'{region} Pangu Error', fig_path=fig_path,
-                    file_name = f'pangu_error_{region}_{date}')
-make_forecast_gif(data_array=combined, forecast='fourcastnet_error',
-                    title=f'{region} Fourcastnet Error', fig_path=fig_path,
-                    file_name = f'fourcastnet_error_{region}_{date}')
-
-# Estimate loss over time using RMSE and custom loss functions
-ifs_error_avg = combined['ifs_error'].mean(dim='latitude').mean(dim='longitude')
-pangu_error_avg = combined['pangu_error'].mean(dim='latitude').mean(dim='longitude')
-
-ifs_rmse = np.sqrt(combined['ifs_error_squared'].mean(dim='latitude').mean(dim='longitude'))
-pangu_rmse = np.sqrt(combined['pangue_error_squared'].mean(dim='latitude').mean(dim='longitude'))
-
-ifs_freeze_loss = unexpected_freeze_loss(y_true = combined['era5_t2m'].values, 
-                                         y_pred = combined['ifs_t2m'].values)
-pangu_freeze_loss = unexpected_freeze_loss(y_true = combined['era5_t2m'].values, 
-                                           y_pred = combined['pangu_t2m'].values)
-
-# time in hours
-time = combined['era5_t2m'].time.values
-time_hours = (time - time[0]).astype('timedelta64[h]')
-
-# plot RMSE in the bbox across time
-plt.plot(time_hours, ifs_rmse, label='IFS', color = "lightgreen")
-plt.plot(time_hours, pangu_rmse, label='Pangu', color = "darkgreen")
-plt.plot(time_hours, ifs_freeze_loss, label='IFS Freeze Loss', color = "lightgreen", linestyle='dashed')
-plt.plot(time_hours, pangu_freeze_loss, label='Pangu Freeze Loss', color = "darkgreen", linestyle='dashed')
-plt.xlabel('Time (Hours)')
-plt.ylabel('RMSE (C)')
-plt.title('RMSE By Time')
-plt.legend()
-plt.savefig(f"{fig_path}/rmse_by_time_{region}.png")
-plt.clf()
+        im = ax.pcolormesh(data.longitude, data.latitude, data, transform=ccrs.PlateCarree(),
+                        cmap=cmap, vmin=vmin, vmax=vmax)
+        
+        # Add colorbar
+        plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, label='RMSE (°C)')
+        
+        # Set the extent to the bounding box of the region
+        ax.set_extent(self.bbox, crs=ccrs.PlateCarree())
+        
+        # Set title
+        ax.set_title(title)
+        
+        return fig
 
 
+def main():
+    """
+    Main function to run the forecast comparison.
+    """
+    forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
+    fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures"
+    date = "2024-04-01"
+    region = "Midwest"
 
+    # Create ForecastComparison object and run analysis
+    comparison = ForecastComparison(forecast_path, fig_path, date, region)
+    comparison.load_and_preprocess_data()
+    # comparison.create_forecast_gifs()
+    losses = comparison.calculate_losses()
+    comparison.plot_rmse_over_time(losses)
+    comparison.plot_rmse_maps()
+
+if __name__ == "__main__":
+    main()
