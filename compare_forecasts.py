@@ -41,13 +41,14 @@ class ForecastComparison:
         """
         # Define bounding boxes for supported regions
         region_bounds = {
-            "Global": (-90, 90, -180, 180),
-            "Midwest": (35, 50, -100, -80),
-            "Pakistan": (24, 37, 60, 78)
+            # order is lon_min, lat_min, lon_max, lat_max
+            "Global": (-180, -90, 180, 90),
+            "Midwest": (-100, 35, -90, 50),
+            "Pakistan": (60, 24, 78, 37),
         }
         if self.region not in region_bounds:
             raise ValueError("Region not supported")
-        lat_min, lat_max, lon_min, lon_max = region_bounds[self.region]
+        lon_min, lat_min, lon_max, lat_max = region_bounds[self.region]
         return [lon_min, lat_min, lon_max, lat_max]
 
     def load_and_preprocess_data(self):
@@ -65,10 +66,9 @@ class ForecastComparison:
         """
         Filter the data to only include the region of interest.
         """
-        lon_min, lat_min, lon_max, lat_max = self.bbox
         self.combined = self.combined.where(
-            (self.combined.longitude >= lon_min) & (self.combined.longitude <= lon_max) &
-            (self.combined.latitude >= lat_min) & (self.combined.latitude <= lat_max),
+            (self.combined.longitude >= self.bbox[0]) & (self.combined.longitude <= self.bbox[2]) &
+            (self.combined.latitude >= self.bbox[1]) & (self.combined.latitude <= self.bbox[3]),
             drop=True
         )
 
@@ -172,23 +172,10 @@ class ForecastComparison:
         plt.savefig(f"{self.fig_path}/rmse_by_time_{self.region}.png")
         plt.close()
 
-    def plot_rmse_maps(self):
-        """
-        Create and save RMSE maps for each forecast model, focusing on the specified region.
-        """
-        rmse_time = {model: np.sqrt(self.combined[f'{model}_error_squared'].mean(dim='time'))
-                        for model in ['ifs', 'pangu', 'fourcastnet']}
-        vmin, vmax = min(map(np.min, rmse_time.values())), max(map(np.max, rmse_time.values()))
-
-        for model, data in rmse_time.items():
-            fig = self._plot_rmse_map(data, f'{model.upper()} RMSE Map', vmin=vmin, vmax=vmax)
-            fig.savefig(f"{self.fig_path}/{model}_rmse_map_{self.region}.png")
-            plt.close(fig)
-
     def _plot_rmse_map(self, data: xr.DataArray, title: str, cmap: str = 'viridis', 
                     vmin: float = None, vmax: float = None) -> plt.Figure:
         """
-        Create an RMSE map for a single model, focusing on the specified region.
+        Create an RMSE map for a single model.
 
         :param data: RMSE data for the model
         :param title: Title of the plot
@@ -197,27 +184,58 @@ class ForecastComparison:
         :param vmax: Maximum value for the colorbar
         :return: The created figure
         """
-        fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+        fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': ccrs.PlateCarree()})
         
         # Add map features
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=':')
+
+        # top code rmse to 10
+        data = data.where(data < 10, 10)
         
         # Plot the data
-        im = ax.pcolormesh(data.longitude, data.latitude, data, transform=ccrs.PlateCarree(),
-                        cmap=cmap, vmin=vmin, vmax=vmax)
+        im = ax.pcolormesh(data.longitude, data.latitude, data, 
+                        transform=ccrs.PlateCarree(),
+                        cmap=cmap)
+                        # vmin=vmin, vmax=vmax)# include these to standardize colorbar
         
         # Add colorbar
-        plt.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, label='RMSE (°C)')
+        cbar = fig.colorbar(im, ax=ax, orientation='horizontal', pad=0.05, aspect=30)
+        cbar.set_label('RMSE (°C)')
         
-        # Set the extent to the bounding box of the region
-        ax.set_extent(self.bbox, crs=ccrs.PlateCarree())
+        # Set the extent to global if using global option, otherwise use bbox
+        if self.region == 'Global':
+            ax.set_global()
+        else:
+            lon_min = self.bbox[0]
+            lon_max = self.bbox[2]
+            lat_min = self.bbox[1]
+            lat_max = self.bbox[3]
+            ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
         
         # Set title
         ax.set_title(title)
         
         return fig
 
+    # Modify the plot_rmse_maps function to ensure correct vmin and vmax
+    def plot_rmse_maps(self):
+        """
+        Create and save RMSE maps for each forecast model.
+        """
+        rmse_time = {}
+        for model in ['ifs', 'pangu', 'fourcastnet']:
+            rmse = np.sqrt(self.combined[f'{model}_error_squared'].mean(dim='time'))
+            rmse_time[model] = rmse
+
+        # Calculate global vmin and vmax (not currently used because a few extremes wash out the rest)
+        vmin = min(rmse.min() for rmse in rmse_time.values())
+        vmax = max(rmse.max() for rmse in rmse_time.values())
+
+        for model, data in rmse_time.items():
+            fig = self._plot_rmse_map(data, f'{model.upper()} RMSE Map', vmin=vmin, vmax=vmax)
+            fig.savefig(f"{self.fig_path}/{model}_rmse_map_{self.region}.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
 
 def main():
     """
@@ -226,8 +244,26 @@ def main():
     forecast_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/forecasts"
     fig_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures"
     date = "2024-04-01"
-    region = "Midwest"
 
+    region = "Global"
+    # Create ForecastComparison object and run analysis
+    comparison = ForecastComparison(forecast_path, fig_path, date, region)
+    comparison.load_and_preprocess_data()
+    # comparison.create_forecast_gifs()
+    losses = comparison.calculate_losses()
+    comparison.plot_rmse_over_time(losses)
+    comparison.plot_rmse_maps()
+
+    region = "Midwest"
+    # Create ForecastComparison object and run analysis
+    comparison = ForecastComparison(forecast_path, fig_path, date, region)
+    comparison.load_and_preprocess_data()
+    # comparison.create_forecast_gifs()
+    losses = comparison.calculate_losses()
+    comparison.plot_rmse_over_time(losses)
+    comparison.plot_rmse_maps()
+
+    region = "Pakistan"
     # Create ForecastComparison object and run analysis
     comparison = ForecastComparison(forecast_path, fig_path, date, region)
     comparison.load_and_preprocess_data()
