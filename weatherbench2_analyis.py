@@ -14,33 +14,10 @@ code_dir = "/Users/ohouck/vc/ai_weather_ag/"
 # output_dir = "/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
 # code_dir = "/anvil/projects/x-atm170020/ohouck/ai_weather_ag"
 
-region = "global"
+region = "pakistan"
 
 # Evaluations created by weatherbench2
 pangu = xr.open_dataset(f'{output_dir}/pangu_{region}_deterministic.nc')
-
-pangu_old = xr.open_dataset(f'{output_dir}/pangu_{region}_deterministic_old.nc')
-
-print(pangu)
-print(pangu_old)
-
-# rename and merge pangu and pangu_old
-pangu = pangu.rename_vars({'temperature': 'pangu_temperature', 
-                           '2m_temperature': 'pangu_2m_temperature'})
-pangu_old = pangu_old.rename_vars({'temperature': 'pangu_old_temperature'})
-
-combined_pangu = xr.merge([pangu, pangu_old])
-
-# plot mse of temperature at 850 hPa
-combined_pangu['pangu_temperature'].sel(level=850).sel(metric='mse').plot(label='pangu', color='lightgreen')
-combined_pangu['pangu_old_temperature'].sel(level=850).sel(metric='mse').plot(label='pangu_old', color='darkgreen')
-plt.legend()
-plt.ylabel('MSE')
-plt.title('Temperature at 850 hPa')
-plt.show()
-
-exit()
-
 
 ifs = xr.open_dataset(f'{output_dir}/ifs_hres_{region}_deterministic.nc')
 
@@ -61,7 +38,6 @@ combined = xr.merge([pangu, ifs, neural_gcm])
 combined['lead_time'] = combined.lead_time * 1.15741e-14
 
 print(combined['neural_gcm_temperature'].sel(level=850).sel(metric='acc'))
-exit()
 
 # make plot coming temperature at 850 hPa
 combined['pangu_temperature'].sel(level=850).sel(metric='mse').plot(label='pangu', color='lightgreen')
