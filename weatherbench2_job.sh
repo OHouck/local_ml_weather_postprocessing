@@ -3,8 +3,8 @@
 
 #SBATCH --account=atm170020-gpu # Allocation name
 #SBATCH -p gpu # GPU partition
-#SBATCH --time=03:00:00
-#SBATCH --mem=128G #24G total
+#SBATCH --time=12:00:00
+#SBATCH --mem=256G 
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1 # Number of GPUs per node
 
@@ -31,7 +31,7 @@ OUTPUT_DIR="/anvil/projects/x-atm170020/ohouck/output/weatherbench2"
 TIME_START="2020-01-01"
 TIME_STOP="2020-07-01"
 # see possible regions in evaluation.py
-REGION="pakistan"
+REGION="global"
 
 # Function to set model-specific parameters
 set_model_params() {
@@ -65,7 +65,7 @@ set_model_params() {
             FORECAST_PATH="gs://weatherbench2/datasets/neuralgcm_deterministic/2020-240x121_equiangular_with_poles_conservative.zarr"
             OBS_PATH="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr"
             CLIMATOLOGY_PATH="gs://weatherbench2/datasets/era5-hourly-climatology/1990-2019_6h_240x121_equiangular_with_poles_conservative.zarr"
-            VARIABLES="temperature,P_minus_E_cumulative"
+            VARIABLES="temperature"
             ;;
         *)
             echo "Unknown model: $model"
@@ -100,16 +100,16 @@ run_evaluation() {
 # Run evaluations for different forecast models
 
 # Pangu test evaluation (coarse resolution)
-run_evaluation "pangu_test"
+#run_evaluation "pangu_test"
 
 # # Pangu evaluation
-# run_evaluation "pangu"
+run_evaluation "pangu"
 
 # # IFS HRES evaluation
-# run_evaluation "ifs_hres"
+run_evaluation "ifs_hres"
 
 # # GraphCast evaluation
-# run_evaluation "graphcast"
+run_evaluation "graphcast"
 
 # # Neural GCM evaluation
-# run_evaluation "neural_gcm"
+run_evaluation "neural_gcm"
