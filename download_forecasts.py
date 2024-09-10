@@ -87,6 +87,8 @@ def download_era5(date, variables, bbox):
 fourcastnet_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnet_{date}.grib --download-assets fourcastnet"
 pangu_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/pangu_{date}.grib --download-assets panguweather"
 fourcastnetv2_command = f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/fourcastnetv2_{date}.grib --download-assets fourcastnetv2-small"
+
+# NOTE: I think the haiku version I need is dm-haiku--0.0.10 but have 0.0.13.dev0 for neuralgcm to work
 graphcast_command= f"ai-models --input cds --date {ai_models_date} --time {ai_models_time_start} --path {output_path}/graphcast_{date}.grib --download-assets graphcast"
 
 # Download the ai-models forecasts
