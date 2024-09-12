@@ -70,7 +70,7 @@ tree_map = jax.tree_util.tree_map
 
 
 @gin.configurable(allowlist=['constructor'])
-def get_loss_obj( ## where to define costume loss functions
+def get_loss_obj( ## XX where to define costume loss functions
     trajectory_spec: metrics_util.TrajectorySpec,
     constructor: Callable[..., metrics_base.Loss] = gin.REQUIRED,
 ) -> metrics_base.Loss:
@@ -879,7 +879,7 @@ class Experiment(experiment.AbstractExperiment):
         + 1,
     )
 
-    loss_fn = get_loss_obj(traj_spec).evaluate ## Could also define custom loss functions here 
+    loss_fn = get_loss_obj(traj_spec).evaluate ##  XX might not be implemented Could also define custom loss functions here 
     ensembled_loss_fn = jax.vmap(
         loss_fn,
         axis_name='ensemble',
