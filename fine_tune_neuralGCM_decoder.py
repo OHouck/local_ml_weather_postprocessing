@@ -34,7 +34,6 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds = (0, 180), lon_bounds
     lon_slice_size = lon_idx_max - lon_idx_min
     lat_slice_size = lat_idx_max - lat_idx_min
 
-
     # Initialize total loss
     total_loss = 0.0
     num_variables = 0
@@ -54,11 +53,6 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds = (0, 180), lon_bounds
                 (37, lon_slice_size, lat_slice_size)
             )
 
-            # Mean absolute error
-            # var_loss = jnp.mean(jnp.abs(inputs_masked - predictions_masked))
-            # total_loss += var_loss
-            # num_variables += 1
-
             # Normalized mean absolute error
             var_range = jnp.max(inputs_masked) - jnp.min(inputs_masked)
             var_loss = jnp.mean(jnp.abs(inputs_masked - predictions_masked) / var_range)
@@ -72,34 +66,45 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds = (0, 180), lon_bounds
 # JIT-compile the function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
 
-# this isn't working
 def freeze_non_decoder_params(model, updates):
+    # Function that freezes portions of a model not
+    total_params = 0
+    unfrozen_params = 0
+
     def is_decoder_param(path, _):
-        return 'dimensional_learned_primitive_to_weatherbench_decoder' in '/'.join(path)
+        # Convert the path to a string representation then check if path is a
+        # part of the decoder
+        path_str = '/'.join(str(key) for key in path)
+        # return 'dimensional_learned_primitive_to_weatherbench_decoder' in path_str
+        return 'decoder' in path_str
 
     def maybe_freeze(path, update):
-        print(f'path: {path}')
-        return update if is_decoder_param(path, update) else jnp.zeros_like(update)
+        nonlocal total_params
+        nonlocal unfrozen_params
+        total_params += jnp.size(update)
+        if is_decoder_param(path, update):
+            unfrozen_params += jnp.size(update)
+            return update
+        else:
+            return jnp.zeros_like(update)
+        # return update if is_decoder_param(path, update) else jnp.zeros_like(update)
 
     frozen_updates = jax.tree_util.tree_map_with_path(maybe_freeze, updates)
-    return frozen_updates
+    pct_unfrozen = unfrozen_params / total_params if total_params > 0 else 0.0
+    return frozen_updates, pct_unfrozen
+
+def find_decoder_params(model):
+    # print all parameter names that contain "decode"
+    for path, param in model.params.items():
+        if 'decode' in str(path):
+            print(path)
+
 
 checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 initial_model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
 
 ds = neuralgcm.demo.load_data(initial_model.data_coords)
 inputs, forcings = initial_model.data_from_xarray(ds.isel(time=0))
-
-
-def print_param_tree(params, prefix=''):
-    for key, value in params.items():
-        if isinstance(value, dict):
-            print(f"{prefix}{key}:")
-            print_param_tree(value, prefix + '  ')
-        else:
-            print(f"{prefix}{key}: {value.shape}")
-
-# print_param_tree(initial_model.params)
 
 optimizer = optax.adam(1e-3)
 
@@ -120,7 +125,9 @@ model = initial_model
 for i in range(5):
     loss, grads = jax.value_and_grad(compute_loss_jit)(model, inputs, forcings, rng, lat_bounds, lon_bounds)
     updates, opt_state = optimizer.update(grads, opt_state)
-    frozen_updates = freeze_non_decoder_params(model, updates)
+    frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
+    print(f'{pct_unfrozen=}')
+    exit()
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i=}, {loss=}')
 # i=0, loss=Array(6.2256584, dtype=float32)
