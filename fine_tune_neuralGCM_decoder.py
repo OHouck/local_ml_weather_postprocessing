@@ -38,7 +38,7 @@ class CustomLoss(metrics.TransformedL2Loss):
     #     prediction: metrics_util.TrajectoryRepresentations,
     #     target: metrics_util.TrajectoryRepresentations,
     # ) -> Pytree:
-    #     prediction = self.get_representation(prediction)
+    #     prediction = self.get_representation(prediction) # takes in TrajectoryRepresentations
     #     target = self.get_representation(target)
     #     trajectory = self.getter(prediction)
     #     target = self.getter(target)
@@ -47,16 +47,17 @@ class CustomLoss(metrics.TransformedL2Loss):
         prediction: Dict[str, Any],
         target: Dict[str, Any],
     ) -> Pytree:
-        prediction = self.getter(prediction)
+        trajectory = self.getter(prediction)
         target = self.getter(target)
 
         # Apply spatial masking
-        # trajectory = self._apply_spatial_mask(trajectory) # XX will likely want to switch back to this
-        prediction = self._apply_spatial_mask(prediction)
+        trajectory = self._apply_spatial_mask(trajectory) # XX will likely want to switch back to this
         target = self._apply_spatial_mask(target)
 
-        errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target)
+        errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target) # change prediction to trajectory if revert to original
+
         transformed_errors = self.transform(errors, target)
+
         squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
         return self.mean_per_variable(squared_transformed_errors)
 
@@ -84,6 +85,14 @@ class CustomLoss(metrics.TransformedL2Loss):
         return jax.tree_util.tree_map(apply_mask, data)
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
+    # Define the number of days to predict
+    num_days = 5
+    
+    # Calculate the number of steps based on the model's timestep
+    # Assuming the model's timestep is in hours
+    steps_per_day = 24 // model.timestep.astype('timedelta64[h]').astype(int)
+    total_steps = num_days * steps_per_day
+
     trajectory_spec = metrics_util.TrajectorySpec(
         trajectory_length=1,  # Adjust as needed
         max_trajectory_length=1,
@@ -92,14 +101,15 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         data_coords=model.data_coords,
     )
 
-    # Define weights for each variable
+    # Define weights for each variable: these are used to scale the loss for each variable
     weights = {
-        'temperature': 1.0, # maybe should be "t"?
-        'z': 1.0,
-        'u': 1.0,
-        'v': 1.0,
-        'tracers': {'specific_humidity': 1.0},
-        # Add other variables as needed
+        'temperature': 1.0,
+        'geopotential': 1.0,
+        'specific_cloud_ice_water_content': 1.0,
+        'specific_cloud_liquid_water_content': 1.0,
+        'specific_humidity': 1.0,
+        'u_component_of_wind': 1.0,
+        'v_component_of_wind': 1.0,
     }
 
     components = [
@@ -115,9 +125,16 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     )
 
     encoded = model.encode(inputs, forcings, rng_key=rng)
-    predictions = model.decode(encoded, forcings)
 
-    loss = loss_fn.evaluate(predictions, inputs)
+     # Unroll the model for 5 days
+    _, predictions = model.unroll(encoded, forcings, steps=total_steps)
+
+    # initial state repeated for total_steps XX place holder code
+    target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+
+    # predictions = model.decode(encoded, forcings)
+
+    loss = loss_fn.evaluate(predictions, target)
     return loss
 
 # JIT-compile the function
@@ -247,7 +264,7 @@ for i in range(5):
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
 
     model = optax.apply_updates(model, frozen_updates)
-    print(f'{i=}, {loss=}')
+    print(f'{i=}, loss = {loss.item()}')
     exit()
 # i=0, loss=Array(6.2256584, dtype=float32)
 # i=1, loss=Array(4.670498, dtype=float32)
