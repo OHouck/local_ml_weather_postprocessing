@@ -30,10 +30,14 @@ import jax.numpy as jnp
 from neuralgcm import model_utils
 import numpy as np
 
-import train_utils
-import linear_transforms
-import metrics_base
-import metrics_util
+# import train_utils
+# import linear_transforms
+# import metrics_base
+# import metrics_util
+from . import train_utils # XX changed this line for fine_tune_neuralGCM_decoder.py
+from . import linear_transforms
+from . import metrics_base
+from . import metrics_util
 
 
 Pytree = typing.Pytree

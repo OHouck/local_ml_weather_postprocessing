@@ -26,7 +26,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-import metrics_util
+# import metrics_util # changed for local use
+from . import metrics_util
 
 
 Pytree = typing.Pytree

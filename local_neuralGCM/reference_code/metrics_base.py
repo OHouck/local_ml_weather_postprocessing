@@ -17,7 +17,8 @@ from typing import Callable
 from dinosaur import typing
 import jax
 import jax.numpy as jnp
-import metrics_util
+# import metrics_util # XX changed for fine_tune_neuralGCM_decoder.py
+from . import metrics_util
 
 
 Pytree = typing.Pytree
