@@ -16,6 +16,7 @@ class CustomLoss(metrics.TransformedL2Loss):
         trajectory_spec: metrics_util.TrajectorySpec,
         lat_bounds: tuple,
         lon_bounds: tuple,
+        variables_to_slice: Sequence[str],
         components: Sequence[linear_transforms.LinearTransformConstructor] = (),
         is_nodal: bool = True,
         is_encoded: bool = False,
@@ -32,16 +33,9 @@ class CustomLoss(metrics.TransformedL2Loss):
         )
         self.lat_bounds = lat_bounds
         self.lon_bounds = lon_bounds
+        self.variables_to_slice = set(variables_to_slice)
 
-    # def evaluate_per_variable(
-    #     self,
-    #     prediction: metrics_util.TrajectoryRepresentations,
-    #     target: metrics_util.TrajectoryRepresentations,
-    # ) -> Pytree:
-    #     prediction = self.get_representation(prediction) # takes in TrajectoryRepresentations
-    #     target = self.get_representation(target)
-    #     trajectory = self.getter(prediction)
-    #     target = self.getter(target)
+    # alternative using dictionaries.
     def evaluate_per_variable(
         self,
         prediction: Dict[str, Any],
@@ -50,9 +44,9 @@ class CustomLoss(metrics.TransformedL2Loss):
         trajectory = self.getter(prediction)
         target = self.getter(target)
 
-        # Apply spatial masking
-        trajectory = self._apply_spatial_mask(trajectory) # XX will likely want to switch back to this
-        target = self._apply_spatial_mask(target)
+        # slice the lat lon bounds
+        trajectory = self._get_spatial_slice(trajectory) 
+        target = self._get_spatial_slice(target)
 
         errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target) # change prediction to trajectory if revert to original
 
@@ -60,8 +54,8 @@ class CustomLoss(metrics.TransformedL2Loss):
 
         squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
         return self.mean_per_variable(squared_transformed_errors)
-
-    def _apply_spatial_mask(self, data: Pytree) -> Pytree:
+    
+    def _get_spatial_slice(self, data: Pytree) -> Pytree:
         lat_min, lat_max = self.lat_bounds
         lon_min, lon_max = self.lon_bounds
 
@@ -69,24 +63,32 @@ class CustomLoss(metrics.TransformedL2Loss):
         lats = coords.horizontal.latitudes
         lons = coords.horizontal.longitudes
 
+        assert lats.shape == (64,), f"Expected latitude shape (64,), got {lats.shape}"
+        assert lons.shape == (128,), f"Expected longitude shape (128,), got {lons.shape}"
+
+
+        # Create boolean masks
         lat_mask = (lats >= lat_min) & (lats <= lat_max)
         lon_mask = (lons >= lon_min) & (lons <= lon_max)
-        # spatial_mask = lat_mask[:, None] & lon_mask[None, :] # XX I think the wrong order
-        spatial_mask = lon_mask[:, None] & lat_mask[None, :]
 
-        def apply_mask(x):
-            if x.ndim == 3:  # (level, lat, lon)
-                return x * spatial_mask[None, :, :]
-            elif x.ndim == 4:  # (time, level, lat, lon)
-                return x * spatial_mask[None, None, :, :]
-            else:
-                return x
+        
+        def slice_data(var_name, x):
+            print("name of x", x.shape[:]) # XX this isn'tworking there is a bug here
+            if var_name in self.variables_to_slice:
+                if x.ndim == 3:  # (level, lon, lat)
+                    assert x.shape[1:] == (128, 64), f"Expected shape (_, 128, 64), got {x.shape}"
+                    return x[:, lon_mask][:, :, lat_mask]
+                elif x.ndim == 4:  # (time, level, lon, lat)
+                    assert x.shape[2:] == (128, 64), f"Expected shape (_, _, 128, 64), got {x.shape}"
+                    return x[:, :, lon_mask][:, :, :, lat_mask]
+            return x
 
-        return jax.tree_util.tree_map(apply_mask, data)
+        # return jax.tree_util.tree_map(slice_data, data) # old return before using variables_to_slice
+        return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     # Define the number of days to predict
-    num_days = 5
+    num_days = 1
     
     # Calculate the number of steps based on the model's timestep
     # Assuming the model's timestep is in hours
@@ -122,15 +124,22 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         lat_bounds=lat_bounds,
         lon_bounds=lon_bounds,
         components=components,
+        variables_to_slice=['temperature', 'geopotential', 
+                            'u_component_of_wind', 'v_component_of_wind', 
+                            'specific_humidity', 
+                            'specific_cloud_liquid_water_content', 
+                            'specific_cloud_ice_water_content'],
     )
 
     encoded = model.encode(inputs, forcings, rng_key=rng)
 
      # Unroll the model for 5 days
-    _, predictions = model.unroll(encoded, forcings, steps=total_steps)
+    # _, predictions = model.unroll(encoded, forcings, steps=total_steps)
+    predictions = model.decode(encoded, forcings)
 
     # initial state repeated for total_steps XX place holder code
-    target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+    # target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+    target = inputs
 
     # predictions = model.decode(encoded, forcings)
 
@@ -195,7 +204,6 @@ compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
 def freeze_non_decoder_params(model, updates):
     total_params = 0
     unfrozen_params = 0
-
     # First, let's create a mapping from flattened indices to full parameter paths
     flat_params, tree_def = jax.tree_util.tree_flatten(model.params)
     flat_to_full = {}
@@ -231,6 +239,7 @@ def freeze_non_decoder_params(model, updates):
 
 def find_decoder_params(model):
     # print all parameter names that contain "decode"
+    # meant as a function for exploring and debugging
     for path, param in model.params.items():
         if 'decode' in str(path):
             print(path)
