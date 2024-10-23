@@ -149,58 +149,6 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
 # JIT-compile the function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
 
-# old simple loss function
-# def compute_loss(model, inputs, forcings, rng, lat_bounds = (0, 180), lon_bounds = (0, 360)):
-#     encoded = model.encode(inputs, forcings, rng_key=rng)
-#     predictions = model.decode(encoded, forcings)
-
-#     lat_min, lat_max = lat_bounds
-#     lon_min, lon_max = lon_bounds
-
-#     # Convert geographic coordinates to array indices
-#     # Assuming 128 longitude steps from 0 to 360, and 64 latitude steps from -90 to 90
-#     lon_idx_min = int(lon_min * 128 / 360)
-#     lon_idx_max = int(lon_max * 128 / 360)
-#     lat_idx_min = int((lat_min + 90) * 64 / 180)
-#     lat_idx_max = int((lat_max + 90) * 64 / 180)
-
-#     # Calculate slice sizes
-#     lon_slice_size = lon_idx_max - lon_idx_min
-#     lat_slice_size = lat_idx_max - lat_idx_min
-
-#     # Initialize total loss
-#     total_loss = 0.0
-#     num_variables = 0
-
-#     # Iterate over all variables in inputs
-#     for var_name in inputs.keys():
-#         if inputs[var_name].ndim == 3:  # Only process 3D variables (not things like time)
-#             # Apply the geographic mask to both inputs and predictions using dynamic_slice
-#             # there are 37 pressure levels
-#             inputs_masked = jax.lax.dynamic_slice(
-#                 inputs[var_name], 
-#                 (0, lon_idx_min, lat_idx_min), 
-#                 (37, lon_slice_size, lat_slice_size)
-#             )
-#             predictions_masked = jax.lax.dynamic_slice(
-#                 predictions[var_name], 
-#                 (0, lon_idx_min, lat_idx_min), 
-#                 (37, lon_slice_size, lat_slice_size)
-#             )
-
-#             # Normalized mean absolute error
-#             var_range = jnp.max(inputs_masked) - jnp.min(inputs_masked)
-#             var_loss = jnp.mean(jnp.abs(inputs_masked - predictions_masked) / var_range)
-#             total_loss += var_loss
-#             num_variables += 1
-
-#     # Calculate the average loss across all variables
-#     average_loss = total_loss / num_variables if num_variables > 0 else 0.0
-#     return average_loss
-
-# # JIT-compile the function
-# compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
-
 def freeze_non_decoder_params(model, updates):
     total_params = 0
     unfrozen_params = 0
