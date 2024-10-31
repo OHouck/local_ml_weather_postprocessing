@@ -139,7 +139,6 @@ class TrajectoryShape:
           f'This TrajectoryShape is {self}.'
       )
 
-
 def nodal_surface_mean(
     x: typing.Array, coords: coordinate_systems.CoordinateSystem
 ) -> typing.Array:
@@ -151,6 +150,24 @@ def nodal_surface_mean(
   # Changes shape (n_t, n_z, n_lon, n_lat) --> (n_t, n_z)
   return coords.horizontal.integrate(x) / surface_area
 
+# XX OH modified this function to allow integration over a specific region
+def regional_nodal_surface_mean(
+    x: typing.Array, coords: coordinate_systems.CoordinateSystem, region_mask: typing.Array
+) -> typing.Array:
+    """Integrates x over its spatial domain, normalized by the domain's area."""
+    # Ensure data dimensions match the coordinate system
+    # XX issue is x and region_mask have different shapes because
+    # x is is sliced to region and region_mask is not
+    # maybe solution is to not filter x before this function
+    print(x.shape)
+    print(x)
+    print(region_mask.shape)
+    x_masked = x * region_mask
+    integral = coords.horizontal.integrate(x_masked)
+    ones = jnp.ones_like(x_masked)
+    area = coords.horizontal.integrate(ones * region_mask)
+    mean = integral / area
+    return mean
 
 def modal_surface_mean(
     x: typing.Array, coords: coordinate_systems.CoordinateSystem

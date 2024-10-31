@@ -8,8 +8,10 @@ import jax.numpy as jnp
 from local_neuralGCM.reference_code import metrics, metrics_util, linear_transforms
 
 from dinosaur import pytree_utils
+from dinosaur import coordinate_systems
 from dinosaur import typing
 Pytree = typing.Pytree
+tree_map = jax.tree_util.tree_map
 
 class CustomLoss(metrics.TransformedL2Loss):
     def __init__(
@@ -36,6 +38,10 @@ class CustomLoss(metrics.TransformedL2Loss):
         self.lon_bounds = lon_bounds
         self.variables_to_slice = set(variables_to_slice)
 
+        # Create regional mask
+        coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
+        self.lat_mask, self.lon_mask, self.region_mask = self._create_region_mask(coords)
+
     def evaluate_per_variable(
         self,
         prediction: Dict[str, Any], # maybe should be trajectories? XX
@@ -55,29 +61,33 @@ class CustomLoss(metrics.TransformedL2Loss):
 
         squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
 
-        return jax.tree_util.tree_map(jnp.mean, squared_transformed_errors) # potential fix? maybe not correct
         # XX issue is that this fucntion is meant for global loss not loss for a region
-        # return self.mean_per_variable(squared_transformed_errors)
-    
-    def _get_spatial_slice(self, data: Pytree) -> Pytree:
-        lat_min, lat_max = self.lat_bounds
-        lon_min, lon_max = self.lon_bounds
+        return self.mean_per_variable(squared_transformed_errors)
 
-        coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
-        lats = coords.horizontal.latitudes
-        lons = coords.horizontal.longitudes
+    def _create_region_mask(self, coords):
+        # Get full latitudes and longitudes in degrees
+        full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
+        full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
 
-        assert lats.shape == (64,), f"Expected latitude shape (64,), got {lats.shape}"
-        assert lons.shape == (128,), f"Expected longitude shape (128,), got {lons.shape}"
-
+        lat_min = lat_bounds[0]
+        lat_max = lat_bounds[1]
+        lon_min = lon_bounds[0]
+        lon_max = lon_bounds[1]
 
         # Create boolean masks
-        lat_mask = (lats >= lat_min) & (lats <= lat_max)
-        lon_mask = (lons >= lon_min) & (lons <= lon_max)
+        lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
+        lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
 
-        
+        # Create a 2D mask
+        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
+        # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
+        return lat_mask, lon_mask, region_mask
+
+    def _get_spatial_slice(self, data: Pytree) -> Pytree:
+        lat_mask = self.lat_mask
+        lon_mask = self.lon_mask
+
         def slice_data(var_name, x):
-            print("shape of x", x.shape[:]) # XX this isn'tworking there is a bug here
             if var_name in self.variables_to_slice:
                 if x.ndim == 3:  # (level, lon, lat)
                     assert x.shape[1:] == (128, 64), f"Expected shape (_, 128, 64), got {x.shape}"
@@ -87,8 +97,17 @@ class CustomLoss(metrics.TransformedL2Loss):
                     return x[:, :, lon_mask][:, :, :, lat_mask]
             return x
 
-        # return jax.tree_util.tree_map(slice_data, data) # old return before using variables_to_slice
         return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
+
+    def surface_mean(self, trajectory: Pytree) -> Pytree:
+        coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
+        region_mask = self.region_mask
+        if self.is_nodal:
+            fn = lambda x: metrics_util.regional_nodal_surface_mean(x, coords, region_mask)
+        else:
+            print('MODAL coords! probably should not be here!!')
+            fn = lambda x: metrics_util.modal_surface_mean(x, coords)
+        return tree_map(fn, trajectory)
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     # Define the number of days to predict
@@ -202,19 +221,25 @@ inputs, forcings = initial_model.data_from_xarray(ds.isel(time=0))
 
 optimizer = optax.adam(1e-3)
 
-# Set region around pakistan
-lat_min = np.deg2rad(20)
-lat_max = np.deg2rad(60)
-lon_min = np.deg2rad(200)
-lon_max = np.deg2rad(300)
 
-lat_bounds = (lat_min, lat_max)
-lon_bounds = (lon_min, lon_max)
+# latitude between -90 and 90
+# longitude between 0 and 360
+# lat_bounds = (-90, 90)
+# lon_bounds = (0, 360)
+
+# pakistan
+lat_bounds = (20, 60)
+lon_bounds = (200, 300)
+
+# convert to radians
+lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
+lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 
 rng = jax.random.PRNGKey(0)
 
 opt_state = optimizer.init(initial_model)
 
+# 128 longitude, 64 latitude
 model = initial_model
 
 for i in range(5):
