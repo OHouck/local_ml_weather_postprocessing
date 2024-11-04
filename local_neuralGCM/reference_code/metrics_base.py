@@ -84,28 +84,19 @@ class Metric(Evaluator):
       )
     return x_rep
 
-  # def surface_mean(self, trajectory: Pytree) -> Pytree:
-  #   if self.is_encoded:
-  #     coords = self.trajectory_spec.coords
-  #   else:
-  #     coords = self.trajectory_spec.data_coords
-  #   if self.is_nodal:
-  #     # Mean over lat/lon. Converts shapes
-  #     #   (n_time, n_level, n_lon, n_lat) --> (n_time, n_level)
-  #     fn = lambda x: metrics_util.nodal_surface_mean(x, coords)
-  #   else:
-  #     fn = lambda x: metrics_util.modal_surface_mean(x, coords)
-  #   return tree_map(fn, trajectory)
-
-  # XX OH modified to do regional weights
   def surface_mean(self, trajectory: Pytree) -> Pytree:
-    coords = self.regional_coords
-
-    if self.is_nodal:
-        fn = lambda x: metrics_util.nodal_surface_mean(x, coords)
+    if self.is_encoded:
+      coords = self.trajectory_spec.coords
     else:
-        fn = lambda x: metrics_util.modal_surface_mean(x, coords)
+      coords = self.trajectory_spec.data_coords
+    if self.is_nodal:
+      # Mean over lat/lon. Converts shapes
+      #   (n_time, n_level, n_lon, n_lat) --> (n_time, n_level)
+      fn = lambda x: metrics_util.nodal_surface_mean(x, coords)
+    else:
+      fn = lambda x: metrics_util.modal_surface_mean(x, coords)
     return tree_map(fn, trajectory)
+
 
 
   def mean_per_variable(self, trajectory: Pytree) -> Pytree:
