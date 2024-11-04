@@ -13,6 +13,7 @@ import xarray
 from dinosaur import horizontal_interpolation
 from dinosaur import spherical_harmonic
 from dinosaur import xarray_utils
+import matplotlib.pyplot as plt
 import neuralgcm
 
 gcs = gcsfs.GCSFileSystem(token='anon')
@@ -44,7 +45,7 @@ sliced_era5 = (
     .compute()
 )
 
-# REgrid to neuralGCM native resolution
+# Regrid to neuralGCM native resolution
 era5_grid = spherical_harmonic.Grid(
     latitude_nodes=full_era5.sizes['latitude'],
     longitude_nodes=full_era5.sizes['longitude'],
@@ -106,7 +107,11 @@ target_data_ds = model.data_to_xarray(target_trajectory, times=times)
 combined_ds = xarray.concat([target_data_ds, predictions_ds], 'model')
 combined_ds.coords['model'] = ['ERA5', 'NeuralGCM']
 
+
 # Visualize ERA5 vs NeuralGCM trajectories
 combined_ds.specific_humidity.sel(level=850).plot(
     x='longitude', y='latitude', row='time', col='model', robust=True, aspect=2, size=2
-);
+)
+
+# Save the plot to a file
+plt.savefig('era5_vs_neuralgcm_trajectories.png')

@@ -5,12 +5,13 @@ from typing import Sequence, Callable, Optional, Dict, Any
 import jax
 import jax.numpy as jnp
 # reference code from local version of neuralGCM
-from local_neuralGCM.reference_code import metrics, metrics_util, linear_transforms
+from local_neuralGCM.reference_code import metrics, metrics_util, linear_transforms, metrics_base
 
 from dinosaur import pytree_utils
 from dinosaur import coordinate_systems
 from dinosaur import typing
 Pytree = typing.Pytree
+TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
 
 class CustomLoss(metrics.TransformedL2Loss):
@@ -42,27 +43,28 @@ class CustomLoss(metrics.TransformedL2Loss):
         coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
         self.lat_mask, self.lon_mask, self.region_mask = self._create_region_mask(coords)
 
-    def evaluate_per_variable(
-        self,
-        prediction: Dict[str, Any], # maybe should be trajectories? XX
-        target: Dict[str, Any],
-    ) -> Pytree:
-        trajectory = self.getter(prediction)
-        target = self.getter(target)
+    # def evaluate_per_variable(
+    #     self,
+    #     prediction: Dict[str, Any], # maybe should be trajectories? XX
+    #     target: Dict[str, Any],
+    # ) -> Pytree:
+    #     trajectory = self.getter(prediction)
+    #     target = self.getter(target)
 
-        # slice the lat lon bounds
-        trajectory = self._get_spatial_slice(trajectory) 
-        target = self._get_spatial_slice(target)
+    #     # slice the lat lon bounds
+    #     # trajectory = self._get_spatial_slice(trajectory) 
+    #     # target = self._get_spatial_slice(target)
 
-        # difference between target and the trajectory
-        errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target) # change prediction to trajectory if revert to original
+    #     # difference between target and the trajectory
+    #     errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target) # change prediction to trajectory if revert to original
 
-        transformed_errors = self.transform(errors, target)
+    #     transformed_errors = self.transform(errors, target)
 
-        squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
+    #     squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
+    #     return self.mean_per_variable(squared_transformed_errors)
 
-        # XX issue is that this fucntion is meant for global loss not loss for a region
-        return self.mean_per_variable(squared_transformed_errors)
+    #     # using version of mean_per_variable defined here:
+    #     # return self.mean_per_variable(squared_transformed_errors)
 
     def _create_region_mask(self, coords):
         # Get full latitudes and longitudes in degrees
@@ -99,7 +101,7 @@ class CustomLoss(metrics.TransformedL2Loss):
 
         return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
 
-    def surface_mean(self, trajectory: Pytree) -> Pytree:
+    def surface_mean(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
         coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
         region_mask = self.region_mask
         if self.is_nodal:
@@ -108,6 +110,10 @@ class CustomLoss(metrics.TransformedL2Loss):
             print('MODAL coords! probably should not be here!!')
             fn = lambda x: metrics_util.modal_surface_mean(x, coords)
         return tree_map(fn, trajectory)
+
+    # def mean_per_variable(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
+    #     # In practice this is used to reduce shape (n_time, n_level) --> ()
+    #     return tree_map(jnp.mean, self.surface_mean(trajectory))
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     # Define the number of days to predict
@@ -158,13 +164,23 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
 
      # Unroll the model for 5 days
     # _, predictions = model.unroll(encoded, forcings, steps=total_steps)
-    predictions = model.decode(encoded, forcings)
+    prediction = model.decode(encoded, forcings)
 
     # initial state repeated for total_steps XX place holder code
     # target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
     target = inputs
 
-    loss = loss_fn.evaluate_per_variable(predictions, target)
+    # make sure both prediction and target are TrajectoryRepresentations
+    # prediction = TrajectoryRepresentations(prediction)
+    # target = TrajectoryRepresentations(target)
+
+    print(f'{prediction=}, {target=}')
+
+    # print typing of prediction and target
+    print(f'{type(prediction)=}, {type(target)=}')
+    exit()
+
+    loss = loss_fn.evaluate_per_variable(prediction, target)
     return loss
 
 # JIT-compile the function
