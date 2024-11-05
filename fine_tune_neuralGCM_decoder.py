@@ -35,13 +35,13 @@ class CustomLoss(metrics.TransformedL2Loss):
             getter=getter,
             time_step=time_step,
         )
-        self.lat_bounds = lat_bounds
-        self.lon_bounds = lon_bounds
-        self.variables_to_slice = set(variables_to_slice)
+        # self.lat_bounds = lat_bounds
+        # self.lon_bounds = lon_bounds
+        # self.variables_to_slice = set(variables_to_slice)
 
-        # Create regional mask
-        coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
-        self.lat_mask, self.lon_mask, self.region_mask = self._create_region_mask(coords)
+        # # Create regional mask
+        # coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
+        # self.lat_mask, self.lon_mask, self.region_mask = self._create_region_mask(coords)
 
     # def evaluate_per_variable(
     #     self,
@@ -66,50 +66,50 @@ class CustomLoss(metrics.TransformedL2Loss):
     #     # using version of mean_per_variable defined here:
     #     # return self.mean_per_variable(squared_transformed_errors)
 
-    def _create_region_mask(self, coords):
-        # Get full latitudes and longitudes in degrees
-        full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
-        full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
+    # def _create_region_mask(self, coords):
+    #     # Get full latitudes and longitudes in degrees
+    #     full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
+    #     full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
 
-        lat_min = lat_bounds[0]
-        lat_max = lat_bounds[1]
-        lon_min = lon_bounds[0]
-        lon_max = lon_bounds[1]
+    #     lat_min = lat_bounds[0]
+    #     lat_max = lat_bounds[1]
+    #     lon_min = lon_bounds[0]
+    #     lon_max = lon_bounds[1]
 
-        # Create boolean masks
-        lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
-        lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
+    #     # Create boolean masks
+    #     lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
+    #     lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
 
-        # Create a 2D mask
-        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
-        # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
-        return lat_mask, lon_mask, region_mask
+    #     # Create a 2D mask
+    #     region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
+    #     # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
+    #     return lat_mask, lon_mask, region_mask
 
-    def _get_spatial_slice(self, data: Pytree) -> Pytree:
-        lat_mask = self.lat_mask
-        lon_mask = self.lon_mask
+    # def _get_spatial_slice(self, data: Pytree) -> Pytree:
+    #     lat_mask = self.lat_mask
+    #     lon_mask = self.lon_mask
 
-        def slice_data(var_name, x):
-            if var_name in self.variables_to_slice:
-                if x.ndim == 3:  # (level, lon, lat)
-                    assert x.shape[1:] == (128, 64), f"Expected shape (_, 128, 64), got {x.shape}"
-                    return x[:, lon_mask][:, :, lat_mask]
-                elif x.ndim == 4:  # (time, level, lon, lat)
-                    assert x.shape[2:] == (128, 64), f"Expected shape (_, _, 128, 64), got {x.shape}"
-                    return x[:, :, lon_mask][:, :, :, lat_mask]
-            return x
+    #     def slice_data(var_name, x):
+    #         if var_name in self.variables_to_slice:
+    #             if x.ndim == 3:  # (level, lon, lat)
+    #                 assert x.shape[1:] == (128, 64), f"Expected shape (_, 128, 64), got {x.shape}"
+    #                 return x[:, lon_mask][:, :, lat_mask]
+    #             elif x.ndim == 4:  # (time, level, lon, lat)
+    #                 assert x.shape[2:] == (128, 64), f"Expected shape (_, _, 128, 64), got {x.shape}"
+    #                 return x[:, :, lon_mask][:, :, :, lat_mask]
+    #         return x
 
-        return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
+    #     return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
 
-    def surface_mean(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
-        coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
-        region_mask = self.region_mask
-        if self.is_nodal:
-            fn = lambda x: metrics_util.regional_nodal_surface_mean(x, coords, region_mask)
-        else:
-            print('MODAL coords! probably should not be here!!')
-            fn = lambda x: metrics_util.modal_surface_mean(x, coords)
-        return tree_map(fn, trajectory)
+    # def surface_mean(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
+    #     coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
+    #     region_mask = self.region_mask
+    #     if self.is_nodal:
+    #         fn = lambda x: metrics_util.regional_nodal_surface_mean(x, coords, region_mask)
+    #     else:
+    #         print('MODAL coords! probably should not be here!!')
+    #         fn = lambda x: metrics_util.modal_surface_mean(x, coords)
+    #     return tree_map(fn, trajectory)
 
     # def mean_per_variable(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
     #     # In practice this is used to reduce shape (n_time, n_level) --> ()
@@ -170,15 +170,27 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     # target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
     target = inputs
 
-    # make sure both prediction and target are TrajectoryRepresentations
-    # prediction = TrajectoryRepresentations(prediction)
-    # target = TrajectoryRepresentations(target)
+    # Convert prediction and target to TrajectoryRepresentations
+    def create_trajectory_representations(data):
+        # Get both nodal and modal representations in data and model space
+        data_nodal = data
+        data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
+        model_nodal = model.encode(data_nodal, forcings, rng_key=rng).state  # Get state from encoded output
+        model_modal = coordinate_systems.maybe_to_modal(model_nodal, model.model_coords)
+        
+        return TrajectoryRepresentations(
+            data_nodal_trajectory=data_nodal,
+            data_modal_trajectory=data_modal,
+            model_nodal_trajectory=model_nodal,
+            model_modal_trajectory=model_modal
+        )
 
-    print(f'{prediction=}, {target=}')
+    prediction = create_trajectory_representations(prediction)
+    target = create_trajectory_representations(target)
 
-    # print typing of prediction and target
-    print(f'{type(prediction)=}, {type(target)=}')
-    exit()
+    # check that they are TrajectoryRepresentations
+    assert isinstance(prediction, TrajectoryRepresentations)
+    assert isinstance(target, TrajectoryRepresentations)
 
     loss = loss_fn.evaluate_per_variable(prediction, target)
     return loss

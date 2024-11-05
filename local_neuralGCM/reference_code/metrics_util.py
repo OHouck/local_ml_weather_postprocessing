@@ -159,8 +159,6 @@ def regional_nodal_surface_mean(
     # XX issue is x and region_mask have different shapes because
     # x is is sliced to region and region_mask is not
     # maybe solution is to not filter x before this function
-    print(f"variable shape:", x.shape)
-    print(f"mask_shape: ", region_mask.shape)
     x_masked = x * region_mask
     integral = coords.horizontal.integrate(x_masked)
     ones = jnp.ones_like(x_masked)
