@@ -53,17 +53,18 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         data_coords=model.data_coords,
     )
 
-    # Define weights for each variable: these are used to scale the loss for each variable
+    # Define variable-specific weights to handle different scales
     weights = {
         'temperature': 1.0,
-        'geopotential': 1.0,
-        'specific_cloud_ice_water_content': 1.0,
-        'specific_cloud_liquid_water_content': 1.0,
-        'specific_humidity': 1.0,
-        'u_component_of_wind': 1.0,
-        'v_component_of_wind': 1.0,
+        'geopotential': 1e-10,  # Geopotential tends to have large values
+        'specific_cloud_ice_water_content': 1e13,  # Very small values
+        'specific_cloud_liquid_water_content': 1e12,  # Very small values
+        'specific_humidity': 1e13,  # Very small values
+        'u_component_of_wind': 1e-3,
+        'v_component_of_wind': 1e-3,
     }
 
+    # used to rescale variables
     components = [
         linear_transforms.LegacyTimeRescaling,
         lambda *args, **kwargs: linear_transforms.PerVariableRescaling(*args, weights=weights, **kwargs)
@@ -113,8 +114,15 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     assert isinstance(prediction, TrajectoryRepresentations)
     assert isinstance(target, TrajectoryRepresentations)
 
-    loss = loss_fn.evaluate_per_variable(prediction, target)
-    return loss
+    loss_array = loss_fn.evaluate(prediction, target)
+    # print(f"type: {type(loss_array)}")
+    loss_array2 = loss_fn.evaluate_per_variable(prediction, target)
+    print(f"type2: {type(loss_array2)}")
+    print(f"values type: {type(loss_array2.values())}")
+    # exit()
+
+    # exit()
+    return loss_array
 
 # JIT-compile the function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
