@@ -37,6 +37,26 @@ class CustomLoss(metrics.TransformedL2Loss):
         )
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
+
+    # compute statustics for input data
+    def compute_stats(x):
+        return {
+            'mean': jnp.mean(x),
+            'std': jnp.std(x) + 1e-8 # avoid division by 0
+        }
+
+    # Filter out metadata fields and only compute stats for actual variables
+    variables_to_normalize = {
+        'temperature': inputs['temperature'],
+        'geopotential': inputs['geopotential'],
+        'specific_cloud_ice_water_content': inputs['specific_cloud_ice_water_content'],
+        'specific_cloud_liquid_water_content': inputs['specific_cloud_liquid_water_content'],
+        'specific_humidity': inputs['specific_humidity'],
+        'u_component_of_wind': inputs['u_component_of_wind'],
+        'v_component_of_wind': inputs['v_component_of_wind']
+    }
+    input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
+
     # Define the number of days to predict
     num_days = 1
     
@@ -46,7 +66,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     total_steps = num_days * steps_per_day
 
     trajectory_spec = metrics_util.TrajectorySpec(
-        trajectory_length=1,  # Adjust as needed
+        trajectory_length=1,  # Adjust as needed only going a short ways forward
         max_trajectory_length=1,
         steps_per_save=1,
         coords=model.model_coords,
@@ -54,20 +74,29 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     )
 
     # Define variable-specific weights to handle different scales
-    weights = {
+    importance_weights = {
         'temperature': 1.0,
-        'geopotential': 1e-10,  # Geopotential tends to have large values
-        'specific_cloud_ice_water_content': 1e13,  # Very small values
-        'specific_cloud_liquid_water_content': 1e12,  # Very small values
-        'specific_humidity': 1e13,  # Very small values
-        'u_component_of_wind': 1e-3,
-        'v_component_of_wind': 1e-3,
+        'geopotential': 1.0,
+        'specific_cloud_ice_water_content': 1.0,
+        'specific_cloud_liquid_water_content': 1.0,
+        'specific_humidity': 1.0,
+        'u_component_of_wind': 1.0,
+        'v_component_of_wind': 1.0,
     }
 
-    # used to rescale variables
+    # to rescale variables and then use importance weights
     components = [
         linear_transforms.LegacyTimeRescaling,
-        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(*args, weights=weights, **kwargs)
+        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
+            *args, 
+            weights={k: 1/v['std']**2 for k, v in input_stats.items()}, 
+            **kwargs
+        ),
+        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
+            *args, 
+            weights= importance_weights, 
+            **kwargs
+        )
     ]
 
     loss_fn = CustomLoss(
@@ -89,7 +118,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     prediction = model.decode(encoded, forcings)
 
     # initial state repeated for total_steps XX place holder code
-    # target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+    # target = jax.tree_util.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
     target = inputs
 
     # Convert prediction and target to TrajectoryRepresentations
@@ -114,15 +143,12 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     assert isinstance(prediction, TrajectoryRepresentations)
     assert isinstance(target, TrajectoryRepresentations)
 
-    loss_array = loss_fn.evaluate(prediction, target)
-    # print(f"type: {type(loss_array)}")
-    loss_array2 = loss_fn.evaluate_per_variable(prediction, target)
-    print(f"type2: {type(loss_array2)}")
-    print(f"values type: {type(loss_array2.values())}")
-    # exit()
+    # loss for all variables
+    loss_dict = loss_fn.evaluate_per_variable(prediction, target)
+    # Can think more carefully about how to combine loss from different variables
+    loss_sum = sum(loss_dict.values())
 
-    # exit()
-    return loss_array
+    return loss_sum
 
 # JIT-compile the function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
@@ -169,6 +195,16 @@ def find_decoder_params(model):
         if 'decode' in str(path):
             print(path)
 
+# helper function to get number of params in decoder (58k)
+def count_decoder_parameters(model):
+    '''Count the number of parameters in the decoder that can be retrained.'''
+    retrainable_params = 0
+
+    for path, param in jax.tree_util.tree_leaves_with_path(model.params):
+        if 'dimensional_learned_primitive_to_weatherbench_decoder' in str(path):
+            retrainable_params += jnp.size(param)
+
+    print(retrainable_params)
 
 checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 initial_model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
@@ -206,9 +242,3 @@ for i in range(5):
 
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i=}, loss = {loss.item()}')
-    exit()
-# i=0, loss=Array(6.2256584, dtype=float32)
-# i=1, loss=Array(4.670498, dtype=float32)
-# i=2, loss=Array(3.855668, dtype=float32)
-# i=3, loss=Array(3.5485578, dtype=float32)
-# i=4, loss=Array(3.4335625, dtype=float32)
