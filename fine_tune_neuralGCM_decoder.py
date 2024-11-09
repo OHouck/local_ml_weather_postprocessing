@@ -14,8 +14,9 @@ Pytree = typing.Pytree
 TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
 
-# neuralgcm files that are changed
+# neuralgcm files that are changed..
 # linear_transforms.py: used jnp instead of np for sqrt function
+
 
 class CustomLoss(metrics.TransformedL2Loss):
     def __init__(
