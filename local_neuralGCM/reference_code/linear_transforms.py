@@ -92,7 +92,7 @@ class LegacyTimeRescaling(LinearTransform):
     del targets  # unused.
     n = self.trajectory_spec.trajectory_length
     steps_per_save = self.trajectory_spec.steps_per_save
-    scale = 1 if n == 1 else 1 / np.sqrt((n - 1) * steps_per_save)
+    scale = 1 if n == 1 else 1 / np.sqrt((n - 1) * steps_per_save) 
     return tree_map(lambda x: x * scale, errors)
 
 
@@ -262,9 +262,8 @@ class PerVariableRescaling(LinearTransform):
           errors, weights, default=None,
           check_used_all_replace_keys=True,
       )
-    root_weights = tree_map(lambda w: np.sqrt(w * self.scale), weights)
+    root_weights = tree_map(lambda w: jnp.sqrt(w * self.scale), weights)# OH: changed np.sqrt to jnp.sqrt
     return tree_map(jnp.multiply, errors, root_weights)
-
 
 @gin.register
 class ExponentialFilteringByLeadtime(LinearTransform):

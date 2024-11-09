@@ -14,6 +14,9 @@ Pytree = typing.Pytree
 TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
 
+# neuralgcm files that are changed
+# linear_transforms.py: used jnp instead of np for sqrt function
+
 class CustomLoss(metrics.TransformedL2Loss):
     def __init__(
         self,
@@ -35,87 +38,28 @@ class CustomLoss(metrics.TransformedL2Loss):
             getter=getter,
             time_step=time_step,
         )
-        # self.lat_bounds = lat_bounds
-        # self.lon_bounds = lon_bounds
-        # self.variables_to_slice = set(variables_to_slice)
-
-        # # Create regional mask
-        # coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
-        # self.lat_mask, self.lon_mask, self.region_mask = self._create_region_mask(coords)
-
-    # def evaluate_per_variable(
-    #     self,
-    #     prediction: Dict[str, Any], # maybe should be trajectories? XX
-    #     target: Dict[str, Any],
-    # ) -> Pytree:
-    #     trajectory = self.getter(prediction)
-    #     target = self.getter(target)
-
-    #     # slice the lat lon bounds
-    #     # trajectory = self._get_spatial_slice(trajectory) 
-    #     # target = self._get_spatial_slice(target)
-
-    #     # difference between target and the trajectory
-    #     errors = jax.tree_util.tree_map(jnp.subtract, trajectory, target) # change prediction to trajectory if revert to original
-
-    #     transformed_errors = self.transform(errors, target)
-
-    #     squared_transformed_errors = jax.tree_util.tree_map(jnp.square, transformed_errors)
-    #     return self.mean_per_variable(squared_transformed_errors)
-
-    #     # using version of mean_per_variable defined here:
-    #     # return self.mean_per_variable(squared_transformed_errors)
-
-    # def _create_region_mask(self, coords):
-    #     # Get full latitudes and longitudes in degrees
-    #     full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
-    #     full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
-
-    #     lat_min = lat_bounds[0]
-    #     lat_max = lat_bounds[1]
-    #     lon_min = lon_bounds[0]
-    #     lon_max = lon_bounds[1]
-
-    #     # Create boolean masks
-    #     lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
-    #     lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
-
-    #     # Create a 2D mask
-    #     region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
-    #     # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
-    #     return lat_mask, lon_mask, region_mask
-
-    # def _get_spatial_slice(self, data: Pytree) -> Pytree:
-    #     lat_mask = self.lat_mask
-    #     lon_mask = self.lon_mask
-
-    #     def slice_data(var_name, x):
-    #         if var_name in self.variables_to_slice:
-    #             if x.ndim == 3:  # (level, lon, lat)
-    #                 assert x.shape[1:] == (128, 64), f"Expected shape (_, 128, 64), got {x.shape}"
-    #                 return x[:, lon_mask][:, :, lat_mask]
-    #             elif x.ndim == 4:  # (time, level, lon, lat)
-    #                 assert x.shape[2:] == (128, 64), f"Expected shape (_, _, 128, 64), got {x.shape}"
-    #                 return x[:, :, lon_mask][:, :, :, lat_mask]
-    #         return x
-
-    #     return {var_name: slice_data(var_name, x) for var_name, x in data.items()}
-
-    # def surface_mean(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
-    #     coords = self.trajectory_spec.coords if self.is_encoded else self.trajectory_spec.data_coords
-    #     region_mask = self.region_mask
-    #     if self.is_nodal:
-    #         fn = lambda x: metrics_util.regional_nodal_surface_mean(x, coords, region_mask)
-    #     else:
-    #         print('MODAL coords! probably should not be here!!')
-    #         fn = lambda x: metrics_util.modal_surface_mean(x, coords)
-    #     return tree_map(fn, trajectory)
-
-    # def mean_per_variable(self, trajectory: Pytree) -> Pytree: # copied from metrics_base
-    #     # In practice this is used to reduce shape (n_time, n_level) --> ()
-    #     return tree_map(jnp.mean, self.surface_mean(trajectory))
 
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
+
+    # compute statustics for input data
+    def compute_stats(x):
+        return {
+            'mean': jnp.mean(x),
+            'std': jnp.std(x) + 1e-8 # avoid division by 0
+        }
+
+    # Filter out metadata fields and only compute stats for actual variables
+    variables_to_normalize = {
+        'temperature': inputs['temperature'],
+        'geopotential': inputs['geopotential'],
+        'specific_cloud_ice_water_content': inputs['specific_cloud_ice_water_content'],
+        'specific_cloud_liquid_water_content': inputs['specific_cloud_liquid_water_content'],
+        'specific_humidity': inputs['specific_humidity'],
+        'u_component_of_wind': inputs['u_component_of_wind'],
+        'v_component_of_wind': inputs['v_component_of_wind']
+    }
+    input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
+
     # Define the number of days to predict
     num_days = 1
     
@@ -125,15 +69,15 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     total_steps = num_days * steps_per_day
 
     trajectory_spec = metrics_util.TrajectorySpec(
-        trajectory_length=1,  # Adjust as needed
+        trajectory_length=1,  # Adjust as needed only going a short ways forward
         max_trajectory_length=1,
         steps_per_save=1,
         coords=model.model_coords,
         data_coords=model.data_coords,
     )
 
-    # Define weights for each variable: these are used to scale the loss for each variable
-    weights = {
+    # Define variable-specific weights to handle different scales
+    importance_weights = {
         'temperature': 1.0,
         'geopotential': 1.0,
         'specific_cloud_ice_water_content': 1.0,
@@ -143,9 +87,19 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         'v_component_of_wind': 1.0,
     }
 
+    # to rescale variables and then use importance weights
     components = [
         linear_transforms.LegacyTimeRescaling,
-        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(*args, weights=weights, **kwargs)
+        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
+            *args, 
+            weights={k: 1/v['std']**2 for k, v in input_stats.items()}, 
+            **kwargs
+        ),
+        lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
+            *args, 
+            weights= importance_weights, 
+            **kwargs
+        )
     ]
 
     loss_fn = CustomLoss(
@@ -167,7 +121,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     prediction = model.decode(encoded, forcings)
 
     # initial state repeated for total_steps XX place holder code
-    # target = jax.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+    # target = jax.tree_util.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
     target = inputs
 
     # Convert prediction and target to TrajectoryRepresentations
@@ -192,8 +146,12 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     assert isinstance(prediction, TrajectoryRepresentations)
     assert isinstance(target, TrajectoryRepresentations)
 
-    loss = loss_fn.evaluate_per_variable(prediction, target)
-    return loss
+    # loss for all variables
+    loss_dict = loss_fn.evaluate_per_variable(prediction, target)
+    # Can think more carefully about how to combine loss from different variables
+    loss_sum = sum(loss_dict.values())
+
+    return loss_sum
 
 # JIT-compile the function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
@@ -240,6 +198,16 @@ def find_decoder_params(model):
         if 'decode' in str(path):
             print(path)
 
+# helper function to get number of params in decoder (58k)
+def count_decoder_parameters(model):
+    '''Count the number of parameters in the decoder that can be retrained.'''
+    retrainable_params = 0
+
+    for path, param in jax.tree_util.tree_leaves_with_path(model.params):
+        if 'dimensional_learned_primitive_to_weatherbench_decoder' in str(path):
+            retrainable_params += jnp.size(param)
+
+    print(retrainable_params)
 
 checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 initial_model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
@@ -277,9 +245,3 @@ for i in range(5):
 
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i=}, loss = {loss.item()}')
-    exit()
-# i=0, loss=Array(6.2256584, dtype=float32)
-# i=1, loss=Array(4.670498, dtype=float32)
-# i=2, loss=Array(3.855668, dtype=float32)
-# i=3, loss=Array(3.5485578, dtype=float32)
-# i=4, loss=Array(3.4335625, dtype=float32)
