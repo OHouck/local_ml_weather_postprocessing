@@ -39,7 +39,84 @@ class CustomLoss(metrics.TransformedL2Loss):
             getter=getter,
             time_step=time_step,
         )
+        self.lat_bounds = lat_bounds
+        self.lon_bounds = lon_bounds
+        self.variables_to_slice = variables_to_slice
 
+    # modifed version of method in metrics.py to incorporate regional masking
+    def evaluate_per_variable(
+        self,
+        prediction: TrajectoryRepresentations,
+        target: TrajectoryRepresentations,
+    ) -> Pytree:
+        prediction = self.get_representation(prediction)
+        target = self.get_representation(target)
+        trajectory = self.getter(prediction)
+        target = self.getter(target)
+
+        # Get the masks for the region of interest
+        if self.is_encoded:
+            coords = self.trajectory_spec.coords
+        else:
+            coords = self.trajectory_spec.data_coords
+        lat_mask, lon_mask, region_mask = self._create_region_mask(coords)
+        
+        # # Apply mask to relevant variables
+        # def apply_mask(x, var_name):
+        #     if var_name in self.variables_to_slice:
+        #         # Expand mask dimensions to match the variable shape
+        #         # Assuming shape is (time, level, lon, lat) or similar
+        #         expanded_mask = region_mask[None, None, :, :]  # Add time and level dims
+        #         expanded_mask = jnp.broadcast_to(expanded_mask, x.shape)
+        #         return x * expanded_mask
+        #     return x
+        def apply_mask(x, var_name):
+            if var_name in self.variables_to_slice:
+                print(f"Variable {var_name} shape: {x.shape}")
+                *leading_dims, lon, lat = x.shape
+                broadcast_shape = (1,) * (len(leading_dims)) + region_mask.shape
+                print(f"Mask broadcast shape: {broadcast_shape}")
+                expanded_mask = region_mask.reshape(broadcast_shape)
+                expanded_mask = jnp.broadcast_to(expanded_mask, x.shape)
+                return x * expanded_mask
+            return x            
+
+        # Apply mask to both trajectory and target
+        trajectory = {k: apply_mask(v, k) for k, v in trajectory.items()}
+        target = {k: apply_mask(v, k) for k, v in target.items()}
+
+        # Continue with normal loss computation
+        errors = tree_map(jnp.subtract, trajectory, target)
+        transformed_errors = self.transform(errors, target)
+        squared_transformed_errors = tree_map(jnp.square, transformed_errors)
+    
+        # When taking mean, we should only consider points within the mask
+        def masked_mean(x, var_name):
+            if var_name in self.variables_to_slice:
+                # Count number of points in mask for proper averaging
+                n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2]))
+                # Sum over spatial dimensions and divide by number of masked points
+                return jnp.sum(x) / n_points
+            return jnp.mean(x)
+
+        return {k: masked_mean(v, k) for k, v in squared_transformed_errors.items()}
+
+    def _create_region_mask(self, coords):
+        # Get full latitudes and longitudes in degrees
+        full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
+        full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
+        lat_min = lat_bounds[0]
+        lat_max = lat_bounds[1]
+        lon_min = lon_bounds[0]
+        lon_max = lon_bounds[1]
+        # Create boolean masks
+        lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
+        lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
+        # Create a 2D mask
+        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
+        # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
+        return lat_mask, lon_mask, region_mask
+            
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
 
     # compute statustics for input data
