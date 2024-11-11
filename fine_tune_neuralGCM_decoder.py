@@ -49,9 +49,12 @@ class CustomLoss(metrics.TransformedL2Loss):
         prediction: TrajectoryRepresentations,
         target: TrajectoryRepresentations,
     ) -> Pytree:
+
+        # Step 1: Convert to appropriate representation (nodal/modal)
         prediction = self.get_representation(prediction)
         target = self.get_representation(target)
-        trajectory = self.getter(prediction)
+        # Step 2: Apply getter function (currenlty filter to simulated time)
+        prediction = self.getter(prediction)
         target = self.getter(target)
 
         # Get the masks for the region of interest
@@ -59,21 +62,12 @@ class CustomLoss(metrics.TransformedL2Loss):
             coords = self.trajectory_spec.coords
         else:
             coords = self.trajectory_spec.data_coords
-        lat_mask, lon_mask, region_mask = self._create_region_mask(coords)
+        region_mask = self._create_region_mask(coords)
         
-        # # Apply mask to relevant variables
-        # def apply_mask(x, var_name):
-        #     if var_name in self.variables_to_slice:
-        #         # Expand mask dimensions to match the variable shape
-        #         # Assuming shape is (time, level, lon, lat) or similar
-        #         expanded_mask = region_mask[None, None, :, :]  # Add time and level dims
-        #         expanded_mask = jnp.broadcast_to(expanded_mask, x.shape)
-        #         return x * expanded_mask
-        #     return x
         def apply_mask(x, var_name):
             if var_name in self.variables_to_slice:
                 print(f"Variable {var_name} shape: {x.shape}")
-                *leading_dims, lon, lat = x.shape
+                *leading_dims, lon, lat = x.shape 
                 broadcast_shape = (1,) * (len(leading_dims)) + region_mask.shape
                 print(f"Mask broadcast shape: {broadcast_shape}")
                 expanded_mask = region_mask.reshape(broadcast_shape)
@@ -82,11 +76,11 @@ class CustomLoss(metrics.TransformedL2Loss):
             return x            
 
         # Apply mask to both trajectory and target
-        trajectory = {k: apply_mask(v, k) for k, v in trajectory.items()}
+        prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
         target = {k: apply_mask(v, k) for k, v in target.items()}
 
         # Continue with normal loss computation
-        errors = tree_map(jnp.subtract, trajectory, target)
+        errors = tree_map(jnp.subtract, prediction, target)
         transformed_errors = self.transform(errors, target)
         squared_transformed_errors = tree_map(jnp.square, transformed_errors)
     
@@ -115,7 +109,7 @@ class CustomLoss(metrics.TransformedL2Loss):
         # Create a 2D mask
         region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
         # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
-        return lat_mask, lon_mask, region_mask
+        return region_mask
             
 def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
 
@@ -165,7 +159,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         'v_component_of_wind': 1.0,
     }
 
-    # to rescale variables and then use importance weights
+    # to rescale variables and then use weight using importance weights
     components = [
         linear_transforms.LegacyTimeRescaling,
         lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
@@ -223,6 +217,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     # check that they are TrajectoryRepresentations
     assert isinstance(prediction, TrajectoryRepresentations)
     assert isinstance(target, TrajectoryRepresentations)
+
 
     # loss for all variables
     loss_dict = loss_fn.evaluate_per_variable(prediction, target)
@@ -298,12 +293,12 @@ optimizer = optax.adam(1e-3)
 
 # latitude between -90 and 90
 # longitude between 0 and 360
-# lat_bounds = (-90, 90)
-# lon_bounds = (0, 360)
+lat_bounds = (-90, 90)
+lon_bounds = (0, 360)
 
 # pakistan
-lat_bounds = (20, 60)
-lon_bounds = (200, 300)
+# lat_bounds = (20, 60)
+# lon_bounds = (200, 300)
 
 # convert to radians
 lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
@@ -315,6 +310,130 @@ opt_state = optimizer.init(initial_model)
 
 # 128 longitude, 64 latitude
 model = initial_model
+
+import matplotlib.pyplot as plt
+
+# Define the number of days to predict
+num_days = 1
+
+# Calculate the number of steps based on the model's timestep
+# Assuming the model's timestep is in hours
+steps_per_day = 24 // model.timestep.astype('timedelta64[h]').astype(int)
+total_steps = num_days * steps_per_day
+
+encoded = model.encode(inputs, forcings, rng_key=rng)
+
+    # Unroll the model for 5 days
+# _, predictions = model.unroll(encoded, forcings, steps=total_steps)
+prediction = model.decode(encoded, forcings)
+
+# initial state repeated for total_steps XX place holder code
+# target = jax.tree_util.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
+target = inputs
+
+# Convert prediction and target to TrajectoryRepresentations
+def create_trajectory_representations(data):
+    # Get both nodal and modal representations in data and model space
+    data_nodal = data
+    data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
+    model_nodal = model.encode(data_nodal, forcings, rng_key=rng).state  # Get state from encoded output
+    model_modal = coordinate_systems.maybe_to_modal(model_nodal, model.model_coords)
+    
+    return TrajectoryRepresentations(
+        data_nodal_trajectory=data_nodal,
+        data_modal_trajectory=data_modal,
+        model_nodal_trajectory=model_nodal,
+        model_modal_trajectory=model_modal
+    )
+
+prediction = create_trajectory_representations(prediction)
+target = create_trajectory_representations(target)
+
+# check that they are TrajectoryRepresentations
+assert isinstance(prediction, TrajectoryRepresentations)
+assert isinstance(target, TrajectoryRepresentations)
+
+def create_temperature_maps(prediction: TrajectoryRepresentations, 
+                            target: TrajectoryRepresentations):
+    """Creates maps of temperature values for prediction and target.
+    
+    Args:
+        prediction: TrajectoryRepresentations of model predictions
+        target: TrajectoryRepresentations of target values
+        
+    Returns:
+        dict with temperature maps and their difference
+    """
+    # Get the nodal (grid-point) representation
+    pred_data = prediction.data_nodal_trajectory
+    target_data = target.data_nodal_trajectory
+    
+    # Extract temperature fields
+    # Assuming shape is (time, level, lat, lon) or similar
+    pred_temp = pred_data['temperature']
+    target_temp = target_data['temperature']
+
+    print(f"Prediction temperature shape: {pred_temp.shape}")
+    print(f"Target temperature shape: {target_temp.shape}")
+
+        # Take first level (index 0) for surface temperature
+    # Shape should be (128, 64) after this
+    pred_temp = pred_temp[-1]  # [level=0, lon, lat]
+    target_temp = target_temp[-1]
+    
+    print(f"After slicing - Prediction temperature shape: {pred_temp.shape}")
+    print(f"After slicing - Target temperature shape: {target_temp.shape}")
+    # Compute difference
+    temp_diff = pred_temp - target_temp
+    
+    return {
+        'prediction_temperature': pred_temp,
+        'target_temperature': target_temp,
+        'temperature_difference': temp_diff,
+        'coords': {
+            'latitudes': model.data_coords.horizontal.latitudes,
+            'longitudes': model.data_coords.horizontal.longitudes
+        }
+    }
+    
+# Create temperature maps after making predictions
+temp_maps = create_temperature_maps(prediction, target)
+
+print(temp_maps['prediction_temperature'].shape)
+print(temp_maps['target_temperature'].shape)
+print(temp_maps['temperature_difference'].shape)
+print(temp_maps['coords']['latitudes'].shape)
+print(temp_maps['coords']['longitudes'].shape)
+
+def plot_temperature_maps(temp_maps):
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # Get coordinate grids in radians
+    lons, lats = temp_maps['coords']['longitudes'], temp_maps['coords']['latitudes']
+    
+    # Plot prediction
+    im1 = ax1.pcolormesh(lons, lats, temp_maps['prediction_temperature'].T)
+    ax1.set_title('Predicted Temperature')
+    plt.colorbar(im1, ax=ax1)
+    
+    # Plot target
+    im2 = ax2.pcolormesh(lons, lats, temp_maps['target_temperature'].T)
+    ax2.set_title('Target Temperature')
+    plt.colorbar(im2, ax=ax2)
+    
+    # Plot difference
+    im3 = ax3.pcolormesh(lons, lats, temp_maps['temperature_difference'].T, 
+                         cmap='RdBu_r')
+    ax3.set_title('Temperature Difference')
+    plt.colorbar(im3, ax=ax3)
+    
+    plt.tight_layout()
+    plt.show()
+
+# After computing loss and getting maps:
+plot_temperature_maps(temp_maps)
+
+exit()
 
 for i in range(5):
     loss, grads = jax.value_and_grad(compute_loss_jit)(model, inputs, forcings, rng, lat_bounds, lon_bounds)
