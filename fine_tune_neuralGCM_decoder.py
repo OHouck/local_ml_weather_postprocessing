@@ -1,5 +1,9 @@
+import gcsfs
 import optax
+import pickle
 import numpy as np
+from datetime import datetime, timedelta
+import xarray
 import neuralgcm
 from typing import Sequence, Callable, Optional, Dict, Any
 import jax
@@ -9,14 +13,17 @@ from local_neuralGCM.reference_code import metrics, metrics_util, linear_transfo
 
 from dinosaur import pytree_utils
 from dinosaur import coordinate_systems
+from dinosaur import horizontal_interpolation
+from dinosaur import xarray_utils
+from dinosaur import spherical_harmonic
 from dinosaur import typing
 Pytree = typing.Pytree
 TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
+gcs = gcsfs.GCSFileSystem(token='anon')
 
 # neuralgcm files that are changed..
 # linear_transforms.py: used jnp instead of np for sqrt function
-
 
 class CustomLoss(metrics.TransformedL2Loss):
     def __init__(
@@ -66,10 +73,8 @@ class CustomLoss(metrics.TransformedL2Loss):
         
         def apply_mask(x, var_name):
             if var_name in self.variables_to_slice:
-                print(f"Variable {var_name} shape: {x.shape}")
                 *leading_dims, lon, lat = x.shape 
                 broadcast_shape = (1,) * (len(leading_dims)) + region_mask.shape
-                print(f"Mask broadcast shape: {broadcast_shape}")
                 expanded_mask = region_mask.reshape(broadcast_shape)
                 expanded_mask = jnp.broadcast_to(expanded_mask, x.shape)
                 return x * expanded_mask
@@ -111,7 +116,7 @@ class CustomLoss(metrics.TransformedL2Loss):
         # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
         return region_mask
             
-def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
+def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat_bounds, lon_bounds):
 
     # compute statustics for input data
     def compute_stats(x):
@@ -131,14 +136,6 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
         'v_component_of_wind': inputs['v_component_of_wind']
     }
     input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
-
-    # Define the number of days to predict
-    num_days = 1
-    
-    # Calculate the number of steps based on the model's timestep
-    # Assuming the model's timestep is in hours
-    steps_per_day = 24 // model.timestep.astype('timedelta64[h]').astype(int)
-    total_steps = num_days * steps_per_day
 
     trajectory_spec = metrics_util.TrajectorySpec(
         trajectory_length=1,  # Adjust as needed only going a short ways forward
@@ -186,15 +183,23 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
                             'specific_cloud_ice_water_content'],
     )
 
-    encoded = model.encode(inputs, forcings, rng_key=rng)
+    encoded = model.encode(inputs, forcings, rng_key=rng_key)
 
      # Unroll the model for 5 days
-    # _, predictions = model.unroll(encoded, forcings, steps=total_steps)
-    prediction = model.decode(encoded, forcings)
+    final_state, prediction = model.unroll(state = encoded, 
+                                           forcings = forcings, 
+                                           steps = steps,
+                                           timedelta = timedelta,
+                                           start_with_input = True)
+    # for testing just loss from encoding and decoding
+    # prediction = model.decode(encoded, forcings)
 
-    # initial state repeated for total_steps XX place holder code
-    # target = jax.tree_util.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
-    target = inputs
+    print(f'prediction: {prediction}')
+    print(f"final_state: {final_state}")
+
+    exit()
+
+
 
     # Convert prediction and target to TrajectoryRepresentations
     def create_trajectory_representations(data):
@@ -227,7 +232,7 @@ def compute_loss(model, inputs, forcings, rng, lat_bounds, lon_bounds):
     return loss_sum
 
 # JIT-compile the function
-compute_loss_jit = jax.jit(compute_loss, static_argnums=(0, 4, 5))
+compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8))
 
 def freeze_non_decoder_params(model, updates):
     total_params = 0
@@ -282,163 +287,112 @@ def count_decoder_parameters(model):
 
     print(retrainable_params)
 
-checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
-initial_model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
+# simple demo version for quickest testing
+# checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
+# model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
+# ds = neuralgcm.demo.load_data(model.data_coords)
+# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
 
-ds = neuralgcm.demo.load_data(initial_model.data_coords)
-inputs, forcings = initial_model.data_from_xarray(ds.isel(time=0))
+# set random key
+rng = jax.random.PRNGKey(854)
+
+# 1.4 degree pre-trained model checkpoint
+model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
+
+with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
+  ckpt = pickle.load(f)
+
+model= neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
+
+
+start_date = '2020-02-14'
+num_days = 3
+
+end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days)
+end_date = end_date.strftime('%Y-%m-%d')
+
+
+# set up now to create a forecast for 4 days
+num_inner_steps = 24 # save model output once every 24 hours
+num_outer_steps = num_days * 24 // num_inner_steps # process num_days days
+timedelta = np.timedelta64(1, 'h') * num_inner_steps
+times = np.arange(num_outer_steps) * num_inner_steps # time axis in hours
+
+# # read in, slice, and regrid era5 data
+# era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
+# full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=none)
+# sliced_era5 = (
+#     full_era5
+#     [model.input_variables + model.forcing_variables]
+#     .pipe(
+#         xarray_utils.selective_temporal_shift,
+#         variables=model.forcing_variables,
+#         time_shift='24 hours',
+#     )
+#     .sel(time=slice(start_date, end_date, num_inner_steps))
+#     .compute()
+# )
+
+# # regrid to neuralgcm resolution
+# era5_grid = spherical_harmonic.grid(
+#     latitude_nodes=full_era5.sizes['latitude'],
+#     longitude_nodes=full_era5.sizes['longitude'],
+#     latitude_spacing=xarray_utils.infer_latitude_spacing(full_era5.latitude),
+#     longitude_offset=xarray_utils.infer_longitude_offset(full_era5.longitude),
+# )
+# regridder = horizontal_interpolation.conservativeregridder(
+#     era5_grid, model.data_coords.horizontal, skipna=true
+# )
+# eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
+# eval_era5= xarray_utils.fill_nan_with_nearest(eval_era5)
+# eval_era5.to_netcdf('~/documents/eval_era5.nc')
+
+
+eval_era5 = xarray.open_dataset('~/documents/eval_era5.nc')
+
+inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
+input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
+initial_state = model.encode(inputs, input_forcings, rng)
+# use persistence for forcing variables (SST and sea ice cover)
+forcings = model.forcings_from_xarray(eval_era5.head(time=1))
+# parameter for generating forecast
+start_with_input = True
 
 optimizer = optax.adam(1e-3)
 
+# create target states for the forecast
+def prepare_target_trajectory(eval_era5, model, num_outer_steps):
+
+    target = []
+    for i in range(num_outer_steps):
+        # extract inputs at each time step and convert to JAX array
+        target_input = model.inputs_from_xarray(eval_era5.isel(time=i))
+        target.append(target_input)
+    return target
+target = prepare_target_trajectory(eval_era5, model, num_outer_steps)
 
 # latitude between -90 and 90
 # longitude between 0 and 360
-lat_bounds = (-90, 90)
-lon_bounds = (0, 360)
+# lat_bounds = (-90, 90)
+# lon_bounds = (0, 360)
 
 # pakistan
-# lat_bounds = (20, 60)
-# lon_bounds = (200, 300)
+lat_bounds = (20, 60)
+lon_bounds = (200, 300)
 
 # convert to radians
 lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
 lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 
-rng = jax.random.PRNGKey(0)
 
-opt_state = optimizer.init(initial_model)
-
-# 128 longitude, 64 latitude
-model = initial_model
-
-import matplotlib.pyplot as plt
-
-# Define the number of days to predict
-num_days = 1
-
-# Calculate the number of steps based on the model's timestep
-# Assuming the model's timestep is in hours
-steps_per_day = 24 // model.timestep.astype('timedelta64[h]').astype(int)
-total_steps = num_days * steps_per_day
-
-encoded = model.encode(inputs, forcings, rng_key=rng)
-
-    # Unroll the model for 5 days
-# _, predictions = model.unroll(encoded, forcings, steps=total_steps)
-prediction = model.decode(encoded, forcings)
-
-# initial state repeated for total_steps XX place holder code
-# target = jax.tree_util.tree_map(lambda x: jnp.repeat(x[jnp.newaxis, ...], total_steps, axis=0), inputs)
-target = inputs
-
-# Convert prediction and target to TrajectoryRepresentations
-def create_trajectory_representations(data):
-    # Get both nodal and modal representations in data and model space
-    data_nodal = data
-    data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
-    model_nodal = model.encode(data_nodal, forcings, rng_key=rng).state  # Get state from encoded output
-    model_modal = coordinate_systems.maybe_to_modal(model_nodal, model.model_coords)
-    
-    return TrajectoryRepresentations(
-        data_nodal_trajectory=data_nodal,
-        data_modal_trajectory=data_modal,
-        model_nodal_trajectory=model_nodal,
-        model_modal_trajectory=model_modal
-    )
-
-prediction = create_trajectory_representations(prediction)
-target = create_trajectory_representations(target)
-
-# check that they are TrajectoryRepresentations
-assert isinstance(prediction, TrajectoryRepresentations)
-assert isinstance(target, TrajectoryRepresentations)
-
-def create_temperature_maps(prediction: TrajectoryRepresentations, 
-                            target: TrajectoryRepresentations):
-    """Creates maps of temperature values for prediction and target.
-    
-    Args:
-        prediction: TrajectoryRepresentations of model predictions
-        target: TrajectoryRepresentations of target values
-        
-    Returns:
-        dict with temperature maps and their difference
-    """
-    # Get the nodal (grid-point) representation
-    pred_data = prediction.data_nodal_trajectory
-    target_data = target.data_nodal_trajectory
-    
-    # Extract temperature fields
-    # Assuming shape is (time, level, lat, lon) or similar
-    pred_temp = pred_data['temperature']
-    target_temp = target_data['temperature']
-
-    print(f"Prediction temperature shape: {pred_temp.shape}")
-    print(f"Target temperature shape: {target_temp.shape}")
-
-        # Take first level (index 0) for surface temperature
-    # Shape should be (128, 64) after this
-    pred_temp = pred_temp[-1]  # [level=0, lon, lat]
-    target_temp = target_temp[-1]
-    
-    print(f"After slicing - Prediction temperature shape: {pred_temp.shape}")
-    print(f"After slicing - Target temperature shape: {target_temp.shape}")
-    # Compute difference
-    temp_diff = pred_temp - target_temp
-    
-    return {
-        'prediction_temperature': pred_temp,
-        'target_temperature': target_temp,
-        'temperature_difference': temp_diff,
-        'coords': {
-            'latitudes': model.data_coords.horizontal.latitudes,
-            'longitudes': model.data_coords.horizontal.longitudes
-        }
-    }
-    
-# Create temperature maps after making predictions
-temp_maps = create_temperature_maps(prediction, target)
-
-print(temp_maps['prediction_temperature'].shape)
-print(temp_maps['target_temperature'].shape)
-print(temp_maps['temperature_difference'].shape)
-print(temp_maps['coords']['latitudes'].shape)
-print(temp_maps['coords']['longitudes'].shape)
-
-def plot_temperature_maps(temp_maps):
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
-    
-    # Get coordinate grids in radians
-    lons, lats = temp_maps['coords']['longitudes'], temp_maps['coords']['latitudes']
-    
-    # Plot prediction
-    im1 = ax1.pcolormesh(lons, lats, temp_maps['prediction_temperature'].T)
-    ax1.set_title('Predicted Temperature')
-    plt.colorbar(im1, ax=ax1)
-    
-    # Plot target
-    im2 = ax2.pcolormesh(lons, lats, temp_maps['target_temperature'].T)
-    ax2.set_title('Target Temperature')
-    plt.colorbar(im2, ax=ax2)
-    
-    # Plot difference
-    im3 = ax3.pcolormesh(lons, lats, temp_maps['temperature_difference'].T, 
-                         cmap='RdBu_r')
-    ax3.set_title('Temperature Difference')
-    plt.colorbar(im3, ax=ax3)
-    
-    plt.tight_layout()
-    plt.show()
-
-# After computing loss and getting maps:
-plot_temperature_maps(temp_maps)
-
-exit()
+opt_state = optimizer.init(model)
 
 for i in range(5):
-    loss, grads = jax.value_and_grad(compute_loss_jit)(model, inputs, forcings, rng, lat_bounds, lon_bounds)
+    loss, grads = jax.value_and_grad(compute_loss_jit)(
+        model, inputs, target, forcings, rng, num_outer_steps, timedelta, lat_bounds, lon_bounds
+    )
     updates, opt_state = optimizer.update(grads, opt_state)
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
-
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i=}, loss = {loss.item()}')
+ 
