@@ -25,7 +25,7 @@ gcs = gcsfs.GCSFileSystem(token='anon')
 # neuralgcm files that are changed..
 # linear_transforms.py: used jnp instead of np for sqrt function
 
-class CustomLoss(metrics.TransformedL2Loss):
+class RegionalLoss(metrics.TransformedL2Loss):
     def __init__(
         self,
         trajectory_spec: metrics_util.TrajectorySpec,
@@ -116,9 +116,18 @@ class CustomLoss(metrics.TransformedL2Loss):
         # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
         return region_mask
             
-def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat_bounds, lon_bounds):
+def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds):
 
-    # compute statustics for input data
+    # Run model forward to create forecast
+    _, prediction_trajectory = model.unroll(
+        state = initial_state,
+        forcings = forcings,
+        steps=num_outer_steps,
+        timedelta=timedelta,
+        start_with_input=True,
+    )
+
+    # compute statistics for input data
     def compute_stats(x):
         return {
             'mean': jnp.mean(x),
@@ -138,9 +147,9 @@ def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat
     input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
 
     trajectory_spec = metrics_util.TrajectorySpec(
-        trajectory_length=1,  # Adjust as needed only going a short ways forward
-        max_trajectory_length=1,
-        steps_per_save=1,
+        trajectory_length=num_outer_steps,  # Adjust as needed only going a short ways forward
+        max_trajectory_length=num_outer_steps,
+        steps_per_save=num_inner_steps,
         coords=model.model_coords,
         data_coords=model.data_coords,
     )
@@ -171,7 +180,7 @@ def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat
         )
     ]
 
-    loss_fn = CustomLoss(
+    loss_fn = RegionalLoss(
         trajectory_spec=trajectory_spec,
         lat_bounds=lat_bounds,
         lon_bounds=lon_bounds,
@@ -181,33 +190,37 @@ def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat
                             'specific_humidity', 
                             'specific_cloud_liquid_water_content', 
                             'specific_cloud_ice_water_content'],
+        is_nodal = True,
+        is_encoded = False,
     )
 
-    encoded = model.encode(inputs, forcings, rng_key=rng_key)
+    # # Convert prediction and target to TrajectoryRepresentations
+    # def create_trajectory_representations(data):
+    #     # Get both nodal and modal representations in data and model space
+    #     data_nodal = data
+    #     data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
+    #     model_nodal = model.encode(data_nodal, forcings_for_encode, rng_key=rng_key).state  # Get state from encoded output
+    #     model_modal = coordinate_systems.maybe_to_modal(model_nodal, model.model_coords)
+        
+    #     return TrajectoryRepresentations(
+    #         data_nodal_trajectory=data_nodal,
+    #         data_modal_trajectory=data_modal,
+    #         model_nodal_trajectory=model_nodal,
+    #         model_modal_trajectory=model_modal
+    #     )
 
-     # Unroll the model for 5 days
-    final_state, prediction = model.unroll(state = encoded, 
-                                           forcings = forcings, 
-                                           steps = steps,
-                                           timedelta = timedelta,
-                                           start_with_input = True)
-    # for testing just loss from encoding and decoding
-    # prediction = model.decode(encoded, forcings)
-
-    print(f'prediction: {prediction}')
-    print(f"final_state: {final_state}")
-
-    exit()
-
-
-
-    # Convert prediction and target to TrajectoryRepresentations
+    # XXX This is where the code is failing
     def create_trajectory_representations(data):
-        # Get both nodal and modal representations in data and model space
+        # Convert data to modal representation if needed
         data_nodal = data
-        data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
-        model_nodal = model.encode(data_nodal, forcings, rng_key=rng).state  # Get state from encoded output
-        model_modal = coordinate_systems.maybe_to_modal(model_nodal, model.model_coords)
+        print({var_name: var_data.shape for var_name, var_data in data_nodal.items()})
+        # data_modal = coordinate_systems.maybe_to_modal(data_nodal, model.data_coords)
+        data_modal = None
+        # code runs when I do this but gets killed when calculating loss
+
+        model_nodal = data_nodal
+        # model_modal = data_modal
+        model_modal = None
         
         return TrajectoryRepresentations(
             data_nodal_trajectory=data_nodal,
@@ -216,8 +229,13 @@ def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat
             model_modal_trajectory=model_modal
         )
 
-    prediction = create_trajectory_representations(prediction)
-    target = create_trajectory_representations(target)
+
+    # filter trajectories to only include last time step
+    prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
+    target_trajectory = {k: v[-1] for k, v in target.items()}
+
+    prediction = create_trajectory_representations(prediction_trajectory)
+    target = create_trajectory_representations(target_trajectory)
 
     # check that they are TrajectoryRepresentations
     assert isinstance(prediction, TrajectoryRepresentations)
@@ -231,8 +249,6 @@ def compute_loss(model, inputs, target, forcings, rng_key, steps, timedelta, lat
 
     return loss_sum
 
-# JIT-compile the function
-compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8))
 
 def freeze_non_decoder_params(model, updates):
     total_params = 0
@@ -306,7 +322,7 @@ model= neuralgcm.PressureLevelModel.from_checkpoint(ckpt)
 
 
 start_date = '2020-02-14'
-num_days = 3
+num_days = 2
 
 end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days)
 end_date = end_date.strftime('%Y-%m-%d')
@@ -319,33 +335,34 @@ timedelta = np.timedelta64(1, 'h') * num_inner_steps
 times = np.arange(num_outer_steps) * num_inner_steps # time axis in hours
 
 # # read in, slice, and regrid era5 data
-# era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
-# full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=none)
-# sliced_era5 = (
-#     full_era5
-#     [model.input_variables + model.forcing_variables]
-#     .pipe(
-#         xarray_utils.selective_temporal_shift,
-#         variables=model.forcing_variables,
-#         time_shift='24 hours',
-#     )
-#     .sel(time=slice(start_date, end_date, num_inner_steps))
-#     .compute()
-# )
+data_inner_steps = 24  # process every 24th hour
+era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
+full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=None)
+sliced_era5 = (
+    full_era5
+    [model.input_variables + model.forcing_variables]
+    .pipe(
+        xarray_utils.selective_temporal_shift,
+        variables=model.forcing_variables,
+        time_shift='24 hours',
+    )
+    .sel(time=slice(start_date, end_date, num_inner_steps))
+    .compute()
+)
 
-# # regrid to neuralgcm resolution
-# era5_grid = spherical_harmonic.grid(
-#     latitude_nodes=full_era5.sizes['latitude'],
-#     longitude_nodes=full_era5.sizes['longitude'],
-#     latitude_spacing=xarray_utils.infer_latitude_spacing(full_era5.latitude),
-#     longitude_offset=xarray_utils.infer_longitude_offset(full_era5.longitude),
-# )
-# regridder = horizontal_interpolation.conservativeregridder(
-#     era5_grid, model.data_coords.horizontal, skipna=true
-# )
-# eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
-# eval_era5= xarray_utils.fill_nan_with_nearest(eval_era5)
-# eval_era5.to_netcdf('~/documents/eval_era5.nc')
+# regrid to neuralgcm resolution
+era5_grid = spherical_harmonic.Grid(
+    latitude_nodes=full_era5.sizes['latitude'],
+    longitude_nodes=full_era5.sizes['longitude'],
+    latitude_spacing=xarray_utils.infer_latitude_spacing(full_era5.latitude),
+    longitude_offset=xarray_utils.infer_longitude_offset(full_era5.longitude),
+)
+regridder = horizontal_interpolation.ConservativeRegridder(
+    era5_grid, model.data_coords.horizontal, skipna=True
+)
+eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
+eval_era5= xarray_utils.fill_nan_with_nearest(eval_era5)
+eval_era5.to_netcdf('~/documents/eval_era5.nc')
 
 
 eval_era5 = xarray.open_dataset('~/documents/eval_era5.nc')
@@ -353,23 +370,14 @@ eval_era5 = xarray.open_dataset('~/documents/eval_era5.nc')
 inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
 input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
 initial_state = model.encode(inputs, input_forcings, rng)
-# use persistence for forcing variables (SST and sea ice cover)
+
 forcings = model.forcings_from_xarray(eval_era5.head(time=1))
-# parameter for generating forecast
-start_with_input = True
 
-optimizer = optax.adam(1e-3)
-
-# create target states for the forecast
-def prepare_target_trajectory(eval_era5, model, num_outer_steps):
-
-    target = []
-    for i in range(num_outer_steps):
-        # extract inputs at each time step and convert to JAX array
-        target_input = model.inputs_from_xarray(eval_era5.isel(time=i))
-        target.append(target_input)
-    return target
-target = prepare_target_trajectory(eval_era5, model, num_outer_steps)
+target_trajectory = model.inputs_from_xarray(
+    eval_era5
+    .thin(time=(num_inner_steps // data_inner_steps))
+    .isel(time=slice(num_outer_steps))
+)
 
 # latitude between -90 and 90
 # longitude between 0 and 360
@@ -385,14 +393,20 @@ lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
 lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 
 
+optimizer = optax.adam(1e-3)
+
 opt_state = optimizer.init(model)
+
+# JIT-compile the training function
+compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
 
 for i in range(5):
     loss, grads = jax.value_and_grad(compute_loss_jit)(
-        model, inputs, target, forcings, rng, num_outer_steps, timedelta, lat_bounds, lon_bounds
+        model, initial_state, target_trajectory, forcings, rng, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds
     )
     updates, opt_state = optimizer.update(grads, opt_state)
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i=}, loss = {loss.item()}')
+    exit()
  
