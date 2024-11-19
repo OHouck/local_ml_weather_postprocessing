@@ -289,7 +289,6 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
     filename = f'eval_era5_{start_date_short}_{end_date_short}.nc'
     file_path = os.path.join(output_path, filename)
 
-    print(file_path)
     # Check if the file already exists
     if os.path.exists(file_path):
         print(f'File {filename} already exists. Loading it instead of re-evaluating.')
@@ -331,11 +330,6 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
     
     return eval_era5
 
-# simple demo version for quickest testing, now outdated
-# checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
-# model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
-# ds = neuralgcm.demo.load_data(model.data_coords)
-# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
 
 #==============================================================================
 # Set up parameters
@@ -345,7 +339,6 @@ rng_key = jax.random.PRNGKey(854)
 
 # 1.4 degree pre-trained model checkpoint
 model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
-
 
 # set time parameters
 start_date = '2020-02-14'
@@ -381,10 +374,17 @@ times = np.arange(num_outer_steps) * num_inner_steps # time axis in hours
 lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
 lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 
-# load model and era5 data
-with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
-  ckpt = pickle.load(f)
-model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
+# Load a non-toy version of the model
+# with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
+#   ckpt = pickle.load(f)
+# model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
+
+# simple demo version for quickest testing, now outdated
+checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
+model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
+# ds = neuralgcm.demo.load_data(model.data_coords)
+# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
+
 era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
 output_path = dir['processed']
 eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = True)
@@ -411,12 +411,12 @@ compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
 # Run training loop
 #==============================================================================
 for i in range(5):
+    print(f'Iteration {i+1}')
     loss, grads = jax.value_and_grad(compute_loss_jit)(
         model, initial_state, target_trajectory, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds
     )
     updates, opt_state = optimizer.update(grads, opt_state)
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
     model = optax.apply_updates(model, frozen_updates)
-    print(f'{i=}, loss = {loss.item()}')
-    exit()
+    print(f'{i+1=}, loss = {loss.item()}')
  
