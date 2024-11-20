@@ -109,7 +109,7 @@ class RegionalLoss(metrics.TransformedL2Loss):
         prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
         target = {k: apply_mask(v, k) for k, v in target.items()}
 
-        # Continue with normal loss computation
+        # Continue with normal loss computation (MSE)
         errors = tree_map(jnp.subtract, prediction, target)
         transformed_errors = self.transform(errors, target)
         squared_transformed_errors = tree_map(jnp.square, transformed_errors)
@@ -190,7 +190,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'v_component_of_wind': 1.0,
     }
 
-    # to rescale variables and then use weight using importance weights
+    # to rescale variables and then apply importance weights
     components = [
         linear_transforms.LegacyTimeRescaling,
         lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
@@ -271,7 +271,8 @@ def find_decoder_params(model):
         if 'decode' in str(path):
             print(path)
 
-# helper function to get number of params in decoder (58k)
+# helper function to get number of params in decoder 
+# (58k in toy model, 4.2M in 1.4 degree deterministic model)
 def count_decoder_parameters(model):
     '''Count the number of parameters in the decoder that can be retrained.'''
     retrainable_params = 0
@@ -281,6 +282,14 @@ def count_decoder_parameters(model):
             retrainable_params += jnp.size(param)
 
     print(retrainable_params)
+
+# count total params in model
+# (191k in toy model, 18.3M in 1.4 degree deterministic model)
+def count_total_parameters(model):
+    num_params = 0
+    for path, param in jax.tree_util.tree_leaves_with_path(model.params):
+        num_params += jnp.size(param)
+    print(num_params)
 
 
 def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = False):
@@ -337,7 +346,7 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
 # set random key
 rng_key = jax.random.PRNGKey(854)
 
-# 1.4 degree pre-trained model checkpoint
+# 1.4 degree pre-trained model checkpoint (OH: currently not using in order to use demo model)
 model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
 
 # set time parameters
