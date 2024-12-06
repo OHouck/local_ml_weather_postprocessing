@@ -11,7 +11,7 @@ from typing import Sequence, Callable, Optional, Dict, Any
 import jax
 import jax.numpy as jnp
 # reference code from local version of neuralGCM
-from local_neuralGCM.reference_code import metrics, metrics_util, linear_transforms, metrics_base
+from local_neuralGCM.reference_code import metrics, metrics_util, linear_transforms 
 
 from dinosaur import pytree_utils
 from dinosaur import coordinate_systems
@@ -19,6 +19,7 @@ from dinosaur import horizontal_interpolation
 from dinosaur import xarray_utils
 from dinosaur import spherical_harmonic
 from dinosaur import typing
+
 Pytree = typing.Pytree
 TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
@@ -188,6 +189,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': 1.0,
         'u_component_of_wind': 1.0,
         'v_component_of_wind': 1.0,
+        'P_minus_E_cumulative': 1.0
     }
 
     # to rescale variables and then apply importance weights
@@ -214,7 +216,8 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
                             'u_component_of_wind', 'v_component_of_wind', 
                             'specific_humidity', 
                             'specific_cloud_liquid_water_content', 
-                            'specific_cloud_ice_water_content'],
+                            'specific_cloud_ice_water_content',
+                            'P_minus_E_cumulative'],
         is_nodal = True, # data is defined at grid nodes (lat, lon)
         is_encoded = False, # variables represent physical quantities 
     )
@@ -280,7 +283,6 @@ def count_decoder_parameters(model):
     for path, param in jax.tree_util.tree_leaves_with_path(model.params):
         if 'dimensional_learned_primitive_to_weatherbench_decoder' in str(path):
             retrainable_params += jnp.size(param)
-
     print(retrainable_params)
 
 # count total params in model
@@ -292,11 +294,15 @@ def count_total_parameters(model):
     print(num_params)
 
 
-def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = False):
+def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = False):
     start_date_short = start_date.replace('-', '')
     end_date_short = end_date.replace('-', '')
     filename = f'eval_era5_{start_date_short}_{end_date_short}.nc'
     file_path = os.path.join(output_path, filename)
+
+    # I think we want total precipitation? It is sum of convective and large-scale precipitation
+    # use "evaporation" as variable for evaporation
+    # https://codes.ecmwf.int/grib/param-db/228
 
     # Check if the file already exists
     if os.path.exists(file_path):
@@ -305,17 +311,20 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
 
     # Open ERA5 dataset
     full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=None)
+
+    # variables to save
+    era5_vars_to_keep = model.input_variables + model.forcing_variables + ['evaporation', "total_precipitation"]
     
-    # Slice the dataset to the desired time range
+    data_inner_steps = 24  # process every 24th hour
+    # this line is taking longer than expected
     sliced_era5 = (
-        full_era5 
-        [model.input_variables + model.forcing_variables]
+        full_era5[era5_vars_to_keep]
         .pipe(
             xarray_utils.selective_temporal_shift,
             variables=model.forcing_variables,
             time_shift='24 hours',
         )
-        .sel(time=slice(start_date, end_date, num_inner_steps))
+        .sel(time=slice(start_date, end_date, data_inner_steps))
         .compute()
     )
 
@@ -332,9 +341,11 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
     eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
     eval_era5 = xarray_utils.fill_nan_with_nearest(eval_era5)
 
+    # create precipitation minus evaporation variable
+    eval_era5['P_minus_E_cumulative'] = eval_era5['total_precipitation'] - eval_era5['evaporation']
+
     # Save to NetCDF
     if save:
-
         eval_era5.to_netcdf(f"{output_path}/{filename}")
     
     return eval_era5
@@ -347,13 +358,12 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
 rng_key = jax.random.PRNGKey(854)
 
 # 1.4 degree pre-trained model checkpoint (OH: currently not using in order to use demo model)
-model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
+# model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
 
 # set time parameters
 start_date = '2020-02-14'
 num_days = 2
-num_inner_steps = 24 # save model output once every 24 hours
-data_inner_steps = 24  # process every 24th hour
+num_inner_steps = 1 # how many times to save model every 24 hours
 
 # Set region of interest: Note:
 # latitude between -90 and 90
@@ -375,39 +385,68 @@ lon_bounds = (200, 300)
 # set other time parameters based on start date and number of days
 end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days)
 end_date = end_date.strftime('%Y-%m-%d')
-num_outer_steps = num_days * 24 // num_inner_steps # process num_days days
-timedelta = np.timedelta64(1, 'h') * num_inner_steps
+num_outer_steps = num_days * 1 // num_inner_steps # process num_days days
+timedelta = np.timedelta64(24, 'h') * num_inner_steps
 times = np.arange(num_outer_steps) * num_inner_steps # time axis in hours
 
 # convert coordinate bounds to radians
 lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
 lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 
-# Load a non-toy version of the model
+# # Load a non-toy version of the model
 # with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
 #   ckpt = pickle.load(f)
-# model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
 
 # simple demo version for quickest testing, now outdated
-checkpoint = neuralgcm.demo.load_checkpoint_tl63_stochastic()
-model = neuralgcm.PressureLevelModel.from_checkpoint(checkpoint)
-# ds = neuralgcm.demo.load_data(model.data_coords)
-# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
+ckpt = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 
-era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
+
+new_inputs_to_units_mapping = {
+  'u': 'meter / second',
+  'v': 'meter / second',
+  't': 'kelvin',
+  'z': 'm**2 s**-2',
+  'sim_time': 'dimensionless',
+  'tracers': {'specific_humidity': 'dimensionless',
+            'specific_cloud_liquid_water_content': 'dimensionless',
+            'specific_cloud_ice_water_content': 'dimensionless',
+    },
+    'diagnostics': {'P_minus_E_cumulative': 'kg / (meter**2)'}
+  }
+
+new_model_config_str = '\n'.join([
+    ckpt['model_config_str'],
+    f'DimensionalLearnedPrimitiveToWeatherbenchDecoder.inputs_to_units_mapping = {new_inputs_to_units_mapping}',
+    'DimensionalLearnedPrimitiveToWeatherbenchDecoder.diagnostics_module = @NodalModelDiagnosticsDecoder',
+    'StochasticPhysicsParameterizationStep.diagnostics_module = @PrecipitationMinusEvaporationDiagnostics',
+    'PrecipitationMinusEvaporationDiagnostics.method = "cumulative"',
+    'PrecipitationMinusEvaporationDiagnostics.moisture_species = ("specific_humidity", "specific_cloud_liquid_water_content", "specific_cloud_ice_water_content")'
+])
+ckpt['model_config_str'] = new_model_config_str
+
+model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
+ds = neuralgcm.demo.load_data(model.data_coords)
+inputs, forcings = model.data_from_xarray(ds.isel(time=0))
+
 output_path = dir['processed']
-eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = True)
+era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
+eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = True)
 
 inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
 input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
 initial_state = model.encode(inputs, input_forcings, rng_key)
 forcings = model.forcings_from_xarray(eval_era5.head(time=1))
 
+
+# XX issue is that inputs_from_xarray removes P-E cumulative
 target_trajectory = model.inputs_from_xarray(
     eval_era5
-    .thin(time=(num_inner_steps // data_inner_steps))
+    .thin(time=(num_inner_steps))
     .isel(time=slice(num_outer_steps))
 )
+
+print(target_trajectory.keys())
+exit()
 
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
