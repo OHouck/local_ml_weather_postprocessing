@@ -153,6 +153,11 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         start_with_input=True,
     )
 
+    # convert prediction to xarray
+    prediction_trajectory = model.data_to_xarray(prediction_trajectory, times=np.arange(num_outer_steps) * num_inner_steps)
+    print(prediction_trajectory.data_vars)
+    exit()
+
     # compute statistics for input data
     def compute_stats(x):
         return {
@@ -225,6 +230,15 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     # filter trajectories to only include last time step. OH might want to change 
     prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
     target_trajectory = {k: v[-1] for k, v in target.items()}
+
+    # target_trajectory = model.inputs_from_xarray(
+    #     eval_era5
+    #     .thin(time=(num_inner_steps))
+    #     .isel(time=slice(num_outer_steps))
+    # )
+
+    target_trajectory = eval_era5
+
 
     # loss for all variables
     loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target_trajectory)
@@ -437,16 +451,29 @@ input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
 initial_state = model.encode(inputs, input_forcings, rng_key)
 forcings = model.forcings_from_xarray(eval_era5.head(time=1))
 
-
-# XX issue is that inputs_from_xarray removes P-E cumulative
-target_trajectory = model.inputs_from_xarray(
+# Slice the dataset as before
+sliced_ds = (
     eval_era5
-    .thin(time=(num_inner_steps))
+    .thin(time=num_inner_steps)
     .isel(time=slice(num_outer_steps))
 )
 
-print(target_trajectory.keys())
-exit()
+# Gather required variables (model inputs plus P_minus_E_cumulative)
+required_vars = list(model.input_variables) + ["P_minus_E_cumulative"]
+
+# Check that all required variables are present in the dataset
+missing_vars = [var for var in required_vars if var not in sliced_ds.variables]
+if missing_vars:
+    raise ValueError(f"Missing variables in dataset: {missing_vars}")
+
+# Manually construct the target_trajectory dictionary 
+target_trajectory = {var: sliced_ds[var].values for var in required_vars}
+
+# target_trajectory = model.inputs_from_xarray(
+#     eval_era5
+#     .thin(time=(num_inner_steps))
+#     .isel(time=slice(num_outer_steps))
+# )
 
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
@@ -458,7 +485,7 @@ compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
 #==============================================================================
 # Run training loop
 #==============================================================================
-for i in range(5):
+for i in range(3):
     print(f'Iteration {i+1}')
     loss, grads = jax.value_and_grad(compute_loss_jit)(
         model, initial_state, target_trajectory, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds
