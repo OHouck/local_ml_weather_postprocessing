@@ -99,16 +99,35 @@ class RegionalLoss(metrics.TransformedL2Loss):
         
         def apply_mask(x, var_name):
             if var_name in self.variables_to_slice:
-                *leading_dims, lon, lat = x.shape 
+                if var_name == "P_minus_E_cumulative":
+                    # (time, level, lon, lat) in target
+                    # (time, lon, lat) in prediction after 
+                    # want to to be (level, lon, lat)
+                    if x.ndim == 3:
+                        # insert a dummy level dimension to match target
+                        x = x[:, None, :, :]
+                    *leading_dims, lon, lat = x.shape 
+                elif x.ndim==4:
+                    # assume (level, lon, lat)
+                    *leading_dims, lon, lat = x.shape 
+                else:
+                    raise ValueError(f"Unexpected number of dimensions {x.ndim} for variable {var_name}.")
+                print(f"var_name: {var_name}, x.shape: {x.shape}")
+
                 broadcast_shape = (1,) * (len(leading_dims)) + region_mask.shape
                 expanded_mask = region_mask.reshape(broadcast_shape)
                 expanded_mask = jnp.broadcast_to(expanded_mask, x.shape)
                 return x * expanded_mask
             return x            
 
+        # put variables in the order of the variables_to_slice
+        target = {var: target[var] for var in self.variables_to_slice}
+        prediction = {var: prediction[var] for var in self.variables_to_slice}
+
         # Apply mask to both trajectory and target
-        prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
         target = {k: apply_mask(v, k) for k, v in target.items()}
+        prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
+
 
         # Continue with normal loss computation (MSE)
         errors = tree_map(jnp.subtract, prediction, target)
@@ -152,11 +171,6 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         timedelta=timedelta,
         start_with_input=True,
     )
-
-    # convert prediction to xarray
-    prediction_trajectory = model.data_to_xarray(prediction_trajectory, times=np.arange(num_outer_steps) * num_inner_steps)
-    print(prediction_trajectory.data_vars)
-    exit()
 
     # compute statistics for input data
     def compute_stats(x):
@@ -228,17 +242,9 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     )
 
     # filter trajectories to only include last time step. OH might want to change 
-    prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
-    target_trajectory = {k: v[-1] for k, v in target.items()}
-
-    # target_trajectory = model.inputs_from_xarray(
-    #     eval_era5
-    #     .thin(time=(num_inner_steps))
-    #     .isel(time=slice(num_outer_steps))
-    # )
-
-    target_trajectory = eval_era5
-
+    #XX commented out for now because it removes the time dimension causing inconsistency
+    # prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
+    # target_trajectory = {k: v[-1] for k, v in target.items()}
 
     # loss for all variables
     loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target_trajectory)
@@ -446,35 +452,22 @@ output_path = dir['processed']
 era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
 eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = True)
 
-inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
+input = model.inputs_from_xarray(eval_era5.isel(time = 0))
 input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
 initial_state = model.encode(inputs, input_forcings, rng_key)
 forcings = model.forcings_from_xarray(eval_era5.head(time=1))
 
-# Slice the dataset as before
-sliced_ds = (
-    eval_era5
-    .thin(time=num_inner_steps)
+# vars used to evaluate loss
+evaluation_vars = ['temperature', 'geopotential', 'specific_cloud_ice_water_content', 
+                   'specific_cloud_liquid_water_content', 'specific_humidity', 
+                   'u_component_of_wind', 'v_component_of_wind', 'P_minus_E_cumulative']
+
+slice_era5 = (eval_era5[evaluation_vars]
+    .thin(time=(num_inner_steps))
     .isel(time=slice(num_outer_steps))
 )
-
-# Gather required variables (model inputs plus P_minus_E_cumulative)
-required_vars = list(model.input_variables) + ["P_minus_E_cumulative"]
-
-# Check that all required variables are present in the dataset
-missing_vars = [var for var in required_vars if var not in sliced_ds.variables]
-if missing_vars:
-    raise ValueError(f"Missing variables in dataset: {missing_vars}")
-
-# Manually construct the target_trajectory dictionary 
-target_trajectory = {var: sliced_ds[var].values for var in required_vars}
-
-# target_trajectory = model.inputs_from_xarray(
-#     eval_era5
-#     .thin(time=(num_inner_steps))
-#     .isel(time=slice(num_outer_steps))
-# )
-
+target_trajectory = model._data_from_xarray(slice_era5, 
+                                            list(slice_era5.data_vars))
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
 opt_state = optimizer.init(model)
