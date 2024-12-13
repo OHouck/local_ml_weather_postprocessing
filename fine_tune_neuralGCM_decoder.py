@@ -60,6 +60,7 @@ class RegionalLoss(metrics.TransformedL2Loss):
         lat_bounds: tuple,
         lon_bounds: tuple,
         variables_to_slice: Sequence[str],
+        pressure_weights: Dict[str, jnp.ndarray],
         components: Sequence[linear_transforms.LinearTransformConstructor] = (),
         is_nodal: bool = True,
         is_encoded: bool = False,
@@ -77,8 +78,9 @@ class RegionalLoss(metrics.TransformedL2Loss):
         self.lat_bounds = lat_bounds
         self.lon_bounds = lon_bounds
         self.variables_to_slice = variables_to_slice
+        self.pressure_weights = pressure_weights
 
-    # modifed version of method in metrics.py to incorporate regional masking
+    # modified version of method in metrics.py to incorporate regional masking
     # also made prediction and target dictionaries and removed the need for TrajectoryRepresentations
     # do not call get_representation 
     def evaluate_per_variable(
@@ -102,17 +104,16 @@ class RegionalLoss(metrics.TransformedL2Loss):
                 if var_name == "P_minus_E_cumulative":
                     # (time, level, lon, lat) in target
                     # (time, lon, lat) in prediction after 
-                    # want to to be (level, lon, lat)
-                    if x.ndim == 3:
-                        # insert a dummy level dimension to match target
-                        x = x[:, None, :, :]
+                    # want to to be (time, lon, lat)
+                    if x.ndim == 4:
+                        # remove level dimension to match prediction
+                        x = x[:, 0, :, :]
                     *leading_dims, lon, lat = x.shape 
                 elif x.ndim==4:
                     # assume (level, lon, lat)
                     *leading_dims, lon, lat = x.shape 
                 else:
                     raise ValueError(f"Unexpected number of dimensions {x.ndim} for variable {var_name}.")
-                print(f"var_name: {var_name}, x.shape: {x.shape}")
 
                 broadcast_shape = (1,) * (len(leading_dims)) + region_mask.shape
                 expanded_mask = region_mask.reshape(broadcast_shape)
@@ -128,17 +129,27 @@ class RegionalLoss(metrics.TransformedL2Loss):
         target = {k: apply_mask(v, k) for k, v in target.items()}
         prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
 
-
         # Continue with normal loss computation (MSE)
         errors = tree_map(jnp.subtract, prediction, target)
         transformed_errors = self.transform(errors, target)
         squared_transformed_errors = tree_map(jnp.square, transformed_errors)
+
+        def apply_pressure_weights(x, var_name):
+            # If var_name in pressure_weight_dict and x has shape (time, level, lon, lat):
+            if var_name in self.pressure_weights and x.ndim == 4:
+                pw = self.pressure_weights[var_name]  # shape (levels,)
+                # Reshape to (1, level, 1, 1) to broadcast over time, lon, lat
+                pw = pw.reshape((1, x.shape[1], 1, 1))
+                x = x * pw
+            return x
+
+        squared_transformed_errors = {k: apply_pressure_weights(v, k) for k, v in squared_transformed_errors.items()}
     
         # When taking mean, we should only consider points within the mask
         def masked_mean(x, var_name):
             if var_name in self.variables_to_slice:
                 # Count number of points in mask for proper averaging
-                n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2]))
+                n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2])) # last two dims are lon, lat
                 # Sum over spatial dimensions and divide by number of masked points
                 return jnp.sum(x) / n_points
             return jnp.mean(x)
@@ -147,18 +158,20 @@ class RegionalLoss(metrics.TransformedL2Loss):
 
     def _create_region_mask(self, coords):
         # Get full latitudes and longitudes in degrees
-        full_latitudes = coords.horizontal.latitudes  # Shape: (64,)
-        full_longitudes = coords.horizontal.longitudes  # Shape: (128,)
+        full_latitudes = coords.horizontal.latitudes  # Shape: (lat,)
+        full_longitudes = coords.horizontal.longitudes  # Shape: (lon,)
+
         lat_min = lat_bounds[0]
         lat_max = lat_bounds[1]
         lon_min = lon_bounds[0]
         lon_max = lon_bounds[1]
+
         # Create boolean masks
         lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
         lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
+
         # Create a 2D mask
-        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64)
-        # region_mask = region_mask.T  # Shape: (64, 128), matching (lat, lon) don't think we want
+        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64) (lon, lat)
         return region_mask
             
 def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds):
@@ -172,7 +185,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         start_with_input=True,
     )
 
-    # compute statistics for input data
+    # compute statistics for normalization
     def compute_stats(x):
         return {
             'mean': jnp.mean(x),
@@ -180,14 +193,16 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         }
 
     # Filter out metadata fields and only compute stats for actual variables
+    # OH to do: starting conditions should be properly passed in
     variables_to_normalize = {
-        'temperature': inputs['temperature'],
-        'geopotential': inputs['geopotential'],
-        'specific_cloud_ice_water_content': inputs['specific_cloud_ice_water_content'],
-        'specific_cloud_liquid_water_content': inputs['specific_cloud_liquid_water_content'],
-        'specific_humidity': inputs['specific_humidity'],
-        'u_component_of_wind': inputs['u_component_of_wind'],
-        'v_component_of_wind': inputs['v_component_of_wind']
+        'temperature': starting_conditions['temperature'],
+        'geopotential': starting_conditions['geopotential'],
+        'specific_cloud_ice_water_content': starting_conditions['specific_cloud_ice_water_content'],
+        'specific_cloud_liquid_water_content': starting_conditions['specific_cloud_liquid_water_content'],
+        'specific_humidity': starting_conditions['specific_humidity'],
+        'u_component_of_wind': starting_conditions['u_component_of_wind'],
+        'v_component_of_wind': starting_conditions['v_component_of_wind'],
+        'P_minus_E_cumulative': starting_conditions['P_minus_E_cumulative'] 
     }
     input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
 
@@ -208,7 +223,26 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': 1.0,
         'u_component_of_wind': 1.0,
         'v_component_of_wind': 1.0,
-        'P_minus_E_cumulative': 1.0
+        'P_minus_E_cumulative': 0 # OH: currently set to 0 since units or something are off 
+    }
+
+    num_levels = 37  # This matches the shape you mentioned
+    # A simple scheme: emphasize lower levels more. 
+    # For instance, weight them inversely by their index (just as a placeholder):
+    level_array = jnp.arange(num_levels)  # 0, 1, 2, ..., 36
+    # Add 1 so we don't divide by zero
+    level_weights = 1.0 / (1.0 + level_array)
+    level_weights = level_weights / jnp.sum(level_weights)  # Normalize so they sum to 1
+
+    pressure_weight_dict = {
+        'temperature': level_weights,
+        'geopotential': level_weights,
+        'specific_cloud_ice_water_content': level_weights,
+        'specific_cloud_liquid_water_content': level_weights,
+        'specific_humidity': level_weights,
+        'u_component_of_wind': level_weights,
+        'v_component_of_wind': level_weights
+        # 'P_minus_E_cumulative' has no level dimension, so exclude it or set None
     }
 
     # to rescale variables and then apply importance weights
@@ -237,6 +271,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
                             'specific_cloud_liquid_water_content', 
                             'specific_cloud_ice_water_content',
                             'P_minus_E_cumulative'],
+        pressure_weights = pressure_weight_dict,
         is_nodal = True, # data is defined at grid nodes (lat, lon)
         is_encoded = False, # variables represent physical quantities 
     )
@@ -244,10 +279,10 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     # filter trajectories to only include last time step. OH might want to change 
     #XX commented out for now because it removes the time dimension causing inconsistency
     # prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
-    # target_trajectory = {k: v[-1] for k, v in target.items()}
+    # target = {k: v[-1] for k, v in target.items()}
 
     # loss for all variables
-    loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target_trajectory)
+    loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target)
     # Can think more carefully about how to combine loss from different variables
     loss_sum = sum(loss_dict.values())
     return loss_sum
@@ -321,7 +356,12 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     file_path = os.path.join(output_path, filename)
 
     # I think we want total precipitation? It is sum of convective and large-scale precipitation
-    # use "evaporation" as variable for evaporation
+    # use "Evaporation" as variable for evaporation
+    # https://codes.ecmwf.int/grib/param-db/260259
+    # Total Precipitation: https://codes.ecmwf.int/grib/param-db/228228
+
+    # note couldn't find these so use the versions in meters and convert to kg/m^2
+    # https://codes.ecmwf.int/grib/param-db/182
     # https://codes.ecmwf.int/grib/param-db/228
 
     # Check if the file already exists
@@ -332,7 +372,6 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     # Open ERA5 dataset
     full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=None)
 
-    # variables to save
     era5_vars_to_keep = model.input_variables + model.forcing_variables + ['evaporation', "total_precipitation"]
     
     data_inner_steps = 24  # process every 24th hour
@@ -348,6 +387,23 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
         .compute()
     )
 
+    # convert total precipitation to kg/m^2
+    # OH check this: density of water is 1000 kg/m^3
+    sliced_era5['total_precipitation'] = sliced_era5['total_precipitation'] * 1000
+    sliced_era5['evaporation'] = sliced_era5['evaporation'] * 1000
+
+    P_initial = sliced_era5['total_precipitation'].isel(time=0)
+    E_initial = sliced_era5['evaporation'].isel(time=0)
+
+    # generate cumulative precipitation minus evaporation variable over time
+    sliced_era5['P_minus_E_cumulative'] = (
+    (sliced_era5['total_precipitation'] - P_initial) 
+    - (sliced_era5['evaporation'] - E_initial)
+    )
+
+    # create precipitation minus evaporation variable
+    sliced_era5['P_minus_E'] = sliced_era5['total_precipitation'] - sliced_era5['evaporation']
+
     # Regrid to neuralgcm resolution
     era5_grid = spherical_harmonic.Grid(
         latitude_nodes=full_era5.sizes['latitude'],
@@ -361,8 +417,6 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
     eval_era5 = xarray_utils.fill_nan_with_nearest(eval_era5)
 
-    # create precipitation minus evaporation variable
-    eval_era5['P_minus_E_cumulative'] = eval_era5['total_precipitation'] - eval_era5['evaporation']
 
     # Save to NetCDF
     if save:
@@ -382,7 +436,7 @@ rng_key = jax.random.PRNGKey(854)
 
 # set time parameters
 start_date = '2020-02-14'
-num_days = 2
+num_days = 5
 num_inner_steps = 1 # how many times to save model every 24 hours
 
 # Set region of interest: Note:
@@ -420,7 +474,7 @@ lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 # simple demo version for quickest testing, now outdated
 ckpt = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 
-
+# code from: https://github.com/neuralgcm/neuralgcm/issues/12
 new_inputs_to_units_mapping = {
   'u': 'meter / second',
   'v': 'meter / second',
@@ -445,29 +499,50 @@ new_model_config_str = '\n'.join([
 ckpt['model_config_str'] = new_model_config_str
 
 model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
-ds = neuralgcm.demo.load_data(model.data_coords)
-inputs, forcings = model.data_from_xarray(ds.isel(time=0))
+# ds = neuralgcm.demo.load_data(model.data_coords) # uncomment if using demo model
+# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
 
 output_path = dir['processed']
 era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
 eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = True)
 
-input = model.inputs_from_xarray(eval_era5.isel(time = 0))
+inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
 input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
 initial_state = model.encode(inputs, input_forcings, rng_key)
 forcings = model.forcings_from_xarray(eval_era5.head(time=1))
 
+
 # vars used to evaluate loss
 evaluation_vars = ['temperature', 'geopotential', 'specific_cloud_ice_water_content', 
                    'specific_cloud_liquid_water_content', 'specific_humidity', 
-                   'u_component_of_wind', 'v_component_of_wind', 'P_minus_E_cumulative']
+                   'u_component_of_wind', 'v_component_of_wind', 'P_minus_E_cumulative'] 
 
 slice_era5 = (eval_era5[evaluation_vars]
     .thin(time=(num_inner_steps))
     .isel(time=slice(num_outer_steps))
 )
+
+# keep initial state as starting conditions
+starting_conditions = model._data_from_xarray(slice_era5.isel(time=1), 
+                                            list(slice_era5.data_vars))
+
 target_trajectory = model._data_from_xarray(slice_era5, 
                                             list(slice_era5.data_vars))
+
+# testing running the model outside of training loop
+# _, prediction_trajectory = model.unroll(
+#     state = initial_state,
+#     forcings = forcings,
+#     steps=num_outer_steps,
+#     timedelta=timedelta,
+#     start_with_input=True,
+# )
+
+# prediction_ds = model.data_to_xarray(prediction_trajectory, times = times)
+
+# # print mean cumulative precipitation minus evaporation by time step
+# print(prediction_ds['P_minus_E_cumulative'].mean(('longitude', 'latitude')))
+
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
 opt_state = optimizer.init(model)
@@ -477,6 +552,8 @@ compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
 
 #==============================================================================
 # Run training loop
+# OH note 12/9/24: got P_minus_E mostly working but it makes the loss much larger at each iteration
+# something to investigate. Unit conversion or something might still be off
 #==============================================================================
 for i in range(3):
     print(f'Iteration {i+1}')
