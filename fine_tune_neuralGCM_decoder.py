@@ -223,7 +223,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': 1.0,
         'u_component_of_wind': 1.0,
         'v_component_of_wind': 1.0,
-        'P_minus_E_cumulative': 0 # OH: currently set to 0 since units or something are off 
+        'P_minus_E_cumulative': 0 # OH: currently set to 0 since something is off
     }
 
     num_levels = 37  # This matches the shape you mentioned
@@ -242,7 +242,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': level_weights,
         'u_component_of_wind': level_weights,
         'v_component_of_wind': level_weights
-        # 'P_minus_E_cumulative' has no level dimension, so exclude it or set None
+        # 'P_minus_E_cumulative' has no level dimension, so exclude it 
     }
 
     # to rescale variables and then apply importance weights
@@ -277,7 +277,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     )
 
     # filter trajectories to only include last time step. OH might want to change 
-    #XX commented out for now because it removes the time dimension causing inconsistency
+    #XX commented out for now because it removes tho time dimension causing inconsistency
     # prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
     # target = {k: v[-1] for k, v in target.items()}
 
@@ -396,10 +396,16 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     E_initial = sliced_era5['evaporation'].isel(time=0)
 
     # generate cumulative precipitation minus evaporation variable over time
+    # sliced_era5['P_minus_E_cumulative'] = (
+    # (sliced_era5['total_precipitation'] - P_initial) 
+    # - (sliced_era5['evaporation'] - E_initial)
+    # )
+
     sliced_era5['P_minus_E_cumulative'] = (
-    (sliced_era5['total_precipitation'] - P_initial) 
-    - (sliced_era5['evaporation'] - E_initial)
-    )
+    sliced_era5['total_precipitation'].cumsum('time')
+    - sliced_era5['evaporation'].cumsum('time')
+)
+
 
     # create precipitation minus evaporation variable
     sliced_era5['P_minus_E'] = sliced_era5['total_precipitation'] - sliced_era5['evaporation']
@@ -529,7 +535,7 @@ starting_conditions = model._data_from_xarray(slice_era5.isel(time=1),
 target_trajectory = model._data_from_xarray(slice_era5, 
                                             list(slice_era5.data_vars))
 
-# testing running the model outside of training loop
+# # testing running the model outside of training loop
 # _, prediction_trajectory = model.unroll(
 #     state = initial_state,
 #     forcings = forcings,
@@ -541,7 +547,18 @@ target_trajectory = model._data_from_xarray(slice_era5,
 # prediction_ds = model.data_to_xarray(prediction_trajectory, times = times)
 
 # # print mean cumulative precipitation minus evaporation by time step
+# print("Prediction")
 # print(prediction_ds['P_minus_E_cumulative'].mean(('longitude', 'latitude')))
+
+# # print mean cumulative precipitation minus evaporation by time step in target
+# print("Target")
+# print(slice_era5['P_minus_E_cumulative'].mean(('longitude', 'latitude')))
+
+# print("Prediction")
+# print(slice_era5['P_minus_E_cumulative'].values)
+# print("Target")
+# print(prediction_ds['P_minus_E_cumulative'].values)
+
 
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
