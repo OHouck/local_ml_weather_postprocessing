@@ -31,7 +31,6 @@ gcs = gcsfs.GCSFileSystem(token='anon')
 #==============================================================================
 # Define functions and classes
 #==============================================================================
-
 def setup_directories():
     # check if we are on the server or local
     nodename = socket.gethostname()
@@ -129,11 +128,12 @@ class RegionalLoss(metrics.TransformedL2Loss):
         target = {k: apply_mask(v, k) for k, v in target.items()}
         prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
 
-        # Continue with normal loss computation (MSE)
+        # calculate squared transformed errors
         errors = tree_map(jnp.subtract, prediction, target)
         transformed_errors = self.transform(errors, target)
         squared_transformed_errors = tree_map(jnp.square, transformed_errors)
 
+        # apply pressure weights to squared transformed errors
         def apply_pressure_weights(x, var_name):
             # If var_name in pressure_weight_dict and x has shape (time, level, lon, lat):
             if var_name in self.pressure_weights and x.ndim == 4:
@@ -144,17 +144,16 @@ class RegionalLoss(metrics.TransformedL2Loss):
             return x
 
         squared_transformed_errors = {k: apply_pressure_weights(v, k) for k, v in squared_transformed_errors.items()}
-    
-        # When taking mean, we should only consider points within the mask
-        def masked_mean(x, var_name):
-            if var_name in self.variables_to_slice:
-                # Count number of points in mask for proper averaging
-                n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2])) # last two dims are lon, lat
-                # Sum over spatial dimensions and divide by number of masked points
-                return jnp.sum(x) / n_points
-            return jnp.mean(x)
 
-        return {k: masked_mean(v, k) for k, v in squared_transformed_errors.items()}
+        # When taking mean, we should only consider points within the mask
+        def masked_mean_rmse(x, var_name):
+            if var_name not in self.variables_to_slice:
+                raise ValueError(f"Variable '{var_name}' not in variables to slice")
+            n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2]))  # Points in mask
+            return jnp.sqrt(jnp.sum(x) / n_points)  # RMSE computation
+
+        return {k: masked_mean_rmse(v, k) for k, v in squared_transformed_errors.items()}
+    
 
     def _create_region_mask(self, coords):
         # Get full latitudes and longitudes in degrees
@@ -209,7 +208,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     trajectory_spec = metrics_util.TrajectorySpec(
         trajectory_length=num_outer_steps,  # max "outer steps"
         max_trajectory_length=num_outer_steps, # Max length for stage of experiment
-        steps_per_save=num_inner_steps, # number of 1 hour steps between outer steps
+        steps_per_save=num_inner_steps, # number of times to save model every 24 hours
         coords=model.model_coords, # model coordinates
         data_coords=model.data_coords, # data coordinates
     )
@@ -223,7 +222,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': 1.0,
         'u_component_of_wind': 1.0,
         'v_component_of_wind': 1.0,
-        'P_minus_E_cumulative': 1.0 # OH: currently set to 0 since something is off
+        'P_minus_E_cumulative': 1.0 
     }
 
     num_levels = 37  # This matches the shape you mentioned
@@ -349,10 +348,10 @@ def count_total_parameters(model):
     print(num_params)
 
 
-def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = False):
+def pull_and_regrid_era5(model, era5_path, start_date, end_date, timedelta, output_path, save = False):
     start_date_short = start_date.replace('-', '')
     end_date_short = end_date.replace('-', '')
-    filename = f'eval_era5_{start_date_short}_{end_date_short}.nc'
+    filename = f'eval_era5_{start_date_short}_{end_date_short}.zarr'
     file_path = os.path.join(output_path, filename)
 
     # I think we want total precipitation? It is sum of convective and large-scale precipitation
@@ -367,15 +366,18 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     # Check if the file already exists
     if os.path.exists(file_path):
         print(f'File {filename} already exists. Loading it instead of re-evaluating.')
-        return xarray.open_dataset(file_path, engine='netcdf4')
+        return xarray.open_zarr(file_path)
 
     # Open ERA5 dataset
     full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=None)
 
     era5_vars_to_keep = model.input_variables + model.forcing_variables + ['evaporation', "total_precipitation"]
     
-    data_inner_steps = 24  # process every 24th hour
-    # this line is taking longer than expected
+
+    timestep = 24 // num_inner_steps
+    # OH: might need to change time_shift if we change timedelta not sure
+    # might be one hour time slice over the whole day not average
+
     sliced_era5 = (
         full_era5[era5_vars_to_keep]
         .pipe(
@@ -383,33 +385,25 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
             variables=model.forcing_variables,
             time_shift='24 hours',
         )
-        .sel(time=slice(start_date, end_date, data_inner_steps))
+        .sel(time=slice(start_date, end_date, timestep))
         .compute()
     )
 
     # convert total precipitation to kg/m^2
     # OH check this: density of water is 1000 kg/m^3
-    sliced_era5['total_precipitation'] = sliced_era5['total_precipitation'] * 1000
-    sliced_era5['evaporation'] = sliced_era5['evaporation'] * 1000
+
+    # multiply by 24 since this is an hour snapshot: XX make this better
+    sliced_era5['total_precipitation'] = sliced_era5['total_precipitation'] * 1000 * 24
+    sliced_era5['evaporation'] = sliced_era5['evaporation'] * 1000 * 24
 
     P_initial = sliced_era5['total_precipitation'].isel(time=0)
     E_initial = sliced_era5['evaporation'].isel(time=0)
 
     # generate cumulative precipitation minus evaporation variable over time
-    # sliced_era5['P_minus_E_cumulative'] = (
-    # (sliced_era5['total_precipitation'] - P_initial) 
-    # - (sliced_era5['evaporation'] - E_initial)
-    # )
-
     sliced_era5['P_minus_E_cumulative'] = (
     sliced_era5['total_precipitation'].cumsum('time')
     - sliced_era5['evaporation'].cumsum('time')
 )
-
-
-    # create precipitation minus evaporation variable
-    sliced_era5['P_minus_E'] = sliced_era5['total_precipitation'] - sliced_era5['evaporation']
-
     # Regrid to neuralgcm resolution
     era5_grid = spherical_harmonic.Grid(
         latitude_nodes=full_era5.sizes['latitude'],
@@ -423,10 +417,8 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, sa
     eval_era5 = xarray_utils.regrid(sliced_era5, regridder)
     eval_era5 = xarray_utils.fill_nan_with_nearest(eval_era5)
 
-
-    # Save to NetCDF
     if save:
-        eval_era5.to_netcdf(f"{output_path}/{filename}")
+        eval_era5.to_zarr(f"{output_path}/{filename}")
     
     return eval_era5
 
@@ -457,7 +449,6 @@ num_inner_steps = 1 # how many times to save model every 24 hours
 lat_bounds = (20, 60)
 lon_bounds = (200, 300)
 
-
 #==============================================================================
 # Set up model and data
 #==============================================================================
@@ -477,10 +468,10 @@ lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
 # with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
 #   ckpt = pickle.load(f)
 
-# simple demo version for quickest testing, now outdated
+# simple demo version for quickest testing
 ckpt = neuralgcm.demo.load_checkpoint_tl63_stochastic()
 
-# code from: https://github.com/neuralgcm/neuralgcm/issues/12
+# P_minus_E code from: https://github.com/neuralgcm/neuralgcm/issues/12
 new_inputs_to_units_mapping = {
   'u': 'meter / second',
   'v': 'meter / second',
@@ -510,7 +501,7 @@ model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)
 
 output_path = dir['processed']
 era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
-eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, output_path, save = True)
+eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = True)
 
 inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
 input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
@@ -559,14 +550,12 @@ target_trajectory = model._data_from_xarray(slice_era5,
 # print("Target")
 # print(prediction_ds['P_minus_E_cumulative'].values)
 
-
 # set up optimizer settings
 optimizer = optax.adam(1e-3)
 opt_state = optimizer.init(model)
 
 # JIT-compile the training function
 compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
-
 #==============================================================================
 # Run training loop
 # OH note 12/9/24: got P_minus_E mostly working but it makes the loss much larger at each iteration
@@ -581,4 +570,3 @@ for i in range(3):
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
     model = optax.apply_updates(model, frozen_updates)
     print(f'{i+1=}, loss = {loss.item()}')
- 
