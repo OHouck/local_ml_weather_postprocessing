@@ -223,7 +223,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': 1.0,
         'u_component_of_wind': 1.0,
         'v_component_of_wind': 1.0,
-        'P_minus_E_cumulative': 0 # OH: currently set to 0 since something is off
+        'P_minus_E_cumulative': 1.0 # OH: currently set to 0 since something is off
     }
 
     num_levels = 37  # This matches the shape you mentioned
@@ -465,9 +465,9 @@ lon_bounds = (200, 300)
 # set other time parameters based on start date and number of days
 end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days)
 end_date = end_date.strftime('%Y-%m-%d')
-num_outer_steps = num_days * 1 // num_inner_steps # process num_days days
-timedelta = np.timedelta64(24, 'h') * num_inner_steps
-times = np.arange(num_outer_steps) * num_inner_steps # time axis in hours
+num_outer_steps = num_days * num_inner_steps # process num_days days
+timedelta = np.timedelta64(24, 'h') // num_inner_steps
+times = np.arange(num_outer_steps) * timedelta # time axis in hours
 
 # convert coordinate bounds to radians
 lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
