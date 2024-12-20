@@ -1,7 +1,7 @@
 # Author: Ozzy Houck
 # Date Created: 6/27/2024
 
-# Purpose: take output from weatherbench2_eval.py and create
+# Purpose: take output from weatherbench2_job.sh and create
 # figures showing the performance of the different models
 
 
