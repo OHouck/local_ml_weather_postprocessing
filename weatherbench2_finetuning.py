@@ -7,7 +7,6 @@
 # It trains a correction model that maps model-forecasted fields to observed fields over a specified bounding box.
 # After training, it applies the correction to a test set of forecasts and saves the corrected forecasts to disk.
 
-
 # For fine-tuning
 # python region_add_on.py \
 #   --forecast_path=path/to/base_model_forecasts.zarr \
@@ -19,17 +18,6 @@
 #   --valid_start=2020-01-01 --valid_end=2020-12-31 \
 #   --var_name=temperature --level=850 \
 #   --epochs=10 --batch_size=32
-# drafting for pangu_test: currenlty not working
-# python3 weatherbench2_finetuning.py \
-#   --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
-#   --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
-#   --output_dir="~/" \
-#   --model_name="pangu_test" \
-#   --lat_min=24 --lat_max=37 --lon_min=60 --lon_max=78 \
-#   --train_start="2018-01-01" --train_end="2019-12-31" \
-#   --valid_start="2020-01-01" --valid_end="2020-12-31" \
-#   --var_name=temperature --level=850 \
-#   --epochs=3 --batch_size=32
 
 # Then to evaluate the fine-tuned model
 # python evaluate.py \
@@ -42,8 +30,6 @@
 #   --use_beam=False \
 #   --time_start=2020-01-01 \
 #   --time_stop=2020-12-31
-
-
 
 import argparse
 import xarray as xr
@@ -92,38 +78,60 @@ def parse_args():
 def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, time_slice):
     # Load forecast and observation data for a specific variable and region
     # Assumes data is in a compatible format and variable naming is consistent.
-    # For demonstration, we assume the data variables are named consistently in both datasets.
-    # Adjust this part as needed.
 
     ds_forecast = xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr') else xr.open_dataset(forecast_path)
     ds_obs = xr.open_zarr(obs_path) if obs_path.endswith('.zarr') else xr.open_dataset(obs_path)
 
+
     # Select region and time
     if 'level' in ds_forecast[var_name].dims:
-        fc_var = ds_forecast[var_name].sel(time=time_slice, lat=lat_slice, lon=lon_slice, level=level)
+        fc_var = ds_forecast[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice, level=level)
     else:
-        fc_var = ds_forecast[var_name].sel(time=time_slice, lat=lat_slice, lon=lon_slice)
+        fc_var = ds_forecast[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice)
 
     if 'level' in ds_obs[var_name].dims:
-        obs_var = ds_obs[var_name].sel(time=time_slice, lat=lat_slice, lon=lon_slice, level=level)
+        obs_var = ds_obs[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice, level=level)
     else:
-        obs_var = ds_obs[var_name].sel(time=time_slice, lat=lat_slice, lon=lon_slice)
+        obs_var = ds_obs[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice)
 
-    # Align forecasts and obs on time, lat, lon
+
+    # Select the first index of the prediction_timedelta dimension and drop it
+    # OH: Kinda of hacky, might not be the best way to do this
+    fc_var = fc_var.isel(prediction_timedelta=0).drop('prediction_timedelta')
+
+    # Align forecasts and obs on time, lon, lat 
     fc_var, obs_var = xr.align(fc_var, obs_var, join='inner')
 
-    # Convert to numpy arrays
-    # Shape: (time, lat, lon)
     fc_data = fc_var.values
     obs_data = obs_var.values
 
+    # shape of both forecast and observation data are (time, lon, lat)
+    n_time = fc_data.shape[0]
+    n_lon = fc_data.shape[1]
+    n_lat = fc_data.shape[2]
+
+    # print dimensions
+    print("Data shapes of forecast:")
+    print(f"Time: {n_time}, Lon: {n_lon}"), print(f"Lat: {n_lat}")
+    print("Data shapes of observation:")
+    print(f"Time: {obs_data.shape[0]}, Lon: {obs_data.shape[1]}"), print(f"Lat: {obs_data.shape[2]}")
+
+    # explicitly only save time, lat, and lon dimensions
+    fc_data = fc_data.reshape(n_time, n_lon, n_lat)
+    obs_data = obs_data.reshape(n_time, n_lon, n_lat)
+
+    # make sure the shapes are the same
+    assert fc_data.shape == obs_data.shape
+
     # Flatten spatial dims for MLP
     # new shape: (time, lat*lon)
-    n_time, n_lat, n_lon = fc_data.shape
     fc_data_reshaped = fc_data.reshape(n_time, n_lat*n_lon)
     obs_data_reshaped = obs_data.reshape(n_time, n_lat*n_lon)
 
-    return fc_data_reshaped, obs_data_reshaped, fc_var.lat.values, fc_var.lon.values
+    # Extract the time coordinate
+    time_values = fc_var['time'].values
+
+    return fc_data_reshaped, obs_data_reshaped, fc_var.longitude.values, fc_var.latitude.values, time_values
 
 def create_dataloader(fc_data, obs_data, batch_size):
     # Creates a PyTorch DataLoader for training/validation
@@ -137,7 +145,7 @@ def create_dataloader(fc_data, obs_data, batch_size):
 def train_model(model, train_loader, valid_loader, epochs, lr):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    criterion = nn.MSELoss()
+    loss_metric = nn.MSELoss() #OH: Place to change the loss function
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for epoch in range(epochs):
@@ -147,7 +155,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr):
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             y_pred = model(x)
-            loss = criterion(y_pred, y)
+            loss = loss_metric(y_pred, y)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * x.size(0)
@@ -160,7 +168,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr):
             for x, y in valid_loader:
                 x, y = x.to(device), y.to(device)
                 y_pred = model(x)
-                loss = criterion(y_pred, y)
+                loss = loss_metric(y_pred, y)
                 valid_loss += loss.item() * x.size(0)
         valid_loss /= len(valid_loader.dataset)
 
@@ -178,11 +186,14 @@ def apply_correction(model, fc_data):
         corrected = model(x).cpu().numpy()
     return corrected
 
-def save_corrected_forecasts(output_dir, model_name, var_name, lat, lon, time, corrected_data, original_shape):
+def save_corrected_forecasts(output_dir, model_name, var_name, longitude, latitude, time, corrected_data, original_shape):
     # Reshape corrected data back to (time, lat, lon)
     corrected_data = corrected_data.reshape(original_shape)
 
-    ds_out = xr.DataArray(corrected_data, coords=[time, lat, lon], dims=['time', 'lat', 'lon'], name=var_name)
+    # print corrected data shape
+    print(f"Corrected data shape: {corrected_data.shape}")
+
+    ds_out = xr.DataArray(corrected_data, coords=[time, longitude, latitude], dims=['time', 'longitude', 'latitude'], name=var_name)
     ds_out = ds_out.to_dataset()
     ds_out.attrs['description'] = f'Corrected forecasts from {model_name} using MLP fine-tuning'
     out_path = os.path.join(output_dir, f"{model_name}_corrected_forecasts_{var_name}.nc")
@@ -195,12 +206,12 @@ def main():
 
     lat_slice = slice(args.lat_min, args.lat_max)
     lon_slice = slice(args.lon_min, args.lon_max)
-    train_fc, train_obs, lat_vals, lon_vals = load_data(
+    train_fc, train_obs, lon_vals, lat_vals, train_time = load_data(
         args.forecast_path, args.obs_path, args.var_name, args.level,
         lat_slice, lon_slice, slice(args.train_start, args.train_end)
     )
 
-    valid_fc, valid_obs, _, _ = load_data(
+    valid_fc, valid_obs, _, _, valid_time = load_data(
         args.forecast_path, args.obs_path, args.var_name, args.level,
         lat_slice, lon_slice, slice(args.valid_start, args.valid_end)
     )
@@ -235,9 +246,9 @@ def main():
         args.output_dir,
         args.model_name,
         args.var_name,
-        lat_vals,
         lon_vals,
-        xr.cftime_range(start=args.valid_start, end=args.valid_end, freq='D'), # adjust frequency as needed
+        lat_vals,
+        valid_time,
         corrected_valid,
         (n_time, n_lat, n_lon)
     )
