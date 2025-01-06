@@ -1,4 +1,4 @@
-python3 weatherbench2_finetuning.py \
+python3 weatherbench2_finetune.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
     --output_dir="~/wb_finetune_test" \
@@ -7,4 +7,4 @@ python3 weatherbench2_finetuning.py \
     --train_start="2018-05-01" --train_end="2018-05-31" \
     --valid_start="2020-05-01" --valid_end="2020-05-31" \
     --var_name=temperature --level=850 \
-    --epochs=3 --batch_size=32
+    --epochs=2000 --batch_size=32 --learning_rate=1e-4 

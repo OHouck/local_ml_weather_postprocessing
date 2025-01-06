@@ -14,6 +14,8 @@ Files needed to create weatherbench output
 Inference using neuralgcm
 - neuralGCM_inference.py: takes inference demo code from neuralGCM documentation.
 
-Files used for fine-tuning neuralgcm
+Files used for retraining neuralgcm decoder
 - fine_tune_neuralGCM_decoder.py: main script for creating and testing custom loss 
 - it calls from local_neuralGCM which contains the public neuralGCM code. We only modify scripts in the reference_code folder
+
+Files used for fine-tuning models using weatherbench2

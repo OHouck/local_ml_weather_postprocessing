@@ -72,7 +72,7 @@ def parse_args():
     parser.add_argument('--valid_end', type=str, default='2020-12-31', help='Validation end date')
     parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     return parser.parse_args()
 
 def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, time_slice):
@@ -94,10 +94,8 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, ti
     else:
         obs_var = ds_obs[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice)
 
-
-    # Select the first index of the prediction_timedelta dimension and drop it
-    # OH: Kinda of hacky, might not be the best way to do this
-    fc_var = fc_var.isel(prediction_timedelta=0).drop('prediction_timedelta')
+    # select the 5 day forecast for comparison
+    fc_var = fc_var.sel(prediction_timedelta= np.timedelta64(120, 'h')).drop('prediction_timedelta')
 
     # Align forecasts and obs on time, lon, lat 
     fc_var, obs_var = xr.align(fc_var, obs_var, join='inner')
@@ -180,25 +178,58 @@ def apply_correction(model, fc_data):
     # Apply correction to forecasts
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    model.eval()
-    with torch.no_grad():
+    model.eval() # Set model to evaluation mode
+    with torch.no_grad(): # No need to compute gradients for inference
+        # Convert to PyTorch tensor and move to device
         x = torch.from_numpy(fc_data).float().to(device)
-        corrected = model(x).cpu().numpy()
-    return corrected
+        # run weather model output through correction to get new corrected forecast
+        corrected_forecast = model(x).cpu().numpy()
+    return corrected_forecast 
 
-def save_corrected_forecasts(output_dir, model_name, var_name, longitude, latitude, time, corrected_data, original_shape):
-    # Reshape corrected data back to (time, lat, lon)
-    corrected_data = corrected_data.reshape(original_shape)
+def save_output(output_dir, model_name, var_name, level, longitude, latitude, time, original_forecast, corrected_forecast, original_shape, ground_truth_data):
+
+    # Data back to (time, lat, lon)
+    original_forecast = original_forecast.reshape(original_shape)
+    corrected_forecast = corrected_forecast.reshape(original_shape)
 
     # print corrected data shape
-    print(f"Corrected data shape: {corrected_data.shape}")
+    print(f"Corrected data shape: {corrected_forecast.shape}")
 
-    ds_out = xr.DataArray(corrected_data, coords=[time, longitude, latitude], dims=['time', 'longitude', 'latitude'], name=var_name)
-    ds_out = ds_out.to_dataset()
-    ds_out.attrs['description'] = f'Corrected forecasts from {model_name} using MLP fine-tuning'
-    out_path = os.path.join(output_dir, f"{model_name}_corrected_forecasts_{var_name}.nc")
-    ds_out.to_netcdf(out_path)
-    print(f"Corrected forecasts saved to {out_path}")
+    da_original = xr.DataArray(original_forecast, coords=[time, longitude, latitude], dims=['time', 'longitude', 'latitude'], name=var_name)
+    da_corrected = xr.DataArray(corrected_forecast, coords=[time, longitude, latitude], dims=['time', 'longitude', 'latitude'], name=var_name)
+    
+
+    # Combine both into a single Dataset
+    ds_out = xr.Dataset(
+        {
+            f'{var_name}_original': da_original,
+            f'{var_name}_corrected': da_corrected
+        }
+    )
+    ds_out.attrs['description'] = (
+        f'Original and corrected forecasts from {model_name} using MLP fine-tuning'
+    )
+
+    # Optionally include ground truth
+    if ground_truth_data is not None:
+        ground_truth= ground_truth_data.reshape(original_shape)
+        da_ground_truth = xr.DataArray(
+            data= ground_truth,
+            coords=[time, longitude, latitude],
+            dims=['time', 'longitude', 'latitude'],
+            name=f"{var_name}_groundtruth"
+        )
+        ds_out[f"{var_name}_groundtruth"] = da_ground_truth
+        ds_out.attrs["description"] += " (includes sliced ground truth)"
+
+
+    # Build Zarr store path
+    out_path = os.path.join(output_dir, f"{model_name}_forecasts_{var_name}{level}.zarr")
+
+    # Save to a Zarr store (mode='w' overwrites existing data)
+    ds_out.to_zarr(out_path, mode='w')
+    print(f"Original and corrected forecasts saved to {out_path} (Zarr format)")
+
 
 def main():
     args = parse_args()
@@ -225,7 +256,7 @@ def main():
     output_dim = input_dim
     # 5-layer MLP total: Input->hidden->hidden->hidden->Output (3 hidden layers)
     # Already defined in SimpleMLP: num_hidden_layers=3 means total of 1 input, 3 hidden, 1 output layers
-    model = SimpleMLP(input_dim=input_dim, hidden_dim=128, output_dim=output_dim, num_hidden_layers=3)
+    model = SimpleMLP(input_dim=input_dim, hidden_dim=128, output_dim=output_dim, num_hidden_layers=10)
 
     # Train model
     model = train_model(model, train_loader, valid_loader, args.epochs, args.learning_rate)
@@ -236,21 +267,24 @@ def main():
     print(f"Model weights saved to {model_path}")
 
     # Apply correction to validation forecasts
-    corrected_valid = apply_correction(model, valid_fc)
+    corrected_valid_fc = apply_correction(model, valid_fc)
 
     # Save corrected forecasts
     n_time = valid_fc.shape[0]
     n_lat = len(lat_vals)
     n_lon = len(lon_vals)
-    save_corrected_forecasts(
+    save_output(
         args.output_dir,
         args.model_name,
         args.var_name,
+        args.level,
         lon_vals,
         lat_vals,
-        valid_time,
-        corrected_valid,
-        (n_time, n_lat, n_lon)
+        valid_time, # validation time
+        valid_fc, # original forecast  
+        corrected_valid_fc, # corrected forecast
+        (n_time, n_lat, n_lon), # original shape
+        valid_obs # optional ground truth
     )
 
 if __name__ == "__main__":

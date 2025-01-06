@@ -4,6 +4,8 @@
 # Purpose: take output from weatherbench2_job.sh and create
 # figures showing the performance of the different models
 
+# doesn't interface with finetuning code written in 12/2024
+
 
 import xarray as xr
 import matplotlib.pyplot as plt
