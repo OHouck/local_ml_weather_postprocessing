@@ -19,3 +19,6 @@ Files used for retraining neuralgcm decoder
 - it calls from local_neuralGCM which contains the public neuralGCM code. We only modify scripts in the reference_code folder
 
 Files used for fine-tuning models using weatherbench2
+- weatherbench2_finetune.py: main script that trains small MLP to correct model outputs
+- weatherbench2_finetune_job.sh: bash script to run simple finetuning job
+- weatherbench2_finetune_evaluation.py: takes in original and corrected .zarr forecasts created by weatherbench2_finetune.py and makes plots showing comparison. 

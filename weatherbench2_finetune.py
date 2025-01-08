@@ -64,8 +64,9 @@ def parse_args():
     parser.add_argument('--lat_max', type=float, required=True, help='Maximum latitude for region')
     parser.add_argument('--lon_min', type=float, required=True, help='Minimum longitude for region')
     parser.add_argument('--lon_max', type=float, required=True, help='Maximum longitude for region')
+    parser.add_argument('--lead_time_hours', type=int, default=48, help='Lead time in hours for forecast')
     parser.add_argument('--var_name', type=str, default='temperature', help='Variable to fine-tune (e.g. temperature, 2m_temperature)')
-    parser.add_argument('--level', type=int, default=850, help='Pressure level if applicable')
+    parser.add_argument('--level', type=int, nargs='?', default=None, help='Pressure level if applicable')
     parser.add_argument('--train_start', type=str, default='2018-01-01', help='Training start date')
     parser.add_argument('--train_end', type=str, default='2019-12-31', help='Training end date')
     parser.add_argument('--valid_start', type=str, default='2020-01-01', help='Validation start date')
@@ -75,7 +76,7 @@ def parse_args():
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     return parser.parse_args()
 
-def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, time_slice):
+def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, time_slice, lead_time_hours):
     # Load forecast and observation data for a specific variable and region
     # Assumes data is in a compatible format and variable naming is consistent.
 
@@ -94,8 +95,9 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice, ti
     else:
         obs_var = ds_obs[var_name].sel(time=time_slice, latitude=lat_slice, longitude=lon_slice)
 
-    # select the 5 day forecast for comparison
-    fc_var = fc_var.sel(prediction_timedelta= np.timedelta64(120, 'h')).drop('prediction_timedelta')
+
+    # selects forecast with the lead time of lead_time_hours
+    fc_var = fc_var.sel(prediction_timedelta= np.timedelta64(lead_time_hours, 'h')).drop('prediction_timedelta')
 
     # Align forecasts and obs on time, lon, lat 
     fc_var, obs_var = xr.align(fc_var, obs_var, join='inner')
@@ -223,12 +225,16 @@ def save_output(output_dir, model_name, var_name, level, longitude, latitude, ti
         ds_out.attrs["description"] += " (includes sliced ground truth)"
 
 
-    # Build Zarr store path
-    out_path = os.path.join(output_dir, f"{model_name}_forecasts_{var_name}{level}.zarr")
+    if level is not None:
+        level_str = f'{level}hPa'
+    else:
+        level_str = ''
+
+    output_path = os.path.join(output_dir, f"{model_name}_forecasts_{var_name}{level_str}.zarr")
 
     # Save to a Zarr store (mode='w' overwrites existing data)
-    ds_out.to_zarr(out_path, mode='w')
-    print(f"Original and corrected forecasts saved to {out_path} (Zarr format)")
+    ds_out.to_zarr(output_path, mode='w')
+    print(f"Original and corrected forecasts saved to {output_path} (Zarr format)")
 
 
 def main():
@@ -237,26 +243,32 @@ def main():
 
     lat_slice = slice(args.lat_min, args.lat_max)
     lon_slice = slice(args.lon_min, args.lon_max)
+    train_time_slice = slice(args.train_start, args.train_end)
+    validation_time_slice = slice(args.valid_start, args.valid_end)
+
     train_fc, train_obs, lon_vals, lat_vals, train_time = load_data(
         args.forecast_path, args.obs_path, args.var_name, args.level,
-        lat_slice, lon_slice, slice(args.train_start, args.train_end)
+        lat_slice, lon_slice, train_time_slice,
+        args.lead_time_hours
     )
 
-    valid_fc, valid_obs, _, _, valid_time = load_data(
+    validation_fc, validation_obs, _, _, validation_time= load_data(
         args.forecast_path, args.obs_path, args.var_name, args.level,
-        lat_slice, lon_slice, slice(args.valid_start, args.valid_end)
+        lat_slice, lon_slice, validation_time_slice,  
+        args.lead_time_hours
     )
 
     # Create dataloaders
     train_loader = create_dataloader(train_fc, train_obs, args.batch_size)
-    valid_loader = create_dataloader(valid_fc, valid_obs, args.batch_size)
+    valid_loader = train_loader
+    # valid_loader = create_dataloader(validation_fc, validation_obs, args.batch_size)
 
     # Model initialization
     input_dim = train_fc.shape[1]  # lat*lon
     output_dim = input_dim
     # 5-layer MLP total: Input->hidden->hidden->hidden->Output (3 hidden layers)
     # Already defined in SimpleMLP: num_hidden_layers=3 means total of 1 input, 3 hidden, 1 output layers
-    model = SimpleMLP(input_dim=input_dim, hidden_dim=128, output_dim=output_dim, num_hidden_layers=10)
+    model = SimpleMLP(input_dim=input_dim, hidden_dim=256, output_dim=output_dim, num_hidden_layers=10)
 
     # Train model
     model = train_model(model, train_loader, valid_loader, args.epochs, args.learning_rate)
@@ -266,13 +278,19 @@ def main():
     torch.save(model.state_dict(), model_path)
     print(f"Model weights saved to {model_path}")
 
+    # temp for testing to see if I can overfit the model: XX REMOVE THIS
+    validation_fc = train_fc
+    validation_time = train_time
+    validation_obs = train_obs
+
     # Apply correction to validation forecasts
-    corrected_valid_fc = apply_correction(model, valid_fc)
+    corrected_validation_fc = apply_correction(model, validation_fc)
 
     # Save corrected forecasts
-    n_time = valid_fc.shape[0]
+    n_time = validation_fc.shape[0]
     n_lat = len(lat_vals)
     n_lon = len(lon_vals)
+
     save_output(
         args.output_dir,
         args.model_name,
@@ -280,11 +298,11 @@ def main():
         args.level,
         lon_vals,
         lat_vals,
-        valid_time, # validation time
-        valid_fc, # original forecast  
-        corrected_valid_fc, # corrected forecast
+        validation_time, # validation time
+        validation_fc, # original forecast  
+        corrected_validation_fc, # corrected forecast
         (n_time, n_lat, n_lon), # original shape
-        valid_obs # optional ground truth
+        validation_obs # optional ground truth
     )
 
 if __name__ == "__main__":
