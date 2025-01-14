@@ -225,9 +225,10 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'P_minus_E_cumulative': 1.0 
     }
 
-    num_levels = 37  # This matches the shape you mentioned
+    num_levels = 37  
     # A simple scheme: emphasize lower levels more. 
     # For instance, weight them inversely by their index (just as a placeholder):
+    # simple weights, weight them inversely by their index
     level_array = jnp.arange(num_levels)  # 0, 1, 2, ..., 36
     # Add 1 so we don't divide by zero
     level_weights = 1.0 / (1.0 + level_array)
@@ -275,10 +276,12 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         is_encoded = False, # variables represent physical quantities 
     )
 
-    # filter trajectories to only include last time step. OH might want to change 
-    #XX commented out for now because it removes tho time dimension causing inconsistency
-    # prediction_trajectory = {k: v[-1] for k, v in prediction_trajectory.items()}
-    # target = {k: v[-1] for k, v in target.items()}
+    def subset_trajectory(trajectory: Dict[str, jnp.ndarray], last_n: int = 1) -> Dict[str, jnp.ndarray]:
+        # Subset the last n time steps from the data in trajectory dictionary.
+        return {var_name: data_array[-last_n:] for var_name, data_array in trajectory.items()}
+
+    prediction_trajectory = subset_trajectory(prediction_trajectory, last_n=1)
+    target = subset_trajectory(target, last_n=1)
 
     # loss for all variables
     loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target)
@@ -348,7 +351,7 @@ def count_total_parameters(model):
     print(num_params)
 
 
-def pull_and_regrid_era5(model, era5_path, start_date, end_date, timedelta, output_path, save = False):
+def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = False):
     start_date_short = start_date.replace('-', '')
     end_date_short = end_date.replace('-', '')
     filename = f'eval_era5_{start_date_short}_{end_date_short}.zarr'
@@ -373,10 +376,7 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, timedelta, outp
 
     era5_vars_to_keep = model.input_variables + model.forcing_variables + ['evaporation', "total_precipitation"]
     
-
     timestep = 24 // num_inner_steps
-    # OH: might need to change time_shift if we change timedelta not sure
-    # might be one hour time slice over the whole day not average
 
     sliced_era5 = (
         full_era5[era5_vars_to_keep]
@@ -389,15 +389,16 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, timedelta, outp
         .compute()
     )
 
-    # convert total precipitation to kg/m^2
-    # OH check this: density of water is 1000 kg/m^3
+    # convert total precipitation to kg/m^2 
 
-    # multiply by 24 since this is an hour snapshot: XX make this better
-    sliced_era5['total_precipitation'] = sliced_era5['total_precipitation'] * 1000 * 24
-    sliced_era5['evaporation'] = sliced_era5['evaporation'] * 1000 * 24
+    sliced_era5["total_precipitation"] = sliced_era5["total_precipitation"] * 1000.0
+    sliced_era5["evaporation"] = sliced_era5["evaporation"]   * 1000.0
 
-    P_initial = sliced_era5['total_precipitation'].isel(time=0)
-    E_initial = sliced_era5['evaporation'].isel(time=0)
+    # assume (perhaps incorrectly) that can estimate cumulative evap/precip by scaling by timestep
+    # doesn't work if precipitation varies a lot over the day: 
+    # OH XX might be something to come back to. Can directly calculate cumulative values but would require loading a lot more data
+    sliced_era5["total_precipitation"] = sliced_era5["total_precipitation"] * timestep
+    sliced_era5["evaporation"] = sliced_era5["evaporation"] * timestep
 
     # generate cumulative precipitation minus evaporation variable over time
     sliced_era5['P_minus_E_cumulative'] = (
@@ -566,6 +567,7 @@ for i in range(3):
     loss, grads = jax.value_and_grad(compute_loss_jit)(
         model, initial_state, target_trajectory, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds
     )
+    exit()
     updates, opt_state = optimizer.update(grads, opt_state)
     frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
     model = optax.apply_updates(model, frozen_updates)
