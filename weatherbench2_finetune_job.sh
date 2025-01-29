@@ -8,4 +8,4 @@ python3 weatherbench2_finetune.py \
     --test_start="2020-03-01" --test_end="2020-06-01" \
     --lead_time_hours=6 \
     --var_name="2m_temperature" \
-    --epochs=100 --batch_size=32 --learning_rate=1e-4 
+    --epochs=200 --batch_size=32 --learning_rate=1e-4 
