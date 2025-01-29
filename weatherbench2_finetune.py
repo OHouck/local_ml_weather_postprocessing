@@ -7,19 +7,19 @@ Date: 12/20/2024
 This script fine-tunes a MLP to a specific region using model
 forecasts and corresponding observations from weatherbench2. It trains a correction model that maps
 model-forecasted fields to observed fields over a specified bounding box. After
-training, it applies the correction to a test set of forecasts and saves the
-corrected forecasts to disk.
+training, it applies the correction to both a validation split from the training period
+and a separate test set of forecasts, then saves the corrected forecasts to disk.
 ----------------------------
 
 Example usage 
-python3 weatherbench2_finetune.py \
+python3 weatherbench2_finetuning.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
     --output_dir="~/wb_finetune_test" \
     --model_name="pangu_test" \
-    --lat_min=20 --lat_max=50 --lon_min=60 --lon_max=85\
+    --lat_min=20 --lat_max=50 --lon_min=60 --lon_max=85 \
     --train_start="2018-03-01" --train_end="2018-06-01" \
-    --valid_start="2020-03-01" --valid_end="2020-06-01" \
+    --test_start="2020-03-01" --test_end="2020-06-01" \
     --lead_time_hours=6 \
     --var_name="2m_temperature" \
     --epochs=100 --batch_size=32 --learning_rate=1e-4 
@@ -91,10 +91,10 @@ def parse_args():
                         help='Training start date')
     parser.add_argument('--train_end', type=str, default='2019-12-31',
                         help='Training end date')
-    parser.add_argument('--valid_start', type=str, default='2020-01-01',
-                        help='Validation start date')
-    parser.add_argument('--valid_end', type=str, default='2020-12-31',
-                        help='Validation end date')
+    parser.add_argument('--test_start', type=str, default='2020-01-01',
+                        help='Test start date')
+    parser.add_argument('--test_end', type=str, default='2020-12-31',
+                        help='Test end date')
     parser.add_argument('--epochs', type=int, default=10,
                         help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=32,
@@ -122,6 +122,8 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
     Returns:
         tuple of np.ndarray: forecast_data, obs_data, longitudes, latitudes, time_values
     """
+    import time
+    start_time = time.time()
     # Open forecast and observation datasets
     ds_forecast = (
         xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
@@ -131,6 +133,27 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
         xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
         else xr.open_dataset(obs_path)
     )
+    end_time = time.time()
+
+    start_time_chunking = time.time()
+    # chunk data to be opened by time, this speeds up loading (OH: time chunk size was chosen arbitrarily)
+    ds_forecast_chunked = xr.open_zarr(forecast_path, chunks={"time": 20})  
+    ds_obs_chunked      = xr.open_zarr(obs_path, chunks={"time": 20})
+
+
+    # Then select your slices:
+    fc_var = ds_forecast_chunked[var_name].sel(
+        time=time_slice, latitude=lat_slice, longitude=lon_slice
+    )
+    obs_var = ds_obs_chunked[var_name].sel(
+        time=time_slice, latitude=lat_slice, longitude=lon_slice
+    )
+    end_time_chunking = time.time()
+
+    print(f"Time taken to load data: {end_time - start_time:.2f} seconds")
+    print(f"Time taken to chunk data: {end_time_chunking - start_time_chunking:.2f} seconds")
+
+    exit()
 
     # Select region and time for forecast
     if 'level' in ds_forecast[var_name].dims and level is not None:
@@ -205,15 +228,15 @@ def create_dataloader(forecast_data, obs_data, batch_size):
     return dataloader
 
 
-def normalize_data(train_fc, valid_fc, train_obs, valid_obs):
+def normalize_data(train_fc, val_fc, train_obs, val_obs):
     """
     Normalize forecast and observation data using statistics from the training set.
 
     Args:
         train_fc (np.ndarray): Training forecast data (2D).
-        valid_fc (np.ndarray): Validation forecast data (2D).
+        val_fc (np.ndarray): Validation forecast data (2D).
         train_obs (np.ndarray): Training observation data (2D).
-        valid_obs (np.ndarray): Validation observation data (2D).
+        val_obs (np.ndarray): Validation observation data (2D).
 
     Returns:
         tuple: Normalized training/validation forecast & observation data,
@@ -223,13 +246,13 @@ def normalize_data(train_fc, valid_fc, train_obs, valid_obs):
     mean_fc = train_fc.mean()
     std_fc = train_fc.std()
     train_fc_norm = (train_fc - mean_fc) / (std_fc + 1e-8)
-    valid_fc_norm = (valid_fc - mean_fc) / (std_fc + 1e-8)
+    val_fc_norm = (val_fc - mean_fc) / (std_fc + 1e-8)
 
     # Observation normalization (could also use forecast stats if desired)
     mean_obs = train_obs.mean()
     std_obs = train_obs.std()
     train_obs_norm = (train_obs - mean_obs) / (std_obs + 1e-8)
-    valid_obs_norm = (valid_obs - mean_obs) / (std_obs + 1e-8)
+    val_obs_norm = (val_obs - mean_obs) / (std_obs + 1e-8)
 
     stats = {
         'mean_fc': mean_fc,
@@ -237,7 +260,7 @@ def normalize_data(train_fc, valid_fc, train_obs, valid_obs):
         'mean_obs': mean_obs,
         'std_obs': std_obs,
     }
-    return train_fc_norm, valid_fc_norm, train_obs_norm, valid_obs_norm, stats
+    return train_fc_norm, val_fc_norm, train_obs_norm, val_obs_norm, stats
 
 
 def unnormalize_data(corrected_norm, stats, is_obs=True):
@@ -261,16 +284,6 @@ def unnormalize_data(corrected_norm, stats, is_obs=True):
 def train_one_epoch(model, dataloader, optimizer, criterion, device):
     """
     Train the model for one epoch on the provided DataLoader.
-
-    Args:
-        model (nn.Module): The PyTorch model to train.
-        dataloader (DataLoader): Training data loader.
-        optimizer (torch.optim.Optimizer): The optimizer to use.
-        criterion (nn.Module): The loss function.
-        device (torch.device): The device (CPU or GPU).
-
-    Returns:
-        float: The average training loss for this epoch.
     """
     model.train()
     running_loss = 0.0
@@ -292,15 +305,6 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device):
 def validate_one_epoch(model, dataloader, criterion, device):
     """
     Validate the model for one epoch on the provided DataLoader.
-
-    Args:
-        model (nn.Module): The PyTorch model to validate.
-        dataloader (DataLoader): Validation data loader.
-        criterion (nn.Module): The loss function.
-        device (torch.device): The device (CPU or GPU).
-
-    Returns:
-        float: The average validation loss.
     """
     model.eval()
     running_loss = 0.0
@@ -318,16 +322,6 @@ def validate_one_epoch(model, dataloader, criterion, device):
 def train_model(model, train_loader, valid_loader, epochs, lr):
     """
     Train the model over multiple epochs, including validation after each epoch.
-
-    Args:
-        model (nn.Module): PyTorch model to be trained.
-        train_loader (DataLoader): Dataloader for the training set.
-        valid_loader (DataLoader): Dataloader for the validation set.
-        epochs (int): Number of epochs to train.
-        lr (float): Learning rate.
-
-    Returns:
-        nn.Module: The trained model.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -369,10 +363,10 @@ def apply_correction(model, forecast_data):
 
 def save_output(output_dir, model_name, var_name, level, lon_vals, lat_vals,
                 time_vals, original_fc, corrected_fc, original_shape,
+                dataset_label='validation',
                 ground_truth_data=None):
     """
     Save original and corrected forecasts (and optionally ground truth) in Zarr format.
-
     Args:
         output_dir (str): Path to directory where outputs are saved.
         model_name (str): Name of the model (e.g., 'pangu').
@@ -384,13 +378,14 @@ def save_output(output_dir, model_name, var_name, level, lon_vals, lat_vals,
         original_fc (np.ndarray): Original forecast data (time, lat*lon).
         corrected_fc (np.ndarray): Corrected forecast data (time, lat*lon).
         original_shape (tuple): Shape (time, lat, lon) to reshape data back.
+        dataset_label (str): Label for the dataset being saved ('validation', 'test', etc.).
         ground_truth_data (np.ndarray, optional): Ground truth data for comparison.
     """
     # Reshape to (time, lat, lon)
     original_fc_reshaped = original_fc.reshape(original_shape)
     corrected_fc_reshaped = corrected_fc.reshape(original_shape)
 
-    print(f"Corrected data shape: {corrected_fc_reshaped.shape}")
+    print(f"Corrected data shape ({dataset_label}): {corrected_fc_reshaped.shape}")
 
     # Convert to xarray DataArrays
     da_original = xr.DataArray(
@@ -414,7 +409,7 @@ def save_output(output_dir, model_name, var_name, level, lon_vals, lat_vals,
         }
     )
     ds_out.attrs['description'] = (f'Original and corrected forecasts from {model_name} '
-                                   f'using MLP fine-tuning')
+                                   f'using MLP fine-tuning ({dataset_label} set)')
 
     # Optionally include ground truth
     if ground_truth_data is not None:
@@ -429,10 +424,11 @@ def save_output(output_dir, model_name, var_name, level, lon_vals, lat_vals,
         ds_out.attrs["description"] += " (includes sliced ground truth)"
 
     level_str = f'{level}hPa' if level is not None else ''
-    output_path = os.path.join(output_dir, f"{model_name}_forecasts_{var_name}{level_str}.zarr")
+    output_filename = f"{model_name}_{dataset_label}_forecasts_{var_name}{level_str}.zarr"
+    output_path = os.path.join(output_dir, output_filename)
 
     ds_out.to_zarr(output_path, mode='w')
-    print(f"Original and corrected forecasts saved to {output_path} (Zarr format)")
+    print(f"Original and corrected {dataset_label} forecasts saved to {output_path} (Zarr format)")
 
 
 def main():
@@ -443,10 +439,12 @@ def main():
     lat_slice = slice(args.lat_min, args.lat_max)
     lon_slice = slice(args.lon_min, args.lon_max)
     train_time_slice = slice(args.train_start, args.train_end)
-    valid_time_slice = slice(args.valid_start, args.valid_end)
+    test_time_slice = slice(args.test_start, args.test_end)
 
-    # Load training data
-    train_fc, train_obs, lon_vals, lat_vals, train_time_vals = load_data(
+    # =========================================================================
+    # 1) Load data for the entire "training" time range
+    # =========================================================================
+    train_fc_full, train_obs_full, lon_vals, lat_vals, train_time_vals = load_data(
         args.forecast_path,
         args.obs_path,
         args.var_name,
@@ -457,64 +455,102 @@ def main():
         args.lead_time_hours
     )
 
-    # Load validation data
-    valid_fc, valid_obs, _, _, valid_time_vals = load_data(
+    # =========================================================================
+    # 2) Randomly split the above training data into TRAIN (80%) and VAL (20%)
+    # =========================================================================
+    n_samples = train_fc_full.shape[0]
+    indices = np.arange(n_samples)
+    np.random.shuffle(indices)
+
+    split_idx = int(0.8 * n_samples)
+    train_idx = indices[:split_idx]
+    val_idx = indices[split_idx:]
+
+    # Split the data
+    train_fc = train_fc_full[train_idx]
+    train_obs = train_obs_full[train_idx]
+    val_fc = train_fc_full[val_idx]
+    val_obs = train_obs_full[val_idx]
+
+    # (Optionally) separate time arrays if needed
+    train_time_subset = train_time_vals[train_idx]
+    val_time_subset = train_time_vals[val_idx]
+
+    # =========================================================================
+    # 3) Load the test data
+    # =========================================================================
+    test_fc, test_obs, _, _, test_time_vals = load_data(
         args.forecast_path,
         args.obs_path,
         args.var_name,
         args.level,
         lat_slice,
         lon_slice,
-        valid_time_slice,
+        test_time_slice,
         args.lead_time_hours
     )
 
-    # Normalize
+    # =========================================================================
+    # 4) Normalize training & validation data based on training statistics
+    # =========================================================================
     (train_fc_norm,
-     valid_fc_norm,
+     val_fc_norm,
      train_obs_norm,
-     valid_obs_norm,
-     stats) = normalize_data(train_fc, valid_fc, train_obs, valid_obs)
+     val_obs_norm,
+     stats) = normalize_data(train_fc, val_fc, train_obs, val_obs)
 
-    # Create dataloaders
+    # Note: we will normalize the test data using the same training stats later.
+
+    # =========================================================================
+    # 5) Create PyTorch DataLoaders
+    # =========================================================================
     train_loader = create_dataloader(train_fc_norm, train_obs_norm, args.batch_size)
-    valid_loader = create_dataloader(valid_fc_norm, valid_obs_norm, args.batch_size)
+    val_loader = create_dataloader(val_fc_norm, val_obs_norm, args.batch_size)
 
-    # Initialize model
+    # =========================================================================
+    # 6) Initialize and train the model
+    # =========================================================================
     input_dim = train_fc.shape[1]  # lat*lon
     model = SimpleMLP(input_dim=input_dim,
                       hidden_dim=128,
                       output_dim=input_dim,
                       num_hidden_layers=3)
 
-    # Train model
-    model = train_model(model, train_loader, valid_loader, args.epochs, args.learning_rate)
+    model = train_model(model, train_loader, val_loader, args.epochs, args.learning_rate)
 
     # Save model weights
     model_path = os.path.join(args.output_dir, f"{args.model_name}_mlp_correction.pt")
     torch.save(model.state_dict(), model_path)
     print(f"Model weights saved to {model_path}")
 
-    # Apply correction to validation data
-    corrected_valid_fc_norm = apply_correction(model, valid_fc_norm)
-    corrected_valid_fc = unnormalize_data(corrected_valid_fc_norm, stats, is_obs=True)
+    # =========================================================================
+    # 7) Apply correction to the validation set
+    # =========================================================================
+    corrected_val_fc_norm = apply_correction(model, val_fc_norm)
+    corrected_val_fc = unnormalize_data(corrected_val_fc_norm, stats, is_obs=True)
 
-    # (Optional) Apply correction to training data, for analysis
-    corrected_train_fc_norm = apply_correction(model, train_fc_norm)
-    corrected_train_fc = unnormalize_data(corrected_train_fc_norm, stats, is_obs=True)
+    # =========================================================================
+    # 8) Apply correction to the test set
+    #    (First normalize test using training stats, then unnormalize)
+    # =========================================================================
+    test_fc_norm = (test_fc - stats['mean_fc']) / (stats['std_fc'] + 1e-8)
+    corrected_test_fc_norm = apply_correction(model, test_fc_norm)
+    corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
 
-    # Compute MSE difference on training set
-    mse_original = np.mean((train_fc - train_obs) ** 2)
-    mse_corrected = np.mean((corrected_train_fc - train_obs) ** 2)
+    # =========================================================================
+    # 9) Optional: Compute MSE difference on the (random) validation set
+    # =========================================================================
+    mse_original_val = np.mean((val_fc - val_obs) ** 2)
+    mse_corrected_val = np.mean((corrected_val_fc - val_obs) ** 2)
+    print(f"MSE (original forecast, validation set): {mse_original_val:.6f}")
+    print(f"MSE (corrected forecast, validation set): {mse_corrected_val:.6f}")
 
-    print(f"MSE (original forecast, train set): {mse_original}")
-    print(f"MSE (corrected forecast, train set): {mse_corrected}")
-    print("Mean of training observations:", stats['mean_obs'])
-
-    # Save corrected validation forecasts
-    n_time_valid = valid_fc.shape[0]
-    n_lat = len(lat_vals)
+    # =========================================================================
+    # 10) Save outputs for validation
+    # =========================================================================
+    n_time_val = val_fc.shape[0]
     n_lon = len(lon_vals)
+    n_lat = len(lat_vals)
     save_output(
         output_dir=args.output_dir,
         model_name=args.model_name,
@@ -522,12 +558,33 @@ def main():
         level=args.level,
         lon_vals=lon_vals,
         lat_vals=lat_vals,
-        time_vals=valid_time_vals,
-        original_fc=valid_fc,
-        corrected_fc=corrected_valid_fc,
-        original_shape=(n_time_valid, n_lon, n_lat),
-        ground_truth_data=valid_obs
+        time_vals=val_time_subset,
+        original_fc=val_fc,
+        corrected_fc=corrected_val_fc,
+        original_shape=(n_time_val, n_lon, n_lat),
+        dataset_label='validation',
+        ground_truth_data=val_obs
     )
+
+    # =========================================================================
+    # 11) Save outputs for test
+    # =========================================================================
+    n_time_test = test_fc.shape[0]
+    save_output(
+        output_dir=args.output_dir,
+        model_name=args.model_name,
+        var_name=args.var_name,
+        level=args.level,
+        lon_vals=lon_vals,
+        lat_vals=lat_vals,
+        time_vals=test_time_vals,
+        original_fc=test_fc,
+        corrected_fc=corrected_test_fc,
+        original_shape=(n_time_test, n_lon, n_lat),
+        dataset_label='test',
+        ground_truth_data=test_obs
+    )
+
 
 if __name__ == "__main__":
     main()

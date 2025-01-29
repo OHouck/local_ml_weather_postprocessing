@@ -5,7 +5,7 @@ python3 weatherbench2_finetune.py \
     --model_name="pangu_test" \
     --lat_min=20 --lat_max=50 --lon_min=60 --lon_max=85\
     --train_start="2018-03-01" --train_end="2018-06-01" \
-    --valid_start="2020-03-01" --valid_end="2020-06-01" \
+    --test_start="2020-03-01" --test_end="2020-06-01" \
     --lead_time_hours=6 \
     --var_name="2m_temperature" \
     --epochs=100 --batch_size=32 --learning_rate=1e-4 

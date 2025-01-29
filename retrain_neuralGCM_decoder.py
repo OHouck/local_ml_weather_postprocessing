@@ -20,13 +20,14 @@ from dinosaur import xarray_utils
 from dinosaur import spherical_harmonic
 from dinosaur import typing
 
+# for experimenting with adding finetuning mlp to neuralGCM
+from flax import nnx
+from flax.core import freeze, unfreeze
+
 Pytree = typing.Pytree
 TrajectoryRepresentations = typing.TrajectoryRepresentations
 tree_map = jax.tree_util.tree_map
 gcs = gcsfs.GCSFileSystem(token='anon')
-
-# neuralgcm files that are changed..
-# linear_transforms.py: used jnp instead of np for sqrt function
 
 #==============================================================================
 # Define functions and classes
@@ -50,7 +51,42 @@ def setup_directories():
         os.makedirs(path, exist_ok=True)
 
     return dirs
+
 dir = setup_directories()
+
+
+class FineTuningMLP(nnx.Module):
+    """
+    OH: currently not used still need to implement. 
+        For now just ported pytorch simpleMLP class 
+        from weatherbench2_finetune.py to flax
+
+    Simple MLP for post-processing neuralGCM output
+    """
+    input_dim: int
+    output_dim: int = 1
+    num_hidd_layers: int = 3
+
+    def setup(self):
+        self.layers = []
+
+        # first layer   
+        self.layers.append(nnx.Dense(features=self.hiddem_dim))
+        self.layers.append(nnx.relu)
+
+        # hidden layers
+        for _ in range(self.num_hidd_layers - 1):
+            self.layers.append(nnx.Dense(features=self.hiddem_dim))
+            self.layers.append(nnx.relu)
+
+        # output layer
+        self.layers.append(nnx.Dense(features=self.output_dim))
+
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
 
 class RegionalLoss(metrics.TransformedL2Loss):
     def __init__(
@@ -79,9 +115,6 @@ class RegionalLoss(metrics.TransformedL2Loss):
         self.variables_to_slice = variables_to_slice
         self.pressure_weights = pressure_weights
 
-    # modified version of method in metrics.py to incorporate regional masking
-    # also made prediction and target dictionaries and removed the need for TrajectoryRepresentations
-    # do not call get_representation 
     def evaluate_per_variable(
         self,
         prediction: Dict,
@@ -91,25 +124,23 @@ class RegionalLoss(metrics.TransformedL2Loss):
         prediction = self.getter(prediction)
         target = self.getter(target)
 
-        # Get the masks for the region of interest
         if self.is_encoded:
             coords = self.trajectory_spec.coords
         else:
             coords = self.trajectory_spec.data_coords
+
         region_mask = self._create_region_mask(coords)
         
         def apply_mask(x, var_name):
             if var_name in self.variables_to_slice:
                 if var_name == "P_minus_E_cumulative":
-                    # (time, level, lon, lat) in target
-                    # (time, lon, lat) in prediction after 
-                    # want to to be (time, lon, lat)
+                    # shape might be (time, level, lon, lat) in target
+                    # and (time, lon, lat) in prediction
+                    # ensure we remove level dimension for the target if needed
                     if x.ndim == 4:
-                        # remove level dimension to match prediction
                         x = x[:, 0, :, :]
                     *leading_dims, lon, lat = x.shape 
-                elif x.ndim==4:
-                    # assume (level, lon, lat)
+                elif x.ndim == 4:
                     *leading_dims, lon, lat = x.shape 
                 else:
                     raise ValueError(f"Unexpected number of dimensions {x.ndim} for variable {var_name}.")
@@ -120,62 +151,66 @@ class RegionalLoss(metrics.TransformedL2Loss):
                 return x * expanded_mask
             return x            
 
-        # put variables in the order of the variables_to_slice
         target = {var: target[var] for var in self.variables_to_slice}
         prediction = {var: prediction[var] for var in self.variables_to_slice}
 
-        # Apply mask to both trajectory and target
         target = {k: apply_mask(v, k) for k, v in target.items()}
         prediction = {k: apply_mask(v, k) for k, v in prediction.items()}
 
-        # calculate squared transformed errors
         errors = tree_map(jnp.subtract, prediction, target)
         transformed_errors = self.transform(errors, target)
         squared_transformed_errors = tree_map(jnp.square, transformed_errors)
 
-        # apply pressure weights to squared transformed errors
+        # apply pressure weights
         def apply_pressure_weights(x, var_name):
-            # If var_name in pressure_weight_dict and x has shape (time, level, lon, lat):
             if var_name in self.pressure_weights and x.ndim == 4:
                 pw = self.pressure_weights[var_name]  # shape (levels,)
-                # Reshape to (1, level, 1, 1) to broadcast over time, lon, lat
                 pw = pw.reshape((1, x.shape[1], 1, 1))
                 x = x * pw
             return x
 
-        squared_transformed_errors = {k: apply_pressure_weights(v, k) for k, v in squared_transformed_errors.items()}
+        squared_transformed_errors = {
+            k: apply_pressure_weights(v, k) 
+            for k, v in squared_transformed_errors.items()
+        }
 
-        # When taking mean, we should only consider points within the mask
         def masked_mean_rmse(x, var_name):
             if var_name not in self.variables_to_slice:
                 raise ValueError(f"Variable '{var_name}' not in variables to slice")
-            n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2]))  # Points in mask
-            return jnp.sqrt(jnp.sum(x) / n_points)  # RMSE computation
+            n_points = jnp.sum(region_mask) * jnp.prod(jnp.array(x.shape[:-2]))
+            return jnp.sqrt(jnp.sum(x) / n_points)
 
         return {k: masked_mean_rmse(v, k) for k, v in squared_transformed_errors.items()}
     
-
     def _create_region_mask(self, coords):
-        # Get full latitudes and longitudes in degrees
-        full_latitudes = coords.horizontal.latitudes  # Shape: (lat,)
-        full_longitudes = coords.horizontal.longitudes  # Shape: (lon,)
+        full_latitudes = coords.horizontal.latitudes  # (lat,)
+        full_longitudes = coords.horizontal.longitudes  # (lon,)
 
-        lat_min = lat_bounds[0]
-        lat_max = lat_bounds[1]
-        lon_min = lon_bounds[0]
-        lon_max = lon_bounds[1]
+        lat_min = self.lat_bounds[0]
+        lat_max = self.lat_bounds[1]
+        lon_min = self.lon_bounds[0]
+        lon_max = self.lon_bounds[1]
 
-        # Create boolean masks
         lat_mask = (full_latitudes >= lat_min) & (full_latitudes <= lat_max)
         lon_mask = (full_longitudes >= lon_min) & (full_longitudes <= lon_max)
 
-        # Create a 2D mask
-        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # Shape: (128, 64) (lon, lat)
+        region_mask = np.outer(lon_mask, lat_mask).astype(float)  # shape (lon, lat)
         return region_mask
-            
-def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds):
 
-    # Run model forward to create forecast
+
+def compute_loss(
+    model,
+    initial_state,
+    target,
+    forcings,
+    rng_key,
+    num_outer_steps,
+    num_inner_steps,
+    timedelta,
+    lat_bounds,
+    lon_bounds
+):
+    # unroll the model for forecasting
     _, prediction_trajectory = model.unroll(
         state = initial_state,
         forcings = forcings,
@@ -184,36 +219,30 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         start_with_input=True,
     )
 
-    # compute statistics for normalization
+    # compute stats for rescaling
     def compute_stats(x):
-        return {
-            'mean': jnp.mean(x),
-            'std': jnp.std(x) + 1e-8 # avoid division by 0
-        }
+        return {'mean': jnp.mean(x), 'std': jnp.std(x) + 1e-8}
 
-    # Filter out metadata fields and only compute stats for actual variables
-    # OH to do: starting conditions should be properly passed in
     variables_to_normalize = {
-        'temperature': starting_conditions['temperature'],
-        'geopotential': starting_conditions['geopotential'],
-        'specific_cloud_ice_water_content': starting_conditions['specific_cloud_ice_water_content'],
-        'specific_cloud_liquid_water_content': starting_conditions['specific_cloud_liquid_water_content'],
-        'specific_humidity': starting_conditions['specific_humidity'],
-        'u_component_of_wind': starting_conditions['u_component_of_wind'],
-        'v_component_of_wind': starting_conditions['v_component_of_wind'],
-        'P_minus_E_cumulative': starting_conditions['P_minus_E_cumulative'] 
+        'temperature': initial_state['temperature'],
+        'geopotential': initial_state['geopotential'],
+        'specific_cloud_ice_water_content': initial_state['specific_cloud_ice_water_content'],
+        'specific_cloud_liquid_water_content': initial_state['specific_cloud_liquid_water_content'],
+        'specific_humidity': initial_state['specific_humidity'],
+        'u_component_of_wind': initial_state['u_component_of_wind'],
+        'v_component_of_wind': initial_state['v_component_of_wind'],
+        'P_minus_E_cumulative': initial_state['P_minus_E_cumulative'] 
     }
     input_stats = jax.tree_util.tree_map(compute_stats, variables_to_normalize)
 
     trajectory_spec = metrics_util.TrajectorySpec(
-        trajectory_length=num_outer_steps,  # max "outer steps"
-        max_trajectory_length=num_outer_steps, # Max length for stage of experiment
-        steps_per_save=num_inner_steps, # number of times to save model every 24 hours
-        coords=model.model_coords, # model coordinates
-        data_coords=model.data_coords, # data coordinates
+        trajectory_length=num_outer_steps,
+        max_trajectory_length=num_outer_steps,
+        steps_per_save=num_inner_steps,
+        coords=model.model_coords,
+        data_coords=model.data_coords,
     )
 
-    # Define variable-specific weights to handle different scales
     importance_weights = {
         'temperature': 1.0,
         'geopotential': 1.0,
@@ -226,13 +255,9 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
     }
 
     num_levels = 37  
-    # A simple scheme: emphasize lower levels more. 
-    # For instance, weight them inversely by their index (just as a placeholder):
-    # simple weights, weight them inversely by their index
-    level_array = jnp.arange(num_levels)  # 0, 1, 2, ..., 36
-    # Add 1 so we don't divide by zero
+    level_array = jnp.arange(num_levels)
     level_weights = 1.0 / (1.0 + level_array)
-    level_weights = level_weights / jnp.sum(level_weights)  # Normalize so they sum to 1
+    level_weights = level_weights / jnp.sum(level_weights)
 
     pressure_weight_dict = {
         'temperature': level_weights,
@@ -242,10 +267,8 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         'specific_humidity': level_weights,
         'u_component_of_wind': level_weights,
         'v_component_of_wind': level_weights
-        # 'P_minus_E_cumulative' has no level dimension, so exclude it 
     }
 
-    # to rescale variables and then apply importance weights
     components = [
         linear_transforms.LegacyTimeRescaling,
         lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
@@ -255,7 +278,7 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         ),
         lambda *args, **kwargs: linear_transforms.PerVariableRescaling(
             *args, 
-            weights= importance_weights, 
+            weights=importance_weights, 
             **kwargs
         )
     ]
@@ -265,85 +288,78 @@ def compute_loss(model, initial_state, target, forcings, rng_key, num_outer_step
         lat_bounds=lat_bounds,
         lon_bounds=lon_bounds,
         components=components,
-        variables_to_slice=['temperature', 'geopotential', 
-                            'u_component_of_wind', 'v_component_of_wind', 
-                            'specific_humidity', 
-                            'specific_cloud_liquid_water_content', 
-                            'specific_cloud_ice_water_content',
-                            'P_minus_E_cumulative'],
-        pressure_weights = pressure_weight_dict,
-        is_nodal = True, # data is defined at grid nodes (lat, lon)
-        is_encoded = False, # variables represent physical quantities 
+        variables_to_slice=[
+            'temperature', 'geopotential', 
+            'u_component_of_wind', 'v_component_of_wind', 
+            'specific_humidity', 'specific_cloud_liquid_water_content', 
+            'specific_cloud_ice_water_content','P_minus_E_cumulative'
+        ],
+        pressure_weights=pressure_weight_dict,
+        is_nodal=True,
+        is_encoded=False,
     )
 
     def subset_trajectory(trajectory: Dict[str, jnp.ndarray], last_n: int = 1) -> Dict[str, jnp.ndarray]:
-        # Subset the last n time steps from the data in trajectory dictionary.
         return {var_name: data_array[-last_n:] for var_name, data_array in trajectory.items()}
 
+    # only compare last time step
     prediction_trajectory = subset_trajectory(prediction_trajectory, last_n=1)
     target = subset_trajectory(target, last_n=1)
 
-    # loss for all variables
     loss_dict = loss_fn.evaluate_per_variable(prediction_trajectory, target)
-    # Can think more carefully about how to combine loss from different variables
     loss_sum = sum(loss_dict.values())
     return loss_sum
 
 def freeze_non_decoder_params(model, updates):
     total_params = 0
     unfrozen_params = 0
-    # First, let's create a mapping from flattened indices to full parameter paths
-    flat_params, tree_def = jax.tree_util.tree_flatten(model.params)
-    flat_to_full = {}
-    for i, (path, _) in enumerate(jax.tree_util.tree_leaves_with_path(model.params)):
-        flat_to_full[i] = '/'.join(str(p) for p in path)
 
-    def is_decoder_param(path, _):
-        if isinstance(path[0], jax.tree_util.FlattenedIndexKey):
-            full_path = flat_to_full.get(path[0].key, "")
-        else:
-            full_path = '/'.join(str(p) for p in path)
+    # Flatten param updates for inspection
+    flat_updates, tree_def = jax.tree_util.tree_flatten(updates)
 
-        # name in all decoder parameters
-        return 'dimensional_learned_primitive_to_weatherbench_decoder' in full_path
+    # We will store the updated results in a list, then unflatten at the end
+    new_updates = []
 
-    def maybe_freeze(path, update):
-        nonlocal total_params, unfrozen_params
+    for update in flat_updates:
         total_params += jnp.size(update)
-        if is_decoder_param(path, update):
-            unfrozen_params += jnp.size(update)
-            return update
-        else:
-            return jnp.zeros_like(update)
 
-    frozen_updates, tree_def = jax.tree_util.tree_flatten(updates)
-    frozen_updates = [maybe_freeze((jax.tree_util.FlattenedIndexKey(i),), update) 
-                      for i, update in enumerate(frozen_updates)]
-    frozen_updates = jax.tree_util.tree_unflatten(tree_def, frozen_updates)
+    def is_decoder_param(path_str):
+        return 'dimensional_learned_primitive_to_weatherbench_decoder' in path_str
+
+    # We need to track param paths along with updates:
+    #   jax.tree_util.tree_leaves_with_path gives us (path, leaf).
+    leaves_with_paths = jax.tree_util.tree_leaves_with_path(updates)
+
+    # Build new updates with freezing logic
+    for (path, old_u) in leaves_with_paths:
+        # path is a tuple of keys/indices describing where we are in the tree
+        path_str = '/'.join(str(x) for x in path)
+        if is_decoder_param(path_str):
+            new_updates.append(old_u)  # allow updates
+            unfrozen_params += jnp.size(old_u)
+        else:
+            new_updates.append(jnp.zeros_like(old_u))  # freeze
+
+    # Re-tree-ify new updates
+    frozen_updates = jax.tree_util.tree_unflatten(tree_def, new_updates)
 
     pct_unfrozen = unfrozen_params / total_params if total_params > 0 else 0.0
     return frozen_updates, pct_unfrozen
 
-# helper function for debugging
 def find_decoder_params(model):
     '''Identify decoder parameters and print them'''
     for path, param in model.params.items():
         if 'decode' in str(path):
             print(path)
 
-# helper function to get number of params in decoder 
-# (58k in toy model, 4.2M in 1.4 degree deterministic model)
 def count_decoder_parameters(model):
     '''Count the number of parameters in the decoder that can be retrained.'''
     retrainable_params = 0
-
     for path, param in jax.tree_util.tree_leaves_with_path(model.params):
         if 'dimensional_learned_primitive_to_weatherbench_decoder' in str(path):
             retrainable_params += jnp.size(param)
     print(retrainable_params)
 
-# count total params in model
-# (191k in toy model, 18.3M in 1.4 degree deterministic model)
 def count_total_parameters(model):
     num_params = 0
     for path, param in jax.tree_util.tree_leaves_with_path(model.params):
@@ -351,30 +367,31 @@ def count_total_parameters(model):
     print(num_params)
 
 
-def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = False):
+def pull_and_regrid_era5(
+    model, 
+    era5_path, 
+    start_date, 
+    end_date, 
+    num_inner_steps, 
+    output_path, 
+    save = False
+):
     start_date_short = start_date.replace('-', '')
     end_date_short = end_date.replace('-', '')
     filename = f'eval_era5_{start_date_short}_{end_date_short}.zarr'
     file_path = os.path.join(output_path, filename)
 
-    # I think we want total precipitation? It is sum of convective and large-scale precipitation
-    # use "Evaporation" as variable for evaporation
-    # https://codes.ecmwf.int/grib/param-db/260259
-    # Total Precipitation: https://codes.ecmwf.int/grib/param-db/228228
-
-    # note couldn't find these so use the versions in meters and convert to kg/m^2
-    # https://codes.ecmwf.int/grib/param-db/182
-    # https://codes.ecmwf.int/grib/param-db/228
-
-    # Check if the file already exists
     if os.path.exists(file_path):
         print(f'File {filename} already exists. Loading it instead of re-evaluating.')
         return xarray.open_zarr(file_path)
 
-    # Open ERA5 dataset
     full_era5 = xarray.open_zarr(gcs.get_mapper(era5_path), chunks=None)
 
-    era5_vars_to_keep = model.input_variables + model.forcing_variables + ['evaporation', "total_precipitation"]
+    era5_vars_to_keep = (
+        model.input_variables 
+        + model.forcing_variables 
+        + ['evaporation', 'total_precipitation']
+    )
     
     timestep = 24 // num_inner_steps
 
@@ -389,23 +406,20 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
         .compute()
     )
 
-    # convert total precipitation to kg/m^2 
-
+    # Convert total precipitation & evaporation to kg/m^2
     sliced_era5["total_precipitation"] = sliced_era5["total_precipitation"] * 1000.0
-    sliced_era5["evaporation"] = sliced_era5["evaporation"]   * 1000.0
+    sliced_era5["evaporation"] = sliced_era5["evaporation"] * 1000.0
 
-    # assume (perhaps incorrectly) that can estimate cumulative evap/precip by scaling by timestep
-    # doesn't work if precipitation varies a lot over the day: 
-    # OH XX might be something to come back to. Can directly calculate cumulative values but would require loading a lot more data
+    # Multiply by the time step to approximate cumulative effect
     sliced_era5["total_precipitation"] = sliced_era5["total_precipitation"] * timestep
     sliced_era5["evaporation"] = sliced_era5["evaporation"] * timestep
 
-    # generate cumulative precipitation minus evaporation variable over time
+    # cumulative precipitation minus evaporation
     sliced_era5['P_minus_E_cumulative'] = (
-    sliced_era5['total_precipitation'].cumsum('time')
-    - sliced_era5['evaporation'].cumsum('time')
-)
-    # Regrid to neuralgcm resolution
+        sliced_era5['total_precipitation'].cumsum('time')
+        - sliced_era5['evaporation'].cumsum('time')
+    )
+
     era5_grid = spherical_harmonic.Grid(
         latitude_nodes=full_era5.sizes['latitude'],
         longitude_nodes=full_era5.sizes['longitude'],
@@ -423,152 +437,216 @@ def pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps
     
     return eval_era5
 
-
-#==============================================================================
-# Set up parameters
-#==============================================================================
-# set random key
-rng_key = jax.random.PRNGKey(854)
-
-# 1.4 degree pre-trained model checkpoint (OH: currently not using in order to use demo model)
-# model_name = 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl'  #@param ['neural_gcm_dynamic_forcing_deterministic_0_7_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_1_4_deg.pkl', 'neural_gcm_dynamic_forcing_deterministic_2_8_deg.pkl', 'neural_gcm_dynamic_forcing_stochastic_1_4_deg.pkl'] {type: "string"}
-
-# set time parameters
-start_date = '2020-02-14'
-num_days = 5
-num_inner_steps = 1 # how many times to save model every 24 hours
-
-# Set region of interest: Note:
-# latitude between -90 and 90
-# longitude between 0 and 360
-
-# global
-# lat_bounds = (-90, 90)
-# lon_bounds = (0, 360)
-
-# pakistan
-lat_bounds = (20, 60)
-lon_bounds = (200, 300)
-
-#==============================================================================
-# Set up model and data
-#==============================================================================
-
-# set other time parameters based on start date and number of days
-end_date = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days)
-end_date = end_date.strftime('%Y-%m-%d')
-num_outer_steps = num_days * num_inner_steps # process num_days days
-timedelta = np.timedelta64(24, 'h') // num_inner_steps
-times = np.arange(num_outer_steps) * timedelta # time axis in hours
-
-# convert coordinate bounds to radians
-lat_bounds = (np.deg2rad(lat_bounds[0]), np.deg2rad(lat_bounds[1]))
-lon_bounds = (np.deg2rad(lon_bounds[0]), np.deg2rad(lon_bounds[1]))
-
-# # Load a non-toy version of the model
-# with gcs.open(f'gs://gresearch/neuralgcm/04_30_2024/{model_name}', 'rb') as f:
-#   ckpt = pickle.load(f)
-
-# simple demo version for quickest testing
-ckpt = neuralgcm.demo.load_checkpoint_tl63_stochastic()
-
-# P_minus_E code from: https://github.com/neuralgcm/neuralgcm/issues/12
-new_inputs_to_units_mapping = {
-  'u': 'meter / second',
-  'v': 'meter / second',
-  't': 'kelvin',
-  'z': 'm**2 s**-2',
-  'sim_time': 'dimensionless',
-  'tracers': {'specific_humidity': 'dimensionless',
-            'specific_cloud_liquid_water_content': 'dimensionless',
-            'specific_cloud_ice_water_content': 'dimensionless',
-    },
-    'diagnostics': {'P_minus_E_cumulative': 'kg / (meter**2)'}
-  }
-
-new_model_config_str = '\n'.join([
-    ckpt['model_config_str'],
-    f'DimensionalLearnedPrimitiveToWeatherbenchDecoder.inputs_to_units_mapping = {new_inputs_to_units_mapping}',
-    'DimensionalLearnedPrimitiveToWeatherbenchDecoder.diagnostics_module = @NodalModelDiagnosticsDecoder',
-    'StochasticPhysicsParameterizationStep.diagnostics_module = @PrecipitationMinusEvaporationDiagnostics',
-    'PrecipitationMinusEvaporationDiagnostics.method = "cumulative"',
-    'PrecipitationMinusEvaporationDiagnostics.moisture_species = ("specific_humidity", "specific_cloud_liquid_water_content", "specific_cloud_ice_water_content")'
-])
-ckpt['model_config_str'] = new_model_config_str
-
-model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
-# ds = neuralgcm.demo.load_data(model.data_coords) # uncomment if using demo model
-# inputs, forcings = model.data_from_xarray(ds.isel(time=0))
-
-output_path = dir['processed']
-era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
-eval_era5 = pull_and_regrid_era5(model, era5_path, start_date, end_date, num_inner_steps, output_path, save = True)
-
-inputs = model.inputs_from_xarray(eval_era5.isel(time = 0))
-input_forcings = model.forcings_from_xarray(eval_era5.isel(time=0))
-initial_state = model.encode(inputs, input_forcings, rng_key)
-forcings = model.forcings_from_xarray(eval_era5.head(time=1))
-
-
-# vars used to evaluate loss
-evaluation_vars = ['temperature', 'geopotential', 'specific_cloud_ice_water_content', 
-                   'specific_cloud_liquid_water_content', 'specific_humidity', 
-                   'u_component_of_wind', 'v_component_of_wind', 'P_minus_E_cumulative'] 
-
-slice_era5 = (eval_era5[evaluation_vars]
-    .thin(time=(num_inner_steps))
-    .isel(time=slice(num_outer_steps))
-)
-
-# keep initial state as starting conditions
-starting_conditions = model._data_from_xarray(slice_era5.isel(time=1), 
-                                            list(slice_era5.data_vars))
-
-target_trajectory = model._data_from_xarray(slice_era5, 
-                                            list(slice_era5.data_vars))
-
-# # testing running the model outside of training loop
-# _, prediction_trajectory = model.unroll(
-#     state = initial_state,
-#     forcings = forcings,
-#     steps=num_outer_steps,
-#     timedelta=timedelta,
-#     start_with_input=True,
-# )
-
-# prediction_ds = model.data_to_xarray(prediction_trajectory, times = times)
-
-# # print mean cumulative precipitation minus evaporation by time step
-# print("Prediction")
-# print(prediction_ds['P_minus_E_cumulative'].mean(('longitude', 'latitude')))
-
-# # print mean cumulative precipitation minus evaporation by time step in target
-# print("Target")
-# print(slice_era5['P_minus_E_cumulative'].mean(('longitude', 'latitude')))
-
-# print("Prediction")
-# print(slice_era5['P_minus_E_cumulative'].values)
-# print("Target")
-# print(prediction_ds['P_minus_E_cumulative'].values)
-
-# set up optimizer settings
-optimizer = optax.adam(1e-3)
-opt_state = optimizer.init(model)
-
-# JIT-compile the training function
-compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
-#==============================================================================
-# Run training loop
-# OH note 12/9/24: got P_minus_E mostly working but it makes the loss much larger at each iteration
-# something to investigate. Unit conversion or something might still be off
-#==============================================================================
-for i in range(3):
-    print(f'Iteration {i+1}')
-    loss, grads = jax.value_and_grad(compute_loss_jit)(
-        model, initial_state, target_trajectory, forcings, rng_key, num_outer_steps, num_inner_steps, timedelta, lat_bounds, lon_bounds
+# split the dataset into train/val
+def prepare_train_val_data(
+    model,
+    era5_path: str,
+    start_date: str,
+    end_date: str,
+    num_inner_steps: int,
+    num_outer_steps: int,
+    output_path: str,
+    train_fraction: float = 0.8,
+    save: bool = False
+):
+    """
+    1) Pull and regrid ERA5 data with pull_and_regrid_era5.
+    2) Split by time into train and validation sets.
+    3) Convert each list of (initial_state, target_trajectory, forcings) touples.
+    """
+    # pull regrid and load in era5 data at selected time range, time resolution,
+    # and regrid to model grid. Only includes variables needed for model
+    full_era5 = pull_and_regrid_era5(
+        model=model,
+        era5_path=era5_path,
+        start_date=start_date,
+        end_date=end_date,
+        num_inner_steps=num_inner_steps,
+        output_path=output_path,
+        save=save
     )
+
+    # Need to split the full data into train and validation sets while still 
+    # keeping the time clusters together for forecasts to make sense
+    window_length = num_outer_steps + 1
+    times = full_era5.time
+    n_times = times.size
+
+    cluster_starts = np.arange(0, n_times - window_length + 1, window_length)
+
+    # Randomize cluster order to do a train/val split
+    rng_key = jax.random.PRNGKey(2304)
+    cluster_starts = jax.random.permutation(rng_key, cluster_starts)
+
+    n_clusters = len(cluster_starts)
+    n_train = int(train_fraction * n_clusters)
+
+    train_indices = cluster_starts[:n_train]
+    val_indices = cluster_starts[n_train:] 
+
+    train_list = []
+    val_list = []
+
+    # Helper function to transform an xarray dataset chunk into
+    # (initial_state, target_trajectory, forcings) needed for training.
+    def build_data_dict(xds: xarray.Dataset):
+
+        evaluation_vars = [
+            'temperature', 'geopotential', 
+            'specific_cloud_ice_water_content', 
+            'specific_cloud_liquid_water_content', 
+            'specific_humidity', 'u_component_of_wind', 
+            'v_component_of_wind', 'P_minus_E_cumulative'
+        ]
+
+        # Convert to model dictionary
+        data_dict = model._data_from_xarray(xds, list(xds.data_vars))
+
+        # The "initial_state" can come from the first time
+        init_data = xds.isel(time=0)
+        inputs = model.inputs_from_xarray(init_data)
+        forcings = model.forcings_from_xarray(init_data)
+        initial_state = model.encode(inputs, forcings, jax.random.PRNGKey(0))  
+
+        target_trajectory = data_dict
+        all_forcings = model.forcings_from_xarray(xds)
+
+        return initial_state, target_trajectory, all_forcings
+    
+    for start_idx in train_indices:
+        chunk_ds = full_era5.isel(time=slice(start_idx, start_idx + window_length))
+        train_list.append(build_data_dict(chunk_ds))
+
+    # Build validation list
+    for start_idx in val_indices:
+        chunk_ds = full_era5.isel(time=slice(start_idx, start_idx + window_length))
+        val_list.append(build_data_dict(chunk_ds))
+
+    # Each element of train_list or val_list is a tuple:
+    #   (initial_state, target_trajectory, forcings) for that time cluster
+
+    return train_list, val_list 
+
+if __name__ == "__main__":
+    # Set random key
+    rng_key = jax.random.PRNGKey(854)
+
+    # 1) Load a simple demo model
+    ckpt = neuralgcm.demo.load_checkpoint_tl63_stochastic()
+
+    # P_minus_E code from: https://github.com/neuralgcm/neuralgcm/issues/12
+    new_inputs_to_units_mapping = {
+      'u': 'meter / second',
+      'v': 'meter / second',
+      't': 'kelvin',
+      'z': 'm**2 s**-2',
+      'sim_time': 'dimensionless',
+      'tracers': {
+          'specific_humidity': 'dimensionless',
+          'specific_cloud_liquid_water_content': 'dimensionless',
+          'specific_cloud_ice_water_content': 'dimensionless',
+      },
+      'diagnostics': {'P_minus_E_cumulative': 'kg / (meter**2)'}
+    }
+
+    new_model_config_str = '\n'.join([
+        ckpt['model_config_str'],
+        f'DimensionalLearnedPrimitiveToWeatherbenchDecoder.inputs_to_units_mapping = {new_inputs_to_units_mapping}',
+        'DimensionalLearnedPrimitiveToWeatherbenchDecoder.diagnostics_module = @NodalModelDiagnosticsDecoder',
+        'StochasticPhysicsParameterizationStep.diagnostics_module = @PrecipitationMinusEvaporationDiagnostics',
+        'PrecipitationMinusEvaporationDiagnostics.method = "cumulative"',
+        'PrecipitationMinusEvaporationDiagnostics.moisture_species = ("specific_humidity", "specific_cloud_liquid_water_content", "specific_cloud_ice_water_content")'
+    ])
+    ckpt['model_config_str'] = new_model_config_str
+    model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)    
+
+    # Example parameters
+    start_date = '2020-02-01'
+    num_days = 5 
+    num_inner_steps = 1
+    # add 1 so that we can create clusters that have a one day buffer
+    end_date_dt = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=num_days + 1) 
+    end_date = end_date_dt.strftime('%Y-%m-%d')
+    # OH XX trying to pull for a full month for now
+    end_date = '2020-03-01'
+    num_outer_steps = num_days * num_inner_steps
+    timedelta_h = np.timedelta64(24, 'h') // num_inner_steps
+
+    # Region of interest in degrees, convert to radians:
+    lat_bounds_deg = (20, 60)
+    lon_bounds_deg = (200, 300)
+    lat_bounds = (np.deg2rad(lat_bounds_deg[0]), np.deg2rad(lat_bounds_deg[1]))
+    lon_bounds = (np.deg2rad(lon_bounds_deg[0]), np.deg2rad(lon_bounds_deg[1]))
+
+    era5_path = 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3'
+    output_path = dir['processed']
+
+    # 2) Prepare training and validation data
+    train_list, val_list = prepare_train_val_data(
+        model=model,
+        era5_path=era5_path,
+        start_date=start_date,
+        end_date=end_date,
+        num_inner_steps=num_inner_steps,
+        num_outer_steps=num_outer_steps,
+        output_path=output_path,
+        train_fraction=0.8,
+        save=True
+    )
+
+    print("Data prepared.")
+
+    print(type(train_list))
+    print(len(train_list))
     exit()
-    updates, opt_state = optimizer.update(grads, opt_state)
-    frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
-    model = optax.apply_updates(model, frozen_updates)
-    print(f'{i+1=}, loss = {loss.item()}')
+
+    # for now only use the first element of train_list and val_list
+    train_init, train_target_trajectory, train_forcings = train_list[0]
+    print(f"train init: {train_init['temperature'].shape}")
+    val_init, val_target_trajectory, val_forcings = val_list[0]
+    print(f" val init: {val_init['temperature'].shape}")
+    exit()
+
+    # 3) Set up optimizer
+    optimizer = optax.adam(1e-3)
+    opt_state = optimizer.init(model)
+
+    # 4) JIT-compile compute_loss
+    compute_loss_jit = jax.jit(compute_loss, static_argnums=(5, 6, 7, 8, 9))
+
+    # 5) Training loop
+    num_iterations = 3
+    for i in range(num_iterations):
+        # Training step
+        train_loss, grads = jax.value_and_grad(compute_loss_jit)(
+            model,
+            train_init,
+            train_target_trajectory,
+            train_forcings,
+            rng_key,
+            num_outer_steps,
+            num_inner_steps,
+            timedelta_h,
+            lat_bounds,
+            lon_bounds
+        )
+        updates, opt_state = optimizer.update(grads, opt_state)
+        frozen_updates, pct_unfrozen = freeze_non_decoder_params(model, updates)
+        model = optax.apply_updates(model, frozen_updates)
+
+        # Validation loss
+        val_loss = compute_loss_jit(
+            model,
+            val_init,
+            val_target_trajectory,
+            val_forcings,
+            rng_key,
+            num_outer_steps,
+            num_inner_steps,
+            timedelta_h,
+            lat_bounds,
+            lon_bounds
+        )
+
+        print(f"Iteration {i+1}, train_loss = {train_loss.item():.6f}, val_loss = {val_loss.item():.6f}")
+
