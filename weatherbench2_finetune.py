@@ -16,13 +16,14 @@ python3 weatherbench2_finetuning.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
     --output_dir="~/wb_finetune_test" \
-    --model_name="pangu_test" \
+    --model_name="pangu" \
     --lat_min=20 --lat_max=50 --lon_min=60 --lon_max=85 \
     --train_start="2018-03-01" --train_end="2018-06-01" \
     --test_start="2020-03-01" --test_end="2020-06-01" \
     --lead_time_hours=6 \
     --var_name="2m_temperature" \
     --epochs=100 --batch_size=32 --learning_rate=1e-4 
+
 """
 
 import argparse
@@ -131,6 +132,17 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
         xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
         else xr.open_dataset(obs_path)
     )
+    
+    # to make sure slicing works
+    ds_forecast = ds_forecast.sortby('latitude')
+    ds_obs = ds_obs.sortby('latitude')
+
+
+    # some forecasts use lat/lon instead of latitude/longitude so rename them
+    if 'latitude' not in ds_forecast[var_name].dims and 'lat' in ds_forecast[var_name].dims:
+        ds_forecast = ds_forecast.rename({'lat': 'latitude'})
+    if 'longitude' not in ds_forecast[var_name].dims and 'lon' in ds_forecast[var_name].dims:
+        ds_forecast = ds_forecast.rename({'lon': 'longitude'})
 
     # Select region and time for forecast
     if 'level' in ds_forecast[var_name].dims and level is not None:
@@ -142,7 +154,6 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
         fc_var = ds_forecast[var_name].sel(time=time_slice,
                                            latitude=lat_slice,
                                            longitude=lon_slice)
-
     # Select region and time for observations
     if 'level' in ds_obs[var_name].dims and level is not None:
         obs_var = ds_obs[var_name].sel(time=time_slice,
@@ -166,7 +177,6 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
     fc_data = fc_var.values
     obs_data = obs_var.values
 
-    # Print dimensional info
     print("Forecast data shapes:", fc_data.shape)
     print("Observation data shapes:", obs_data.shape)
 
@@ -417,6 +427,7 @@ def main():
     # Prepare slices
     lat_slice = slice(args.lat_min, args.lat_max)
     lon_slice = slice(args.lon_min, args.lon_max)
+
     train_time_slice = slice(args.train_start, args.train_end)
     test_time_slice = slice(args.test_start, args.test_end)
 
@@ -488,9 +499,9 @@ def main():
     # =========================================================================
     input_dim = train_fc.shape[1]  # lat*lon
     model = SimpleMLP(input_dim=input_dim,
-                      hidden_dim=128,
+                      hidden_dim=512,
                       output_dim=input_dim,
-                      num_hidden_layers=3)
+                      num_hidden_layers=5)
 
     model.to(device)
     model = train_model(model, train_loader, val_loader, args.epochs, 
@@ -516,14 +527,6 @@ def main():
     corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
     print(f"MSE (original forecast, test set): {np.mean((test_fc - test_obs) ** 2):.6f}")
     print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - test_obs) ** 2):.6f}")
-
-    # =========================================================================
-    # 9) Optional: Compute MSE difference on the (random) validation set
-    # =========================================================================
-    mse_original_val = np.mean((val_fc - val_obs) ** 2)
-    mse_corrected_val = np.mean((corrected_val_fc - val_obs) ** 2)
-    print(f"MSE (original forecast, validation set): {mse_original_val:.6f}")
-    print(f"MSE (corrected forecast, validation set): {mse_corrected_val:.6f}")
 
     # =========================================================================
     # 10) Save outputs for test
