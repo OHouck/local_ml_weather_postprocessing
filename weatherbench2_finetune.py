@@ -137,7 +137,6 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
     ds_forecast = ds_forecast.sortby('latitude')
     ds_obs = ds_obs.sortby('latitude')
 
-
     # some forecasts use lat/lon instead of latitude/longitude so rename them
     if 'latitude' not in ds_forecast[var_name].dims and 'lat' in ds_forecast[var_name].dims:
         ds_forecast = ds_forecast.rename({'lat': 'latitude'})
