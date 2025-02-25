@@ -9,7 +9,7 @@ python3 weatherbench2_finetune.py \
     --train_start="2018-01-01" --train_end="2021-12-30" \
     --test_start="2022-01-01" --test_end="2022-12-30" \
     --lead_time_hours=24 \
-    --var_name="10m_v_component_of_wind" \
+    --var_names 10m_v_component_of_wind 10m_u_component_of_wind \
     --epochs=1000 --batch_size=32 --learning_rate=1e-5 
 
 # holding forecast paths for different forecasts

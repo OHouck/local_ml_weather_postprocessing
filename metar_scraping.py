@@ -50,6 +50,8 @@ def download_file(url, local_path):
     print("Download complete.")
 
 def main(test_mode, output_dir):
+
+    output_dir = os.path.expanduser(output_dir)
     # Determine which years to process.
     if test_mode:
         # Only January 2024 in test mode.
@@ -57,7 +59,7 @@ def main(test_mode, output_dir):
         print("Running in test mode: only processing January 2024.")
     else:
         # Full mode: years 2001 through 2025 (each as string with trailing slash).
-        years = [f"{year}/" for year in range(2001, 2026)]
+        years = [f"{year}/" for year in range(2006, 2026)]
 
     for year in years:
         year_url = urljoin(BASE_URL, year)
@@ -124,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="~/metar_data",
+        default="/Volumes/wd_external_hd/noaa_data/metar_data",
         help="Output directory to save downloaded files (default: 'data')."
     )
     args = parser.parse_args()
