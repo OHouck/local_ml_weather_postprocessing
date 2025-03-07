@@ -10,18 +10,25 @@ over multiple variables. The model learns a mapping from the concatenated model-
 fields (for all specified variables) to the corresponding observed fields.
 ----------------------------
 
+All India: lat_min= 8.68 lat_max = 27.2, lon_min=70.75, lon_max = 87.35
+Northern India: lat_min= 21, lat_max = 35.5, lon_min=70.75, lon_max = 87.35
+Uttar Pradesh: lat_min= 24.2, lat_max = 26, lon_min=78, lon_max = 87.35
+
 Example usage 
-python3 weatherbench2_finetuning.py \
-    --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
-    --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
+python3 finetuning/finetune.py \
+    --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
+    --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
     --output_dir="~/wb_finetune_test" \
     --model_name="pangu" \
-    --lat_min=20 --lat_max=50 --lon_min=60 --lon_max=85 \
-    --train_start="2018-03-01" --train_end="2018-06-01" \
-    --test_start="2020-03-01" --test_end="2020-06-01" \
-    --lead_time_hours=6 \
-    --var_names 2m_temperature precipitation \
-    --epochs=100 --batch_size=32 --learning_rate=1e-4 
+    --region="north_india
+    --train_start="2021-01-01" --train_end="2021-12-30" \
+    --test_start="2022-01-01" --test_end="2022-12-30" \
+    --lead_time_hours=48 \
+    --training_vars = 10m_v_component_of_wind 10m_u_component_of_wind \
+    --output_vars = 10m_v_component_of_wind 10m_u_component_of_wind \
+    --epochs=1000 \
+    --mlp_hidd_dim=512 \
+    --mlp_layers=5
 
 """
 
@@ -33,6 +40,8 @@ import xarray as xr
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import socket
+
 
 
 class SimpleMLP(nn.Module):
@@ -71,40 +80,50 @@ def parse_args():
                         help='Path to observation data (e.g. ERA5 Zarr or NetCDF)')
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save the fine-tuned model and corrected forecasts')
-    parser.add_argument('--model_name', type=str, required=True,
+    parser.add_argument('--model_name', type=str, default="pangu",
                         help='Name of the base model (e.g. pangu, ifs, neural_gcm)')
-    parser.add_argument('--lat_min', type=float, required=True,
-                        help='Minimum latitude for region')
-    parser.add_argument('--lat_max', type=float, required=True,
-                        help='Maximum latitude for region')
-    parser.add_argument('--lon_min', type=float, required=True,
-                        help='Minimum longitude for region')
-    parser.add_argument('--lon_max', type=float, required=True,
-                        help='Maximum longitude for region')
-    parser.add_argument('--lead_time_hours', type=int, default=48,
-                        help='Lead time in hours for forecast')
-    parser.add_argument('--var_names', type=str, nargs='+', default=["2m_temperature"],
-                        help='Variables to fine-tune (e.g. 2m_temperature precipitation)')
-    parser.add_argument('--level', type=int, nargs='?', default=None,
-                        help='Pressure level if applicable')
+    parser.add_argument('--region', type=str, default="north_india",
+                        help='Region to train over(e.g. full_india, north_india, uttar_pradesh)')
     parser.add_argument('--train_start', type=str, default='2018-01-01',
                         help='Training start date')
-    parser.add_argument('--train_end', type=str, default='2019-12-31',
+    parser.add_argument('--train_end', type=str, default='2019-12-30',
                         help='Training end date')
     parser.add_argument('--test_start', type=str, default='2020-01-01',
                         help='Test start date')
     parser.add_argument('--test_end', type=str, default='2020-12-31',
                         help='Test end date')
-    parser.add_argument('--epochs', type=int, default=10,
+    parser.add_argument('--lead_time_hours', type=int, default=48,
+                        help='Lead time in hours for forecast')
+    parser.add_argument('--training_vars', type=str, nargs='+', default=["2m_temperature"],
+                        help='Variables used to fine-tune (e.g. 2m_temperature precipitation)')
+    parser.add_argument('--output_vars', type=str, nargs='+', default=["2m_temperature"],
+                        help='Variables to fine-tune subset of training_vars (e.g. 2m_temperature)')
+    parser.add_argument('--level', type=int, nargs='?', default=None,
+                        help='Pressure level if applicable')
+    parser.add_argument('--epochs', type=int, default=1000,
                         help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=1e-4,
-                        help='Learning rate')
+    parser.add_argument('--mlp_hidden_dim', type=int, default=512,
+                        help='Number of neurons in the hidden layers')
+    parser.add_argument('--mlp_layers', type=int, default=5,
+                        help='Number of hidden layers in the MLP')
     return parser.parse_args()
 
+def generate_run_id(args):
+    "Helper function to build string identifier for the run."
+    # Region string from lat/lon bounds
+    region_str = f"{args.region}"
+    # Dates string from training and testing periods
+    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
+    # Variables string (join with a dash or underscore)
+    training_vars_str = "_".join(args.training_vars)
+    ouput_vars_str = "_".join(args.output_vars)
+    # MLP architecture string
+    mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+    # Combine all pieces along with the weather model and lead time
+    run_id = f"{args.model_name}_{region_str}_{dates_str}_{args.lead_time_hours}h_train_{training_vars_str}_output{ouput_vars_str}_{mlp_str}"
+    return run_id
 
-def load_data(forecast_path, obs_path, var_names, level, lat_slice, lon_slice,
+def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slice,
               time_slice, lead_time_hours):
     """
     Load forecast and observation data for the specified variables and region.
@@ -112,7 +131,7 @@ def load_data(forecast_path, obs_path, var_names, level, lat_slice, lon_slice,
     Args:
         forecast_path (str): Path to forecast data.
         obs_path (str): Path to observation data.
-        var_names (list of str): List of variable names.
+        training_vars (list of str): List of variable names used for fine-tuning.
         level (int or None): Pressure level if applicable.
         lat_slice (slice): Latitude slice.
         lon_slice (slice): Longitude slice.
@@ -144,7 +163,7 @@ def load_data(forecast_path, obs_path, var_names, level, lat_slice, lon_slice,
 
     # Rename dims if necessary
     for ds in [ds_forecast, ds_obs]:
-        for v in var_names:
+        for v in training_vars:
             if v not in ds:
                 print(f"Variable '{v}' not found in dataset. Skipping...")
                 print(f"Available variables: {list(ds.data_vars)}")
@@ -158,7 +177,7 @@ def load_data(forecast_path, obs_path, var_names, level, lat_slice, lon_slice,
     # Load each variable separately and store in lists
     fc_vars = []
     obs_vars = []
-    for v in var_names:
+    for v in training_vars:
         # Select region, time, and level (if applicable)
         if 'level' in ds_forecast[v].dims and level is not None:
             fc_var = ds_forecast[v].sel(time=time_slice,
@@ -290,7 +309,7 @@ def unnormalize_data(corrected_norm, stats, is_obs=True):
     return unnorm.reshape(corrected_norm.shape)
 
 
-def train_one_epoch(model, dataloader, optimizer, criterion, device):
+def train_one_epoch(model, dataloader, optimizer, criterion, device, selected_indices):
     """
     Train the model for one epoch.
     """
@@ -302,7 +321,9 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device):
 
         optimizer.zero_grad()
         predictions = model(x_batch)
-        loss = criterion(predictions, y_batch)
+        # Extract only the parts of y_batch corresponding to the output variables
+        y_batch_subset = y_batch[:, selected_indices]
+        loss = criterion(predictions, y_batch_subset)
         loss.backward()
         optimizer.step()
 
@@ -311,7 +332,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device):
     return running_loss / len(dataloader.dataset)
 
 
-def validate_one_epoch(model, dataloader, criterion, device):
+def validate_one_epoch(model, dataloader, criterion, device, selected_indices):
     """
     Validate the model for one epoch.
     """
@@ -322,13 +343,14 @@ def validate_one_epoch(model, dataloader, criterion, device):
         for x_batch, y_batch in dataloader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
             predictions = model(x_batch)
-            loss = criterion(predictions, y_batch)
+            y_batch_subset = y_batch[:, selected_indices]
+            loss = criterion(predictions, y_batch_subset)
             running_loss += loss.item() * x_batch.size(0)
 
     return running_loss / len(dataloader.dataset)
 
 
-def train_model(model, train_loader, valid_loader, epochs, lr, device):
+def train_model(model, train_loader, valid_loader, epochs, lr, device, selected_indices):
     """
     Train the model over multiple epochs.
     """
@@ -336,8 +358,8 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device):
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for epoch in range(epochs):
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        valid_loss = validate_one_epoch(model, valid_loader, criterion, device)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, selected_indices)
+        valid_loss = validate_one_epoch(model, valid_loader, criterion, device, selected_indices)
 
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}")
 
@@ -355,9 +377,8 @@ def apply_correction(model, forecast_data, device):
     return corrected
 
 
-def save_output(output_dir, model_name, var_names, level, lon_vals, lat_vals,
+def save_output(output_dir, run_id, output_vars, lon_vals, lat_vals,
                 time_vals, original_fc, corrected_fc, original_shape,
-                dataset_label='validation',
                 ground_truth_data=None):
     """
     Save original and corrected forecasts (and optionally ground truth) in Zarr format.
@@ -384,16 +405,16 @@ def save_output(output_dir, model_name, var_names, level, lon_vals, lat_vals,
             data=orig_slice,
             coords=[time_vals, lat_vals, lon_vals],
             dims=['time', 'latitude', 'longitude'],
-            name=f"{var_names[i]}_original"
+            name=f"{output_vars[i]}_original"
         )
         da_corr = xr.DataArray(
             data=corr_slice,
             coords=[time_vals, lat_vals, lon_vals],
             dims=['time', 'latitude', 'longitude'],
-            name=f"{var_names[i]}_corrected"
+            name=f"{output_vars[i]}_corrected"
         )
-        ds_dict[f"{var_names[i]}_original"] = da_orig
-        ds_dict[f"{var_names[i]}_corrected"] = da_corr
+        ds_dict[f"{output_vars[i]}_original"] = da_orig
+        ds_dict[f"{output_vars[i]}_corrected"] = da_corr
 
         if ground_truth_data is not None:
             gt_slice = ground_truth_data[:, start:end].reshape(n_time, n_lat, n_lon)
@@ -401,21 +422,20 @@ def save_output(output_dir, model_name, var_names, level, lon_vals, lat_vals,
                 data=gt_slice,
                 coords=[time_vals, lat_vals, lon_vals],
                 dims=['time', 'latitude', 'longitude'],
-                name=f"{var_names[i]}_groundtruth"
+                name=f"{output_vars[i]}_groundtruth"
             )
-            ds_dict[f"{var_names[i]}_groundtruth"] = da_gt
+            ds_dict[f"{output_vars[i]}_groundtruth"] = da_gt
 
     ds_out = xr.Dataset(ds_dict)
-    ds_out.attrs['description'] = (f'Original and corrected forecasts from {model_name} '
-                                   f'using MLP fine-tuning ({dataset_label} set)')
-    level_str = f'_{level}hPa' if level is not None else ''
-    output_filename = f"{model_name}_{dataset_label}_forecasts{level_str}.zarr"
+    ds_out.attrs['description'] = (f'Original and corrected forecasts for run: {run_id}')
+    output_filename = f"{run_id}.zarr"
     output_path = os.path.join(output_dir, output_filename)
     ds_out.to_zarr(output_path, mode='w')
-    print(f"Original and corrected {dataset_label} forecasts saved to {output_path} (Zarr format)")
+    print(f"Forecasts saved to {output_path} (Zarr format)")
 
 
 def main():
+
     # Set up device: prioritize CUDA, then MPS, then CPU
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -425,14 +445,26 @@ def main():
         device = torch.device('cpu')
 
     args = parse_args()
+    run_id = generate_run_id(args)
+
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Prepare region and time slices
-    lat_slice = slice(args.lat_min, args.lat_max)
-    lon_slice = slice(args.lon_min, args.lon_max)
+    if args.region == "full_india":
+        lat_slice = slice(8.68, 27.2)
+        lon_slice = slice(70.75, 87.35)
+    elif args.region == "north_india":
+        lat_slice = slice(21, 35.5)
+        lon_slice = slice(70.75, 87.35)
+    elif args.region == "uttar_pradesh":
+        lat_slice = slice(24.2, 26)
+        lon_slice = slice(78, 87.35)
+    else:
+        print("Invalid region specified. Please choose from 'full_india', 'north_india', or 'uttar_pradesh'.")
+        exit()
+    n_vars = len(args.training_vars)
+
     train_time_slice = slice(args.train_start, args.train_end)
     test_time_slice = slice(args.test_start, args.test_end)
-    n_vars = len(args.var_names)
 
     # =========================================================================
     # 1) Load training data (for all specified variables)
@@ -440,7 +472,7 @@ def main():
     train_fc_full, train_obs_full, lon_vals, lat_vals, train_time_vals, original_shape = load_data(
         args.forecast_path,
         args.obs_path,
-        args.var_names,
+        args.training_vars,
         args.level,
         lat_slice,
         lon_slice,
@@ -469,7 +501,7 @@ def main():
     test_fc, test_obs, _, _, test_time_vals, test_original_shape = load_data(
         args.forecast_path,
         args.obs_path,
-        args.var_names,
+        args.training_vars,
         args.level,
         lat_slice,
         lon_slice,
@@ -496,12 +528,25 @@ def main():
     # 6) Initialize and train the model
     # =========================================================================
     input_dim = train_fc.shape[1]  # equals n_vars * lat * lon
+
+    # Compute the spatial dimension based on the training data
+    spatial_dim = train_fc.shape[1] // len(args.training_vars)
+    # Create a list of indices corresponding to the output variables (which are a subset of training_vars)
+    selected_indices = []
+    for i, var in enumerate(args.training_vars):
+        if var in args.output_vars:
+            # For variable i, its flattened data spans from i*spatial_dim to (i+1)*spatial_dim
+            selected_indices.extend(list(range(i * spatial_dim, (i + 1) * spatial_dim)))
+    # Define the output dimension of the MLP as (number of output vars) * (spatial dimension)
+    output_dim = len(selected_indices)
+
     model = SimpleMLP(input_dim=input_dim,
-                      hidden_dim=512,
-                      output_dim=input_dim,
-                      num_hidden_layers=5)
+                      hidden_dim=args.mlp_hidden_dim,
+                      output_dim=output_dim,
+                      num_hidden_layers=args.mlp_layers)
     model.to(device)
-    model = train_model(model, train_loader, val_loader, args.epochs, args.learning_rate, device)
+    model = train_model(model, train_loader, val_loader, epochs= args.epochs, 
+                        learning_rate = 1e-5, device = device, selected_indices = selected_indices)
 
     # Save model weights
     model_path = os.path.join(args.output_dir, f"{args.model_name}_mlp_correction.pt")
@@ -528,16 +573,14 @@ def main():
     # =========================================================================
     save_output(
         output_dir=args.output_dir,
-        model_name=args.model_name,
-        var_names=args.var_names,
-        level=args.level,
+        run_id = run_id,
+        output_vars=args.output_vars,
         lon_vals=lon_vals,
         lat_vals=lat_vals,
         time_vals=test_time_vals,
         original_fc=test_fc,
         corrected_fc=corrected_test_fc,
         original_shape=test_original_shape,
-        dataset_label='test',
         ground_truth_data=test_obs
     )
 

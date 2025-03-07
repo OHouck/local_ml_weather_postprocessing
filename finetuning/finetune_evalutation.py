@@ -14,8 +14,31 @@ import calendar
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.gridspec as gridspec
+import socket
+
+def setup_directories():
+    # check if we are on the server or local
+    nodename = socket.gethostname()
+    if nodename == "oMac.local": # local laptop
+        root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
+    else:
+        raise Exception("Unknown environment, Please specify the root directory")
+
+    dirs = {
+        'root': root,
+        'raw': os.path.join(root, "raw"),
+        'processed': os.path.join(root, "processed"),
+        'fig': os.path.join(root, "../figures/finetuning"),
+        'input': "~/wb_finetune_test"
+    }
+
+    for path in dirs.values():
+        os.makedirs(path, exist_ok=True)
+
+    return dirs
 
 def main():
+
 
     # ==========================================================================
     # User Configuration
@@ -24,12 +47,6 @@ def main():
     # Where the Zarr outputs from weatherbench2_finetuning.py are stored
     # Each model (pangu, ifs, neural_gcm, etc.) should have a .zarr directory
     # containing the ground truth, original forecast, and corrected forecast.
-    input_dir = "~/wb_finetune_test" 
-
-    # Where to save output figures
-    fig_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning_weatherbench2"
-
-    raw_data_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw"
 
     # OH: eventually would like to select region using lat/lon bounds
     # region = pakistan
@@ -60,7 +77,9 @@ def main():
     # Load Data
     # ==========================================================================
 
-    forecast_path = os.path.join(input_dir, f"{model}_forecasts_{vars_trained_using}{level}.zarr")
+    dir = setup_directories()
+
+    forecast_path = os.path.join(dir['input_dir'], f"{model}_forecasts_{vars_trained_using}{level}.zarr")
     print(f"Loading forecast data from {forecast_path}")
     ds_forecasts = xr.open_zarr(forecast_path) if forecast_path.endswith(".zarr") else xr.open_dataset(forecast_path)
 
@@ -128,7 +147,7 @@ def main():
     plt.tight_layout()
 
     # Save the time-series figure
-    save_path = os.path.join(fig_dir, f"mse_time_series_{var_name}_{model}_traind_with_{vars_trained_using}.png")
+    save_path = os.path.join(dir["fig"], f"mse_time_series_{var_name}_{model}_traind_with_{vars_trained_using}.png")
     plt.savefig(save_path, dpi=150)
     print(f"Time-series plot saved to {save_path}")
     plt.close()
@@ -201,7 +220,7 @@ def main():
     plt.suptitle(f"Spatial MSE Map for {model} - {var_name}", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-    save_path_spatial = os.path.join(fig_dir, f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
+    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
     plt.savefig(save_path_spatial, dpi=150)
     print(f"Spatial MSE plot with base map and elevation gradients saved to {save_path_spatial}")
     plt.close()
