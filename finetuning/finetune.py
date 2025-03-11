@@ -24,8 +24,8 @@ python3 finetuning/finetune.py \
     --train_start="2021-01-01" --train_end="2021-12-30" \
     --test_start="2022-01-01" --test_end="2022-12-30" \
     --lead_time_hours=48 \
-    --training_vars = 10m_v_component_of_wind 10m_u_component_of_wind \
-    --output_vars = 10m_v_component_of_wind 10m_u_component_of_wind \
+    --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
+    --output_vars 10m_v_component_of_wind 10m_u_component_of_wind \
     --epochs=1000 \
     --mlp_hidd_dim=512 \
     --mlp_layers=5
@@ -34,6 +34,7 @@ python3 finetuning/finetune.py \
 
 import argparse
 import os
+import time
 
 import numpy as np
 import xarray as xr
@@ -41,8 +42,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import socket
-
-
 
 class SimpleMLP(nn.Module):
     """
@@ -147,16 +146,35 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
             time_vals (np.ndarray): Time values.
             original_shape (tuple): (n_time, n_vars, n_lat, n_lon)
     """
+
     # Open datasets (supporting Zarr or NetCDF)
-    ds_forecast = (
-        xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
-        else xr.open_dataset(forecast_path)
-    )
-    ds_obs = (
-        xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
-        else xr.open_dataset(obs_path)
-    )
+    # Use kvikio engine for zarr datasets, with chunking for lazy loading
+    # if forecast_path.endswith('.zarr'):
+    #     ds_forecast = xr.open_zarr(forecast_path, decode_timedelta = True, engine='kvikio', chunks={'time': 10})
+    # else:
+    #     ds_forecast = xr.open_dataset(forecast_path)
+
+    # if obs_path.endswith('.zarr'):
+    #     ds_obs = xr.open_zarr(obs_path, decode_timedelta = True, engine='kvikio', chunks={'time': 10})
+    # else:
+    #     ds_obs = xr.open_dataset(obs_path)
+    data_load_start = time.time()
+    if forecast_path.endswith('.zarr'):
+        ds_forecast = xr.open_zarr(forecast_path, decode_timedelta = True) 
+    else:
+        ds_forecast = xr.open_dataset(forecast_path, decode_timedelta = True)
+
+    if obs_path.endswith('.zarr'):
+        ds_obs = xr.open_zarr(obs_path, decode_timedelta = True)
+    else:
+        ds_obs = xr.open_dataset(obs_path, decode_timedelta = True)
+
+    data_load_end = time.time()
+
+    print(f"Data loading time: {data_load_end - data_load_start:.2f} seconds")
     
+    rename_time_start = time.time()
+
     # Ensure consistent ordering of latitude
     ds_forecast = ds_forecast.sortby('latitude')
     ds_obs = ds_obs.sortby('latitude')
@@ -199,6 +217,8 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
                                     longitude=lon_slice)
         # For forecast, select the desired lead time
         fc_var = fc_var.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
+
+
         if 'prediction_timedelta' in fc_var.coords:
             fc_var = fc_var.drop_vars('prediction_timedelta')
         fc_vars.append(fc_var)
@@ -211,6 +231,9 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
     # Align datasets along common coordinates
     fc_concat, obs_concat = xr.align(fc_concat, obs_concat, join='inner')
 
+    rename_time_end = time.time()
+    print(f"Renaming time: {rename_time_end - rename_time_start:.2f} seconds")
+
     # Convert to numpy and record original shape
     original_shape = fc_concat.shape  # (n_time, n_vars, n_lat, n_lon)
     fc_data = fc_concat.values.reshape(original_shape[0], original_shape[1] * original_shape[2] * original_shape[3])
@@ -220,8 +243,6 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
     lat_vals = fc_concat.latitude.values
     time_vals = fc_concat.time.values
 
-    print("Forecast data shape (flattened):", fc_data.shape)
-    print("Observation data shape (flattened):", obs_data.shape)
 
     return fc_data, obs_data, lon_vals, lat_vals, time_vals, original_shape
 
@@ -275,14 +296,16 @@ def normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars):
     train_obs_norm = ((train_obs_reshaped - mean_obs) / (std_obs + 1e-8)).reshape(train_obs.shape)
     val_obs_norm = ((val_obs_reshaped - mean_obs) / (std_obs + 1e-8)).reshape(val_obs.shape)
 
+
     stats = {
-        'mean_fc': mean_fc.squeeze(),  # shape (n_vars,)
-        'std_fc': std_fc.squeeze(),
-        'mean_obs': mean_obs.squeeze(),
-        'std_obs': std_obs.squeeze(),
+        'mean_fc': np.atleast_1d(mean_fc.squeeze()),  # shape (n_vars,) even if n_vars == 1
+        'std_fc': np.atleast_1d(std_fc.squeeze()),
+        'mean_obs': np.atleast_1d(mean_obs.squeeze()),
+        'std_obs': np.atleast_1d(std_obs.squeeze()),
         'n_vars': n_vars,
         'space_dim': space_dim
     }
+
     return train_fc_norm, val_fc_norm, train_obs_norm, val_obs_norm, stats
 
 
@@ -444,8 +467,7 @@ def main():
     else:
         device = torch.device('cpu')
 
-    print("device", device)
-
+    print("Device:", device)
 
     args = parse_args()
     run_id = generate_run_id(args)
@@ -453,7 +475,10 @@ def main():
     print("run id")
     print(run_id)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    # expand path if running locally 
+    if socket.gethostname() == "oMac.local":
+        output_dir = os.path.expanduser(args.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
     if args.region == "full_india":
         lat_slice = slice(8.68, 27.2)
@@ -472,6 +497,8 @@ def main():
     train_time_slice = slice(args.train_start, args.train_end)
     test_time_slice = slice(args.test_start, args.test_end)
 
+    start_time = time.time()
+
     # =========================================================================
     # 1) Load training data (for all specified variables)
     # =========================================================================
@@ -486,7 +513,17 @@ def main():
         args.lead_time_hours
     )
 
+    end_time = time.time()
+
+    print(f"full loading time: {end_time - start_time:.2f} seconds")
+
+    # print shape of training data
+    print("Shape of training data:")
+    print(f"Forecast: {train_fc_full.shape}")
+    print(f"Observations: {train_obs_full.shape}")
+
     print("Loaded Training Data")
+    exit()
 
     # =========================================================================
     # 2) Randomly split training data into TRAIN (80%) and VAL (20%)
@@ -506,6 +543,7 @@ def main():
     # =========================================================================
     # 3) Load the test data
     # =========================================================================
+    start_time = time.time()
     test_fc, test_obs, _, _, test_time_vals, test_original_shape = load_data(
         args.forecast_path,
         args.obs_path,
@@ -517,7 +555,12 @@ def main():
         args.lead_time_hours
     )
 
+    end_time = time.time()
+
+    print(f"Test data loading time: {end_time - start_time:.2f} seconds")
+
     print("Loaded Test Data")
+
 
     # =========================================================================
     # 4) Normalize training & validation data variable-wise using training stats
@@ -531,8 +574,8 @@ def main():
     # =========================================================================
     # 5) Create PyTorch DataLoaders
     # =========================================================================
-    train_loader = create_dataloader(train_fc_norm, train_obs_norm, args.batch_size)
-    val_loader = create_dataloader(val_fc_norm, val_obs_norm, args.batch_size)
+    train_loader = create_dataloader(train_fc_norm, train_obs_norm, batch_size = 32)
+    val_loader = create_dataloader(val_fc_norm, val_obs_norm, batch_size = 32)
 
     # =========================================================================
     # 6) Initialize and train the model
@@ -555,11 +598,13 @@ def main():
                       output_dim=output_dim,
                       num_hidden_layers=args.mlp_layers)
     model.to(device)
-    model = train_model(model, train_loader, val_loader, epochs= args.epochs, 
-                        learning_rate = 1e-5, device = device, selected_indices = selected_indices)
+
+    # XX chagne epochs back to arg.epochs
+    model = train_model(model, train_loader, val_loader, epochs= 10,
+                        lr = 1e-5, device = device, selected_indices = selected_indices)
 
     # Save model weights
-    model_path = os.path.join(args.output_dir, f"{args.model_name}_mlp_correction.pt")
+    model_path = os.path.join(output_dir, f"{args.model_name}_mlp_correction.pt")
     torch.save(model.state_dict(), model_path)
     print(f"Model weights saved to {model_path}")
 
@@ -582,7 +627,7 @@ def main():
     # 9) Save outputs for the test set
     # =========================================================================
     save_output(
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         run_id = run_id,
         output_vars=args.output_vars,
         lon_vals=lon_vals,
