@@ -444,8 +444,14 @@ def main():
     else:
         device = torch.device('cpu')
 
+    print("device", device)
+
+
     args = parse_args()
     run_id = generate_run_id(args)
+
+    print("run id")
+    print(run_id)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -480,6 +486,8 @@ def main():
         args.lead_time_hours
     )
 
+    print("Loaded Training Data")
+
     # =========================================================================
     # 2) Randomly split training data into TRAIN (80%) and VAL (20%)
     # =========================================================================
@@ -508,6 +516,8 @@ def main():
         test_time_slice,
         args.lead_time_hours
     )
+
+    print("Loaded Test Data")
 
     # =========================================================================
     # 4) Normalize training & validation data variable-wise using training stats
