@@ -1,77 +1,140 @@
 #!/usr/bin/env python3
 """
 weatherbench2_finetuning.py
-Author: Ozzy Houck (modified by ChatGPT)
-Date: 12/20/2024 (modified 2025-02-25)
+Author: Ozzy Houck 
+Date: 12/20/2024 (modified 2025-03-11)
 
 This script fine-tunes an MLP correction model to a specific region using model
-forecasts and corresponding observations from weatherbench2. It now supports fine-tuning
-over multiple variables. The model learns a mapping from the concatenated model-forecasted
-fields (for all specified variables) to the corresponding observed fields.
+forecasts and corresponding observations from weatherbench2.
 ----------------------------
 
-All India: lat_min= 8.68 lat_max = 27.2, lon_min=70.75, lon_max = 87.35
-Northern India: lat_min= 21, lat_max = 35.5, lon_min=70.75, lon_max = 87.35
-Uttar Pradesh: lat_min= 24.2, lat_max = 26, lon_min=78, lon_max = 87.35
-
-Example usage 
+Example usage:
 python3 finetuning/finetune.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
     --output_dir="~/wb_finetune_test" \
     --model_name="pangu" \
-    --region="north_india
+    --region="north_india" \
     --train_start="2021-01-01" --train_end="2021-12-30" \
     --test_start="2022-01-01" --test_end="2022-12-30" \
     --lead_time_hours=48 \
     --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
     --output_vars 10m_v_component_of_wind 10m_u_component_of_wind \
     --epochs=1000 \
-    --mlp_hidd_dim=512 \
+    --mlp_hidden_dim=512 \
     --mlp_layers=5
-
 """
 
 import argparse
 import os
 import time
+import socket
 
 import numpy as np
 import xarray as xr
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import socket
+import pandas as pd  
+from torch.utils.data import DataLoader
+
 
 class SimpleMLP(nn.Module):
-    """
-    A simple Multi-Layer Perceptron (MLP) for post-processing weather forecast data.
-    """
     def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3):
         super(SimpleMLP, self).__init__()
         layers = []
-        # First layer
         layers.append(nn.Linear(input_dim, hidden_dim))
         layers.append(nn.ReLU())
-        # Hidden layers
         for _ in range(num_hidden_layers - 1):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
-        # Output layer
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
-        """
-        Forward pass of the MLP.
-        """
         return self.net(x)
 
+class WeatherIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, training_vars, level,
+                 lat_slice, lon_slice, start_date, end_date, lead_time_hours,
+                 ds_forecast, ds_obs, chunk_freq='10D', subset=None):
+
+        self.training_vars = training_vars
+        self.level = level
+        self.lat_slice = lat_slice
+        self.lon_slice = lon_slice
+        self.lead_time_hours = lead_time_hours
+        self.ds_forecast = ds_forecast
+        self.ds_obs = ds_obs
+        self.chunk_freq = chunk_freq
+        self.subset = subset
+
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        if subset is not None:
+            total_days = (end_ts - start_ts).days
+            split_days = int(total_days * 0.8)
+            if subset == "train":
+                self.start_date = start_date
+                self.end_date = (start_ts + pd.Timedelta(days=split_days)).strftime('%Y-%m-%d')
+            elif subset == "val":
+                self.start_date = (start_ts + pd.Timedelta(days=split_days + 1)).strftime('%Y-%m-%d')
+                self.end_date = end_date
+        else:
+            self.start_date = start_date
+            self.end_date = end_date
+
+        self.chunk_dates = self.get_time_chunks(self.start_date, self.end_date, freq=self.chunk_freq)
+        self._length = self.compute_length()  
+
+    def get_time_chunks(self, start_date, end_date, freq='10D'):
+        dates = pd.date_range(start=start_date, end=end_date, freq=freq)
+        if dates[-1] != pd.to_datetime(end_date):
+            dates = dates.append(pd.DatetimeIndex([pd.to_datetime(end_date)]))
+        return dates
+
+    def compute_length(self):
+        """Compute the total number of samples over all chunks."""
+        total = 0
+        for i in range(len(self.chunk_dates) - 1):
+            chunk_start = self.chunk_dates[i].strftime('%Y-%m-%d')
+            chunk_end = self.chunk_dates[i+1].strftime('%Y-%m-%d')
+            # Use the already opened ds_forecast to slice the time coordinate.
+            ds_time = self.ds_forecast.sel(time=slice(chunk_start, chunk_end))
+            total += ds_time.time.size
+        return int(total)
+
+    def __len__(self):
+        return self._length
+
+    def __iter__(self):
+        # Iterate over each 10-day chunk and yield individual samples.
+        for i in range(len(self.chunk_dates) - 1):
+            chunk_start = self.chunk_dates[i].strftime('%Y-%m-%d')
+            chunk_end = self.chunk_dates[i+1].strftime('%Y-%m-%d')
+            time_slice = slice(chunk_start, chunk_end)
+            print(f"[CHUNK] Loading data from {chunk_start} to {chunk_end}")
+            fc_chunk, obs_chunk, _, _, _, _ = load_data(
+                self.training_vars,
+                self.level,
+                self.lat_slice,
+                self.lon_slice,
+                time_slice,
+                self.lead_time_hours,
+                ds_forecast=self.ds_forecast,  
+                ds_obs=self.ds_obs             
+            )
+
+            # fc_chunk and obs_chunk are (lazy) dask arrays; iterate over time steps:
+            print("chunk shape")
+            print(range(fc_chunk.shape[0]))
+            for t in range(fc_chunk.shape[0]):
+                # Compute only this time slice, not the whole array
+                fc_sample = fc_chunk[t].compute() if hasattr(fc_chunk, 'compute') else fc_chunk[t]
+                obs_sample = obs_chunk[t].compute() if hasattr(obs_chunk, 'compute') else obs_chunk[t]
+                yield fc_sample, obs_sample
 
 def parse_args():
-    """
-    Parse command-line arguments for fine-tuning the MLP on regional post-processing.
-    """
     parser = argparse.ArgumentParser(description='Fine-tune MLP for regional post-processing')
     parser.add_argument('--forecast_path', type=str, required=True,
                         help='Path to forecast data (e.g. Zarr or NetCDF)')
@@ -82,7 +145,7 @@ def parse_args():
     parser.add_argument('--model_name', type=str, default="pangu",
                         help='Name of the base model (e.g. pangu, ifs, neural_gcm)')
     parser.add_argument('--region', type=str, default="north_india",
-                        help='Region to train over(e.g. full_india, north_india, uttar_pradesh)')
+                        help='Region to train over (e.g. full_india, north_india, uttar_pradesh)')
     parser.add_argument('--train_start', type=str, default='2018-01-01',
                         help='Training start date')
     parser.add_argument('--train_end', type=str, default='2019-12-30',
@@ -108,78 +171,36 @@ def parse_args():
     return parser.parse_args()
 
 def generate_run_id(args):
-    "Helper function to build string identifier for the run."
-    # Region string from lat/lon bounds
     region_str = f"{args.region}"
-    # Dates string from training and testing periods
     dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
-    # Variables string (join with a dash or underscore)
     training_vars_str = "_".join(args.training_vars)
-    ouput_vars_str = "_".join(args.output_vars)
-    # MLP architecture string
+    output_vars_str = "_".join(args.output_vars)
     mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
-    # Combine all pieces along with the weather model and lead time
-    run_id = f"{args.model_name}_{region_str}_{dates_str}_{args.lead_time_hours}h_train_{training_vars_str}_output{ouput_vars_str}_{mlp_str}"
+    run_id = f"{args.model_name}_{region_str}_{dates_str}_{args.lead_time_hours}h_train_{training_vars_str}_output{output_vars_str}_{mlp_str}"
     return run_id
 
-def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slice,
-              time_slice, lead_time_hours):
-    """
-    Load forecast and observation data for the specified variables and region.
-
-    Args:
-        forecast_path (str): Path to forecast data.
-        obs_path (str): Path to observation data.
-        training_vars (list of str): List of variable names used for fine-tuning.
-        level (int or None): Pressure level if applicable.
-        lat_slice (slice): Latitude slice.
-        lon_slice (slice): Longitude slice.
-        time_slice (slice): Time slice.
-        lead_time_hours (int): Lead time in hours for forecast.
-
-    Returns:
-        tuple:
-            fc_data (np.ndarray): Flattened forecast data of shape (time, n_vars*lat*lon)
-            obs_data (np.ndarray): Flattened observation data of shape (time, n_vars*lat*lon)
-            lon_vals (np.ndarray): Longitude values.
-            lat_vals (np.ndarray): Latitude values.
-            time_vals (np.ndarray): Time values.
-            original_shape (tuple): (n_time, n_vars, n_lat, n_lon)
-    """
-
-    # Open datasets (supporting Zarr or NetCDF)
-    # Use kvikio engine for zarr datasets, with chunking for lazy loading
-    # if forecast_path.endswith('.zarr'):
-    #     ds_forecast = xr.open_zarr(forecast_path, decode_timedelta = True, engine='kvikio', chunks={'time': 10})
-    # else:
-    #     ds_forecast = xr.open_dataset(forecast_path)
-
-    # if obs_path.endswith('.zarr'):
-    #     ds_obs = xr.open_zarr(obs_path, decode_timedelta = True, engine='kvikio', chunks={'time': 10})
-    # else:
-    #     ds_obs = xr.open_dataset(obs_path)
-    data_load_start = time.time()
-    if forecast_path.endswith('.zarr'):
-        ds_forecast = xr.open_zarr(forecast_path, decode_timedelta = True) 
+def check_dataset_alignment(ds1, ds2, coord_vars=['time', 'latitude', 'longitude']):
+    """Helper function to check alignment of coordinates between two datasets."""
+    misaligned = []
+    for coord in coord_vars:
+        if coord in ds1.coords and coord in ds2.coords:
+            # Check if the coordinate arrays are equal.
+            if not np.array_equal(ds1[coord].values, ds2[coord].values):
+                misaligned.append(coord)
+        else:
+            misaligned.append(coord)
+    if misaligned:
+        print(f"Warning: The following coordinates are not aligned between forecast and observation datasets: {misaligned}")
     else:
-        ds_forecast = xr.open_dataset(forecast_path, decode_timedelta = True)
+        print("Datasets are aligned on coordinates:", coord_vars)
 
-    if obs_path.endswith('.zarr'):
-        ds_obs = xr.open_zarr(obs_path, decode_timedelta = True)
-    else:
-        ds_obs = xr.open_dataset(obs_path, decode_timedelta = True)
+def load_data(training_vars, level, lat_slice, lon_slice,
+              time_slice, lead_time_hours, ds_forecast=None, ds_obs=None):  
 
-    data_load_end = time.time()
-
-    print(f"Data loading time: {data_load_end - data_load_start:.2f} seconds")
-    
-    rename_time_start = time.time()
-
-    # Ensure consistent ordering of latitude
+    time_start = time.time()
     ds_forecast = ds_forecast.sortby('latitude')
     ds_obs = ds_obs.sortby('latitude')
 
-    # Rename dims if necessary
     for ds in [ds_forecast, ds_obs]:
         for v in training_vars:
             if v not in ds:
@@ -191,12 +212,13 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
                 ds = ds.rename({'lat': 'latitude'})
             if 'longitude' not in dims and 'lon' in dims:
                 ds = ds.rename({'lon': 'longitude'})
+    time_end = time.time()
+    print(f"Time to sort and rename: {time_end - time_start:.2f} seconds")
 
-    # Load each variable separately and store in lists
+    time_start = time.time()
     fc_vars = []
     obs_vars = []
     for v in training_vars:
-        # Select region, time, and level (if applicable)
         if 'level' in ds_forecast[v].dims and level is not None:
             fc_var = ds_forecast[v].sel(time=time_slice,
                                         latitude=lat_slice,
@@ -215,42 +237,51 @@ def load_data(forecast_path, obs_path, training_vars, level, lat_slice, lon_slic
             obs_var = ds_obs[v].sel(time=time_slice,
                                     latitude=lat_slice,
                                     longitude=lon_slice)
-        # For forecast, select the desired lead time
         fc_var = fc_var.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
-
-
         if 'prediction_timedelta' in fc_var.coords:
             fc_var = fc_var.drop_vars('prediction_timedelta')
         fc_vars.append(fc_var)
         obs_vars.append(obs_var)
 
-    # Concatenate variables along a new dimension called 'variable'
+    print(f"Time to select vars: {time.time() - time_start:.2f} seconds")
+
+    start_time = time.time()
+    # # Create Datasets from the list of DataArrays (assuming variables share the same coordinates)
+    # fc_ds = xr.Dataset({var: fc for var, fc in zip(training_vars, fc_vars)})
+    # obs_ds = xr.Dataset({var: obs for var, obs in zip(training_vars, obs_vars)})
+
+    # # Convert the Dataset into a single DataArray with a new "variable" dimension.
+    # fc_concat = fc_ds.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
+    # obs_concat = obs_ds.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
+
+    # # If the coordinates are identical, alignment is not needed.
+    # original_shape = fc_concat.shape
+
+    # # Instead of reshaping using .data.reshape, stack the non-time dimensions into a single dimension.
+    # # This operation is lazy if the underlying arrays are dask arrays.
+    # fc_data = fc_concat.stack(features=('variable', 'latitude', 'longitude')).data
+    # obs_data = obs_concat.stack(features=('variable', 'latitude', 'longitude')).data
+
+    # lon_vals = fc_concat.longitude.data
+    # lat_vals = fc_concat.latitude.data
+    # time_vals = fc_concat.time.data
+
+
     fc_concat = xr.concat(fc_vars, dim='variable').transpose('time', 'variable', 'latitude', 'longitude')
     obs_concat = xr.concat(obs_vars, dim='variable').transpose('time', 'variable', 'latitude', 'longitude')
-
-    # Align datasets along common coordinates
     fc_concat, obs_concat = xr.align(fc_concat, obs_concat, join='inner')
+    original_shape = fc_concat.shape
+    fc_data = fc_concat.data.reshape(original_shape[0], -1)
+    obs_data = obs_concat.data.reshape(original_shape[0], -1)
+    lon_vals = fc_concat.longitude.data
+    lat_vals = fc_concat.latitude.data
+    time_vals = fc_concat.time.data
 
-    rename_time_end = time.time()
-    print(f"Renaming time: {rename_time_end - rename_time_start:.2f} seconds")
-
-    # Convert to numpy and record original shape
-    original_shape = fc_concat.shape  # (n_time, n_vars, n_lat, n_lon)
-    fc_data = fc_concat.values.reshape(original_shape[0], original_shape[1] * original_shape[2] * original_shape[3])
-    obs_data = obs_concat.values.reshape(original_shape[0], original_shape[1] * original_shape[2] * original_shape[3])
-
-    lon_vals = fc_concat.longitude.values
-    lat_vals = fc_concat.latitude.values
-    time_vals = fc_concat.time.values
-
+    print(f"Time to combine vars: {time.time() - start_time:.2f} seconds")
 
     return fc_data, obs_data, lon_vals, lat_vals, time_vals, original_shape
 
-
 def create_dataloader(forecast_data, obs_data, batch_size):
-    """
-    Create a PyTorch DataLoader from forecast and observation data.
-    """
     dataset = torch.utils.data.TensorDataset(
         torch.from_numpy(forecast_data).float(),
         torch.from_numpy(obs_data).float()
@@ -260,35 +291,19 @@ def create_dataloader(forecast_data, obs_data, batch_size):
                                              shuffle=True)
     return dataloader
 
-
 def normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars):
-    """
-    Normalize forecast and observation data variable-wise using training statistics.
-
-    Args:
-        train_fc (np.ndarray): Training forecast data of shape (n_time, n_vars*space).
-        val_fc (np.ndarray): Validation forecast data.
-        train_obs (np.ndarray): Training observation data.
-        val_obs (np.ndarray): Validation observation data.
-        n_vars (int): Number of variables.
-
-    Returns:
-        tuple: Normalized training/validation data and normalization statistics.
-    """
-    # Determine spatial size (lat*lon)
     space_dim = train_fc.shape[1] // n_vars
     n_time = train_fc.shape[0]
 
-    # Reshape to (n_time, n_vars, space)
+    # forecast data stats
     train_fc_reshaped = train_fc.reshape(n_time, n_vars, space_dim)
     val_fc_reshaped = val_fc.reshape(val_fc.shape[0], n_vars, space_dim)
-    # Compute stats per variable for forecast
-    mean_fc = train_fc_reshaped.mean(axis=(0,2), keepdims=True)  # shape (1, n_vars, 1)
+    mean_fc = train_fc_reshaped.mean(axis=(0,2), keepdims=True)
     std_fc = train_fc_reshaped.std(axis=(0,2), keepdims=True)
     train_fc_norm = ((train_fc_reshaped - mean_fc) / (std_fc + 1e-8)).reshape(train_fc.shape)
     val_fc_norm = ((val_fc_reshaped - mean_fc) / (std_fc + 1e-8)).reshape(val_fc.shape)
 
-    # Repeat for observations
+    # observation data stats
     train_obs_reshaped = train_obs.reshape(n_time, n_vars, space_dim)
     val_obs_reshaped = val_obs.reshape(val_obs.shape[0], n_vars, space_dim)
     mean_obs = train_obs_reshaped.mean(axis=(0,2), keepdims=True)
@@ -296,31 +311,17 @@ def normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars):
     train_obs_norm = ((train_obs_reshaped - mean_obs) / (std_obs + 1e-8)).reshape(train_obs.shape)
     val_obs_norm = ((val_obs_reshaped - mean_obs) / (std_obs + 1e-8)).reshape(val_obs.shape)
 
-
     stats = {
-        'mean_fc': np.atleast_1d(mean_fc.squeeze()),  # shape (n_vars,) even if n_vars == 1
+        'mean_fc': np.atleast_1d(mean_fc.squeeze()),
         'std_fc': np.atleast_1d(std_fc.squeeze()),
         'mean_obs': np.atleast_1d(mean_obs.squeeze()),
         'std_obs': np.atleast_1d(std_obs.squeeze()),
         'n_vars': n_vars,
         'space_dim': space_dim
     }
-
     return train_fc_norm, val_fc_norm, train_obs_norm, val_obs_norm, stats
 
-
 def unnormalize_data(corrected_norm, stats, is_obs=True):
-    """
-    Un-normalize corrected data variable-wise using stored statistics.
-
-    Args:
-        corrected_norm (np.ndarray): Normalized corrected data (n_time, n_vars*space).
-        stats (dict): Contains per-variable stats.
-        is_obs (bool): Whether to unnormalize to observation scale.
-
-    Returns:
-        np.ndarray: Unnormalized data with same shape as input.
-    """
     n_time = corrected_norm.shape[0]
     n_vars = stats['n_vars']
     space_dim = stats['space_dim']
@@ -331,36 +332,28 @@ def unnormalize_data(corrected_norm, stats, is_obs=True):
         unnorm = corrected_norm_reshaped * (stats['std_fc'][None, :, None] + 1e-8) + stats['mean_fc'][None, :, None]
     return unnorm.reshape(corrected_norm.shape)
 
-
 def train_one_epoch(model, dataloader, optimizer, criterion, device, selected_indices):
-    """
-    Train the model for one epoch.
-    """
     model.train()
     running_loss = 0.0
 
+    print("length")
+    print(len(dataloader.dataset))
+
     for x_batch, y_batch in dataloader:
         x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-
         optimizer.zero_grad()
         predictions = model(x_batch)
-        # Extract only the parts of y_batch corresponding to the output variables
         y_batch_subset = y_batch[:, selected_indices]
         loss = criterion(predictions, y_batch_subset)
         loss.backward()
         optimizer.step()
-
         running_loss += loss.item() * x_batch.size(0)
-
-    return running_loss / len(dataloader.dataset)
-
+    return running_loss / len(dataloader.dataset) 
 
 def validate_one_epoch(model, dataloader, criterion, device, selected_indices):
-    """
-    Validate the model for one epoch.
-    """
     model.eval()
     running_loss = 0.0
+
 
     with torch.no_grad():
         for x_batch, y_batch in dataloader:
@@ -369,57 +362,36 @@ def validate_one_epoch(model, dataloader, criterion, device, selected_indices):
             y_batch_subset = y_batch[:, selected_indices]
             loss = criterion(predictions, y_batch_subset)
             running_loss += loss.item() * x_batch.size(0)
-
     return running_loss / len(dataloader.dataset)
 
-
 def train_model(model, train_loader, valid_loader, epochs, lr, device, selected_indices):
-    """
-    Train the model over multiple epochs.
-    """
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-
     for epoch in range(epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, selected_indices)
         valid_loss = validate_one_epoch(model, valid_loader, criterion, device, selected_indices)
-
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}")
-
     return model
 
-
 def apply_correction(model, forecast_data, device):
-    """
-    Apply the MLP-based correction to forecast data.
-    """
     model.eval()
     with torch.no_grad():
         x_tensor = torch.from_numpy(forecast_data).float().to(device)
         corrected = model(x_tensor).cpu().numpy()
     return corrected
 
-
 def save_output(output_dir, run_id, output_vars, lon_vals, lat_vals,
                 time_vals, original_fc, corrected_fc, original_shape,
                 ground_truth_data=None):
-    """
-    Save original and corrected forecasts (and optionally ground truth) in Zarr format.
-    Supports both single and multiple variables.
-    """
-    # Determine if multiple variables are present
     if len(original_shape) == 4:
         n_time, n_vars, n_lat, n_lon = original_shape
     else:
-        # Single variable case (reshape to 4D with n_vars=1)
         n_time, n_lon, n_lat = original_shape
         n_vars = 1
         original_fc = original_fc.reshape(n_time, n_vars * n_lon * n_lat)
         corrected_fc = corrected_fc.reshape(n_time, n_vars * n_lon * n_lat)
-
     ds_dict = {}
     for i in range(n_vars):
-        # Extract slice for variable i
         start = i * (n_lat * n_lon)
         end = (i + 1) * (n_lat * n_lon)
         orig_slice = original_fc[:, start:end].reshape(n_time, n_lat, n_lon)
@@ -438,7 +410,6 @@ def save_output(output_dir, run_id, output_vars, lon_vals, lat_vals,
         )
         ds_dict[f"{output_vars[i]}_original"] = da_orig
         ds_dict[f"{output_vars[i]}_corrected"] = da_corr
-
         if ground_truth_data is not None:
             gt_slice = ground_truth_data[:, start:end].reshape(n_time, n_lat, n_lon)
             da_gt = xr.DataArray(
@@ -448,38 +419,41 @@ def save_output(output_dir, run_id, output_vars, lon_vals, lat_vals,
                 name=f"{output_vars[i]}_groundtruth"
             )
             ds_dict[f"{output_vars[i]}_groundtruth"] = da_gt
-
     ds_out = xr.Dataset(ds_dict)
-    ds_out.attrs['description'] = (f'Original and corrected forecasts for run: {run_id}')
+    ds_out.attrs['description'] = f'Original and corrected forecasts for run: {run_id}'
     output_filename = f"{run_id}.zarr"
     output_path = os.path.join(output_dir, output_filename)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path} (Zarr format)")
 
 
+# =============================================================================
+# Main Function 
+# =============================================================================
+
 def main():
 
-    # Set up device: prioritize CUDA, then MPS, then CPU
+    # Set device for training. look if apple silicon is available if no GPU
     if torch.cuda.is_available():
         device = torch.device('cuda')
     elif torch.backends.mps.is_available():
         device = torch.device('mps')
     else:
         device = torch.device('cpu')
-
     print("Device:", device)
 
     args = parse_args()
     run_id = generate_run_id(args)
+    print("run id:", run_id)
 
-    print("run id")
-    print(run_id)
-
-    # expand path if running locally 
+    # Create output directory if it doesn't exist.
     if socket.gethostname() == "oMac.local":
         output_dir = os.path.expanduser(args.output_dir)
+    else:
+        output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
+    # Set region slices.
     if args.region == "full_india":
         lat_slice = slice(8.68, 27.2)
         lon_slice = slice(70.75, 87.35)
@@ -490,107 +464,92 @@ def main():
         lat_slice = slice(24.2, 26)
         lon_slice = slice(78, 87.35)
     else:
-        print("Invalid region specified. Please choose from 'full_india', 'north_india', or 'uttar_pradesh'.")
+        print("Invalid region specified.")
         exit()
     n_vars = len(args.training_vars)
 
-    train_time_slice = slice(args.train_start, args.train_end)
-    test_time_slice = slice(args.test_start, args.test_end)
+    #===========================================================
+    # Load forecast and observation datasets
+    #===========================================================
 
-    start_time = time.time()
+    if args.forecast_path.endswith('.zarr'):
+        ds_forecast = xr.open_zarr(args.forecast_path, decode_timedelta=True).persist()
+    else:
+           ds_forecast = xr.open_zarr(args.forecast_path, decode_timedelta=True).persist()
+    if args.obs_path.endswith('.zarr'):
+        ds_obs = xr.open_zarr(args.obs_path, decode_timedelta=True).persist()
+    else:
+        ds_obs = xr.open_dataset(args.obs_path, decode_timedelta=True).persist()
+    
+    # Check alignment between the datasets
+    check_dataset_alignment(ds_forecast, ds_obs)
 
-    # =========================================================================
-    # 1) Load training data (for all specified variables)
-    # =========================================================================
-    train_fc_full, train_obs_full, lon_vals, lat_vals, train_time_vals, original_shape = load_data(
-        args.forecast_path,
-        args.obs_path,
+    # Use custom iterable dataset for training and validation.
+    train_dataset = WeatherIterableDataset(
+        training_vars=args.training_vars,
+        level=args.level, # pressure level if applicable
+        lat_slice=lat_slice,
+        lon_slice=lon_slice,
+        start_date=args.train_start,
+        end_date=args.train_end,
+        lead_time_hours=args.lead_time_hours,
+        ds_forecast=ds_forecast, # reuse opened dataset instead of opening again 
+        ds_obs=ds_obs,            
+        chunk_freq='20D', # time chunk size
+        subset="train"
+    )
+    val_dataset = WeatherIterableDataset(
+        training_vars=args.training_vars,
+        level=args.level,
+        lat_slice=lat_slice,
+        lon_slice=lon_slice,
+        start_date=args.train_start,
+        end_date=args.train_end,
+        lead_time_hours=args.lead_time_hours,
+        ds_forecast=ds_forecast,  
+        ds_obs=ds_obs,            
+        chunk_freq='20D',
+        subset="val"
+    )
+    train_loader = DataLoader(train_dataset, batch_size=32)
+    val_loader = DataLoader(val_dataset, batch_size=32)
+    print("Using custom iterable dataset for training. Total training samples:", len(train_dataset))
+    print("Validation samples:", len(val_dataset))
+
+    # ===========================================================
+    # Normalize data XX normalize using full training set
+    # ===========================================================
+
+    # For normalization, load a small slice (this is a placeholder).
+    small_train_fc, small_train_obs, _, _, _, _ = load_data(
         args.training_vars,
         args.level,
         lat_slice,
         lon_slice,
-        train_time_slice,
-        args.lead_time_hours
+        slice(args.train_start, args.train_start),
+        args.lead_time_hours,
+        ds_forecast=ds_forecast,  
+        ds_obs=ds_obs             
     )
-
-    end_time = time.time()
-
-    print(f"full loading time: {end_time - start_time:.2f} seconds")
-
-    # print shape of training data
-    print("Shape of training data:")
-    print(f"Forecast: {train_fc_full.shape}")
-    print(f"Observations: {train_obs_full.shape}")
-
-    print("Loaded Training Data")
-    exit()
-
-    # =========================================================================
-    # 2) Randomly split training data into TRAIN (80%) and VAL (20%)
-    # =========================================================================
-    n_samples = train_fc_full.shape[0]
-    indices = np.arange(n_samples)
-    np.random.shuffle(indices)
-    split_idx = int(0.8 * n_samples)
-    train_idx = indices[:split_idx]
-    val_idx = indices[split_idx:]
-    train_fc = train_fc_full[train_idx]
-    train_obs = train_obs_full[train_idx]
-    val_fc = train_fc_full[val_idx]
-    val_obs = train_obs_full[val_idx]
-    val_time_subset = train_time_vals[val_idx]
-
-    # =========================================================================
-    # 3) Load the test data
-    # =========================================================================
-    start_time = time.time()
-    test_fc, test_obs, _, _, test_time_vals, test_original_shape = load_data(
-        args.forecast_path,
-        args.obs_path,
-        args.training_vars,
-        args.level,
-        lat_slice,
-        lon_slice,
-        test_time_slice,
-        args.lead_time_hours
-    )
-
-    end_time = time.time()
-
-    print(f"Test data loading time: {end_time - start_time:.2f} seconds")
-
-    print("Loaded Test Data")
+    stats = {
+        'mean_fc': small_train_fc.mean(axis=0),
+        'std_fc': small_train_fc.std(axis=0),
+        'mean_obs': small_train_obs.mean(axis=0),
+        'std_obs': small_train_obs.std(axis=0),
+        'n_vars': n_vars,
+        'space_dim': small_train_fc.shape[1] // n_vars
+    }
 
 
-    # =========================================================================
-    # 4) Normalize training & validation data variable-wise using training stats
-    # =========================================================================
-    (train_fc_norm,
-     val_fc_norm,
-     train_obs_norm,
-     val_obs_norm,
-     stats) = normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars)
-
-    # =========================================================================
-    # 5) Create PyTorch DataLoaders
-    # =========================================================================
-    train_loader = create_dataloader(train_fc_norm, train_obs_norm, batch_size = 32)
-    val_loader = create_dataloader(val_fc_norm, val_obs_norm, batch_size = 32)
-
-    # =========================================================================
-    # 6) Initialize and train the model
-    # =========================================================================
-    input_dim = train_fc.shape[1]  # equals n_vars * lat * lon
-
-    # Compute the spatial dimension based on the training data
-    spatial_dim = train_fc.shape[1] // len(args.training_vars)
-    # Create a list of indices corresponding to the output variables (which are a subset of training_vars)
+    # ===========================================================
+    # train finetuning mlp
+    # ===========================================================
+    spatial_dim = small_train_fc.shape[1] // len(args.training_vars)
     selected_indices = []
     for i, var in enumerate(args.training_vars):
         if var in args.output_vars:
-            # For variable i, its flattened data spans from i*spatial_dim to (i+1)*spatial_dim
             selected_indices.extend(list(range(i * spatial_dim, (i + 1) * spatial_dim)))
-    # Define the output dimension of the MLP as (number of output vars) * (spatial dimension)
+    input_dim = small_train_fc.shape[1]
     output_dim = len(selected_indices)
 
     model = SimpleMLP(input_dim=input_dim,
@@ -599,36 +558,38 @@ def main():
                       num_hidden_layers=args.mlp_layers)
     model.to(device)
 
-    # XX chagne epochs back to arg.epochs
-    model = train_model(model, train_loader, val_loader, epochs= 10,
-                        lr = 1e-5, device = device, selected_indices = selected_indices)
+    model = train_model(model, train_loader, val_loader, epochs=10,
+                        lr=1e-5, device=device, selected_indices=selected_indices)
 
-    # Save model weights
     model_path = os.path.join(output_dir, f"{args.model_name}_mlp_correction.pt")
     torch.save(model.state_dict(), model_path)
     print(f"Model weights saved to {model_path}")
 
-    # =========================================================================
-    # 7) Apply correction to the validation set
-    # =========================================================================
-    corrected_val_fc_norm = apply_correction(model, val_fc_norm, device)
-    corrected_val_fc = unnormalize_data(corrected_val_fc_norm, stats, is_obs=True)
+    # ==========================================================
+    # Correct forecasts on the test set
+    # ==========================================================
+    test_time_slice = slice(args.test_start, args.test_end)
+    test_fc, test_obs, lon_vals, lat_vals, test_time_vals, test_original_shape = load_data(
+        args.training_vars,
+        args.level,
+        lat_slice,
+        lon_slice,
+        test_time_slice,
+        args.lead_time_hours,
+        ds_forecast=ds_forecast,  
+        ds_obs=ds_obs             
+    )
+    test_fc = test_fc.compute() if hasattr(test_fc, 'compute') else test_fc
+    test_obs = test_obs.compute() if hasattr(test_obs, 'compute') else test_obs
 
-    # =========================================================================
-    # 8) Apply correction to the test set
-    # =========================================================================
-    test_fc_norm = (test_fc - stats['mean_fc'].mean()) / (stats['std_fc'].mean() + 1e-8)
-    corrected_test_fc_norm = apply_correction(model, test_fc_norm, device)
+    corrected_test_fc_norm = apply_correction(model, test_fc, device)
     corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
     print(f"MSE (original forecast, test set): {np.mean((test_fc - test_obs) ** 2):.6f}")
     print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - test_obs) ** 2):.6f}")
 
-    # =========================================================================
-    # 9) Save outputs for the test set
-    # =========================================================================
     save_output(
         output_dir=output_dir,
-        run_id = run_id,
+        run_id=run_id,
         output_vars=args.output_vars,
         lon_vals=lon_vals,
         lat_vals=lat_vals,
