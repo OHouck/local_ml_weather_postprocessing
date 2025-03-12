@@ -15,7 +15,7 @@ python3 finetuning/finetune.py \
     --output_dir="~/wb_finetune_test" \
     --model_name="pangu" \
     --region="north_india" \
-    --train_start="2021-01-01" --train_end="2021-12-30" \
+    --train_start="2018-01-01" --train_end="2021-12-30" \
     --test_start="2022-01-01" --test_end="2022-12-30" \
     --lead_time_hours=48 \
     --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
@@ -35,9 +35,12 @@ import xarray as xr
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
 import pandas as pd  
-from torch.utils.data import DataLoader
 
+# -------------------------------------------------------------------
+# Simple MLP model
+# -------------------------------------------------------------------
 
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3):
@@ -54,85 +57,151 @@ class SimpleMLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class WeatherIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, training_vars, level,
-                 lat_slice, lon_slice, start_date, end_date, lead_time_hours,
-                 ds_forecast, ds_obs, chunk_freq='10D', subset=None):
+# -------------------------------------------------------------------
+# ForecastDataset: Loads forecast and observation data into a stacked array.
+# -------------------------------------------------------------------
+class ForecastDataset(Dataset):
+    def __init__(self, forecast_path, obs_path, training_vars, level, lat_slice, lon_slice, time_slice, lead_time_hours, use_consolidated=True):
+        # Use consolidated metadata for faster metadata loading on cloud storage.
+        open_zarr_kwargs = {'decode_timedelta': True}
+        if use_consolidated:
+            open_zarr_kwargs['consolidated'] = True
+
+        if isinstance(forecast_path, str):
+            self.ds_forecast = xr.open_zarr(forecast_path, **open_zarr_kwargs)
+        else:
+            self.ds_forecast = forecast_path
+
+        if isinstance(obs_path, str):
+            self.ds_obs = xr.open_zarr(obs_path, **open_zarr_kwargs)
+        else:
+            self.ds_obs = obs_path
 
         self.training_vars = training_vars
         self.level = level
         self.lat_slice = lat_slice
         self.lon_slice = lon_slice
+        self.time_slice = time_slice
         self.lead_time_hours = lead_time_hours
-        self.ds_forecast = ds_forecast
-        self.ds_obs = ds_obs
-        self.chunk_freq = chunk_freq
-        self.subset = subset
 
-        start_ts = pd.Timestamp(start_date)
-        end_ts = pd.Timestamp(end_date)
-        if subset is not None:
-            total_days = (end_ts - start_ts).days
-            split_days = int(total_days * 0.8)
-            if subset == "train":
-                self.start_date = start_date
-                self.end_date = (start_ts + pd.Timedelta(days=split_days)).strftime('%Y-%m-%d')
-            elif subset == "val":
-                self.start_date = (start_ts + pd.Timedelta(days=split_days + 1)).strftime('%Y-%m-%d')
-                self.end_date = end_date
-        else:
-            self.start_date = start_date
-            self.end_date = end_date
+        # slice by time
+        self.ds_forecast = self.ds_forecast.sel(time=time_slice)
+        self.ds_obs = self.ds_obs.sel(time=time_slice)
 
-        self.chunk_dates = self.get_time_chunks(self.start_date, self.end_date, freq=self.chunk_freq)
-        self._length = self.compute_length()  
+        # slice to only include variables in training_vars
+        self.ds_forecast = self.ds_forecast[self.training_vars]
+        self.ds_obs = self.ds_obs[self.training_vars]
 
-    def get_time_chunks(self, start_date, end_date, freq='10D'):
-        dates = pd.date_range(start=start_date, end=end_date, freq=freq)
-        if dates[-1] != pd.to_datetime(end_date):
-            dates = dates.append(pd.DatetimeIndex([pd.to_datetime(end_date)]))
-        return dates
+        # keep only lead time of interest in forecast
+        self.ds_forecast = self.ds_forecast.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
+        if 'prediction_timedelta' in self.ds_forecast.coords:
+            self.ds_forecast= self.ds_forecast.drop_vars('prediction_timedelta')
 
-    def compute_length(self):
-        """Compute the total number of samples over all chunks."""
-        total = 0
-        for i in range(len(self.chunk_dates) - 1):
-            chunk_start = self.chunk_dates[i].strftime('%Y-%m-%d')
-            chunk_end = self.chunk_dates[i+1].strftime('%Y-%m-%d')
-            # Use the already opened ds_forecast to slice the time coordinate.
-            ds_time = self.ds_forecast.sel(time=slice(chunk_start, chunk_end))
-            total += ds_time.time.size
-        return int(total)
+        # if level is not None, slice by level
+        if level is not None:
+            self.ds_forecast = self.ds_forecast.sel(level=level)
+            self.ds_obs = self.ds_obs.sel(level=level)
+
+        # Check if latitude coordinate is sorted; if not, sort it.
+        # This takes a long time for large datasets.
+        # lat_forecast = self.ds_forecast['latitude'].values
+        # lon_forecast = self.ds_forecast['longitude'].values
+        # if not (np.all(np.diff(lat_forecast) >= 0) and np.all(np.diff(lon_forecast) >= 0)):
+        #     print("Forecast Latitude or Longitude coordinate is not sorted. Sorting...")
+        #     self.ds_forecast = self.ds_forecast.sortby(['latitude', 'longitude'])
+
+        # lat_obs = self.ds_obs['latitude'].values
+        # lon_obs = self.ds_obs['longitude'].values
+        # if not (np.all(np.diff(lat_obs) >= 0) and np.all(np.diff(lon_obs) >= 0)):
+        #     print("Observation Latitude or Longitude coordinate is not sorted. Sorting...")
+        #     self.ds_obs = self.ds_obs.sortby(['latitude', 'longitude'])
+
+        # # Select forecast and observation variables.
+        # fc_vars = []
+        # obs_vars = []
+        # for v in self.training_vars:
+        #     if v not in self.ds_forecast:
+        #         print(f"Variable '{v}' not found in forecast dataset. Skipping...")
+        #         continue
+        #     if v not in self.ds_obs:
+        #         print(f"Variable '{v}' not found in obs dataset. Skipping...")
+        #         continue
+        #     if 'level' in self.ds_forecast[v].dims and level is not None:
+        #         fc_var = self.ds_forecast[v].sel(time=time_slice,
+        #                                          latitude=lat_slice,
+        #                                          longitude=lon_slice,
+        #                                          level=level)
+        #     else:
+        #         fc_var = self.ds_forecast[v].sel(time=time_slice,
+        #                                          latitude=lat_slice,
+        #                                          longitude=lon_slice)
+
+        #         print(v)
+        #         print(fc_var)
+        #         exit()
+        #     if 'level' in self.ds_obs[v].dims and level is not None:
+        #         obs_var = self.ds_obs[v].sel(time=time_slice,
+        #                                      latitude=lat_slice,
+        #                                      longitude=lon_slice,
+        #                                      level=level)
+        #     else:
+        #         obs_var = self.ds_obs[v].sel(time=time_slice,
+        #                                      latitude=lat_slice,
+        #                                      longitude=lon_slice)
+        #     # Select the desired lead time and drop the coordinate to simplify the data.
+        #     fc_var = fc_var.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
+
+        #     exit()
+
+        #     if 'prediction_timedelta' in fc_var.coords:
+        #         fc_var = fc_var.drop_vars('prediction_timedelta')
+        #     fc_vars.append(fc_var)
+        #     obs_vars.append(obs_var)
+
+        # t0 = time.time()
+        # # Create new Datasets from the selected DataArrays.
+        # fc_ds = xr.Dataset({var: fc for var, fc in zip(self.training_vars, fc_vars)})
+        # obs_ds = xr.Dataset({var: obs for var, obs in zip(self.training_vars, obs_vars)})
+
+        # Convert to a single DataArray with a new 'variable' dimension.
+        fc_concat = self.ds_forecast.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
+        obs_concat = self.ds_obs.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
+        
+        # If coordinates already match, skip alignment to reduce graph complexity.
+        coords_match = (
+            np.array_equal(fc_concat.time.values, obs_concat.time.values) and 
+            np.array_equal(fc_concat.latitude.values, obs_concat.latitude.values) and 
+            np.array_equal(fc_concat.longitude.values, obs_concat.longitude.values)
+        )
+        if not coords_match:
+            print("Aligning forecast and observation datasets...")
+            fc_concat, obs_concat = xr.align(fc_concat, obs_concat, join='inner')
+
+        # Store the original shape for later unstacking.
+        self.original_shape = fc_concat.shape
+
+        # Stack the non-time dimensions into a single "features" dimension.
+        self.fc_data = fc_concat.stack(features=('variable', 'latitude', 'longitude')).data
+        self.obs_data = obs_concat.stack(features=('variable', 'latitude', 'longitude')).data
+
+        # Coordinates (they are typically small and can be computed eagerly).
+        self.lon_vals = fc_concat.longitude.data
+        self.lat_vals = fc_concat.latitude.data
+        self.time_vals = fc_concat.time.data
 
     def __len__(self):
-        return self._length
+        # Return the number of time steps.
+        return self.fc_data.shape[0]
 
-    def __iter__(self):
-        # Iterate over each 10-day chunk and yield individual samples.
-        for i in range(len(self.chunk_dates) - 1):
-            chunk_start = self.chunk_dates[i].strftime('%Y-%m-%d')
-            chunk_end = self.chunk_dates[i+1].strftime('%Y-%m-%d')
-            time_slice = slice(chunk_start, chunk_end)
-            print(f"[CHUNK] Loading data from {chunk_start} to {chunk_end}")
-            fc_chunk, obs_chunk, _, _, _, _ = load_data(
-                self.training_vars,
-                self.level,
-                self.lat_slice,
-                self.lon_slice,
-                time_slice,
-                self.lead_time_hours,
-                ds_forecast=self.ds_forecast,  
-                ds_obs=self.ds_obs             
-            )
+    def __getitem__(self, index):
+        # Return one sample (forecast, observation) pair.
+        fc_sample = self.fc_data[index].compute() if hasattr(self.fc_data, 'compute') else self.fc_data[index]
+        obs_sample = self.obs_data[index].compute() if hasattr(self.obs_data, 'compute') else self.obs_data[index]
+        return fc_sample, obs_sample
 
-            # fc_chunk and obs_chunk are (lazy) dask arrays; iterate over time steps:
-            print("chunk shape")
-            print(range(fc_chunk.shape[0]))
-            for t in range(fc_chunk.shape[0]):
-                # Compute only this time slice, not the whole array
-                fc_sample = fc_chunk[t].compute() if hasattr(fc_chunk, 'compute') else fc_chunk[t]
-                obs_sample = obs_chunk[t].compute() if hasattr(obs_chunk, 'compute') else obs_chunk[t]
-                yield fc_sample, obs_sample
+# -------------------------------------------------------------------
+# Other helper functions 
+# -------------------------------------------------------------------
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune MLP for regional post-processing')
@@ -184,7 +253,6 @@ def check_dataset_alignment(ds1, ds2, coord_vars=['time', 'latitude', 'longitude
     misaligned = []
     for coord in coord_vars:
         if coord in ds1.coords and coord in ds2.coords:
-            # Check if the coordinate arrays are equal.
             if not np.array_equal(ds1[coord].values, ds2[coord].values):
                 misaligned.append(coord)
         else:
@@ -193,93 +261,6 @@ def check_dataset_alignment(ds1, ds2, coord_vars=['time', 'latitude', 'longitude
         print(f"Warning: The following coordinates are not aligned between forecast and observation datasets: {misaligned}")
     else:
         print("Datasets are aligned on coordinates:", coord_vars)
-
-def load_data(training_vars, level, lat_slice, lon_slice,
-              time_slice, lead_time_hours, ds_forecast=None, ds_obs=None):  
-
-    time_start = time.time()
-    ds_forecast = ds_forecast.sortby('latitude')
-    ds_obs = ds_obs.sortby('latitude')
-
-    for ds in [ds_forecast, ds_obs]:
-        for v in training_vars:
-            if v not in ds:
-                print(f"Variable '{v}' not found in dataset. Skipping...")
-                print(f"Available variables: {list(ds.data_vars)}")
-                continue
-            dims = ds[v].dims
-            if 'latitude' not in dims and 'lat' in dims:
-                ds = ds.rename({'lat': 'latitude'})
-            if 'longitude' not in dims and 'lon' in dims:
-                ds = ds.rename({'lon': 'longitude'})
-    time_end = time.time()
-    print(f"Time to sort and rename: {time_end - time_start:.2f} seconds")
-
-    time_start = time.time()
-    fc_vars = []
-    obs_vars = []
-    for v in training_vars:
-        if 'level' in ds_forecast[v].dims and level is not None:
-            fc_var = ds_forecast[v].sel(time=time_slice,
-                                        latitude=lat_slice,
-                                        longitude=lon_slice,
-                                        level=level)
-        else:
-            fc_var = ds_forecast[v].sel(time=time_slice,
-                                        latitude=lat_slice,
-                                        longitude=lon_slice)
-        if 'level' in ds_obs[v].dims and level is not None:
-            obs_var = ds_obs[v].sel(time=time_slice,
-                                    latitude=lat_slice,
-                                    longitude=lon_slice,
-                                    level=level)
-        else:
-            obs_var = ds_obs[v].sel(time=time_slice,
-                                    latitude=lat_slice,
-                                    longitude=lon_slice)
-        fc_var = fc_var.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
-        if 'prediction_timedelta' in fc_var.coords:
-            fc_var = fc_var.drop_vars('prediction_timedelta')
-        fc_vars.append(fc_var)
-        obs_vars.append(obs_var)
-
-    print(f"Time to select vars: {time.time() - time_start:.2f} seconds")
-
-    start_time = time.time()
-    # # Create Datasets from the list of DataArrays (assuming variables share the same coordinates)
-    # fc_ds = xr.Dataset({var: fc for var, fc in zip(training_vars, fc_vars)})
-    # obs_ds = xr.Dataset({var: obs for var, obs in zip(training_vars, obs_vars)})
-
-    # # Convert the Dataset into a single DataArray with a new "variable" dimension.
-    # fc_concat = fc_ds.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
-    # obs_concat = obs_ds.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
-
-    # # If the coordinates are identical, alignment is not needed.
-    # original_shape = fc_concat.shape
-
-    # # Instead of reshaping using .data.reshape, stack the non-time dimensions into a single dimension.
-    # # This operation is lazy if the underlying arrays are dask arrays.
-    # fc_data = fc_concat.stack(features=('variable', 'latitude', 'longitude')).data
-    # obs_data = obs_concat.stack(features=('variable', 'latitude', 'longitude')).data
-
-    # lon_vals = fc_concat.longitude.data
-    # lat_vals = fc_concat.latitude.data
-    # time_vals = fc_concat.time.data
-
-
-    fc_concat = xr.concat(fc_vars, dim='variable').transpose('time', 'variable', 'latitude', 'longitude')
-    obs_concat = xr.concat(obs_vars, dim='variable').transpose('time', 'variable', 'latitude', 'longitude')
-    fc_concat, obs_concat = xr.align(fc_concat, obs_concat, join='inner')
-    original_shape = fc_concat.shape
-    fc_data = fc_concat.data.reshape(original_shape[0], -1)
-    obs_data = obs_concat.data.reshape(original_shape[0], -1)
-    lon_vals = fc_concat.longitude.data
-    lat_vals = fc_concat.latitude.data
-    time_vals = fc_concat.time.data
-
-    print(f"Time to combine vars: {time.time() - start_time:.2f} seconds")
-
-    return fc_data, obs_data, lon_vals, lat_vals, time_vals, original_shape
 
 def create_dataloader(forecast_data, obs_data, batch_size):
     dataset = torch.utils.data.TensorDataset(
@@ -295,7 +276,7 @@ def normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars):
     space_dim = train_fc.shape[1] // n_vars
     n_time = train_fc.shape[0]
 
-    # forecast data stats
+    # Forecast data stats.
     train_fc_reshaped = train_fc.reshape(n_time, n_vars, space_dim)
     val_fc_reshaped = val_fc.reshape(val_fc.shape[0], n_vars, space_dim)
     mean_fc = train_fc_reshaped.mean(axis=(0,2), keepdims=True)
@@ -303,7 +284,7 @@ def normalize_data(train_fc, val_fc, train_obs, val_obs, n_vars):
     train_fc_norm = ((train_fc_reshaped - mean_fc) / (std_fc + 1e-8)).reshape(train_fc.shape)
     val_fc_norm = ((val_fc_reshaped - mean_fc) / (std_fc + 1e-8)).reshape(val_fc.shape)
 
-    # observation data stats
+    # Observation data stats.
     train_obs_reshaped = train_obs.reshape(n_time, n_vars, space_dim)
     val_obs_reshaped = val_obs.reshape(val_obs.shape[0], n_vars, space_dim)
     mean_obs = train_obs_reshaped.mean(axis=(0,2), keepdims=True)
@@ -336,9 +317,6 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device, selected_in
     model.train()
     running_loss = 0.0
 
-    print("length")
-    print(len(dataloader.dataset))
-
     for x_batch, y_batch in dataloader:
         x_batch, y_batch = x_batch.to(device), y_batch.to(device)
         optimizer.zero_grad()
@@ -353,8 +331,6 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device, selected_in
 def validate_one_epoch(model, dataloader, criterion, device, selected_indices):
     model.eval()
     running_loss = 0.0
-
-
     with torch.no_grad():
         for x_batch, y_batch in dataloader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
@@ -426,14 +402,12 @@ def save_output(output_dir, run_id, output_vars, lon_vals, lat_vals,
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path} (Zarr format)")
 
-
-# =============================================================================
-# Main Function 
-# =============================================================================
+# -------------------------------------------------------------------
+# Main function: using ForecastDataset for train/val/test splits.
+# -------------------------------------------------------------------
 
 def main():
-
-    # Set device for training. look if apple silicon is available if no GPU
+    # Set device (GPU/MPS/CPU)
     if torch.cuda.is_available():
         device = torch.device('cuda')
     elif torch.backends.mps.is_available():
@@ -446,7 +420,7 @@ def main():
     run_id = generate_run_id(args)
     print("run id:", run_id)
 
-    # Create output directory if it doesn't exist.
+    # Create output directory.
     if socket.gethostname() == "oMac.local":
         output_dir = os.path.expanduser(args.output_dir)
     else:
@@ -468,82 +442,44 @@ def main():
         exit()
     n_vars = len(args.training_vars)
 
-    #===========================================================
-    # Load forecast and observation datasets
-    #===========================================================
+    # ----------------------------------------------------------------
+    # Create training/validation dataset using ForecastDataset.
+    # ----------------------------------------------------------------
+    train_time_slice = slice(args.train_start, args.train_end)
 
-    if args.forecast_path.endswith('.zarr'):
-        ds_forecast = xr.open_zarr(args.forecast_path, decode_timedelta=True).persist()
-    else:
-           ds_forecast = xr.open_zarr(args.forecast_path, decode_timedelta=True).persist()
-    if args.obs_path.endswith('.zarr'):
-        ds_obs = xr.open_zarr(args.obs_path, decode_timedelta=True).persist()
-    else:
-        ds_obs = xr.open_dataset(args.obs_path, decode_timedelta=True).persist()
-    
-    # Check alignment between the datasets
-    check_dataset_alignment(ds_forecast, ds_obs)
+    t0 = time.time()
+    train_val_dataset = ForecastDataset(
+         forecast_path=args.forecast_path,
+         obs_path=args.obs_path,
+         training_vars=args.training_vars,
+         level=args.level,
+         lat_slice=lat_slice,
+         lon_slice=lon_slice,
+         time_slice=train_time_slice,
+         lead_time_hours=args.lead_time_hours
+    )
+    print("Time to load dataset:", time.time() - t0)
 
-    # Use custom iterable dataset for training and validation.
-    train_dataset = WeatherIterableDataset(
-        training_vars=args.training_vars,
-        level=args.level, # pressure level if applicable
-        lat_slice=lat_slice,
-        lon_slice=lon_slice,
-        start_date=args.train_start,
-        end_date=args.train_end,
-        lead_time_hours=args.lead_time_hours,
-        ds_forecast=ds_forecast, # reuse opened dataset instead of opening again 
-        ds_obs=ds_obs,            
-        chunk_freq='20D', # time chunk size
-        subset="train"
-    )
-    val_dataset = WeatherIterableDataset(
-        training_vars=args.training_vars,
-        level=args.level,
-        lat_slice=lat_slice,
-        lon_slice=lon_slice,
-        start_date=args.train_start,
-        end_date=args.train_end,
-        lead_time_hours=args.lead_time_hours,
-        ds_forecast=ds_forecast,  
-        ds_obs=ds_obs,            
-        chunk_freq='20D',
-        subset="val"
-    )
-    train_loader = DataLoader(train_dataset, batch_size=32)
-    val_loader = DataLoader(val_dataset, batch_size=32)
-    print("Using custom iterable dataset for training. Total training samples:", len(train_dataset))
+    # Split dataset (e.g., 80/20 train/val split).
+    train_size = int(0.8 * len(train_val_dataset))
+    val_size = len(train_val_dataset) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(train_val_dataset, [train_size, val_size])
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    print("Using ForecastDataset for training. Total training samples:", len(train_dataset))
     print("Validation samples:", len(val_dataset))
 
-    # ===========================================================
-    # Normalize data XX normalize using full training set
-    # ===========================================================
+    # ----------------------------------------------------------------
+    # Compute normalization statistics from a small subset of training data.
+    # Here we use the first 10 samples.
+    # ----------------------------------------------------------------
+    small_train_fc = train_val_dataset.fc_data[:10].compute() if hasattr(train_val_dataset.fc_data, 'compute') else train_val_dataset.fc_data[:10]
+    small_train_obs = train_val_dataset.obs_data[:10].compute() if hasattr(train_val_dataset.obs_data, 'compute') else train_val_dataset.obs_data[:10]
+    _, _, _, _, stats = normalize_data(small_train_fc, small_train_fc, small_train_obs, small_train_obs, n_vars)
 
-    # For normalization, load a small slice (this is a placeholder).
-    small_train_fc, small_train_obs, _, _, _, _ = load_data(
-        args.training_vars,
-        args.level,
-        lat_slice,
-        lon_slice,
-        slice(args.train_start, args.train_start),
-        args.lead_time_hours,
-        ds_forecast=ds_forecast,  
-        ds_obs=ds_obs             
-    )
-    stats = {
-        'mean_fc': small_train_fc.mean(axis=0),
-        'std_fc': small_train_fc.std(axis=0),
-        'mean_obs': small_train_obs.mean(axis=0),
-        'std_obs': small_train_obs.std(axis=0),
-        'n_vars': n_vars,
-        'space_dim': small_train_fc.shape[1] // n_vars
-    }
-
-
-    # ===========================================================
-    # train finetuning mlp
-    # ===========================================================
+    # ----------------------------------------------------------------
+    # Set up training targets.
+    # ----------------------------------------------------------------
     spatial_dim = small_train_fc.shape[1] // len(args.training_vars)
     selected_indices = []
     for i, var in enumerate(args.training_vars):
@@ -552,35 +488,40 @@ def main():
     input_dim = small_train_fc.shape[1]
     output_dim = len(selected_indices)
 
+    # Initialize and train the model.
     model = SimpleMLP(input_dim=input_dim,
                       hidden_dim=args.mlp_hidden_dim,
                       output_dim=output_dim,
                       num_hidden_layers=args.mlp_layers)
     model.to(device)
 
-    model = train_model(model, train_loader, val_loader, epochs=10,
+    model = train_model(model, train_loader, val_loader, epochs=args.epochs,
                         lr=1e-5, device=device, selected_indices=selected_indices)
 
     model_path = os.path.join(output_dir, f"{args.model_name}_mlp_correction.pt")
     torch.save(model.state_dict(), model_path)
     print(f"Model weights saved to {model_path}")
 
-    # ==========================================================
-    # Correct forecasts on the test set
-    # ==========================================================
+    # ----------------------------------------------------------------
+    # Create test dataset and apply correction.
+    # ----------------------------------------------------------------
     test_time_slice = slice(args.test_start, args.test_end)
-    test_fc, test_obs, lon_vals, lat_vals, test_time_vals, test_original_shape = load_data(
-        args.training_vars,
-        args.level,
-        lat_slice,
-        lon_slice,
-        test_time_slice,
-        args.lead_time_hours,
-        ds_forecast=ds_forecast,  
-        ds_obs=ds_obs             
+    test_dataset = ForecastDataset(
+         forecast_path=args.forecast_path,
+         obs_path=args.obs_path,
+         training_vars=args.training_vars,
+         level=args.level,
+         lat_slice=lat_slice,
+         lon_slice=lon_slice,
+         time_slice=test_time_slice,
+         lead_time_hours=args.lead_time_hours
     )
-    test_fc = test_fc.compute() if hasattr(test_fc, 'compute') else test_fc
-    test_obs = test_obs.compute() if hasattr(test_obs, 'compute') else test_obs
+    test_fc = test_dataset.fc_data.compute() if hasattr(test_dataset.fc_data, 'compute') else test_dataset.fc_data
+    test_obs = test_dataset.obs_data.compute() if hasattr(test_dataset.obs_data, 'compute') else test_dataset.obs_data
+    lon_vals = test_dataset.lon_vals
+    lat_vals = test_dataset.lat_vals
+    test_time_vals = test_dataset.time_vals
+    test_original_shape = test_dataset.original_shape
 
     corrected_test_fc_norm = apply_correction(model, test_fc, device)
     corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
