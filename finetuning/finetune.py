@@ -22,7 +22,8 @@ python3 finetuning/finetune.py \
     --output_vars 10m_v_component_of_wind 10m_u_component_of_wind \
     --epochs=1000 \
     --mlp_hidden_dim=512 \
-    --mlp_layers=5
+    --mlp_layers=5 \
+    --use_cupy
 """
 
 import argparse
@@ -37,6 +38,13 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd  
+
+# Import cupy if available. 
+# This is used for faster loading of large datasets on GPU.
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 
 # -------------------------------------------------------------------
 # Simple MLP model
@@ -61,7 +69,8 @@ class SimpleMLP(nn.Module):
 # ForecastDataset: Loads forecast and observation data into a stacked array.
 # -------------------------------------------------------------------
 class ForecastDataset(Dataset):
-    def __init__(self, forecast_path, obs_path, training_vars, level, lat_slice, lon_slice, time_slice, lead_time_hours, use_consolidated=True):
+    def __init__(self, forecast_path, obs_path, training_vars, level, lat_slice, lon_slice, time_slice, lead_time_hours, use_consolidated=True, use_cupy=False):
+        self.use_cupy = use_cupy
         # Use consolidated metadata for faster metadata loading on cloud storage.
         open_zarr_kwargs = {'decode_timedelta': True}
         if use_consolidated:
@@ -77,6 +86,11 @@ class ForecastDataset(Dataset):
         else:
             self.ds_obs = obs_path
 
+        # If using cupy and cupy is available, convert the datasets to cupy-backed arrays.
+        if self.use_cupy and cp is not None:
+            self.ds_forecast = self.ds_forecast.cupy.as_cupy()
+            self.ds_obs = self.ds_obs.cupy.as_cupy()
+
         self.training_vars = training_vars
         self.level = level
         self.lat_slice = lat_slice
@@ -84,90 +98,29 @@ class ForecastDataset(Dataset):
         self.time_slice = time_slice
         self.lead_time_hours = lead_time_hours
 
-        # slice by time
+        # Slice by time.
         self.ds_forecast = self.ds_forecast.sel(time=time_slice)
         self.ds_obs = self.ds_obs.sel(time=time_slice)
 
-        # slice to only include variables in training_vars
-        self.ds_forecast = self.ds_forecast[self.training_vars]
-        self.ds_obs = self.ds_obs[self.training_vars]
+        # Slice to include only training variables.
+        self.ds_forecast = self.ds_forecast[training_vars]
+        self.ds_obs = self.ds_obs[training_vars]
 
-        # keep only lead time of interest in forecast
+        # Keep only the desired lead time in forecast.
         self.ds_forecast = self.ds_forecast.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
         if 'prediction_timedelta' in self.ds_forecast.coords:
-            self.ds_forecast= self.ds_forecast.drop_vars('prediction_timedelta')
+            self.ds_forecast = self.ds_forecast.drop_vars('prediction_timedelta')
 
-        # if level is not None, slice by level
+        # If level is specified, slice by level.
         if level is not None:
             self.ds_forecast = self.ds_forecast.sel(level=level)
             self.ds_obs = self.ds_obs.sel(level=level)
-
-        # Check if latitude coordinate is sorted; if not, sort it.
-        # This takes a long time for large datasets.
-        # lat_forecast = self.ds_forecast['latitude'].values
-        # lon_forecast = self.ds_forecast['longitude'].values
-        # if not (np.all(np.diff(lat_forecast) >= 0) and np.all(np.diff(lon_forecast) >= 0)):
-        #     print("Forecast Latitude or Longitude coordinate is not sorted. Sorting...")
-        #     self.ds_forecast = self.ds_forecast.sortby(['latitude', 'longitude'])
-
-        # lat_obs = self.ds_obs['latitude'].values
-        # lon_obs = self.ds_obs['longitude'].values
-        # if not (np.all(np.diff(lat_obs) >= 0) and np.all(np.diff(lon_obs) >= 0)):
-        #     print("Observation Latitude or Longitude coordinate is not sorted. Sorting...")
-        #     self.ds_obs = self.ds_obs.sortby(['latitude', 'longitude'])
-
-        # # Select forecast and observation variables.
-        # fc_vars = []
-        # obs_vars = []
-        # for v in self.training_vars:
-        #     if v not in self.ds_forecast:
-        #         print(f"Variable '{v}' not found in forecast dataset. Skipping...")
-        #         continue
-        #     if v not in self.ds_obs:
-        #         print(f"Variable '{v}' not found in obs dataset. Skipping...")
-        #         continue
-        #     if 'level' in self.ds_forecast[v].dims and level is not None:
-        #         fc_var = self.ds_forecast[v].sel(time=time_slice,
-        #                                          latitude=lat_slice,
-        #                                          longitude=lon_slice,
-        #                                          level=level)
-        #     else:
-        #         fc_var = self.ds_forecast[v].sel(time=time_slice,
-        #                                          latitude=lat_slice,
-        #                                          longitude=lon_slice)
-
-        #         print(v)
-        #         print(fc_var)
-        #         exit()
-        #     if 'level' in self.ds_obs[v].dims and level is not None:
-        #         obs_var = self.ds_obs[v].sel(time=time_slice,
-        #                                      latitude=lat_slice,
-        #                                      longitude=lon_slice,
-        #                                      level=level)
-        #     else:
-        #         obs_var = self.ds_obs[v].sel(time=time_slice,
-        #                                      latitude=lat_slice,
-        #                                      longitude=lon_slice)
-        #     # Select the desired lead time and drop the coordinate to simplify the data.
-        #     fc_var = fc_var.sel(prediction_timedelta=np.timedelta64(lead_time_hours, 'h'))
-
-        #     exit()
-
-        #     if 'prediction_timedelta' in fc_var.coords:
-        #         fc_var = fc_var.drop_vars('prediction_timedelta')
-        #     fc_vars.append(fc_var)
-        #     obs_vars.append(obs_var)
-
-        # t0 = time.time()
-        # # Create new Datasets from the selected DataArrays.
-        # fc_ds = xr.Dataset({var: fc for var, fc in zip(self.training_vars, fc_vars)})
-        # obs_ds = xr.Dataset({var: obs for var, obs in zip(self.training_vars, obs_vars)})
 
         # Convert to a single DataArray with a new 'variable' dimension.
         fc_concat = self.ds_forecast.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
         obs_concat = self.ds_obs.to_array("variable").transpose('time', 'variable', 'latitude', 'longitude')
         
-        # If coordinates already match, skip alignment to reduce graph complexity.
+        # Align datasets if needed.
         coords_match = (
             np.array_equal(fc_concat.time.values, obs_concat.time.values) and 
             np.array_equal(fc_concat.latitude.values, obs_concat.latitude.values) and 
@@ -177,27 +130,34 @@ class ForecastDataset(Dataset):
             print("Aligning forecast and observation datasets...")
             fc_concat, obs_concat = xr.align(fc_concat, obs_concat, join='inner')
 
-        # Store the original shape for later unstacking.
+        # Store the original shape.
         self.original_shape = fc_concat.shape
 
-        # Stack the non-time dimensions into a single "features" dimension.
+        # Stack non-time dimensions into a single "features" dimension.
         self.fc_data = fc_concat.stack(features=('variable', 'latitude', 'longitude')).data
         self.obs_data = obs_concat.stack(features=('variable', 'latitude', 'longitude')).data
 
-        # Coordinates (they are typically small and can be computed eagerly).
-        self.lon_vals = fc_concat.longitude.data
-        self.lat_vals = fc_concat.latitude.data
-        self.time_vals = fc_concat.time.data
-
     def __len__(self):
-        # Return the number of time steps.
         return self.fc_data.shape[0]
 
     def __getitem__(self, index):
-        # Return one sample (forecast, observation) pair.
-        fc_sample = self.fc_data[index].compute() if hasattr(self.fc_data, 'compute') else self.fc_data[index]
-        obs_sample = self.obs_data[index].compute() if hasattr(self.obs_data, 'compute') else self.obs_data[index]
-        return fc_sample, obs_sample
+        # Retrieve one sample (forecast, observation).
+        if self.use_cupy:
+            # If using cupy, assume data is already on GPU.
+            fc_sample = self.fc_data[index]
+            obs_sample = self.obs_data[index]
+            # Convert cupy array to torch tensor using DLPack.
+            fc_tensor = torch.utils.dlpack.from_dlpack(fc_sample.__dlpack__())
+            obs_tensor = torch.utils.dlpack.from_dlpack(obs_sample.__dlpack__())
+            # Ensure the tensors are float type.
+            return fc_tensor.float(), obs_tensor.float()
+        else:
+            # For CPU-based (or dask-based) arrays.
+            fc_sample = self.fc_data[index].compute() if hasattr(self.fc_data, 'compute') else self.fc_data[index]
+            obs_sample = self.obs_data[index].compute() if hasattr(self.obs_data, 'compute') else self.obs_data[index]
+            fc_tensor = torch.from_numpy(fc_sample).float()
+            obs_tensor = torch.from_numpy(obs_sample).float()
+            return fc_tensor, obs_tensor
 
 # -------------------------------------------------------------------
 # Other helper functions 
@@ -237,6 +197,8 @@ def parse_args():
                         help='Number of neurons in the hidden layers')
     parser.add_argument('--mlp_layers', type=int, default=5,
                         help='Number of hidden layers in the MLP')
+    parser.add_argument('--use_cupy', action='store_true',
+                        help='Enable GPU acceleration for xarray operations using cupy-xarray')
     return parser.parse_args()
 
 def generate_run_id(args):
@@ -249,7 +211,6 @@ def generate_run_id(args):
     return run_id
 
 def check_dataset_alignment(ds1, ds2, coord_vars=['time', 'latitude', 'longitude']):
-    """Helper function to check alignment of coordinates between two datasets."""
     misaligned = []
     for coord in coord_vars:
         if coord in ds1.coords and coord in ds2.coords:
@@ -258,9 +219,9 @@ def check_dataset_alignment(ds1, ds2, coord_vars=['time', 'latitude', 'longitude
         else:
             misaligned.append(coord)
     if misaligned:
-        print(f"Warning: The following coordinates are not aligned between forecast and observation datasets: {misaligned}")
+        print(f"Warning: The following coordinates are not aligned: {misaligned}")
     else:
-        print("Datasets are aligned on coordinates:", coord_vars)
+        print("Datasets are aligned on:", coord_vars)
 
 def create_dataloader(forecast_data, obs_data, batch_size):
     dataset = torch.utils.data.TensorDataset(
@@ -316,7 +277,6 @@ def unnormalize_data(corrected_norm, stats, is_obs=True):
 def train_one_epoch(model, dataloader, optimizer, criterion, device, selected_indices):
     model.train()
     running_loss = 0.0
-
     for x_batch, y_batch in dataloader:
         x_batch, y_batch = x_batch.to(device), y_batch.to(device)
         optimizer.zero_grad()
@@ -352,7 +312,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, selected_
 def apply_correction(model, forecast_data, device):
     model.eval()
     with torch.no_grad():
-        x_tensor = torch.from_numpy(forecast_data).float().to(device)
+        # If forecast_data is a cupy array, convert using DLPack.
+        if hasattr(forecast_data, '__dlpack__'):
+            x_tensor = torch.utils.dlpack.from_dlpack(forecast_data.__dlpack__()).float().to(device)
+        else:
+            x_tensor = torch.from_numpy(forecast_data).float().to(device)
         corrected = model(x_tensor).cpu().numpy()
     return corrected
 
@@ -446,7 +410,6 @@ def main():
     # Create training/validation dataset using ForecastDataset.
     # ----------------------------------------------------------------
     train_time_slice = slice(args.train_start, args.train_end)
-
     t0 = time.time()
     train_val_dataset = ForecastDataset(
          forecast_path=args.forecast_path,
@@ -456,7 +419,8 @@ def main():
          lat_slice=lat_slice,
          lon_slice=lon_slice,
          time_slice=train_time_slice,
-         lead_time_hours=args.lead_time_hours
+         lead_time_hours=args.lead_time_hours,
+         use_cupy=args.use_cupy
     )
     print("Time to load dataset:", time.time() - t0)
 
@@ -466,15 +430,17 @@ def main():
     train_dataset, val_dataset = torch.utils.data.random_split(train_val_dataset, [train_size, val_size])
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-    print("Using ForecastDataset for training. Total training samples:", len(train_dataset))
-    print("Validation samples:", len(val_dataset))
+    print("Training samples:", len(train_dataset), "Validation samples:", len(val_dataset))
 
     # ----------------------------------------------------------------
     # Compute normalization statistics from a small subset of training data.
     # Here we use the first 10 samples.
-    # ----------------------------------------------------------------
-    small_train_fc = train_val_dataset.fc_data[:10].compute() if hasattr(train_val_dataset.fc_data, 'compute') else train_val_dataset.fc_data[:10]
-    small_train_obs = train_val_dataset.obs_data[:10].compute() if hasattr(train_val_dataset.obs_data, 'compute') else train_val_dataset.obs_data[:10]
+    if args.use_cupy:
+        small_train_fc = cp.asnumpy(train_val_dataset.fc_data[:10])
+        small_train_obs = cp.asnumpy(train_val_dataset.obs_data[:10])
+    else:
+        small_train_fc = train_val_dataset.fc_data[:10].compute() if hasattr(train_val_dataset.fc_data, 'compute') else train_val_dataset.fc_data[:10]
+        small_train_obs = train_val_dataset.obs_data[:10].compute() if hasattr(train_val_dataset.obs_data, 'compute') else train_val_dataset.obs_data[:10]
     _, _, _, _, stats = normalize_data(small_train_fc, small_train_fc, small_train_obs, small_train_obs, n_vars)
 
     # ----------------------------------------------------------------
@@ -494,7 +460,6 @@ def main():
                       output_dim=output_dim,
                       num_hidden_layers=args.mlp_layers)
     model.to(device)
-
     model = train_model(model, train_loader, val_loader, epochs=args.epochs,
                         lr=1e-5, device=device, selected_indices=selected_indices)
 
@@ -514,19 +479,25 @@ def main():
          lat_slice=lat_slice,
          lon_slice=lon_slice,
          time_slice=test_time_slice,
-         lead_time_hours=args.lead_time_hours
+         lead_time_hours=args.lead_time_hours,
+         use_cupy=args.use_cupy
     )
-    test_fc = test_dataset.fc_data.compute() if hasattr(test_dataset.fc_data, 'compute') else test_dataset.fc_data
-    test_obs = test_dataset.obs_data.compute() if hasattr(test_dataset.obs_data, 'compute') else test_dataset.obs_data
-    lon_vals = test_dataset.lon_vals
-    lat_vals = test_dataset.lat_vals
-    test_time_vals = test_dataset.time_vals
+    if args.use_cupy:
+        test_fc = test_dataset.fc_data  # cupy array on GPU
+        test_obs = test_dataset.obs_data
+    else:
+        test_fc = test_dataset.fc_data.compute() if hasattr(test_dataset.fc_data, 'compute') else test_dataset.fc_data
+        test_obs = test_dataset.obs_data.compute() if hasattr(test_dataset.obs_data, 'compute') else test_dataset.obs_data
+
+    lon_vals = test_dataset.ds_forecast.latitude.data if 'latitude' in test_dataset.ds_forecast.coords else test_dataset.lon_slice
+    lat_vals = test_dataset.ds_forecast.longitude.data if 'longitude' in test_dataset.ds_forecast.coords else test_dataset.lat_slice
+    test_time_vals = test_dataset.ds_forecast.time.data
     test_original_shape = test_dataset.original_shape
 
     corrected_test_fc_norm = apply_correction(model, test_fc, device)
     corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
-    print(f"MSE (original forecast, test set): {np.mean((test_fc - test_obs) ** 2):.6f}")
-    print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - test_obs) ** 2):.6f}")
+    print(f"MSE (original forecast, test set): {np.mean((cp.asnumpy(test_fc) - cp.asnumpy(test_obs)) ** 2) if args.use_cupy else np.mean((test_fc - test_obs) ** 2):.6f}")
+    print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - (cp.asnumpy(test_obs) if args.use_cupy else test_obs)) ** 2):.6f}")
 
     save_output(
         output_dir=output_dir,
@@ -535,10 +506,10 @@ def main():
         lon_vals=lon_vals,
         lat_vals=lat_vals,
         time_vals=test_time_vals,
-        original_fc=test_fc,
+        original_fc=cp.asnumpy(test_fc) if args.use_cupy else test_fc,
         corrected_fc=corrected_test_fc,
         original_shape=test_original_shape,
-        ground_truth_data=test_obs
+        ground_truth_data=cp.asnumpy(test_obs) if args.use_cupy else test_obs
     )
 
 if __name__ == "__main__":
