@@ -2,7 +2,7 @@
 # FILENAME: finetune_job.sh
 
 #SBATCH --account=atm170020-gpu # Allocation name
-#SBATCH --time=0-02:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH -p gpu # GPU partition
 #SBATCH --mem=64
 #SBATCH --nodes=1
@@ -32,8 +32,9 @@ srun -u --mpi=pmi2 \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
     --output_dir="/anvil/projects/x-atm170020/ohouck/finetuning_results" \
-    --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
-    --output_vars 10m_v_component_of_wind 10m_u_component_of_wind 
+    --train_start="2021-01-01" --train_end="2021-12-30" \
+    --test_start="2022-01-01" --test_end="2022-12-30" \
+    --use_cupy 
     "
 
 # holding forecast paths for different forecasts

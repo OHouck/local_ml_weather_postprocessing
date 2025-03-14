@@ -39,12 +39,16 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd  
 
+import cupy as cp
+
 # Import cupy if available. 
 # This is used for faster loading of large datasets on GPU.
 try:
     import cupy as cp
 except ImportError:
     cp = None
+
+
 
 # -------------------------------------------------------------------
 # Simple MLP model

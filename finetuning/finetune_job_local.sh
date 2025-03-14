@@ -12,7 +12,8 @@ python3 finetuning/finetune.py \
     --output_dir="~/wb_finetune_test" \
     --region="full_india" \
     --train_start="2021-01-01" --train_end="2021-12-30" \
-    --test_start="2022-01-01" --test_end="2022-12-30" 
+    --test_start="2022-01-01" --test_end="2022-12-30" \
+    --use_cupy False
 
 # holding forecast paths for different forecasts
 # graphcast 
