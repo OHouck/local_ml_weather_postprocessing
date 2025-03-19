@@ -5,15 +5,34 @@
 
 source .venv/bin/activate
 
-
 python3 finetuning/finetune.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
     --output_dir="~/wb_finetune_test" \
     --region="north_india" \
-    --train_start="2018-01-01" --train_end="2021-12-30" \
+    --train_start="2021-01-01" --train_end="2021-01-30" \
     --test_start="2022-01-01" --test_end="2022-01-30" \
-    --epochs=3 --use_cloud_dataloader
+    --epochs=1000 --use_cloud_dataloader
+
+# python3 finetuning/finetune.py \
+#     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
+#     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
+#     --output_dir="~/wb_finetune_test" \
+#     --region="north_india" \
+#     --train_start="2018-01-01" --train_end="2021-12-30" \
+#     --test_start="2022-01-01" --test_end="2022-12-30" \
+#     --epochs=1000 --use_cloud_dataloader
+
+# python3 finetuning/finetune.py \
+#     --forecast_path="gs://weatherbench2/datasets/hres/2016-2022-0012-64x32_equiangular_conservative.zarr" \
+#     --obs_path="gs://weatherbench2/datasets/era5/1959-2022-6h-64x32_equiangular_conservative.zarr" \
+#     --output_dir="~/wb_finetune_test" \
+#     --model_name="ifs" \
+#     --region="north_india" \
+#     --train_start="2018-01-01" --train_end="2021-12-30" \
+#     --test_start="2022-01-01" --test_end="2022-12-30" \
+#     --epochs=1000 --use_cloud_dataloader
+
 
 # holding forecast paths for different forecasts
 # graphcast 

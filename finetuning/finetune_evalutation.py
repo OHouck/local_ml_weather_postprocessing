@@ -53,14 +53,14 @@ def main():
     
 
     # variables used to finetune the model. Uncomment the one you want to use
-    # vars_trained_using = "2m_temperature"
+    vars_trained_using = "2m_temperature"
     # vars_trained_using = "10m_u_component_of_wind"
-    vars_trained_using = "10m_u_component_of_wind_10m_v_component_of_wind"
+    # vars_trained_using = "10m_u_component_of_wind_10m_v_component_of_wind"
 
     # variable to plot
-    # var_name = "2m_temperature"
+    var_name = "2m_temperature"
     # var_name = "10m_u_component_of_wind"
-    var_name = "wind_speed"
+    # var_name = "wind_speed"
     
 
     # OH: eventually would like to be able to add additional models
@@ -79,7 +79,10 @@ def main():
 
     dir = setup_directories()
 
-    forecast_path = os.path.join(dir['input_dir'], f"{model}_forecasts_{vars_trained_using}{level}.zarr")
+    filename = "pangu_north_india_train2018-01-01-2021-12-30_test2022-01-01-2022-12-30_48h_train_2m_temperature_output2m_temperature_mlp512x5.zarr"
+
+    # forecast_path = os.path.join(dir['input'], f"{model}_forecasts_{vars_trained_using}{level}.zarr")
+    forecast_path = os.path.join(dir['input'], filename)
     print(f"Loading forecast data from {forecast_path}")
     ds_forecasts = xr.open_zarr(forecast_path) if forecast_path.endswith(".zarr") else xr.open_dataset(forecast_path)
 
@@ -118,6 +121,11 @@ def main():
     mse_spatial_orig = ((fc_orig_aligned - ground_truth_aligned) ** 2).mean(dim=["time"])
     mse_spatial_corr = ((fc_corr_aligned - ground_truth_aligned) ** 2).mean(dim=["time"])
 
+    # Compute spatial raw average over time for mapping
+    raw_spartial_orig = fc_orig_aligned.mean(dim=["time"])
+    raw_spartial_corr = fc_corr_aligned.mean(dim=["time"])
+    raw_spatial_diff = raw_spartial_corr - raw_spartial_orig
+
     # Compute overall MSE (scalar value)
     mse_total_orig = ((fc_orig_aligned - ground_truth_aligned) ** 2).mean()
     mse_total_corr = ((fc_corr_aligned - ground_truth_aligned) ** 2).mean()
@@ -145,11 +153,85 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
+    plt.show()
 
     # Save the time-series figure
     save_path = os.path.join(dir["fig"], f"mse_time_series_{var_name}_{model}_traind_with_{vars_trained_using}.png")
-    plt.savefig(save_path, dpi=150)
+    # plt.savefig(save_path, dpi=150)
     print(f"Time-series plot saved to {save_path}")
+    plt.close()
+
+    # =============================================================================
+    # Create and Save Spatial Raw Maps with Base Map (Country Outlines)
+    # =============================================================================
+        # Determine common color scale limits for the original and corrected forecasts
+    vmin = float(min(raw_spartial_orig.min().values, raw_spartial_corr.min().values))
+    vmax = float(max(raw_spartial_orig.max().values, raw_spartial_corr.max().values))
+
+    # Create a figure with 2 rows:
+    #   Row 1: two subplots (original and corrected forecasts, sharing one colorbar)
+    #   Row 2: one subplot for the MSE difference, spanning both columns.
+    fig = plt.figure(figsize=(14, 10))
+    gs = gridspec.GridSpec(2, 2, height_ratios=[1, 1])
+    
+    # First row subplots
+    ax0 = fig.add_subplot(gs[0, 0], projection=ccrs.PlateCarree())
+    ax1 = fig.add_subplot(gs[0, 1], projection=ccrs.PlateCarree())
+    # Second row: difference plot spanning both columns
+    ax2 = fig.add_subplot(gs[1, :], projection=ccrs.PlateCarree())
+
+    # Plot original forecast spatial MSE with colorbar
+    im0 = raw_spartial_orig.plot(ax=ax0, cmap='viridis', add_colorbar=False,
+                                vmin=vmin, vmax=vmax)
+    ax0.set_title("Original Forecast Values")
+    ax0.set_xlabel("Longitude")
+    ax0.set_ylabel("Latitude")
+    ax0.coastlines()
+    ax0.add_feature(cfeature.BORDERS, linestyle=':')
+    ax0.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax0.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+
+    # Plot corrected forecast spatial MSE without an extra colorbar
+    raw_spartial_corr.plot(ax=ax1, cmap='viridis', add_colorbar=False,
+                          vmin=vmin, vmax=vmax)
+    ax1.set_title("Corrected Forecast Values")
+    ax1.set_xlabel("Longitude")
+    ax1.set_ylabel("Latitude")
+    ax1.coastlines()
+    ax1.add_feature(cfeature.BORDERS, linestyle=':')
+    ax1.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax1.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+
+    # Plot MSE difference (corrected - original) in the second row with its own colorbar
+    im2 = raw_spatial_diff.plot(ax=ax2, cmap='coolwarm', add_colorbar=False)
+    ax2.set_title("Difference (Corrected - Original)")
+    ax2.set_xlabel("Longitude")
+    ax2.set_ylabel("Latitude")
+    ax2.coastlines()
+    ax2.add_feature(cfeature.BORDERS, linestyle=':')
+    ax2.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax2.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+
+    # Manually add a colorbar for the MSE plots.
+    # Get the current position of ax2 and create a new axis to the right.
+    pos = ax0.get_position()
+    cax2 = fig.add_axes([pos.x1 + 0.02, pos.y0, 0.02, pos.height])
+    fig.colorbar(im0, cax=cax2, label='Degrees K')
+
+
+    # Manually add a colorbar for the difference plot.
+    # Get the current position of ax2 and create a new axis to the right.
+    pos = ax2.get_position()
+    cax2 = fig.add_axes([pos.x1 + 0.02, pos.y0, 0.02, pos.height])
+    fig.colorbar(im2, cax=cax2, label='MSE Difference')
+
+    plt.suptitle(f"Spatial MSE Map for {model} - {var_name}", fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
+    # plt.savefig(save_path_spatial, dpi=150)
+    print(f"Spatial MSE plot with base map and elevation gradients saved to {save_path_spatial}")
     plt.close()
 
     # =============================================================================
@@ -219,9 +301,10 @@ def main():
 
     plt.suptitle(f"Spatial MSE Map for {model} - {var_name}", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
     save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
-    plt.savefig(save_path_spatial, dpi=150)
+    # plt.savefig(save_path_spatial, dpi=150)
     print(f"Spatial MSE plot with base map and elevation gradients saved to {save_path_spatial}")
     plt.close()
 
