@@ -13,7 +13,7 @@ python3 finetuning/finetune.py \
     --train_start="2021-01-01" --train_end="2021-01-30" \
     --test_start="2022-01-01" --test_end="2022-01-30" \
     --lead_time_hours=48 \
-    --epochs=1000 
+    --epochs=10 
 
 # python3 finetuning/finetune.py \
 #     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
