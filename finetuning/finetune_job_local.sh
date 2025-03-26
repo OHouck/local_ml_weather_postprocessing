@@ -9,11 +9,26 @@ python3 finetuning/finetune.py \
     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
     --output_dir="~/wb_finetune_test" \
-    --region="north_india" \
-    --train_start="2021-01-01" --train_end="2021-01-30" \
-    --test_start="2022-01-01" --test_end="2022-01-30" \
-    --lead_time_hours=48 \
-    --epochs=10 
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --region="pakistan" \
+
+# baseline
+# python3 finetuning/finetune.py \
+#     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
+#     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
+#     --output_dir="~/wb_finetune_test" \
+#     --train_start="2018-01-01" --train_end="2021-12-31" \
+#     --test_start="2022-01-01" --test_end="2022-12-31" \
+
+# # use full_india
+# python3 finetuning/finetune.py \
+#     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
+#     --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
+#     --output_dir="~/wb_finetune_test" \
+#     --train_start="2018-01-01" --train_end="2021-12-31" \
+#     --test_start="2022-01-01" --test_end="2022-12-31" \
+#     --region="full_india" 
 
 # python3 finetuning/finetune.py \
 #     --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \

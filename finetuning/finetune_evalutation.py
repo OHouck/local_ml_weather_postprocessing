@@ -57,21 +57,24 @@ def main():
     # vars_trained_using = "10m_u_component_of_wind"
     # vars_trained_using = "10m_u_component_of_wind_10m_v_component_of_wind"
 
-    # variable to plot
-    var_name = "2m_temperature"
-    # var_name = "10m_u_component_of_wind"
-    # var_name = "wind_speed"
-    
 
-    # OH: eventually would like to be able to add additional models
     model = "pangu"
+    region = "north_india"
+    train_start_time = "2018-01-01"
+    train_end_time = "2021-12-31"
+    test_start_time = "2022-01-01"
+    test_end_time = "2022-12-31"
+    lead_time = 24
+    training_vars = "2m_temperature" 
+    output_vars = "2m_temperature" 
+    num_layers = 5
+    num_units = 512
 
-    # If you need a specific level (e.g., 850 hPa), set this to an integer or None
-    level = "" # or None if not needed
 
+    var_name = output_vars # change if there are more than 1
     var_name_original = f"{var_name}_original"
     var_name_corrected = f"{var_name}_corrected"
-    var_name_groundtruth = f"{var_name}_groundtruth"
+    var_name_groundtruth = f"{var_name}_ground_truth"
 
     # ==========================================================================
     # Load Data
@@ -79,12 +82,15 @@ def main():
 
     dir = setup_directories()
 
-    filename = "pangu_north_india_train2018-01-01-2021-12-30_test2022-01-01-2022-12-30_48h_train_2m_temperature_output2m_temperature_mlp512x5.zarr"
+    filename = f"{model}_{region}_train{train_start_time}-{train_end_time}_test{test_start_time}-{test_end_time}_{lead_time}h_train_{training_vars}_output{output_vars}_mlp{num_units}x{num_layers}.zarr"
+    # filename = "pangu_north_india_train2018-01-01-2021-12-30_test2022-01-01-2022-12-30_48h_train_2m_temperature_output2m_temperature_mlp512x5.zarr"
 
     # forecast_path = os.path.join(dir['input'], f"{model}_forecasts_{vars_trained_using}{level}.zarr")
     forecast_path = os.path.join(dir['input'], filename)
     print(f"Loading forecast data from {forecast_path}")
     ds_forecasts = xr.open_zarr(forecast_path) if forecast_path.endswith(".zarr") else xr.open_dataset(forecast_path)
+    print(ds_forecasts)
+
 
     # if want to plot windspeed, need to compute it from u and v components
     if var_name == "wind_speed":
@@ -156,7 +162,7 @@ def main():
     plt.show()
 
     # Save the time-series figure
-    save_path = os.path.join(dir["fig"], f"mse_time_series_{var_name}_{model}_traind_with_{vars_trained_using}.png")
+    save_path = os.path.join(dir["fig"], f"mse_time_series_{region}_{var_name}_{model}_traind_with_{vars_trained_using}.png")
     # plt.savefig(save_path, dpi=150)
     print(f"Time-series plot saved to {save_path}")
     plt.close()
@@ -229,7 +235,7 @@ def main():
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
+    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{region}_{var_name}_{model}_trained_with_{vars_trained_using}.png")
     # plt.savefig(save_path_spatial, dpi=150)
     print(f"Spatial MSE plot with base map and elevation gradients saved to {save_path_spatial}")
     plt.close()
@@ -303,7 +309,7 @@ def main():
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{var_name}_{model}_trained_with_{vars_trained_using}.png")
+    save_path_spatial = os.path.join(dir["fig"], f"mse_spatial_{region}_{var_name}_{model}_trained_with_{vars_trained_using}.png")
     # plt.savefig(save_path_spatial, dpi=150)
     print(f"Spatial MSE plot with base map and elevation gradients saved to {save_path_spatial}")
     plt.close()
