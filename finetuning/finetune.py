@@ -72,9 +72,11 @@ def parse_args():
                         help='Path to forecast data (e.g. Zarr or NetCDF)')
     parser.add_argument('--obs_path', type=str, required=True,
                         help='Path to observation data (e.g. ERA5 Zarr or NetCDF)')
+    parser.add_argument('--data_dir', type=str, default="~/weatherbench2_data",
+                        help='Directory to save the raw forecasts locally')
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save the fine-tuned model and corrected forecasts')
-    parser.add_argument('--model_name', type=str, default="pangu",
+    parser.add_argument('--model_name', type=str, required=True,
                         help='Name of the base model (e.g. pangu, ifs, neural_gcm)')
     parser.add_argument('--region', type=str, default="north_india",
                         help='Name of the region')
@@ -104,13 +106,13 @@ def generate_run_id(args):
     training_vars_str = "_".join(args.training_vars)
     output_vars_str = "_".join(args.output_vars)
     mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
-    lead_time = f"leadtime_{args.lead_time_hours}"
+    lead_time = f"_leadtime_{args.lead_time_hours}"
 
     run_id = f"{args.model_name}_{region_str}_{dates_str}_{args.lead_time_hours}h_train_{training_vars_str}_output{output_vars_str}{lead_time}{mlp_str}"
     return run_id
 
 
-def save_data_locally(path, full_surface_var_list, full_atm_var_list, lat_slice, lon_slice,
+def save_data_locally(path, full_surface_var_list, full_atm_var_list, lat_values, lon_values,
               time_values, lead_time_hours, output_path):
     # Open datasets (supporting Zarr or NetCDF)
     import xarray as xr
@@ -136,13 +138,13 @@ def save_data_locally(path, full_surface_var_list, full_atm_var_list, lat_slice,
 
     # Select region, time, and variables
     ds_surface = ds.sel(time=time_values,
-                latitude=lat_slice,
-                longitude=lon_slice)[full_surface_var_list]
+                latitude=lat_values,
+                longitude=lon_values)[full_surface_var_list]
     # select atm vars for 1000 hPa level
     level = 1000
     ds_atm = ds.sel(time=time_values,
-                latitude=lat_slice,
-                longitude=lon_slice,
+                latitude=lat_values,
+                longitude=lon_values,
                 level = level)[full_atm_var_list].drop_vars('level')
     # rename all atm vars to include the level with hte label "1khPa"
     ds_atm = ds_atm.rename({v: f"{v}_{level}hPa" for v in full_atm_var_list})
@@ -371,6 +373,10 @@ def main():
     output_dir = os.path.expanduser(args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
+    data_dir = os.path.expanduser(args.data_dir)
+    os.makedirs(data_dir, exist_ok=True)
+
+
     # Prepare region and time slices
     if args.region == "full_india":
         lat_min, lat_max = 8.75, 27.25
@@ -399,11 +405,10 @@ def main():
     else:
         raise ValueError(f"Unknown region '{args.region}'. Please specify a valid region.")
 
-
-    lat_slice = slice(lat_min, lat_max)
-    lon_slice = slice(lon_min, lon_max)
     train_time_values = np.arange(np.datetime64(args.train_start), np.datetime64(args.train_end), np.timedelta64(24, 'h'))
     test_time_values = np.arange(np.datetime64(args.test_start), np.datetime64(args.test_end), np.timedelta64(24, 'h'))
+    lat_values = np.arange(lat_min, lat_max, 0.25)
+    lon_values = np.arange(lon_min, lon_max, 0.25)
 
     n_train_time = len(train_time_values)
     n_test_time = len(test_time_values)
@@ -415,12 +420,13 @@ def main():
     full_lead_time_hours = [24, 72, 168] # times for 1 day, 3 days, and 7 days ahead
 
     # region to download for india
-    # full_lat_slice = slice(8.5, 28) # full_india is max area
-    # full_lon_slice = slice(70.5, 87.5)
-
-    # region to download for pakistan
-    full_lat_slice = slice(23.75, 34.25) # area for pakistan/afganistan
-    full_lon_slice = slice(59.75, 70.25)
+    if large_region == "india":
+        full_lat_values = np.arange(8.5, 28, 0.25) # full_india is max area
+        full_lon_values = np.arange(70.5, 87.5, 0.25)
+    elif large_region == "pakistan":
+        # full lat values are by 0.25 degrees
+        full_lat_values = np.arange(23.75, 34.25, 0.25) # pakistan/afganistan
+        full_lon_values = np.arange(59.75, 70.25, 0.25) 
 
     # =========================================================================
     # 0) Download and save the data locally (if needed)
@@ -428,7 +434,7 @@ def main():
 
      # ---- Training data ----
     train_months = get_month_ranges(args.train_start, args.train_end)
-    train_dir = os.path.join(output_dir, f"train_{large_region}")
+    train_dir = os.path.join(data_dir, f"train_{large_region}")
     os.makedirs(train_dir, exist_ok=True)
 
     dask.config.set(scheduler="threads", num_workers=8)
@@ -451,15 +457,16 @@ def main():
             continue
         else:
             save_data_locally(args.forecast_path, full_surface_var_list, full_atm_var_list,
-                          full_lat_slice, full_lon_slice, time_values,
+                          full_lat_values, full_lon_values, time_values,
                           full_lead_time_hours, forecast_output_path)
             save_data_locally(args.obs_path, full_surface_var_list, full_atm_var_list,
-                            lat_slice, lon_slice, time_values,
+                            lat_values, lon_values, time_values,
                             full_lead_time_hours, obs_output_path)
+    
 
     # ---- Test data ----
     test_months = get_month_ranges(args.test_start, args.test_end)
-    test_dir = os.path.join(output_dir, f"test_{large_region}")
+    test_dir = os.path.join(data_dir, f"test_{large_region}")
     os.makedirs(test_dir, exist_ok=True)
     
     for start_dt, end_dt in test_months:
@@ -479,10 +486,10 @@ def main():
             continue
         else:
             save_data_locally(args.forecast_path, full_surface_var_list, full_atm_var_list,
-                            full_lat_slice, full_lon_slice, time_values,
+                            full_lat_values, full_lon_values, time_values,
                             full_lead_time_hours, forecast_output_path)
             save_data_locally(args.obs_path, full_surface_var_list, full_atm_var_list,
-                            full_lat_slice, full_lon_slice, time_values,
+                            full_lat_values, full_lon_values, time_values,
                             full_lead_time_hours, obs_output_path)
         
     # =========================================================================
@@ -490,7 +497,7 @@ def main():
     # =========================================================================
 
     # ----- Loading combined training data from monthly files -----
-    train_dir = os.path.join(output_dir, f"train_{large_region}")
+    train_dir = os.path.join(data_dir, f"train_{large_region}")
     # For forecast and observation data, we define the patterns for monthly file names.
     fc_pattern = f"{args.model_name}_train_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_train_obs_data_*.nc"
@@ -500,22 +507,22 @@ def main():
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = train_forecast_ds.sel(
         time=train_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.training_vars].drop_vars('prediction_timedelta').compute()
     
     fc_ds_output = train_forecast_ds.sel(
         time=train_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.output_vars].drop_vars('prediction_timedelta').compute()
     
     obs_ds = train_obs_ds.sel(
         time=train_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
     )[args.output_vars].compute()
 
 
@@ -607,7 +614,7 @@ def main():
     # =========================================================================
 
     # ----- Loading combined training data from monthly files -----
-    test_dir = os.path.join(output_dir, f"test_{large_region}")
+    test_dir = os.path.join(data_dir, f"test_{large_region}")
     # For forecast and observation data, we define the patterns for monthly file names.
     fc_pattern = f"{args.model_name}_test_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_test_obs_data_*.nc"
@@ -617,22 +624,22 @@ def main():
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     test_fc_ds = test_forecast_ds.sel(
         time=test_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.training_vars].drop_vars('prediction_timedelta').compute()
     
     test_fc_ds_output = test_forecast_ds.sel(
         time=test_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.output_vars].drop_vars('prediction_timedelta').compute()
     
     test_obs_ds = test_obs_ds.sel(
         time=test_time_values,
-        latitude=lat_slice,
-        longitude=lon_slice,
+        latitude=lat_values,
+        longitude=lon_values,
     )[args.output_vars].compute()
 
 
