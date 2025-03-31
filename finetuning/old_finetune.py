@@ -137,7 +137,6 @@ def load_data(forecast_path, obs_path, var_name, level, lat_slice, lon_slice,
     ds_forecast = ds_forecast.sortby('latitude')
     ds_obs = ds_obs.sortby('latitude')
 
-
     # some forecasts use lat/lon instead of latitude/longitude so rename them
     if 'latitude' not in ds_forecast[var_name].dims and 'lat' in ds_forecast[var_name].dims:
         ds_forecast = ds_forecast.rename({'lat': 'latitude'})
@@ -317,8 +316,8 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         valid_loss = validate_one_epoch(model, valid_loader, criterion, device)
 
-        print(f"Epoch {epoch + 1}/{epochs}, "
-              f"Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}")
+        # print(f"Epoch {epoch + 1}/{epochs}, "
+        #       f"Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}")
 
     return model
 
@@ -527,6 +526,8 @@ def main():
     corrected_test_fc = unnormalize_data(corrected_test_fc_norm, stats, is_obs=True)
     print(f"MSE (original forecast, test set): {np.mean((test_fc - test_obs) ** 2):.6f}")
     print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - test_obs) ** 2):.6f}")
+
+    exit()
 
     # =========================================================================
     # 10) Save outputs for test

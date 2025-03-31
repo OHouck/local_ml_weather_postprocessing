@@ -1,5 +1,5 @@
 # eval_weatherbench2_finetuning.py
-# Author: Ozzy Houck (modified by GPT)
+# Author: Ozzy Houck 
 # Date Created: 06/27/2024
 #
 # Purpose: take .zarr outputs from weatherbench2_finetuning.py (which include
