@@ -49,7 +49,7 @@ def setup_directories():
 # Metrics Function
 #######################
 
-def create_metrics(ds_forecasts, var_name):
+def create_metrics(ds_forecasts, prediction_var):
     """
     Computes various metrics from the forecast dataset.
 
@@ -67,20 +67,20 @@ def create_metrics(ds_forecasts, var_name):
       mse_spatial_corr: Spatial MSE map for the corrected forecast.
     """
     # Define variable names.
-    var_name_groundtruth = f"{var_name}_ground_truth"
-    var_name_original = f"{var_name}_original"
-    var_name_corrected = f"{var_name}_corrected"
+    var_name_ground_truth = f"{prediction_var}_ground_truth"
+    var_name_original = f"{prediction_var}_original"
+    var_name_corrected = f"{prediction_var}_corrected"
 
     # If forecasting wind_speed, compute it from u and v components.
-    if var_name == "wind_speed":
-        for tag in ["corrected", "original", "groundtruth"]:
+    if prediction_var== "wind_speed":
+        for tag in ["corrected", "original", "ground_truth"]:
             u_component = ds_forecasts[f"10m_u_component_of_wind_{tag}"]
             v_component = ds_forecasts[f"10m_v_component_of_wind_{tag}"]
             wind_speed = np.sqrt(u_component**2 + v_component**2)
             ds_forecasts[f"wind_speed_{tag}"] = wind_speed
 
     # Extract data arrays.
-    ground_truth = ds_forecasts[var_name_groundtruth]
+    ground_truth = ds_forecasts[var_name_ground_truth]
     fc_original = ds_forecasts[var_name_original]
     fc_corrected = ds_forecasts[var_name_corrected]
 
@@ -245,8 +245,8 @@ def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, var_nam
 #######################
 
 def generate_plots(dirs, train_start, train_end, test_start, test_end,
-                   model, region, lead_time,
-                   training_output_vars, mlp_params):
+                   model, region, lead_time, 
+                   training_output_vars, prediction_var, mlp_params):
     """
     Generates individual plots evaluating the performance of corrected weather forecasts.
     
@@ -284,6 +284,7 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
     args.model_name = model
 
     run_id = generate_run_id(args)
+    
     filename = f"{run_id}.zarr"
 
     # Set up directories and load data.
@@ -293,38 +294,34 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
 
     print(ds_forecasts)
 
-
-    # OH: have to update this if using more than 1 output variable
-    var_name = output_vars[0]
-
     # Compute metrics.
-    mse_orig, mse_corr, raw_spatial_orig, raw_spatial_corr, raw_spatial_diff, mse_spatial_orig, mse_spatial_corr = create_metrics(ds_forecasts, var_name)
+    mse_orig, mse_corr, raw_spatial_orig, raw_spatial_corr, raw_spatial_diff, mse_spatial_orig, mse_spatial_corr = create_metrics(ds_forecasts, prediction_var)
 
 
     # Print spatial bounds.
-    ground_truth = ds_forecasts[f"{var_name}_ground_truth"]
-    mse_total_orig = ((ds_forecasts[f"{var_name}_original"] - ground_truth) ** 2).mean()
-    mse_total_corr = ((ds_forecasts[f"{var_name}_corrected"] - ground_truth) ** 2).mean()
+    ground_truth = ds_forecasts[f"{prediction_var}_ground_truth"]
+    mse_total_orig = ((ds_forecasts[f"{prediction_var}_original"] - ground_truth) ** 2).mean()
+    mse_total_corr = ((ds_forecasts[f"{prediction_var}_corrected"] - ground_truth) ** 2).mean()
     print(f"Total MSE for original: {mse_total_orig.values}")
     print(f"Total MSE for corrected: {mse_total_corr.values}")
 
     # Generate individual plots.
-    plot_monthly_mse(mse_orig, mse_corr, model, region, var_name, dirs, training_vars, lead_time)
+    plot_monthly_mse(mse_orig, mse_corr, model, region, prediction_var, dirs, training_vars, lead_time)
 
     # Create maps for all regions besides "pixel".
     if region != "pixel":
-        plot_raw_forecast_original(raw_spatial_orig, model, region, var_name, dirs, training_vars, lead_time)
-        plot_raw_forecast_corrected(raw_spatial_corr, model, region, var_name, dirs, training_vars, lead_time)
-        plot_raw_forecast_diff(raw_spatial_diff, model, region, var_name, dirs, training_vars, lead_time)
-        plot_mse_map_original(mse_spatial_orig, model, region, var_name, dirs, training_vars, lead_time)
-        plot_mse_map_corrected(mse_spatial_corr, model, region, var_name, dirs, training_vars, lead_time)
-        plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, var_name, dirs, training_vars, lead_time)
+        plot_raw_forecast_original(raw_spatial_orig, model, region, prediction_var, dirs, training_vars, lead_time)
+        plot_raw_forecast_corrected(raw_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
+        plot_raw_forecast_diff(raw_spatial_diff, model, region, prediction_var, dirs, training_vars, lead_time)
+        plot_mse_map_original(mse_spatial_orig, model, region, prediction_var, dirs, training_vars, lead_time)
+        plot_mse_map_corrected(mse_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
+        plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
 
 #######################
 # New Comparison Function for Multiple Runs
 #######################
 
-def compare_runs_mse(dirs, model, training_output_vars, mlp_params):
+def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_params):
     """
     Scans the input folder for forecast files matching the given model,
     training/output variables, and MLP parameters, and creates a single bar plot
@@ -353,18 +350,22 @@ def compare_runs_mse(dirs, model, training_output_vars, mlp_params):
 
     # Define the lead times and regions to consider.
     lead_times = [24, 72, 168] # possible lead times
-    regions = ["pakistan", "south_pakistan", "north_india", "uttar_pradesh", "pixel"] # possible regions
+    regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"] # possible regions
 
     # Dictionary to store results keyed by (lead_time, region)
     # Each value is a tuple: (avg_mse_orig, avg_mse_corr)
     results = {}
+    ifs_results = {}
 
-    # Loop over each combination.
+    # Loop over each combination to get original and forecast
     for lt in lead_times:
         for region in regions:
-            pattern = os.path.join(input_folder, f"{model}_{region}_*_{lt}h_train_{training_vars_str}_output{output_vars_str}*{mlp_str}*.zarr")
+            pattern = os.path.join(input_folder, f"{model}_{region}_*_{lt}h_train_{training_vars_str}_output{output_vars_str}_leadtime_{lt}*{mlp_str}*.zarr")
             files = glob.glob(pattern)
+            ifs_pattern = os.path.join(input_folder, f"ifs_{region}_*_{lt}h_train_{training_vars_str}_output{output_vars_str}*{mlp_str}*.zarr")
+            ifs_files = glob.glob(ifs_pattern)
             if not files:
+                print(f"No files found for {model} in {region} with lead time {lt}h")
                 continue
             mse_orig_list = []
             mse_corr_list = []
@@ -374,75 +375,134 @@ def compare_runs_mse(dirs, model, training_output_vars, mlp_params):
                 except Exception as e:
                     print(f"Error opening {f}: {e}")
                     continue
-                var_name = output_vars[0]
-                ground_truth = ds[f"{var_name}_ground_truth"]
-                fc_original = ds[f"{var_name}_original"]
-                fc_corrected = ds[f"{var_name}_corrected"]
+                if prediction_var == "wind_speed":
+                    ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+                    ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+                    ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
+                    print(f"Mean wind speed original: {ds['wind_speed_original'].mean().values}")
+                    print(f"Mean wind speed corrected: {ds['wind_speed_corrected'].mean().values}")
+                ground_truth = ds[f"{prediction_var}_ground_truth"]
+                fc_original = ds[f"{prediction_var}_original"]
+                fc_corrected = ds[f"{prediction_var}_corrected"]
                 mse_total_orig = float(((fc_original - ground_truth) ** 2).mean().values)
                 mse_total_corr = float(((fc_corrected - ground_truth) ** 2).mean().values)
                 mse_orig_list.append(mse_total_orig)
                 mse_corr_list.append(mse_total_corr)
+
+            ifs_mse_orig_list = []
+            ifs_mse_corr_list = []
+            for f in ifs_files:
+                try:
+                    ds = xr.open_zarr(f)
+                except Exception as e:
+                    print(f"Error opening {f}: {e}")
+                    continue
+                if prediction_var == "wind_speed":
+                    ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+                    ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+                    ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
+
+                    # print mean wind speed for original and corrected
+                    print(f"Mean wind speed original: {ds['wind_speed_original'].mean().values}")
+                    print(f"Mean wind speed corrected: {ds['wind_speed_corrected'].mean().values}")
+                    print(f"Mean wind speed ground truth: {ds['wind_speed_ground_truth'].mean().values}")
+                ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
+                ifs_fc_original = ds[f"{prediction_var}_original"]
+                ifs_fc_corrected = ds[f"{prediction_var}_corrected"]
+                ifs_mse_total_orig = float(((ifs_fc_original - ifs_ground_truth) ** 2).mean().values)
+                ifs_mse_total_corr = float(((ifs_fc_corrected - ifs_ground_truth) ** 2).mean().values)
+                ifs_mse_orig_list.append(ifs_mse_total_orig)
+                ifs_mse_corr_list.append(ifs_mse_total_corr)
+
             if mse_orig_list and mse_corr_list:
                 avg_mse_orig = np.mean(mse_orig_list)
                 avg_mse_corr = np.mean(mse_corr_list)
                 results[(lt, region)] = (avg_mse_orig, avg_mse_corr)
+            if ifs_mse_orig_list and ifs_mse_corr_list:
+                avg_mse_orig_ifs = np.mean(ifs_mse_orig_list)
+                avg_mse_corr_ifs = np.mean(ifs_mse_corr_list)
+                ifs_results[(lt, region)] = (avg_mse_orig_ifs, avg_mse_corr_ifs)
 
     # Prepare data for the single grouped bar plot.
     x_positions = []
     x_labels = []
     mse_orig_vals = []
     mse_corr_vals = []
+    ifs_mse_orig_vals = []
+    ifs_mse_corr_vals = []
     pos = 0
     group_gap = 1  # extra gap between different lead time groups
     for region in regions:
         # Collect regions that have results for this lead time.
         for lt in sorted(lead_times):
             regions_with_data = [r for r in regions if (lt, r) in results]
-            if not regions_with_data:
+            regions_with_ifs_data = [r for r in regions if (lt, r) in ifs_results]
+
+            # check if region is available in both results and ifs_results
+            if region not in regions_with_data or region not in regions_with_ifs_data:
+                print(f"Skipping region {region} for lead time {lt} as no data is available")
                 continue
+
             x_positions.append(pos)
             # Create a two-line label: first line is lead time, second line is region.
             label = f"{lt}h\n{region.replace('_', ' ').title()}"
             x_labels.append(label)
             mse_orig, mse_corr = results[(lt, region)]
+            ifs_mse_orig, ifs_mse_corr = ifs_results[(lt, region)]
+
             mse_orig_vals.append(mse_orig)
             mse_corr_vals.append(mse_corr)
+            ifs_mse_orig_vals.append(ifs_mse_orig)
+            ifs_mse_corr_vals.append(ifs_mse_corr)
             pos += 1
         pos += group_gap  # add gap between groups
+
+    x_positions_offset = np.array(x_positions) + 0.3  # Offset for IFS bars
 
     # Create the grouped bar plot.
     fig, ax = plt.subplots(figsize=(max(8, len(x_positions)*0.8), 6))
     # Overlap the two bars at the same positions with transparency.
     ax.bar(x_positions, mse_orig_vals, color='blue', width=0.8, alpha=0.5, label='Original MSE')
     ax.bar(x_positions, mse_corr_vals, color='red', width=0.8, alpha=0.5, label='Corrected MSE')
+    ax.bar(x_positions_offset , ifs_mse_orig_vals, color='blue', width=0.1, alpha=.75, label='IFS Baseline MSE')
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=45, ha='right')
     ax.set_ylabel("Overall MSE")
-    ax.set_title(f"MSE Comparison for {model}\nPredicting {output_vars}")
+    ax.set_title(f"MSE Comparison for {model}\nPredicting {prediction_var}")
     ax.legend()
     plt.tight_layout()
 
-    save_path = os.path.join(dirs["fig"], f"mse_comparison_{model}_trained_with_{training_vars_str}_output{output_vars_str}_{mlp_str}.png")
+    save_path = os.path.join(dirs["fig"], f"mse_comparison_{model}_trained_with_{training_vars_str}_output{prediction_var}_{mlp_str}.png")
     plt.savefig(save_path, dpi=150)
     print(f"MSE comparison bar chart saved to {save_path}")
     plt.close()
 
-#######################
-# Example Usage
-#######################
-
 if __name__ == "__main__":
     dirs = setup_directories()
+
+    # three options for training and output variable combinations, uncomment the one you want to use
+    training_vars = ["2m_temperature"]
+    output_vars = ["2m_temperature"]
+    prediction_var = "2m_temperature"
+
+    # training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    # output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    # prediction_var = "wind_speed"
+
+    # training_vars = ["2m_temperature", "geopotential_1000hPa", "specific_humidity_1000hPa"]
+    # output_vars = ["2m_temperature"]
+    # prediction_var = "2m_temperature"
 
     # Compare multiple runs across lead times and regions in a single plot.
     compare_runs_mse(
         dirs=dirs,
         model="pangu",
-        training_output_vars=(["2m_temperature"], ["2m_temperature"]),
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
         mlp_params=(512, 5)
     )
 
-    regions = ["pakistan", "south_pakistan", "north_india", "uttar_pradesh", "pixel"]
+    regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
     lead_times = [24, 72, 168]
 
     for region in regions:
@@ -457,6 +517,7 @@ if __name__ == "__main__":
                 model="pangu",
                 region=region,
                 lead_time=lead_time,
-                training_output_vars=(["2m_temperature"], ["2m_temperature"]),
+                training_output_vars=(training_vars, output_vars),
+                prediction_var=prediction_var,
                 mlp_params=(512, 5)
             )

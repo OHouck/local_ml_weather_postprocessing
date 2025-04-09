@@ -173,6 +173,7 @@ def load_combined_dataset(root_dir, file_pattern):
     """
     file_paths = glob.glob(os.path.join(root_dir, "*", file_pattern))
     file_paths.sort()
+
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
@@ -391,8 +392,8 @@ def main():
         lon_min, lon_max = 78, 87.25
         large_region = "india"
     elif args.region =="pixel":
-        lat_min, lat_max = 24.25, 24.25
-        lon_min, lon_max = 78, 78
+        lat_min, lat_max = 24.25, 24.5
+        lon_min, lon_max = 78, 78.25
         large_region = "india"
     elif args.region == "pakistan":
         lat_min, lat_max = 25, 34
@@ -418,6 +419,10 @@ def main():
     full_surface_var_list = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"] 
     full_atm_var_list = ["geopotential", "v_component_of_wind", "u_component_of_wind", "specific_humidity"]
     full_lead_time_hours = [24, 72, 168] # times for 1 day, 3 days, and 7 days ahead
+    full_train_start = "2018-01-01"  
+    full_train_end = "2021-12-31"  # full range for training data
+    full_test_start = "2022-01-01"  # full range for test data
+    full_test_end = "2022-12-31"  # full range for test data
 
     # region to download for india
     if large_region == "india":
@@ -433,7 +438,7 @@ def main():
     # =========================================================================
 
      # ---- Training data ----
-    train_months = get_month_ranges(args.train_start, args.train_end)
+    train_months = get_month_ranges(full_train_start, full_train_end)
     train_dir = os.path.join(data_dir, f"train_{large_region}")
     os.makedirs(train_dir, exist_ok=True)
 
@@ -450,22 +455,27 @@ def main():
                                 np.timedelta64(24, 'h'))
         forecast_output_path = os.path.join(month_folder, f"{args.model_name}_train_forecast_data_{month_str}.nc")
         obs_output_path = os.path.join(month_folder, f"{args.model_name}_train_obs_data_{month_str}.nc")
-        
+
+        # delete and uncomment below lines
+        # save_data_locally(args.obs_path, full_surface_var_list, full_atm_var_list,
+        #                 full_lat_values, full_lon_values, time_values,
+        #                 full_lead_time_hours, obs_output_path)
+
         # check if the files already exist
         if os.path.exists(forecast_output_path) and os.path.exists(obs_output_path):
-            print(f"Files already exist for {month_str}. Skipping...")
+            print(f"Train files already exist for {month_str}. Skipping...")
             continue
         else:
             save_data_locally(args.forecast_path, full_surface_var_list, full_atm_var_list,
                           full_lat_values, full_lon_values, time_values,
                           full_lead_time_hours, forecast_output_path)
             save_data_locally(args.obs_path, full_surface_var_list, full_atm_var_list,
-                            lat_values, lon_values, time_values,
+                            full_lat_values, full_lon_values, time_values,
                             full_lead_time_hours, obs_output_path)
-    
 
+    
     # ---- Test data ----
-    test_months = get_month_ranges(args.test_start, args.test_end)
+    test_months = get_month_ranges(full_test_start, full_test_end)
     test_dir = os.path.join(data_dir, f"test_{large_region}")
     os.makedirs(test_dir, exist_ok=True)
     
@@ -482,7 +492,7 @@ def main():
 
         # check if the files already exist
         if os.path.exists(forecast_output_path) and os.path.exists(obs_output_path):
-            print(f"Files already exist for {month_str}. Skipping...")
+            print(f"Test Files already exist for {month_str}. Skipping...")
             continue
         else:
             save_data_locally(args.forecast_path, full_surface_var_list, full_atm_var_list,
@@ -491,7 +501,6 @@ def main():
             save_data_locally(args.obs_path, full_surface_var_list, full_atm_var_list,
                             full_lat_values, full_lon_values, time_values,
                             full_lead_time_hours, obs_output_path)
-        
     # =========================================================================
     # 1) Load training data (for all specified variables)
     # =========================================================================
@@ -524,7 +533,6 @@ def main():
         latitude=lat_values,
         longitude=lon_values,
     )[args.output_vars].compute()
-
 
     # save the lat and lon values for later use
     lat_values = np.unique(fc_ds.latitude.values)
