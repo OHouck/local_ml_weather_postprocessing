@@ -14,16 +14,17 @@ import cartopy.feature as cfeature
 # Utility Functions
 #######################
 
-def generate_run_id(args):
+def generate_output_path(args):
     region_str = f"{args.region}"
+    subregion_str = f"{args.subregion}"
     dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
     training_vars_str = "_".join(args.training_vars)
     output_vars_str = "_".join(args.output_vars)
     mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
-    lead_time = f"_leadtime_{args.lead_time_hours}"
+    lead_time = f"leadtime_{args.lead_time_hours}"
 
-    run_id = f"{args.model_name}_{region_str}_{dates_str}_{args.lead_time_hours}h_train_{training_vars_str}_output{output_vars_str}{lead_time}{mlp_str}"
-    return run_id 
+    output_path = f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
+    return output_path 
 
 def setup_directories():
     # Determine root directory based on environment.
@@ -245,7 +246,7 @@ def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, var_nam
 #######################
 
 def generate_plots(dirs, train_start, train_end, test_start, test_end,
-                   model, region, lead_time, 
+                   model, region, subregion, lead_time, 
                    training_output_vars, prediction_var, mlp_params):
     """
     Generates individual plots evaluating the performance of corrected weather forecasts.
@@ -272,6 +273,7 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
     class Args: pass
     args = Args()
     args.region = region
+    args.subregion = subregion
     args.train_start = train_start
     args.train_end = train_end
     args.test_start = test_start
@@ -283,7 +285,8 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
     args.lead_time_hours = lead_time
     args.model_name = model
 
-    run_id = generate_run_id(args)
+    output_path = generate_output_path(args)
+
     
     filename = f"{run_id}.zarr"
 
@@ -502,22 +505,26 @@ if __name__ == "__main__":
         mlp_params=(512, 5)
     )
 
-    regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
+    # regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
+    regions = ["usa_south", "amazon", "british_columbia"]
+    subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
     lead_times = [24, 72, 168]
 
     for region in regions:
         for lead_time in lead_times:
-            print(f"Generating plots for {region} with lead time {lead_time} hours")
-            generate_plots(
-                dirs=dirs,
-                train_start="2018-01-01",
-                train_end="2021-12-31",
-                test_start="2022-01-01",
-                test_end="2022-12-31",
-                model="pangu",
-                region=region,
-                lead_time=lead_time,
-                training_output_vars=(training_vars, output_vars),
-                prediction_var=prediction_var,
-                mlp_params=(512, 5)
-            )
+            for subregion in subregions:
+                print(f"Generating plots for {region} with lead time {lead_time} hours")
+                generate_plots(
+                    dirs=dirs,
+                    train_start="2018-01-01",
+                    train_end="2021-12-31",
+                    test_start="2022-01-01",
+                    test_end="2022-12-31",
+                    model="pangu",
+                    region=region,
+                    subregion=subregion,
+                    lead_time=lead_time,
+                    training_output_vars=(training_vars, output_vars),
+                    prediction_var=prediction_var,
+                    mlp_params=(512, 5)
+                )
