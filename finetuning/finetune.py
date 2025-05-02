@@ -1,189 +1,558 @@
 #!/usr/bin/env python3
 """
-finetune.py (post‑processing only)
-Author: Ozzy Houck
-Split out of the original `finetune.py` on 2025‑04‑27.
-Requires that `download_forecasts.py` has already stored the raw *.nc
-files under `--data_dir`.
+finetuning.py
+Author: Ozzy Houck 
+Date: 12/20/2024 (modified 2025-03-20)
+
+This script fine-tunes an MLP correction model to a specific region using model
+forecasts and corresponding observations from weatherbench2. It now supports fine-tuning
+over multiple variables. The model learns a mapping from the concatenated model-forecasted
+fields (for all specified variables) to the corresponding observed fields.
+----------------------------
+
+Example usage 
+python3 finetuning/finetune.py \
+    --output_dir="~/wb_finetune_test" \
+    --region="north_india" \
+    --train_start="2021-01-01" --train_end="2021-01-30" \
+    --test_start="2022-01-01" --test_end="2022-01-30" \
+    --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
+    --output_vars 10m_v_component_of_wind \
+    --lead_time_hours=24 \
+    --mlp_hidden_dim=512 \
+    --mlp_layers=5 \
 """
 
-import argparse, os, copy, random, glob
+import argparse
+import os
+import random
 from datetime import datetime, timedelta
+import glob
 
 import numpy as np
 import xarray as xr
-import torch, torch.nn as nn, torch.optim as optim
+import dask
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import copy
 
-# ───────────────────────────────────────── MODEL ──────────────────────────────────────────
 class SimpleMLP(nn.Module):
+    """
+    A simple Multi-Layer Perceptron (MLP) for post-processing weather forecast data.
+    """
     def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3):
-        super().__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        super(SimpleMLP, self).__init__()
+        layers = []
+        # First layer
+        layers.append(nn.Linear(input_dim, hidden_dim))
+        layers.append(nn.ReLU())
+        # Hidden layers
         for _ in range(num_hidden_layers - 1):
-            layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.ReLU())
+        # Output layer
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
+
     def forward(self, x):
+        """
+        Forward pass of the MLP.
+        """
         return self.net(x)
 
-# ───────────────────────────────────── ARGUMENTS ─────────────────────────────────────────
-REGION_BOUNDS = {
-    "india":             (17, 27, 72, 82),
-    "usa_south":         (30, 40, -105+360, -95+360),
-    "amazon":            (-10, 0, -70+360, -60+360),
-    "british_columbia":  (48, 58, -130+360, -120+360),
-}
-SUBREGION_OFFSETS = {"2x2":4, "4x4":3, "6x6":2, "8x8":1, "10x10":0}
 
 def parse_args():
-    p = argparse.ArgumentParser("Fine‑tune regional MLP correction model")
-    p.add_argument("--data_dir",  type=str, default="~/wb_finetune_data")
-    p.add_argument("--output_dir",type=str, required=True)
-    p.add_argument("--model_name", type=str, required=True)  # pangu / ifs / ...
-    p.add_argument("--region",     type=str, default="india")
-    p.add_argument("--subregion",  type=str, default="10x10")
-    p.add_argument("--lead_time_hours", type=int, default=24)
-    p.add_argument("--training_vars", nargs="+", default=["2m_temperature"])
-    p.add_argument("--output_vars",   nargs="+", default=["2m_temperature"])
-    p.add_argument("--train_start", default="2018-01-01")
-    p.add_argument("--train_end",   default="2021-12-31")
-    p.add_argument("--test_start",  default="2022-01-01")
-    p.add_argument("--test_end",    default="2022-12-31")
-    p.add_argument("--mlp_hidden_dim", type=int, default=512)
-    p.add_argument("--mlp_layers",     type=int, default=5)
-    return p.parse_args()
+    """
+    Parse command-line arguments for fine-tuning the MLP on regional post-processing.
+    """
+    parser = argparse.ArgumentParser(description='Fine-tune MLP for regional post-processing')
+    parser.add_argument('--data_dir', type=str, default="~/weatherbench2_data",
+                        help='Directory to save the raw forecasts locally')
+    parser.add_argument('--output_dir', type=str, required=True,
+                        help='Directory to save the fine-tuned model and corrected forecasts')
+    parser.add_argument('--model_name', type=str, required=True,
+                        help='Name of the base model (e.g. pangu, ifs, neural_gcm)')
+    parser.add_argument('--region', type=str, default="india",
+                        help='Name of the region')
+    parser.add_argument('--subregion', type=str, default="10x10",
+                        help='Dimensions of Subregion')
+    parser.add_argument('--lead_time_hours', type=int, default=24,
+                        help='Lead time in hours for forecast')
+    parser.add_argument('--training_vars', type=str, nargs='+', default=["2m_temperature"],
+                        help='Variables used to fine-tune (e.g. 2m_temperature precipitation)')
+    parser.add_argument('--output_vars', type=str, nargs='+', default=["2m_temperature"],
+                        help='subset of training_vars to be predicted (e.g. 2m_temperature precipitation)')
+    parser.add_argument('--train_start', type=str, default='2018-01-01',
+                        help='Training start date')
+    parser.add_argument('--train_end', type=str, default='2019-12-31',
+                        help='Training end date')
+    parser.add_argument('--test_start', type=str, default='2020-01-01',
+                        help='Test start date')
+    parser.add_argument('--test_end', type=str, default='2020-12-31',
+                        help='Test end date')
+    parser.add_argument('--mlp_hidden_dim', type=int, default=512,
+                        help='Number of neurons in the hidden layers')
+    parser.add_argument('--mlp_layers', type=int, default=5,
+                        help='Number of hidden layers in the MLP')
+    return parser.parse_args()
 
-# ─────────────────────────────────── HELPER FUNCTIONS ────────────────────────────────────
+def generate_output_path(args):
+    region_str = f"{args.region}"
+    subregion_str = f"{args.subregion}"
+    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
+    training_vars_str = "_".join(args.training_vars)
+    output_vars_str = "_".join(args.output_vars)
+    mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+    lead_time = f"leadtime_{args.lead_time_hours}"
 
-def load_combined(root, pattern):
-    files = glob.glob(os.path.join(root, "*", pattern))
-    if not files:
-        raise FileNotFoundError(f"No files in {root} matching {pattern}")
-    files.sort()
-    return xr.open_mfdataset(files, combine="by_coords", decode_timedelta=True)
+    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
+    return output_path 
 
-def create_loader(x, y, batch):
-    ds = torch.utils.data.TensorDataset(torch.from_numpy(x).float(),
-                                        torch.from_numpy(y).float())
-    return torch.utils.data.DataLoader(ds, batch_size=batch, shuffle=True)
 
-def train(model, tr_loader, va_loader, device, lr=1e-5, epochs=1000, patience=50):
-    crit = nn.MSELoss(); opt = optim.Adam(model.parameters(), lr=lr)
-    best = float("inf"); stall = 0; best_w = copy.deepcopy(model.state_dict())
-    for ep in range(1, epochs+1):
-        # train
-        model.train(); tl=0
-        for xb,yb in tr_loader:
-            xb,yb = xb.to(device), yb.to(device)
-            opt.zero_grad(); loss = crit(model(xb), yb); loss.backward(); opt.step()
-            tl += loss.item()*xb.size(0)
-        tl/=len(tr_loader.dataset)
-        # val
-        model.eval(); vl=0
+def load_combined_dataset(root_dir, file_pattern):
+    """
+    Finds all files in the subfolders of root_dir matching file_pattern and combines them.
+    """
+    file_paths = glob.glob(os.path.join(root_dir, "*", file_pattern))
+    file_paths.sort()
+
+    if len(file_paths) == 0:
+        raise ValueError(f"No files found matching pattern: {file_pattern}")
+    # print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
+    return xr.open_mfdataset(file_paths, combine="by_coords", decode_timedelta = True) 
+
+
+def create_dataloader(forecast_data, obs_data, batch_size):
+    """
+    Create a PyTorch DataLoader from forecast and observation data.
+    """
+    dataset = torch.utils.data.TensorDataset(
+        torch.from_numpy(forecast_data).float(),
+        torch.from_numpy(obs_data).float()
+    )
+    dataloader = torch.utils.data.DataLoader(dataset,
+                                             batch_size=batch_size,
+                                             shuffle=True)
+    return dataloader
+
+
+def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=50, min_delta=0.0):
+    """
+    Train the model over multiple epochs. with early stopping
+    """
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    best_model_wts = copy.deepcopy(model.state_dict())
+
+    for epoch in range(1, epochs + 1):
+
+    # --- training step ---
+        model.train()
+        train_loss = 0.0
+        for x_batch, y_batch in train_loader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+            optimizer.zero_grad()
+            preds = model(x_batch)
+            loss = criterion(preds, y_batch)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item() * x_batch.size(0)
+        train_loss /= len(train_loader.dataset)
+
+        # --- validation step ---
+        model.eval()
+        val_loss = 0.0
         with torch.no_grad():
-            for xb,yb in va_loader:
-                xb,yb=xb.to(device), yb.to(device)
-                vl+=crit(model(xb),yb).item()*xb.size(0)
-        vl/=len(va_loader.dataset)
-        if vl < best - 1e-12:
-            best = vl; stall = 0; best_w = copy.deepcopy(model.state_dict())
+            for x_batch, y_batch in valid_loader:
+                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+                preds = model(x_batch)
+                loss = criterion(preds, y_batch)
+                val_loss += loss.item() * x_batch.size(0)
+        val_loss /= len(valid_loader.dataset)
+
+        # print(f"Epoch {epoch}/{epochs}  Train: {train_loss:.4f}  Val: {val_loss:.4f}")
+
+        # --- early stopping check ---
+        if val_loss + min_delta < best_val_loss:
+            best_val_loss = val_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
         else:
-            stall += 1
-            if stall >= patience:
-                print(f"Early stop @ {ep} (val={vl:.4f})"); break
-    model.load_state_dict(best_w); return model
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"→ Early stopping at epoch {epoch}. "
+                      f"No improvement in {patience} epochs.")
+                break
 
-def save_zarr(out_path, name, vars_, lons, lats, times, orig, corr, truth):
-    n_v, n_t, n_la, n_lo = len(vars_), len(times), len(lats), len(lons)
-    orig = orig.reshape(n_t, n_v, n_la, n_lo).transpose(1,0,2,3)
-    corr = corr.reshape(n_t, n_v, n_la, n_lo).transpose(1,0,2,3)
-    truth= truth.reshape(n_t,n_v,n_la,n_lo).transpose(1,0,2,3)
+    # load best weights
+    model.load_state_dict(best_model_wts)
+    return model
+
+
+
+def apply_correction(model, forecast_data, device):
+    """
+    Apply the MLP-based correction to forecast data.
+    """
+    model.eval()
+    with torch.no_grad():
+        x_tensor = torch.from_numpy(forecast_data).float().to(device)
+        corrected = model(x_tensor).cpu().numpy()
+    return corrected
+
+
+def save_output(output_path, model_name, output_vars, lon_values, lat_values,
+                time_values, original_fc, corrected_fc, ground_truth_data=None):
+    """
+    Save original and corrected forecasts (and optionally ground truth) in Zarr format.
+    Supports both single and multiple variables.
+    """
+    n_vars = len(output_vars)
+    n_time = len(time_values)
+    n_lon = len(lon_values)
+    n_lat = len(lat_values)
+
+    # reshape to be (variable, time, lat, lon)
+    original_fc = original_fc.reshape(n_time, n_vars, n_lat, n_lon)
+    original_fc = original_fc.transpose(1, 0, 2, 3)
+    
+    corrected_fc = corrected_fc.reshape(n_time, n_vars, n_lat, n_lon)
+    corrected_fc = corrected_fc.transpose(1, 0, 2, 3)
+
+    # convert to xarray DataArray
+    original_fc_da = xr.DataArray(
+        data=original_fc,
+        dims=['variable', 'time', 'latitude', 'longitude'],
+        coords={"variable": output_vars,
+                "time": time_values, 
+                "latitude": lat_values,
+                "longitude": lon_values}
+        )
+    corrected_fc_da = xr.DataArray(
+        data=corrected_fc,
+        dims=['variable', 'time', 'latitude', 'longitude'],
+        coords={"variable": output_vars,
+                "time": time_values, 
+                "latitude": lat_values,
+                "longitude": lon_values}
+        )
+
+
+    if ground_truth_data is not None:
+        ground_truth_data = ground_truth_data.reshape(n_time, n_vars, n_lat, n_lon)
+        ground_truth_data = ground_truth_data.transpose(1, 0, 2, 3)
+        ground_truth_da = xr.DataArray(
+            data=ground_truth_data,
+            dims=['variable', 'time', 'latitude', 'longitude'],
+            coords={"variable": output_vars,
+                    "time": time_values, 
+                    "latitude": lat_values,
+                    "longitude": lon_values}
+            )
+    
+    
+    # combine 3 DataArrays into a single Dataset. will have time, latitude, and longitude as coords
+    # data variables will be of form: {variable}_original, {variable}_corrected, {variable}_ground_truth
+    # Create a dictionary to hold each data variable in the final dataset
     data_vars = {}
-    for i,v in enumerate(vars_):
-        data_vars[f"{v}_original"]  = (("time","latitude","longitude"), orig[i])
-        data_vars[f"{v}_corrected"] = (("time","latitude","longitude"), corr[i])
-        data_vars[f"{v}_ground_truth"] = (("time","latitude","longitude"), truth[i])
-    ds = xr.Dataset(data_vars, coords={"time":times,"latitude":lats,"longitude":lons})
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    ds.to_zarr(out_path, mode="w")
+    for var in output_vars:
+        # Select the slice for this variable (dims will then be time, latitude, longitude)
+        data_vars[f"{var}_original"] = original_fc_da.sel(variable=var).drop_vars("variable")
+        data_vars[f"{var}_corrected"] = corrected_fc_da.sel(variable=var).drop_vars("variable")
+        if ground_truth_data is not None:
+            data_vars[f"{var}_ground_truth"] = ground_truth_da.sel(variable=var).drop_vars("variable")
 
-# ────────────────────────────────────────── MAIN ──────────────────────────────────────────
+    # Combine data variables into a single dataset
+    # print variable names for data_vars
+    ds_out = xr.Dataset(data_vars)
+
+    ds_out.attrs['description'] = (f'Original and corrected forecasts from {model_name} '
+                                   f'using MLP fine-tuning)')
+    output_path = os.path.expanduser(output_path)
+    ds_out.to_zarr(output_path, mode='w')
+    print(f"Forecasts saved to {output_path}")
+
+
 
 def main():
+
+     # Set up device: prioritize CUDA, then MPS, then CPU
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+    
+    # set seed
+    torch.manual_seed(58)
+    random.seed(58)
+
     args = parse_args()
-    torch.manual_seed(58); random.seed(58)
-    device = (torch.device('cuda') if torch.cuda.is_available() else
-              torch.device('mps')  if torch.backends.mps.is_available() else
-              torch.device('cpu'))
+    output_path = generate_output_path(args)
+    print("output path:", output_path)
 
-    ddir   = os.path.expanduser(args.data_dir)
-    odir   = os.path.expanduser(args.output_dir)
-    os.makedirs(odir, exist_ok=True)
+    output_dir = os.path.expanduser(args.output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
-    lat_min, lat_max, lon_min, lon_max = REGION_BOUNDS[args.region]
-    offs = SUBREGION_OFFSETS[args.subregion]
-    lat_min, lat_max = lat_min+offs, lat_max-offs+0.25
-    lon_min, lon_max = lon_min+offs, lon_max-offs+0.25
+    data_dir = os.path.expanduser(args.data_dir)
+    os.makedirs(data_dir, exist_ok=True)
 
-    lats = np.arange(lat_min, lat_max, 0.25)
-    lons = np.arange(lon_min, lon_max, 0.25)
-    tr_times = np.arange(np.datetime64(args.train_start), np.datetime64(args.train_end), np.timedelta64(24,'h'))
-    te_times = np.arange(np.datetime64(args.test_start),  np.datetime64(args.test_end),  np.timedelta64(24,'h'))
+    # =========================================================================
+    # 1) Load training data (for all specified variables)
+    # =========================================================================
 
-    # ---- load train ----
-    tr_dir = os.path.join(ddir, f"train_{args.region}")
-    fc_tr  = load_combined(tr_dir, f"{args.model_name}_train_forecast_data_*.nc")
-    obs_tr = load_combined(tr_dir, f"{args.model_name}_train_obs_data_*.nc")
+    # set up lat and lon bounds for each region.
+    if args.region == "india":
+        lat_min, lat_max = 17, 27
+        lon_min, lon_max = 72, 82
+    elif args.region == "usa_south":
+        lat_min, lat_max = 30, 40
+        lon_min, lon_max = (-105 + 360), (-95 + 360)
+    elif args.region == "amazon":
+        lat_min, lat_max  = -10, 0 
+        lon_min, lon_max = (-70 + 360), (-60 + 360)
+    elif args.region == "british_columbia":
+        lat_min, lat_max = 48, 58 
+        lon_min, lon_max = (-130 + 360), (-120 + 360)
+    elif args.region == "pakistan":
+        lat_min, lat_max = 25, 34
+        lon_min, lon_max = 60, 70
+    else:
+        raise ValueError(f"Unknown region '{args.region}'. Please specify a valid region.")
+    
+    # For each region of 10x10 degrees, there are sub-regions that are
+    # add 0.25 degrees to end to properly set the bounds
+    # 2x2, 4x4, 6x6, 8x8, and 10x10 degrees.
+    if args.subregion == "2x2":
+        lat_min, lat_max = lat_min + 4, lat_max - 4 + 0.25
+        lon_min, lon_max = lon_min + 4, lon_max - 4 + 0.25
+    elif args.subregion == "4x4":
+        lat_min, lat_max = lat_min + 3, lat_max - 3 + 0.25
+        lon_min, lon_max = lon_min + 3, lon_max - 3 + 0.25
+    elif args.subregion == "6x6":
+        lat_min, lat_max = lat_min + 2, lat_max - 2 + 0.25
+        lon_min, lon_max = lon_min + 2, lon_max - 2 + 0.25
+    elif args.subregion == "8x8":
+        lat_min, lat_max = lat_min + 1, lat_max - 1 + 0.25
+        lon_min, lon_max = lon_min + 1, lon_max - 1 + 0.25
+    elif args.subregion == "10x10":
+        lat_min, lat_max = lat_min, lat_max + 0.25
+        lon_min, lon_max = lon_min, lon_max + 0.25
+    else:
+        raise ValueError(f"Unknown subregion '{args.subregion}'. Please specify a valid subregion.")
+    
+    train_time_values = np.arange(np.datetime64(args.train_start), np.datetime64(args.train_end), np.timedelta64(24, 'h'))
+    test_time_values = np.arange(np.datetime64(args.test_start), np.datetime64(args.test_end), np.timedelta64(24, 'h'))
+    lat_values = np.arange(lat_min, lat_max, 0.25)
+    lon_values = np.arange(lon_min, lon_max, 0.25)
 
-    fc_tr  = fc_tr.sel(time=tr_times, latitude=lats, longitude=lons,
-                       prediction_timedelta=np.timedelta64(args.lead_time_hours,'h'))[args.training_vars]
-    fc_out = fc_tr.sel(variable=args.output_vars)
-    obs_tr = obs_tr.sel(time=tr_times, latitude=lats, longitude=lons)[args.output_vars]
+    n_train_time = len(train_time_values)
+    n_test_time = len(test_time_values)
+    n_training_vars = len(args.training_vars)
+    n_output_vars = len(args.output_vars)
 
-    n_la, n_lo = len(lats), len(lons)
-    x = fc_tr.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(tr_times), -1)
-    x_out = fc_out.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(tr_times), -1)
-    y = obs_tr.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(tr_times), -1)
+    # ----- Loading combined training data from monthly files -----
+    train_dir = os.path.join(data_dir, f"train_{args.region}")
+    # For forecast and observation data, we define the patterns for monthly file names.
+    fc_pattern = f"{args.model_name}_train_forecast_data_*.nc"
+    obs_pattern = f"{args.model_name}_train_obs_data_*.nc"
+    train_forecast_ds = load_combined_dataset(train_dir, fc_pattern)
+    train_obs_ds = load_combined_dataset(train_dir, obs_pattern)
 
-    mean_x, sd_x = x.mean(0), x.std(0)+1e-8
-    mean_y, sd_y = x_out.mean(0), x_out.std(0)+1e-8
-    x_n, y_n = (x-mean_x)/sd_x, (y-mean_x)/sd_x
+    # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
+    fc_ds = train_forecast_ds.sel(
+        time=train_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
+    )[args.training_vars].drop_vars('prediction_timedelta').compute()
+    
+    fc_ds_output = train_forecast_ds.sel(
+        time=train_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
+    )[args.output_vars].drop_vars('prediction_timedelta').compute()
+    
+    obs_ds = train_obs_ds.sel(
+        time=train_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+    )[args.output_vars].compute()
 
-    idx = np.random.permutation(len(tr_times))
-    split = int(0.8*len(tr_times))
-    tr_loader = create_loader(x_n[idx[:split]], y_n[idx[:split]], batch=32)
-    va_loader = create_loader(x_n[idx[split:]], y_n[idx[split:]], batch=32)
+    # save the lat and lon values for later use
+    lat_values = np.unique(fc_ds.latitude.values)
+    lon_values = np.unique(fc_ds.longitude.values)
+    n_lat = len(lat_values)
+    n_lon = len(lon_values)
 
-    model = SimpleMLP(input_dim=x.shape[1], hidden_dim=args.mlp_hidden_dim,
-                      output_dim=y.shape[1], num_hidden_layers=args.mlp_layers).to(device)
-    model = train(model, tr_loader, va_loader, device)
+    fc = fc_ds.to_array().values  # shape: (variable, time, lat, lon)
+    fc = fc.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    fc = fc.reshape(n_train_time, n_training_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
 
-    # ---- load test ----
-    te_dir = os.path.join(ddir, f"test_{args.region}")
-    fc_te  = load_combined(te_dir, f"{args.model_name}_test_forecast_data_*.nc")
-    obs_te = load_combined(te_dir, f"{args.model_name}_test_obs_data_*.nc")
-    fc_te  = fc_te.sel(time=te_times, latitude=lats, longitude=lons,
-                       prediction_timedelta=np.timedelta64(args.lead_time_hours,'h'))[args.training_vars]
-    fc_out_te = fc_te.sel(variable=args.output_vars)
-    obs_te = obs_te.sel(time=te_times, latitude=lats, longitude=lons)[args.output_vars]
+    fc_output = fc_ds_output.to_array().values  # shape: (variable, time, lat, lon)
+    fc_output = fc_output.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    fc_output = fc_output.reshape(n_train_time, n_output_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
 
-    X_te = fc_te.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(te_times), -1)
-    X_out_te = fc_out_te.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(te_times), -1)
-    Y_te = obs_te.to_array().transpose("time","variable","latitude","longitude").values.reshape(len(te_times), -1)
+    obs_fc = obs_ds.to_array().values  # shape: (variable, time, lat, lon)
+    obs_fc = obs_fc.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    obs = obs_fc.reshape(n_train_time, n_output_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
 
-    Xn_te = (X_te-mean_x) / sd_x
-    with torch.no_grad():
-        Yn_hat = model(torch.from_numpy(Xn_te).float().to(device)).cpu().numpy()
-    Y_hat = Yn_hat*sd_y + mean_x 
+    print("fc shape", fc.shape, "obs shape", obs.shape)
 
-    print("MSE original:", np.mean((X_out_te - Y_te)**2))
-    print("MSE corrected:", np.mean((Y_hat   - Y_te)**2))
 
-    # ---- save ----
-    tag = f"{args.model_name}/{args.region}/train_{'_'.join(args.training_vars)}_test_{'_'.join(args.output_vars)}_dim{args.subregion}_lead{args.lead_time_hours}h"
-    out_path = os.path.join(odir, f"{tag}.zarr")
-    save_zarr(out_path, args.model_name, args.output_vars, lons, lats, te_times, X_out_te, Y_hat, Y_te)
-    print("✓ Saved", out_path)
+
+    # =========================================================================
+    # 4) Normalize training & validation data variable-wise using training stats
+    # =========================================================================
+    stats_training= {
+        'mean': fc.mean(axis=0), # take mean over time
+        'std': fc.std(axis=0) + 1e-8, # add small value to avoid division by zero
+    }
+    stats_output= {
+        'mean': fc_output.mean(axis=0), # take mean over time
+        'std': fc_output.std(axis=0) + 1e-8, # add small value to avoid division by zero
+    }
+
+    # subset fc stats to only include variables in output_vars
+    fc_norm = (fc - stats_training['mean']) / stats_training['std']
+    obs_norm = (obs - stats_output['mean']) / stats_output['std']
+
+    # =========================================================================
+    # 2) Randomly split training data into TRAIN (80%) and VAL (20%)
+    # split using the indices of the time dimension
+    # =========================================================================
+    indices = np.arange(n_train_time)
+    np.random.shuffle(indices)
+    split_idx = int(0.8 * n_train_time)
+    train_idx = indices[:split_idx]
+    val_idx = indices[split_idx:]
+    train_fc_norm = fc_norm[train_idx]
+    train_obs_norm =obs_norm[train_idx]
+    val_fc_norm = fc_norm[val_idx]
+    val_obs_norm = obs_norm[val_idx]
+
+    print(f"Training set size: {fc_norm.shape}")
+    print(f"Training data shape: {train_fc_norm.shape}")
+    print(f"Validation data shape: {val_fc_norm.shape}")
+
+    # =========================================================================
+    # 5) Create PyTorch DataLoaders
+    # =========================================================================
+    batch_size = 32 
+    train_loader = create_dataloader(train_fc_norm, train_obs_norm, batch_size)
+    val_loader = create_dataloader(val_fc_norm, val_obs_norm, batch_size)
+
+    # =========================================================================
+    # 6) Initialize and train the model
+    # =========================================================================
+    input_dim = n_training_vars * n_lat * n_lon
+
+    # eventually allow this to be different
+    output_dim = n_output_vars * n_lat * n_lon
+    model = SimpleMLP(input_dim=input_dim,
+                      hidden_dim=args.mlp_hidden_dim,
+                      output_dim=output_dim,
+                      num_hidden_layers=args.mlp_layers)
+    model.to(device)
+
+    epochs = 1000
+    learning_rate = 1e-5
+    patience = 50
+    min_delta = 0.0
+    model = train_model(model, train_loader, val_loader, epochs, learning_rate, device, patience, min_delta)
+
+    # Save model weights
+    # model_path = os.path.join(output_dir, f"{args.model_name}_mlp_correction.pt")
+    # torch.save(model.state_dict(), model_path)
+    # print(f"Model weights saved to {model_path}")
+
+    # =========================================================================
+    # 3) Load the test data
+    # =========================================================================
+
+    # ----- Loading combined training data from monthly files -----
+    test_dir = os.path.join(data_dir, f"test_{args.region}")
+    # For forecast and observation data, we define the patterns for monthly file names.
+    fc_pattern = f"{args.model_name}_test_forecast_data_*.nc"
+    obs_pattern = f"{args.model_name}_test_obs_data_*.nc"
+    test_forecast_ds = load_combined_dataset(test_dir, fc_pattern)
+    test_obs_ds = load_combined_dataset(test_dir, obs_pattern)
+
+    # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
+    test_fc_ds = test_forecast_ds.sel(
+        time=test_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
+    )[args.training_vars].drop_vars('prediction_timedelta').compute()
+    
+    test_fc_ds_output = test_forecast_ds.sel(
+        time=test_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
+    )[args.output_vars].drop_vars('prediction_timedelta').compute()
+    
+    test_obs_ds = test_obs_ds.sel(
+        time=test_time_values,
+        latitude=lat_values,
+        longitude=lon_values,
+    )[args.output_vars].compute()
+
+    print(test_fc_ds)
+    print(test_obs_ds)
+
+    print("obs")
+    print("2m_temperature max:", test_obs_ds['2m_temperature'].max().values)
+    print("2m_temperature min:", test_obs_ds['2m_temperature'].min().values)
+    print("2m_temperature median:", test_obs_ds['2m_temperature'].median().values)
+    print("2m_temperature mean:", test_obs_ds['2m_temperature'].mean().values)
+
+
+    test_fc = test_fc_ds.to_array().values  # shape: (variable, time, lat, lon)
+    test_fc = test_fc.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    test_fc = test_fc.reshape(n_test_time, n_training_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
+
+    test_fc_output = test_fc_ds_output.to_array().values  # shape: (variable, time, lat, lon)
+    test_fc_output = test_fc_output.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    test_fc_output = test_fc_output.reshape(n_test_time, n_output_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
+
+    test_obs = test_obs_ds.to_array().values  # shape: (variable, time, lat, lon)
+    test_obs = test_obs.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
+    test_obs = test_obs.reshape(n_test_time, n_output_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
+
+    # =========================================================================
+    # 8) Apply correction to the test set
+    # =========================================================================
+    test_fc_norm = (test_fc - stats_training['mean']) / stats_training['std']
+
+    corrected_test_fc_norm = apply_correction(model, test_fc_norm, device)
+    # XX should create subset of fc stats for only output vars
+    corrected_test_fc = (corrected_test_fc_norm * stats_output['std']) + stats_output['mean']
+
+    print(f"MSE (original forecast, test set): {np.mean((test_fc_output - test_obs) ** 2):.6f}")
+    print(f"MSE (corrected forecast, test set): {np.mean((corrected_test_fc - test_obs) ** 2):.6f}")
+
+    # =========================================================================
+    # 9) Save outputs for the test set
+    # =========================================================================
+    save_output(
+        output_path = output_path,
+        model_name=args.model_name,
+        output_vars=args.output_vars,
+        lon_values=lon_values,
+        lat_values=lat_values,
+        time_values=test_time_values,
+        original_fc=test_fc_output, # only need output_vars from test_fc
+        corrected_fc=corrected_test_fc,
+        ground_truth_data=test_obs
+    )
 
 if __name__ == "__main__":
     main()

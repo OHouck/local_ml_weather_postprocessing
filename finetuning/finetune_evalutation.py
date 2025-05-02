@@ -108,7 +108,7 @@ def create_metrics(ds_forecasts, prediction_var):
 # Plotting Functions (Individual Figures)
 #######################
 
-def plot_monthly_mse(mse_orig, mse_corr, model, region, var_name, dirs, training_vars, lead_time):
+def plot_monthly_mse(mse_orig, mse_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a bar plot of monthly MSE for the original and corrected forecasts."""
     months = [calendar.month_name[i] for i in mse_orig['month'].values]
 
@@ -122,11 +122,14 @@ def plot_monthly_mse(mse_orig, mse_corr, model, region, var_name, dirs, training
     plt.grid(True)
     plt.tight_layout()
 
-    save_path = os.path.join(dirs["fig"], f"mse_time_series_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+    out_folder = os.path.join(dirs["fig"], model, "time_series", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"mse_time_series_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_raw_forecast_original(raw_spatial_orig, model, region, var_name, dirs, training_vars, lead_time):
+def plot_raw_forecast_original(raw_spatial_orig, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a map for the original forecast values."""
     vmin = float(raw_spatial_orig.min().values)
     vmax = float(raw_spatial_orig.max().values)
@@ -141,11 +144,15 @@ def plot_raw_forecast_original(raw_spatial_orig, model, region, var_name, dirs, 
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"raw_map_original_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/raw_map_original_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_raw_forecast_corrected(raw_spatial_corr, model, region, var_name, dirs, training_vars, lead_time):
+def plot_raw_forecast_corrected(raw_spatial_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a map for the corrected forecast values."""
     vmin = float(raw_spatial_corr.min().values)
     vmax = float(raw_spatial_corr.max().values)
@@ -160,11 +167,14 @@ def plot_raw_forecast_corrected(raw_spatial_corr, model, region, var_name, dirs,
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"raw_map_corrected_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/raw_map_corrected_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_raw_forecast_diff(raw_spatial_diff, model, region, var_name, dirs, training_vars, lead_time):
+def plot_raw_forecast_diff(raw_spatial_diff, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a map for the difference (corrected - original) of forecast values."""
     vmin = float(raw_spatial_diff.min().values)
     vmax = float(raw_spatial_diff.max().values)
@@ -179,11 +189,14 @@ def plot_raw_forecast_diff(raw_spatial_diff, model, region, var_name, dirs, trai
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"raw_map_difference_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/raw_map_difference_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_mse_map_original(mse_spatial_orig, model, region, var_name, dirs, training_vars, lead_time):
+def plot_mse_map_original(mse_spatial_orig, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a spatial map of the original forecast MSE."""
     vmin = float(mse_spatial_orig.min().values)
     vmax = float(mse_spatial_orig.max().values)
@@ -198,11 +211,13 @@ def plot_mse_map_original(mse_spatial_orig, model, region, var_name, dirs, train
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"mse_map_original_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/mse_map_original_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_mse_map_corrected(mse_spatial_corr, model, region, var_name, dirs, training_vars, lead_time):
+def plot_mse_map_corrected(mse_spatial_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a spatial map of the corrected forecast MSE."""
     vmin = float(mse_spatial_corr.min().values)
     vmax = float(mse_spatial_corr.max().values)
@@ -217,11 +232,13 @@ def plot_mse_map_corrected(mse_spatial_corr, model, region, var_name, dirs, trai
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"mse_map_corrected_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/mse_map_corrected_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
     plt.savefig(save_path, dpi=150)
     plt.close()
 
-def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, var_name, dirs, training_vars, lead_time):
+def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a spatial map of the MSE difference (corrected - original)."""
     mse_diff = mse_spatial_corr - mse_spatial_orig
     vmin = float(mse_diff.min().values)
@@ -237,7 +254,9 @@ def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, var_nam
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
     plt.tight_layout()
-    save_path = os.path.join(dirs["fig"], f"mse_map_difference_{region}_{var_name}_{model}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
+    out_folder = os.path.join(dirs["fig"], model, "maps", region)
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder, f"{model}/maps/{region}/mse_map_difference_{subregion}_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
     plt.savefig(save_path, dpi=150)
     plt.close()
 
@@ -287,11 +306,8 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
 
     output_path = generate_output_path(args)
 
-    
-    filename = f"{run_id}.zarr"
-
     # Set up directories and load data.
-    forecast_path = os.path.join(dirs['input'], filename)
+    forecast_path = os.path.join(dirs['input'], output_path)
     print(f"Loading forecast data from {forecast_path}")
     ds_forecasts = xr.open_zarr(forecast_path)
 
@@ -309,19 +325,102 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
     print(f"Total MSE for corrected: {mse_total_corr.values}")
 
     # Generate individual plots.
-    plot_monthly_mse(mse_orig, mse_corr, model, region, prediction_var, dirs, training_vars, lead_time)
+    plot_monthly_mse(mse_orig, mse_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
 
     # Create maps for all regions besides "pixel".
-    if region != "pixel":
-        plot_raw_forecast_original(raw_spatial_orig, model, region, prediction_var, dirs, training_vars, lead_time)
-        plot_raw_forecast_corrected(raw_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
-        plot_raw_forecast_diff(raw_spatial_diff, model, region, prediction_var, dirs, training_vars, lead_time)
-        plot_mse_map_original(mse_spatial_orig, model, region, prediction_var, dirs, training_vars, lead_time)
-        plot_mse_map_corrected(mse_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
-        plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, prediction_var, dirs, training_vars, lead_time)
+    # if region != "pixel":
+    #     plot_raw_forecast_original(raw_spatial_orig, model, region,subregion, prediction_var, dirs, training_vars, lead_time)
+    #     plot_raw_forecast_corrected(raw_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
+    #     plot_raw_forecast_diff(raw_spatial_diff, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
+    #     plot_mse_map_original(mse_spatial_orig, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
+    #     plot_mse_map_corrected(mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
+    #     plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
+
+def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start, 
+    test_end, model, training_output_vars, prediction_var, mlp_params):
+    """
+    Generates a line plot of MSE improvement vs subregion size
+    for different lead times and a given large region.
+    """
+    input_folder = dirs['input']
+    # Unpack training and output vars
+    training_vars, output_vars = training_output_vars
+    if not isinstance(training_vars, (list, tuple)):
+        training_vars = [training_vars]
+    if not isinstance(output_vars, (list, tuple)):
+        output_vars = [output_vars]
+    training_vars_str = "_".join(training_vars)
+    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
+
+    # Define the large region(s), subregions, and lead times to consider
+    regions = ["pakistan"]  # adjust or extend as needed
+    subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
+    lead_times = [24, 72, 168]
+
+    # Prepare dict to collect (size, improvement) tuples for each lead time
+    improvement = {lt: [] for lt in lead_times}
+
+    # Loop through each combination and compute overall MSE improvement
+    for region in regions:
+        for subregion in subregions:
+            size = int(subregion.split('x')[0])
+            for lt in lead_times:
+                # Build args for path generation
+                class Args: pass
+                args = Args()
+                args.model_name = model
+                args.region = region
+                args.subregion = subregion
+                args.train_start = train_start
+                args.train_end = train_end
+                args.test_start = test_start
+                args.test_end = test_end
+                args.training_vars = training_vars
+                args.output_vars = output_vars
+                args.mlp_hidden_dim = mlp_params[0]
+                args.mlp_layers = mlp_params[1]
+                args.lead_time_hours = lt
+
+                # Load forecasts
+                path = generate_output_path(args)
+                forecast_path = os.path.join(input_folder, path)
+                ds = xr.open_zarr(forecast_path)
+
+                # Compute total MSE for original and corrected
+                gt = ds[f"{prediction_var}_ground_truth"]
+                orig = ds[f"{prediction_var}_original"]
+                corr = ds[f"{prediction_var}_corrected"]
+                mse_orig = float(((orig - gt) ** 2).mean().values)
+                mse_corr = float(((corr - gt) ** 2).mean().values)
+
+                improvement[lt].append((size, mse_orig - mse_corr))
+
+    # Plotting
+    plt.figure(figsize=(8, 6))
+    for lt, data in improvement.items():
+        data_sorted = sorted(data, key=lambda x: x[0])
+        sizes, imps = zip(*data_sorted)
+        plt.plot(sizes, imps, marker='o', label=f"{lt}h")
+
+    plt.xlabel("Subregion size (degrees)")
+    plt.ylabel("MSE improvement (Original - Corrected)")
+    plt.title(f"MSE Improvement vs Subregion Size for {model}")
+    plt.xticks(sizes, [f"{s}x{s}" for s in sizes])
+    plt.grid(True)
+    plt.legend(title="Lead Time")
+    plt.tight_layout()
+
+    # Save figure
+    out_folder = os.path.join(dirs["fig"], model, "comparison")
+    os.makedirs(out_folder, exist_ok=True)
+    save_path = os.path.join(out_folder,
+                             f"subregion_mse_improvement_{training_vars_str}_{prediction_var}_{mlp_str}.png")
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"Saved subregion comparison plot to {save_path}")
 
 #######################
-# New Comparison Function for Multiple Runs
+# Comparison Function for Multiple Runs
 #######################
 
 def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_params):
@@ -480,9 +579,9 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
     print(f"MSE comparison bar chart saved to {save_path}")
     plt.close()
 
-if __name__ == "__main__":
-    dirs = setup_directories()
+def main():
 
+    dirs = setup_directories()
     # three options for training and output variable combinations, uncomment the one you want to use
     training_vars = ["2m_temperature"]
     output_vars = ["2m_temperature"]
@@ -497,8 +596,20 @@ if __name__ == "__main__":
     # prediction_var = "2m_temperature"
 
     # Compare multiple runs across lead times and regions in a single plot.
-    compare_runs_mse(
-        dirs=dirs,
+    # compare_runs_mse(
+    #     dirs=dirs,
+    #     model="pangu",
+    #     training_output_vars=(training_vars, output_vars),
+    #     prediction_var=prediction_var,
+    #     mlp_params=(512, 5)
+    # )
+
+    generate_subregion_comparison_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
         model="pangu",
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
@@ -506,7 +617,8 @@ if __name__ == "__main__":
     )
 
     # regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
-    regions = ["usa_south", "amazon", "british_columbia"]
+    # regions = ["usa_south", "amazon", "british_columbia", "india", "pakistan"]
+    regions = ["pakistan"]
     subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
     lead_times = [24, 72, 168]
 
@@ -528,3 +640,6 @@ if __name__ == "__main__":
                     prediction_var=prediction_var,
                     mlp_params=(512, 5)
                 )
+
+if __name__ == "__main__":
+    main()
