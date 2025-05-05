@@ -119,7 +119,7 @@ def get_year_ranges(start_date_str, end_date_str):
 def main():
     # possible regions
     # regions = ["india", "usa_south", "amazon", "british_columbia"]
-    region = "usa_south"
+    region = "british_columbia"
     # model_names = ["pangu", "ifs"]
     model_name = "pangu"
 
@@ -197,9 +197,7 @@ def main():
     )
 
      # ---- Training data ---- 
-    # train_days = get_day_list(full_train_start, full_train_end)
     train_months = get_month_ranges(full_train_start, full_train_end)
-    # train_years = get_year_ranges(full_train_start, full_train_end)
     train_dir = os.path.join(data_dir, f"train_{region}")
     os.makedirs(train_dir, exist_ok=True)
     
@@ -234,9 +232,7 @@ def main():
             print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
     
     # ---- Test data ----
-    # test_days = get_day_list(full_test_start, full_test_end)
     test_months = get_month_ranges(full_test_start, full_test_end)
-    # test_years = get_year_ranges(full_test_start, full_test_end)
     test_dir = os.path.join(data_dir, f"test_{region}")
     os.makedirs(test_dir, exist_ok=True)
     

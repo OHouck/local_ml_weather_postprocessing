@@ -335,15 +335,13 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
     #     plot_mse_map_original(mse_spatial_orig, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
     #     plot_mse_map_corrected(mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
     #     plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
-
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start, 
     test_end, model, training_output_vars, prediction_var, mlp_params):
     """
     Generates a line plot of MSE improvement vs subregion size
-    for different lead times and a given large region.
+    for different lead times and multiple regions.
     """
     input_folder = dirs['input']
-    # Unpack training and output vars
     training_vars, output_vars = training_output_vars
     if not isinstance(training_vars, (list, tuple)):
         training_vars = [training_vars]
@@ -352,15 +350,13 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     training_vars_str = "_".join(training_vars)
     mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
 
-    # Define the large region(s), subregions, and lead times to consider
-    regions = ["pakistan"]  # adjust or extend as needed
+    regions = ["amazon", "india", "pakistan"]
     subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
     lead_times = [24, 72, 168]
 
-    # Prepare dict to collect (size, improvement) tuples for each lead time
-    improvement = {lt: [] for lt in lead_times}
+    # Nested dict: improvement[region][lead_time] = list of (size, improvement)
+    improvement = {region: {lt: [] for lt in lead_times} for region in regions}
 
-    # Loop through each combination and compute overall MSE improvement
     for region in regions:
         for subregion in subregions:
             size = int(subregion.split('x')[0])
@@ -381,43 +377,74 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 args.mlp_layers = mlp_params[1]
                 args.lead_time_hours = lt
 
-                # Load forecasts
                 path = generate_output_path(args)
                 forecast_path = os.path.join(input_folder, path)
                 ds = xr.open_zarr(forecast_path)
 
-                # Compute total MSE for original and corrected
+                if prediction_var == "wind_speed":
+                    ds["wind_speed_ground_truth"] = np.sqrt(
+                        ds["10m_u_component_of_wind_ground_truth"]**2 + 
+                        ds["10m_v_component_of_wind_ground_truth"]**2
+                    )
+                    ds["wind_speed_original"] = np.sqrt(
+                        ds["10m_u_component_of_wind_original"]**2 + 
+                        ds["10m_v_component_of_wind_original"]**2
+                    )
+                    ds["wind_speed_corrected"] = np.sqrt(
+                        ds["10m_u_component_of_wind_corrected"]**2 + 
+                        ds["10m_v_component_of_wind_corrected"]**2
+                    )
+
                 gt = ds[f"{prediction_var}_ground_truth"]
                 orig = ds[f"{prediction_var}_original"]
                 corr = ds[f"{prediction_var}_corrected"]
                 mse_orig = float(((orig - gt) ** 2).mean().values)
                 mse_corr = float(((corr - gt) ** 2).mean().values)
 
-                improvement[lt].append((size, mse_orig - mse_corr))
+                improvement[region][lt].append((size, mse_orig - mse_corr))
 
     # Plotting
-    plt.figure(figsize=(8, 6))
-    for lt, data in improvement.items():
-        data_sorted = sorted(data, key=lambda x: x[0])
-        sizes, imps = zip(*data_sorted)
-        plt.plot(sizes, imps, marker='o', label=f"{lt}h")
+    plt.figure(figsize=(10, 6))
+
+    # Assign distinct colors and line styles
+    cmap = plt.get_cmap('tab10')
+    color_map = {region: cmap(i) for i, region in enumerate(regions)}
+    linestyle_map = {24: 'solid', 72: '--', 168: ':'}
+
+    for region in regions:
+        for lt in lead_times:
+            data = improvement[region][lt]
+            if not data:
+                continue
+            data_sorted = sorted(data, key=lambda x: x[0])
+            sizes, imps = zip(*data_sorted)
+            plt.plot(
+                sizes, imps, marker='o',
+                color=color_map[region],
+                linestyle=linestyle_map[lt],
+                label=f"{region.replace('_',' ').title()} {lt}h"
+            )
 
     plt.xlabel("Subregion size (degrees)")
     plt.ylabel("MSE improvement (Original - Corrected)")
     plt.title(f"MSE Improvement vs Subregion Size for {model}")
-    plt.xticks(sizes, [f"{s}x{s}" for s in sizes])
+    sizes_all = [int(s.split('x')[0]) for s in subregions]
+    plt.xticks(sizes_all, subregions)
     plt.grid(True)
-    plt.legend(title="Lead Time")
+    plt.legend(title="Region & Lead Time", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
 
     # Save figure
     out_folder = os.path.join(dirs["fig"], model, "comparison")
     os.makedirs(out_folder, exist_ok=True)
-    save_path = os.path.join(out_folder,
-                             f"subregion_mse_improvement_{training_vars_str}_{prediction_var}_{mlp_str}.png")
+    save_path = os.path.join(
+        out_folder,
+        f"subregion_mse_improvement_{training_vars_str}_{prediction_var}_{mlp_str}.png"
+    )
     plt.savefig(save_path, dpi=150)
     plt.close()
     print(f"Saved subregion comparison plot to {save_path}")
+
 
 #######################
 # Comparison Function for Multiple Runs
@@ -452,7 +479,8 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
     # Define the lead times and regions to consider.
     lead_times = [24, 72, 168] # possible lead times
-    regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"] # possible regions
+    regions = ["amazon", "usa_south", "india", "pakistan"]  # adjust or extend as needed
+    subregion ="10x10"
 
     # Dictionary to store results keyed by (lead_time, region)
     # Each value is a tuple: (avg_mse_orig, avg_mse_corr)
@@ -462,9 +490,9 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
     # Loop over each combination to get original and forecast
     for lt in lead_times:
         for region in regions:
-            pattern = os.path.join(input_folder, f"{model}_{region}_*_{lt}h_train_{training_vars_str}_output{output_vars_str}_leadtime_{lt}*{mlp_str}*.zarr")
+            pattern = os.path.join(input_folder, f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h*{mlp_str}*.zarr")
             files = glob.glob(pattern)
-            ifs_pattern = os.path.join(input_folder, f"ifs_{region}_*_{lt}h_train_{training_vars_str}_output{output_vars_str}*{mlp_str}*.zarr")
+            ifs_pattern = os.path.join(input_folder, f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h*{mlp_str}*.zarr")
             ifs_files = glob.glob(ifs_pattern)
             if not files:
                 print(f"No files found for {model} in {region} with lead time {lt}h")
@@ -615,6 +643,8 @@ def main():
         prediction_var=prediction_var,
         mlp_params=(512, 5)
     )
+
+    exit()
 
     # regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
     # regions = ["usa_south", "amazon", "british_columbia", "india", "pakistan"]

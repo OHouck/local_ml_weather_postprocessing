@@ -31,11 +31,13 @@ import glob
 
 import numpy as np
 import xarray as xr
+from xarray.coding.times import CFDatetimeCoder
 import dask
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import copy
+
 
 class SimpleMLP(nn.Module):
     """
@@ -120,7 +122,12 @@ def load_combined_dataset(root_dir, file_pattern):
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     # print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
-    return xr.open_mfdataset(file_paths, combine="by_coords", decode_timedelta = True) 
+    return xr.open_mfdataset(
+        file_paths,
+        combine="by_coords",
+        decode_timedelta=True     # if you still want your lead-time axis as timedelta
+    )
+
 
 
 def create_dataloader(forecast_data, obs_data, batch_size):
@@ -173,8 +180,6 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=
                 loss = criterion(preds, y_batch)
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
-
-        # print(f"Epoch {epoch}/{epochs}  Train: {train_loss:.4f}  Val: {val_loss:.4f}")
 
         # --- early stopping check ---
         if val_loss + min_delta < best_val_loss:
@@ -276,9 +281,54 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
 
+def check_2m_temperature(files):
+    """
+    For each NetCDF file in `files`, attempt to open it without CF time decoding,
+    then check whether '2m_temperature' exists and whether it contains any NaNs.
+    Returns a dict mapping file path -> info dict.
+    """
+    results = {}
+    for fn in files:
+        try:
+            ds = xr.open_dataset(fn,
+                                 decode_times=False,
+                                 decode_timedelta=False)
+        except Exception as e:
+            # Could not open file at all
+            results[fn] = {"error": f"open_dataset failed: {e}"}
+            continue
+
+        if "2m_temperature" not in ds:
+            results[fn] = {"error": "'2m_temperature' variable not found"}
+        else:
+            arr = ds["2m_temperature"]
+            # Boolean flag for any NaNs
+            has_nans = bool(arr.isnull().any().item())
+            # Count of NaNs (if you want the exact count)
+            n_nans = int(arr.isnull().sum().values) if has_nans else 0
+            results[fn] = {
+                "has_nans": has_nans,
+                "n_nans": n_nans,
+                "shape": arr.shape
+            }
+
+        ds.close()
+    return results
 
 
 def main():
+
+    file_list = sorted(glob.glob("/Users/ohouck/wb_finetune_data/train_india/**/*.nc", recursive=True))
+    summary = check_2m_temperature(file_list)
+    # Print a quick report
+    for path, info in summary.items():
+        if "error" in info:
+            print(f"[ERROR] {path}: {info['error']}")
+        else:
+            status = "contains NaNs" if info["has_nans"] else "no NaNs"
+            if status == "contains NaNs":
+                print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
+
 
      # Set up device: prioritize CUDA, then MPS, then CPU
     if torch.cuda.is_available():
@@ -385,6 +435,13 @@ def main():
         longitude=lon_values,
     )[args.output_vars].compute()
 
+    # # This gives you, for each time t, True if any lat/lon at that time is NaN
+    # missing_flag = obs_ds['2m_temperature'].isnull().any(dim=('latitude', 'longitude'))
+    # missing_times = obs_ds['time'][missing_flag]
+    # print("Times with any NaNs in 2m_temperature:")
+    # print(missing_times.values)
+    # exit()
+
     # save the lat and lon values for later use
     lat_values = np.unique(fc_ds.latitude.values)
     lon_values = np.unique(fc_ds.longitude.values)
@@ -402,10 +459,6 @@ def main():
     obs_fc = obs_ds.to_array().values  # shape: (variable, time, lat, lon)
     obs_fc = obs_fc.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
     obs = obs_fc.reshape(n_train_time, n_output_vars * n_lat * n_lon) # shape: (time, variable*lat*lon)
-
-    print("fc shape", fc.shape, "obs shape", obs.shape)
-
-
 
     # =========================================================================
     # 4) Normalize training & validation data variable-wise using training stats
@@ -467,11 +520,6 @@ def main():
     min_delta = 0.0
     model = train_model(model, train_loader, val_loader, epochs, learning_rate, device, patience, min_delta)
 
-    # Save model weights
-    # model_path = os.path.join(output_dir, f"{args.model_name}_mlp_correction.pt")
-    # torch.save(model.state_dict(), model_path)
-    # print(f"Model weights saved to {model_path}")
-
     # =========================================================================
     # 3) Load the test data
     # =========================================================================
@@ -507,13 +555,6 @@ def main():
 
     print(test_fc_ds)
     print(test_obs_ds)
-
-    print("obs")
-    print("2m_temperature max:", test_obs_ds['2m_temperature'].max().values)
-    print("2m_temperature min:", test_obs_ds['2m_temperature'].min().values)
-    print("2m_temperature median:", test_obs_ds['2m_temperature'].median().values)
-    print("2m_temperature mean:", test_obs_ds['2m_temperature'].mean().values)
-
 
     test_fc = test_fc_ds.to_array().values  # shape: (variable, time, lat, lon)
     test_fc = test_fc.transpose(1, 0, 2, 3)   # shape: (time, variable, lat, lon)
