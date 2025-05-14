@@ -502,17 +502,10 @@ INPUT ./report.out
 INPUT report.out
 INPUT ./report.out
 INPUT report.out
-OUTPUT report.pdf
 INPUT ./report.out
 INPUT ./report.out
 OUTPUT report.out
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmr12.tfm
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm
-INPUT ./report.toc
-INPUT report.toc
-INPUT report.toc
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm
-OUTPUT report.toc
+OUTPUT report.pdf
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
@@ -553,15 +546,47 @@ INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetunin
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//subregion/subregion_mse_improvement_pakistan_10m_v_component_of_wind_10m_u_component_of_wind_wind_speed_mlp512x5.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//subregion/subregion_mse_improvement_pakistan_10m_v_component_of_wind_10m_u_component_of_wind_wind_speed_mlp512x5.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//subregion/subregion_mse_improvement_pakistan_10m_v_component_of_wind_10m_u_component_of_wind_wind_speed_mlp512x5.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcrm1095.tfm
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/usa_south/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/pakistan/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
+INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/amazon/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/usa_south/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/usa_south/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/usa_south/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png
@@ -586,20 +611,10 @@ INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetunin
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/pakistan/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/pakistan/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
 INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/pakistan/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_2m_temperature.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_2m_temperature.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_2m_temperature.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_2m_temperature.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_wind_speed.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_wind_speed.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_wind_speed.png
-INPUT ../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//global_maps/global_map_mse_diff_wind_speed.png
 INPUT /usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc
 INPUT report.aux
 INPUT ./report.out
 INPUT ./report.out
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb

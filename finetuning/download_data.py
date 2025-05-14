@@ -133,7 +133,7 @@ def main():
         raise ValueError(f"Unknown model '{model_name}'. Please specify a valid model.")
 
 
-    data_dir = os.path.expanduser("~/test_wb_finetune_data")
+    data_dir = os.path.expanduser("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads")
     os.makedirs(data_dir, exist_ok=True)
 
     # # Prepare region and time slices
@@ -179,7 +179,7 @@ def main():
         full_lat_values = np.arange(-10.25, 0.25, 0.25)
         full_lon_values = np.arange(-70.25 + 360, -59.75 + 360, 0.25)
     elif region == "british_columbia":
-        full_lat_values = np.arange(48.25, 58.25, 0.25)
+        full_lat_values = np.arange(48.25, 58.25, 0.25) # if rerun should start at 47.75
         full_lon_values = np.arange(-130.25 + 360, -119.75 + 360, 0.25)
 
     # =========================================================================

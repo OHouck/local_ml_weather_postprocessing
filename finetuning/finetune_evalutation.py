@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from types import SimpleNamespace
 
 from matplotlib.colors import TwoSlopeNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -42,7 +43,7 @@ def setup_directories():
         'raw': os.path.join(root, "raw"),
         'processed': os.path.join(root, "processed"),
         'fig': os.path.join(root, "../figures/finetuning"),
-        'input': os.path.join(root, "wb_finetune_test")  # adjusted input directory path
+        'input': os.path.join(root, "fine_tuning_output")  # adjusted input directory path
     }
 
     for path in dirs.values():
@@ -199,7 +200,7 @@ def generate_global_map(
 
         # create_metrics will handle wind_speed from u/v automatically
         mse_o, mse_c, *_ , mse_sp_o, mse_sp_c = create_metrics(ds, prediction_var)
-        diff = mse_sp_c - mse_sp_o
+        diff = mse_sp_o - mse_sp_c
 
         diffs[region] = diff
         mins.append(float(diff.min().values))
@@ -229,7 +230,7 @@ def generate_global_map(
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
     ax.set_global()
-    ax.set_title(f"Global MSE Difference (corr − orig) for {prediction_var.replace('_',' ')}")
+    ax.set_title(f"Global MSE Improvement (orig − corr) for {prediction_var.replace('_',' ')}")
 
     # shared colorbar
     mappable = plt.cm.ScalarMappable(cmap='coolwarm')
@@ -241,7 +242,7 @@ def generate_global_map(
         pad=0.05,
         fraction=0.05
     )
-    cbar.set_label("Normalized MSE Difference")
+    cbar.set_label("Normalized MSE Improvement")
 
     plt.tight_layout()
     out_dir = os.path.join(dirs['fig'], model, "global_maps")
@@ -389,13 +390,13 @@ def plot_mse_map_corrected(mse_spatial_corr, model, region, subregion, var_name,
 
 def plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """Generates and saves a spatial map of the MSE difference (corrected - original)."""
-    mse_diff = mse_spatial_corr - mse_spatial_orig
+    mse_diff = mse_spatial_orig - mse_spatial_corr
     vmin = float(mse_diff.min().values)
     vmax = float(mse_diff.max().values)
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
     mse_diff.plot(ax=ax, cmap='coolwarm', add_colorbar=True, vmin=vmin, vmax=vmax)
-    ax.set_title("MSE Difference (Corrected - Original)")
+    ax.set_title("MSE Improvement (Original - Corrected)")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.coastlines()
@@ -481,118 +482,125 @@ def generate_plots(dirs, train_start, train_end, test_start, test_end,
         plot_mse_map_original(mse_spatial_orig, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
         plot_mse_map_corrected(mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
         plot_mse_map_diff(mse_spatial_orig, mse_spatial_corr, model, region, subregion, prediction_var, dirs, training_vars, lead_time)
-def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start, 
-                                       test_end, model, training_output_vars, 
-                                       prediction_var, mlp_params):
-    """
-    Generates one line plot per region showing MSE improvement vs subregion size
-    for different lead times, and saves them under model/subregion.
-    """
+
+# Function to generate subregion comparison plots that show the MSE improvements of using different subregion sizes.
+def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
+                                        test_end, model, training_output_vars,
+                                        prediction_var, mlp_params):
     input_folder = dirs['input']
     training_vars, output_vars = training_output_vars
-    if not isinstance(training_vars, (list, tuple)):
-        training_vars = [training_vars]
-    if not isinstance(output_vars, (list, tuple)):
-        output_vars = [output_vars]
-    training_vars_str = "_".join(training_vars)
+    training_vars = training_vars if isinstance(training_vars, (list,tuple)) else [training_vars]
+    output_vars   = output_vars   if isinstance(output_vars,   (list,tuple)) else [output_vars]
     mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
 
-    regions = ["amazon", "india", "pakistan", "usa_south"]
-    subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
-    lead_times = [24, 72, 168]
+    regions   = ["amazon", "india", "pakistan", "usa_south", "british_columbia"]
+    subregions = ["2x2","4x4","6x6","8x8","10x10"]
+    lead_times = [24,72,168]
+    degrees    = [int(s.split('x')[0]) for s in subregions]
 
-    # Pre-compute all improvements
-    improvement = {region: {lt: [] for lt in lead_times} for region in regions}
+    improvement = {r:{lt:[] for lt in lead_times} for r in regions}
+
     for region in regions:
-        for subregion in subregions:
-            size = int(subregion.split('x')[0])
+        # ---- extract central 2×2 bounds and normalization once ----
+        central_path = os.path.join(
+            input_folder,
+            generate_output_path(SimpleNamespace(
+                model_name=model, region=region, subregion="2x2",
+                train_start=train_start, train_end=train_end,
+                test_start=test_start,  test_end=test_end,
+                training_vars=training_vars, output_vars=output_vars,
+                mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
+                lead_time_hours=lead_times[0]  # dummy
+            ))
+        )
+        with xr.open_zarr(central_path) as ds2:
+            lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
+            lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
+
+            if prediction_var == "wind_speed":
+            
+                ds2["wind_speed_ground_truth"] = np.sqrt(
+                    ds2["10m_u_component_of_wind_ground_truth"]**2 + 
+                    ds2["10m_v_component_of_wind_ground_truth"]**2
+                )
+                ds2["wind_speed_original"] = np.sqrt(
+                    ds2["10m_u_component_of_wind_original"]**2 + 
+                    ds2["10m_v_component_of_wind_original"]**2
+                )
+                ds2["wind_speed_corrected"] = np.sqrt(
+                    ds2["10m_u_component_of_wind_corrected"]**2 + 
+                    ds2["10m_v_component_of_wind_corrected"]**2
+                )
+            gt2 = ds2[f"{prediction_var}_ground_truth"]
+            mu, sigma = float(gt2.mean()), float(gt2.std())
+
+        # ---- now loop subregions + lead times, always slicing that 2×2 box ----
+        for sub in subregions:
             for lt in lead_times:
-                # build args for zarr path
-                class Args: pass
-                args = Args()
-                args.model_name   = model
-                args.region       = region
-                args.subregion    = subregion
-                args.train_start  = train_start
-                args.train_end    = train_end
-                args.test_start   = test_start
-                args.test_end     = test_end
-                args.training_vars= training_vars
-                args.output_vars  = output_vars
-                args.mlp_hidden_dim = mlp_params[0]
-                args.mlp_layers     = mlp_params[1]
-                args.lead_time_hours= lt
+                path = os.path.join(
+                    input_folder,
+                    generate_output_path(SimpleNamespace(
+                        model_name=model, region=region, subregion=sub,
+                        train_start=train_start, train_end=train_end,
+                        test_start=test_start,  test_end=test_end,
+                        training_vars=training_vars, output_vars=output_vars,
+                        mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
+                        lead_time_hours=lt
+                    ))
+                )
+                with xr.open_zarr(path) as ds:
+                    ds = ds.sel(latitude=slice(lat_min,lat_max),
+                                longitude=slice(lon_min,lon_max))
+                    
+                    if prediction_var == "wind_speed":
+                    
+                        ds["wind_speed_ground_truth"] = np.sqrt(
+                            ds["10m_u_component_of_wind_ground_truth"]**2 + 
+                            ds["10m_v_component_of_wind_ground_truth"]**2
+                        )
+                        ds["wind_speed_original"] = np.sqrt(
+                            ds["10m_u_component_of_wind_original"]**2 + 
+                            ds["10m_v_component_of_wind_original"]**2
+                        )
+                        ds["wind_speed_corrected"] = np.sqrt(
+                            ds["10m_u_component_of_wind_corrected"]**2 + 
+                            ds["10m_v_component_of_wind_corrected"]**2
+                        )
+                    
+                    # compute wind_speed if needed…
+                    # normalize using mu, sigma
+                    gt_n   = (ds[f"{prediction_var}_ground_truth"] - mu) / sigma
+                    orig_n = (ds[f"{prediction_var}_original"]      - mu) / sigma
+                    corr_n = (ds[f"{prediction_var}_corrected"]     - mu) / sigma
 
-                zpath = os.path.join(input_folder, generate_output_path(args))
-                ds = xr.open_zarr(zpath)
+                    mse_orig = float(((orig_n - gt_n)**2).mean())
+                    mse_corr = float(((corr_n - gt_n)**2).mean())
+                    size = int(sub.split('x')[0])
+                    improvement[region][lt].append((size, mse_orig - mse_corr))
 
-                if prediction_var == "wind_speed":
-                    ds["wind_speed_ground_truth"] = np.sqrt(
-                        ds["10m_u_component_of_wind_ground_truth"]**2 + 
-                        ds["10m_v_component_of_wind_ground_truth"]**2
-                    )
-                    ds["wind_speed_original"] = np.sqrt(
-                        ds["10m_u_component_of_wind_original"]**2 + 
-                        ds["10m_v_component_of_wind_original"]**2
-                    )
-                    ds["wind_speed_corrected"] = np.sqrt(
-                        ds["10m_u_component_of_wind_corrected"]**2 + 
-                        ds["10m_v_component_of_wind_corrected"]**2
-                    )
-
-                # compute normalized MSE
-                gt   = ds[f"{prediction_var}_ground_truth"]
-                orig = ds[f"{prediction_var}_original"]
-                corr = ds[f"{prediction_var}_corrected"]
-
-                # normalize
-                mean = gt.mean().values
-                std  = gt.std().values
-                gt_n   = (gt   - mean) / std
-                orig_n = (orig - mean) / std
-                corr_n = (corr - mean) / std
-
-                # compute mse on normalized fields
-                mse_orig = float(((orig_n - gt_n) ** 2).mean().values)
-                mse_corr = float(((corr_n - gt_n) ** 2).mean().values)
-
-                improvement[region][lt].append((size, mse_orig - mse_corr))
-
-
-    # Now plot one figure per region
+    # ---- plotting ----
     cmap = plt.get_cmap('tab10')
-    linestyle_map = {24: 'solid', 72: '--', 168: ':'}
+    ls_map = {24:'solid',72:'--',168:':'}
+
     for region in regions:
         plt.figure(figsize=(8,5))
-        for i, lt in enumerate(lead_times):
-            data = improvement[region][lt]
-            if not data:
-                continue
-            sizes, imps = zip(*sorted(data, key=lambda x: x[0]))
-            plt.plot(
-                sizes, imps, marker='o',
-                color=cmap(i),
-                linestyle=linestyle_map[lt],
-                label=f"{lt}-hour lead"
-            )
-
+        for idx, lt in enumerate(lead_times):
+            data = sorted(improvement[region][lt], key=lambda x: x[0])
+            sizes, imps = zip(*data)
+            plt.plot(sizes, imps, marker='o',
+                     color=cmap(idx), linestyle=ls_map[lt],
+                     label=f"{lt}-h lead")
+        plt.xticks(degrees, subregions)
         plt.xlabel("Subregion size (degrees)")
         plt.ylabel("MSE improvement\n(original − corrected)")
-        plt.title(f"{region.replace('_',' ').title()}: MSE Improvement vs Subregion Size")
-        plt.xticks(sizes, subregions)
+        plt.title(f"{region.replace('_',' ').title()}: MSE Improvement")
         plt.grid(True)
-        plt.legend(title="Lead time", loc="best")
+        plt.legend(title="Lead time")
         plt.tight_layout()
 
         out_folder = os.path.join(dirs["fig"], model, "subregion")
         os.makedirs(out_folder, exist_ok=True)
-        fname = (
-            f"subregion_mse_improvement_"
-            f"{region}_"
-            f"{training_vars_str}_"
-            f"{prediction_var}_"
-            f"{mlp_str}.png"
-        )
+        fname = f"subregion_mse_improvement_{region}_{'_'.join(training_vars)}_{prediction_var}_{mlp_str}.png"
         plt.savefig(os.path.join(out_folder, fname), dpi=150)
         plt.close()
 
@@ -630,7 +638,7 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
     # Define the lead times and regions to consider.
     lead_times = [24, 72, 168] # possible lead times
-    regions = ["amazon", "usa_south", "india", "pakistan"]  # adjust or extend as needed
+    regions = ["amazon", "usa_south", "india", "pakistan", "british_columbia"]  # adjust or extend as needed
     subregion ="10x10"
 
     # Dictionary to store results keyed by (lead_time, region)
@@ -656,12 +664,11 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
                 except Exception as e:
                     print(f"Error opening {f}: {e}")
                     continue
+
                 if prediction_var == "wind_speed":
                     ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
                     ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
                     ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
-                    # print(f"Mean wind speed original: {ds['wind_speed_original'].mean().values}")
-                    # print(f"Mean wind speed corrected: {ds['wind_speed_corrected'].mean().values}")
                 ground_truth = ds[f"{prediction_var}_ground_truth"]
                 orig = ds[f"{prediction_var}_original"]
                 corr = ds[f"{prediction_var}_corrected"]
@@ -810,18 +817,32 @@ def main():
     # print(amazon_mse)
 
     dirs = setup_directories()
-    # three options for training and output variable combinations, uncomment the one you want to use
-    training_vars = ["2m_temperature"]
-    output_vars = ["2m_temperature"]
-    prediction_var = "2m_temperature"
 
-    # training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    # output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    # prediction_var = "wind_speed"
+    # three options for training and output variable combinations, uncomment the one you want to use
+
+    # training_vars = ["2m_temperature"]
+    # output_vars = ["2m_temperature"]
+    # prediction_var = "2m_temperature"
+
+    training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    prediction_var = "wind_speed"
 
     # training_vars = ["2m_temperature", "geopotential_1000hPa", "specific_humidity_1000hPa"]
     # output_vars = ["2m_temperature"]
     # prediction_var = "2m_temperature"
+
+    generate_subregion_comparison_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        mlp_params=(512, 5)
+    )
 
     # Compare multiple runs across lead times and regions in a single plot.
     compare_runs_mse(
@@ -840,29 +861,13 @@ def main():
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
         mlp_params=(512,5),
-        regions=["amazon","india","pakistan","usa_south"],
+        regions=["amazon","india","pakistan","usa_south", "british_columbia"],
         subregion="10x10",
         lead_time=168
     )
 
-
-
-    generate_subregion_comparison_plots(
-        dirs = dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5)
-    )
-
-    exit()
-
     # regions = ["pakistan", "south_pakistan", "full_india", "north_india", "uttar_pradesh", "pixel"]
-    regions = ["usa_south", "amazon", "india", "pakistan"]
+    regions = ["usa_south", "amazon", "india", "british_columbia", "pakistan"]
     subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
     lead_times = [24, 72, 168]
 

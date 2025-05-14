@@ -111,7 +111,9 @@ def generate_output_path(args):
     output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
     return output_path 
 
-
+def sort_lat_lon(ds):
+    # ensure that both lat and lon are sorted ascendingly
+    return ds.sortby(['latitude', 'longitude'])
 def load_combined_dataset(root_dir, file_pattern):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
@@ -125,9 +127,9 @@ def load_combined_dataset(root_dir, file_pattern):
     return xr.open_mfdataset(
         file_paths,
         combine="by_coords",
+        preprocess=lambda ds: ds.sortby('latitude'),
         decode_timedelta=True     # if you still want your lead-time axis as timedelta
     )
-
 
 
 def create_dataloader(forecast_data, obs_data, batch_size):
@@ -318,7 +320,7 @@ def check_2m_temperature(files):
 
 def main():
 
-    file_list = sorted(glob.glob("/Users/ohouck/wb_finetune_data/train_india/**/*.nc", recursive=True))
+    file_list = sorted(glob.glob("/Users/ohouck/wb_finetune_data/train_british_columbia/**/*.nc", recursive=True))
     summary = check_2m_temperature(file_list)
     # Print a quick report
     for path, info in summary.items():
@@ -328,7 +330,6 @@ def main():
             status = "contains NaNs" if info["has_nans"] else "no NaNs"
             if status == "contains NaNs":
                 print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
-
 
      # Set up device: prioritize CUDA, then MPS, then CPU
     if torch.cuda.is_available():
@@ -367,7 +368,7 @@ def main():
         lat_min, lat_max  = -10, 0 
         lon_min, lon_max = (-70 + 360), (-60 + 360)
     elif args.region == "british_columbia":
-        lat_min, lat_max = 48, 58 
+        lat_min, lat_max = 48.25, 58  # XX note can update this if I fix the inital download
         lon_min, lon_max = (-130 + 360), (-120 + 360)
     elif args.region == "pakistan":
         lat_min, lat_max = 25, 34

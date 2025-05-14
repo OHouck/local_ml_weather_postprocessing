@@ -1,62 +1,63 @@
-import xarray
+#!/usr/bin/env python3
+import glob
+import os
+import xarray as xr
 
+# root folder where all your monthly .nc files live
+root_dir = "/Users/ohouck/wb_finetune_data"
 
-# open datasets and compare.
+path = "/Users/ohouck/wb_finetune_data/test_british_columbia/2022-06/pangu_test_obs_data_2022-06.nc"
+path2 = "/Users/ohouck/wb_finetune_data/test_british_columbia/2022-06/pangu_test_forecast_data_2022-06.nc"
 
-new_pangu_fc_path  = "/Users/ohouck/test_wb_finetune_data/train_usa_south/2018-01/pangu_train_forecast_data_2018-01.nc"
-# new_pangu_obs_path = "/Users/ohouck/test_wb_finetune_data/train_usa_south/2018-01/pangu_train_obs_data_2018-01.nc"
+# open the dataset
+ds = xr.open_dataset(path)
+ds2 = xr.open_dataset(path2)
 
+print(ds)
 
-old_pangu_fc_path = "/Users/ohouck/wb_finetune_data/train_usa_south/2018-01/pangu_train_forecast_data_2018-01.nc"
-old_pangu_obs_path = "/Users/ohouck/wb_finetune_data/train_usa_south/2018-01/pangu_train_obs_data_2018-01.nc"
+print(ds2)
 
-old_ifs_fc_path = "/Users/ohouck/wb_finetune_data/train_usa_south/2018-01/ifs_train_forecast_data_2018-01.nc"
-old_ifs_obs_path = "/Users/ohouck/wb_finetune_data/train_usa_south/2018-01/ifs_train_obs_data_2018-01.nc"
+max_lat = ds.latitude.max().values
+min_lat = ds.latitude.min().values
 
+max_lon = ds.longitude.max().values
+min_lon = ds.longitude.min().values
 
-india_path = "/Users/ohouck/wb_finetune_data/train_india/2018-01/pangu_train_forecast_data_2018-01.nc"
+# you can tweak the glob to hit both train_* and test_* if you like
+pattern = os.path.join(root_dir, "test_british_columbia", "**", "pangu*.nc")
 
-india = xarray.open_dataset(india_path)
+file_list = glob.glob(pattern, recursive=True)
 
-print(india)
+for fn in file_list:
+    ds = xr.open_dataset(fn, decode_timedelta=True)
 
-exit()
+    is_ds_sorted_lat = (ds.latitude.values == sorted(ds.latitude.values)).all()
+    is_ds_sorted_lon = (ds.longitude.values == sorted(ds.longitude.values)).all()
 
+    if not is_ds_sorted_lat:
+        print(f"ds sorted by latitude: {is_ds_sorted_lat}")
+        print(f"file path: {fn}")   
+    if not is_ds_sorted_lon:
+        print(f"ds sorted by longitude: {is_ds_sorted_lon}")
+        print(f"file path: {fn}")   
+    
+    # check that matches max and min lat and lon
+    if ds.latitude.max().values != max_lat:
+        print(f"ds max latitude: {ds.latitude.max()} != {max_lat}")
+        print(f"file path: {fn}")   
+    if ds.latitude.min().values != min_lat:
+        print(f"ds min latitude: {ds.latitude.min()} != {min_lat}")
+        print(f"file path: {fn}")   
+    if ds.longitude.max().values != max_lon:
+        print(f"ds max longitude: {ds.longitude.max()} != {max_lon}")
+        print(f"file path: {fn}")   
+    if ds.longitude.min() != min_lon:
+        print(f"ds min longitude: {ds.longitude.min()} != {min_lon}")
+        print(f"file path: {fn}")   
 
-new_pangu_fc = xarray.open_dataset(new_pangu_fc_path)
-# new_pangu_obs = xarray.open_dataset(new_pangu_obs_path)
-
-old_pangu_fc = xarray.open_dataset(old_pangu_fc_path)
-old_pangu_obs = xarray.open_dataset(old_pangu_obs_path)
-
-old_ifs_fc = xarray.open_dataset(old_ifs_fc_path)
-old_ifs_obs = xarray.open_dataset(old_ifs_obs_path)
-
-def get_stats(ds):
-    max_2m_temp= ds["2m_temperature"].max().values
-    min_2m_temp= ds["2m_temperature"].min().values
-    mean_2m_temp= ds["2m_temperature"].mean().values
-
-    return max_2m_temp, min_2m_temp, mean_2m_temp
-
-# function that returns first value of 2m_temperature
-def get_stats(ds):
-    return ds["2m_temperature"].values[0][0][0]
-
-
-# print summary of datasets
-print("New Pangu FC Dataset:")
-print(get_stats(new_pangu_fc))
-
-print("New Pangu Obs Dataset:")
-# print(get_stats(new_pangu_obs))
-
-print("Old Pangu FC Dataset:")
-print(get_stats(old_pangu_fc))
-print("Old Pangu Obs Dataset:")
-print(get_stats(old_pangu_obs))
-
-print("Old IFS FC Dataset:")
-print(get_stats(old_ifs_fc))
-print("Old IFS Obs Dataset:")
-print(get_stats(old_ifs_obs))
+    # # sort by latitude (and then longitude)
+    # ds_sorted = ds.sortby(['latitude', 'longitude'])
+    # # overwrite the original file with the sorted version
+    # ds_sorted.to_netcdf(fn,mode = "w")
+    # ds.close()
+    # print(f"✅ Sorted & saved: {fn}")
