@@ -9,18 +9,6 @@ forecasts and corresponding observations from weatherbench2. It now supports fin
 over multiple variables. The model learns a mapping from the concatenated model-forecasted
 fields (for all specified variables) to the corresponding observed fields.
 ----------------------------
-
-Example usage 
-python3 finetuning/finetune.py \
-    --output_dir="~/wb_finetune_test" \
-    --region="north_india" \
-    --train_start="2021-01-01" --train_end="2021-01-30" \
-    --test_start="2022-01-01" --test_end="2022-01-30" \
-    --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
-    --output_vars 10m_v_component_of_wind \
-    --lead_time_hours=24 \
-    --mlp_hidden_dim=512 \
-    --mlp_layers=5 \
 """
 
 import argparse
@@ -320,7 +308,8 @@ def check_2m_temperature(files):
 
 def main():
 
-    file_list = sorted(glob.glob("/Users/ohouck/wb_finetune_data/train_british_columbia/**/*.nc", recursive=True))
+    # Check for NaNs in 2m_temperature variable across all files, this can happen if download gets interrupted
+    file_list = sorted(glob.glob("/Users/ohouck/test_wb_finetune_data/train_india/**/*.nc", recursive=True))
     summary = check_2m_temperature(file_list)
     # Print a quick report
     for path, info in summary.items():
@@ -413,7 +402,10 @@ def main():
     fc_pattern = f"{args.model_name}_train_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_train_obs_data_*.nc"
     train_forecast_ds = load_combined_dataset(train_dir, fc_pattern)
+    # XX TEMP reset train dir to be old
+    train_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads/train_india" 
     train_obs_ds = load_combined_dataset(train_dir, obs_pattern)
+    train_dir = os.path.join(data_dir, f"train_{args.region}")
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = train_forecast_ds.sel(
@@ -531,6 +523,8 @@ def main():
     fc_pattern = f"{args.model_name}_test_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_test_obs_data_*.nc"
     test_forecast_ds = load_combined_dataset(test_dir, fc_pattern)
+    # XX TEMP reset train dir to be old
+    test_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads/test_india" 
     test_obs_ds = load_combined_dataset(test_dir, obs_pattern)
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.

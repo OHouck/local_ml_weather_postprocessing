@@ -2,24 +2,27 @@
 # lat must be between -90 and 90
 # lon must be between 0 and 360 (0 is at prime meridian)
 source .venv/bin/activate
+    # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+    # --data_dir="/Users/ohouck/test_wb_finetune_data" \
 
-# python3 finetuning/finetune.py \
-#     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-#     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-#     --training_vars 2m_temperature \
-#     --output_vars 2m_temperature \
-#     --train_start="2018-01-01" --train_end="2021-12-31" \
-#     --test_start="2022-01-01" --test_end="2022-12-31" \
-#     --model_name="ifs" \
-#     --region="british_columbia" \
-#     --subregion="10x10" \
-#     --lead_time_hours="24"
+python3 finetuning/finetune.py \
+    --data_dir="/Users/ohouck/test_wb_finetune_data" \
+    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+    --training_vars 2m_temperature \
+    --output_vars 2m_temperature \
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --model_name="ifs" \
+    --region="india" \
+    --subregion="10x10" \
+    --lead_time_hours="96"
 
 # # regions=("amazon" "usa_south" "british_columbia" "india" "pakistan")
-regions=("british_columbia")
-# subregions=(2x2 4x4 6x6 8x8 10x10)
-subregions=(10x10)
-lead_times=(24 72 168)
+regions=("india")
+subregions=(2x2 4x4 6x6 8x8 10x10)
+# subregions=(10x10)
+# lead_times=(24 48 72 96 120 144 168)
+lead_times=(48 96 120 144)
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -27,7 +30,7 @@ for region in "${regions[@]}"; do
 
             # 2m temp
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
                 --training_vars 2m_temperature \
                 --output_vars 2m_temperature \
@@ -39,7 +42,7 @@ for region in "${regions[@]}"; do
                 --lead_time_hours="$lead_time"
 
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
                 --training_vars 2m_temperature \
                 --output_vars 2m_temperature \
@@ -52,7 +55,7 @@ for region in "${regions[@]}"; do
 
             # 10 m wind
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
                 --output_vars 10m_v_component_of_wind 10m_u_component_of_wind \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -64,7 +67,7 @@ for region in "${regions[@]}"; do
                 --lead_time_hours="$lead_time"
 
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --training_vars 10m_v_component_of_wind 10m_u_component_of_wind \
                 --output_vars 10m_v_component_of_wind 10m_u_component_of_wind \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -77,7 +80,7 @@ for region in "${regions[@]}"; do
             
             # 1000 hPa temp
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --training_vars temperature_1000hPa geopotential_1000hPa specific_humidity_1000hPa \
                 --output_vars temperature_1000hPa \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -89,7 +92,7 @@ for region in "${regions[@]}"; do
                 --lead_time_hours="$lead_time"
 
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/test_wb_finetune_data" \
                 --training_vars temperature_1000hPa geopotential_1000hPa specific_humidity_1000hPa \
                 --output_vars temperature_1000hPa \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \

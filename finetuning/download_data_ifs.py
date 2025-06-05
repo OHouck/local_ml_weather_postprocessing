@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 download_forecasts.py
-Author: Ozzy Houck
+Author: Ozma Houck
 Revised 2025-04-28 (download by **year** rather than month)
 
 Download all raw forecast and observation data for the selected
@@ -119,9 +119,9 @@ def get_year_ranges(start_date_str, end_date_str):
 def main():
     # possible regions
     # regions = ["india", "usa_south", "amazon", "british_columbia"]
-    region = "british_columbia"
+    region = "india"
     # model_names = ["pangu", "ifs"]
-    model_name = "pangu"
+    model_name = "ifs"
 
     if model_name == "pangu":
         forecast_path = "gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr"
@@ -133,7 +133,9 @@ def main():
         raise ValueError(f"Unknown model '{model_name}'. Please specify a valid model.")
 
 
-    data_dir = os.path.expanduser("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads")
+    # data_dir = os.path.expanduser("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads")
+    data_dir = os.path.expanduser("/Users/ohouck/test_wb_finetune_data")
+
     os.makedirs(data_dir, exist_ok=True)
 
     # # Prepare region and time slices
@@ -158,7 +160,7 @@ def main():
 
     full_surface_var_list = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"] 
     full_atm_var_list = ["geopotential", "v_component_of_wind", "u_component_of_wind", "specific_humidity", "temperature"]
-    full_lead_time_hours = [24, 72, 168] # times for 1 day, 3 days, and 7 days ahead
+    full_lead_time_hours = [24, 48, 72, 96, 120, 144, 168] # times for 1 day, 3 days, and 7 days ahead
     full_train_start = "2018-01-01"  
     full_train_end = "2021-12-31"  # full range for training data
     full_test_start = "2022-01-01"  # full range for test data
@@ -179,7 +181,7 @@ def main():
         full_lat_values = np.arange(-10.25, 0.25, 0.25)
         full_lon_values = np.arange(-70.25 + 360, -59.75 + 360, 0.25)
     elif region == "british_columbia":
-        full_lat_values = np.arange(48.25, 58.25, 0.25) # if rerun should start at 47.75
+        full_lat_values = np.arange(47.75, 58.25, 0.25) # if rerun should start at 47.75
         full_lon_values = np.arange(-130.25 + 360, -119.75 + 360, 0.25)
 
     # =========================================================================
@@ -191,10 +193,10 @@ def main():
         xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
         else xr.open_dataset(forecast_path)
     )
-    ds_obs = (
-        xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
-        else xr.open_dataset(obs_path)
-    )
+    # ds_obs = (
+    #     xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
+    #     else xr.open_dataset(obs_path)
+    # )
 
      # ---- Training data ---- 
     train_months = get_month_ranges(full_train_start, full_train_end)
@@ -222,14 +224,14 @@ def main():
             print("Training Forecast data saved successfully for:", date_str, "in region:", region)
             end_time = time.time()
             print("Time taken to save forecast data:", (end_time - start_time) / 3600, "hours")
-        if not os.path.exists(obs_output_path):
-            start_time = time.time()
-            save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
-                            full_lat_values, full_lon_values, time_values,
-                            full_lead_time_hours, obs_output_path)
-            end_time = time.time()
-            print("Training Obs data saved successfully for:", date_str, "in region:", region)
-            print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
+        # if not os.path.exists(obs_output_path):
+        #     start_time = time.time()
+        #     save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
+        #                     full_lat_values, full_lon_values, time_values,
+        #                     full_lead_time_hours, obs_output_path)
+        #     end_time = time.time()
+        #     print("Training Obs data saved successfully for:", date_str, "in region:", region)
+        #     print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
     
     # ---- Test data ----
     test_months = get_month_ranges(full_test_start, full_test_end)
@@ -258,14 +260,14 @@ def main():
             # print time in hours
             print("Time taken to save forecast data:", (time_end - time_start) / 3600, "hours")
         
-        if not os.path.exists(obs_output_path):
-            time_start = time.time()
-            save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
-                            full_lat_values, full_lon_values, time_values,
-                            full_lead_time_hours, obs_output_path)
-            time_end = time.time()
-            print("Testing Obs data saved successfully for date:", date_str, "in region:", region)
-            print("Time taken to save obs data:", (time_end - time_start) / 3600, "hours")
+        # if not os.path.exists(obs_output_path):
+        #     time_start = time.time()
+        #     save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
+        #                     full_lat_values, full_lon_values, time_values,
+        #                     full_lead_time_hours, obs_output_path)
+        #     time_end = time.time()
+        #     print("Testing Obs data saved successfully for date:", date_str, "in region:", region)
+        #     print("Time taken to save obs data:", (time_end - time_start) / 3600, "hours")
     
 if __name__ == "__main__":
     main()

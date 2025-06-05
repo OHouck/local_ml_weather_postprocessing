@@ -128,6 +128,170 @@ def create_metrics(ds_forecasts, prediction_var):
         raw_spatial_orig, raw_spatial_corr, raw_spatial_diff,
         mse_spatial_orig, mse_spatial_corr
     )
+
+def generate_lead_time_plots(
+        dirs,
+        train_start, train_end,
+        test_start, test_end,
+        model,
+        training_output_vars,
+        prediction_var,
+        mlp_params,
+        region,
+        subregion,
+):
+    """
+    Generates line plot that shows how MSE changes as lead time increases
+    """
+    training_vars, output_vars = training_output_vars
+
+    if not isinstance(training_vars, (list, tuple)):
+        training_vars = [training_vars]
+    if not isinstance(output_vars, (list, tuple)):
+        output_vars = [output_vars]
+
+    training_vars_str = "_".join(training_vars)
+    output_vars_str = "_".join(output_vars)
+    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
+    time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}" 
+
+    lead_times = [24, 48, 72, 96, 120, 144, 168]  # possible lead times
+
+    forecast_orig_mse = {}
+    forecast_corr_mse = {}
+    ifs_orig_mse = {}
+    ifs_corr_mse = {}
+
+    for lt in lead_times:
+        file_path = os.path.join(dirs['input'], f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
+        ifs_file_path = os.path.join(dirs['input'], f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
+
+        try:
+            ds = xr.open_zarr(file_path)
+        except Exception as e:
+            print(f"Error opening {file_path}: {e}")
+            continue
+
+        if prediction_var == "wind_speed":
+            ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+            ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+            ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
+        ground_truth = ds[f"{prediction_var}_ground_truth"]
+        orig = ds[f"{prediction_var}_original"]
+        corr = ds[f"{prediction_var}_corrected"]
+
+        # normalize by test‐set truth
+        mean = ground_truth.mean().values
+        std  = ground_truth.std().values
+        gt_n   = (ground_truth - mean) / std
+        orig_n = (orig            - mean) / std
+        corr_n = (corr           - mean) / std
+
+        mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
+        mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+        forecast_orig_mse[lt] = mse_total_orig
+        forecast_corr_mse[lt] = mse_total_corr
+
+        # repeat for ifs
+        try:
+            ds = xr.open_zarr(ifs_file_path)
+        except Exception as e:
+            print(f"Error opening {ifs_file_path}: {e}")
+            continue
+        if prediction_var == "wind_speed":
+            ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+            ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+            ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
+
+        ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
+        ifs_fc_original = ds[f"{prediction_var}_original"]
+        ifs_fc_corrected = ds[f"{prediction_var}_corrected"]
+
+        # normalize by test‐set truth
+        mean = ground_truth.mean().values
+        std  = ground_truth.std().values
+        gt_n   = (ifs_ground_truth - mean) / std
+        orig_n = (ifs_fc_original - mean) / std
+        corr_n = (ifs_fc_corrected - mean) / std
+
+        ifs_mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
+        ifs_mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+        ifs_orig_mse[lt] = ifs_mse_total_orig
+        ifs_corr_mse[lt] = ifs_mse_total_corr
+
+    forecast_orig = forecast_orig_mse.values()
+    forecast_corr = forecast_corr_mse.values()
+    ifs_orig = ifs_orig_mse.values()
+    ifs_corr = ifs_corr_mse.values()
+
+    # Choose colors: Pangu = blue, IFS = orange (for example)
+    cmap = plt.get_cmap("tab10")
+    color_forecast = cmap(1)   # e.g. blue
+    color_ifs = cmap(0)     # e.g. orange
+
+    # Linestyles
+    ls_orig = "solid"
+    ls_corr = "dashed"
+
+    # Start plotting
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        lead_times, forecast_orig,
+        label="Pangu: Original",
+        color=color_forecast,
+        linestyle=ls_orig,
+        marker="o"
+    )
+    plt.plot(
+        lead_times, forecast_corr,
+        label="Pangu: Corrected",
+        color=color_forecast,
+        linestyle=ls_corr,
+        marker="o"
+    )
+    plt.plot(
+        lead_times, ifs_orig,
+        label="IFS: Original",
+        color=color_ifs,
+        linestyle=ls_orig,
+        marker="s"
+    )
+    plt.plot(
+        lead_times, ifs_corr,
+        label="IFS: Corrected",
+        color=color_ifs,
+        linestyle=ls_corr,
+        marker="s"
+    )
+
+    plt.xlabel("Lead Time (hours)")
+    plt.ylabel("Normalized MSE")
+    plt.title(
+        f"Lead‐Time MSE for {prediction_var.replace('_',' ')}\n"
+        f"Region: {region}, Subregion: {subregion}"
+    )
+    plt.grid(True)
+    plt.legend(loc="upper right", frameon=True)
+
+    plt.xticks(lead_times, lead_times)  # ensure ticks appear at each lead time exactly
+    plt.tight_layout()
+
+    # Create output folder: dirs['fig']/model/lead_time/region/subregion
+    out_folder = os.path.join(dirs["fig"], model, "lead_time", region, subregion)
+    os.makedirs(out_folder, exist_ok=True)
+
+    fname = (
+        f"leadtime_mse_{prediction_var}_trainedwith_{training_vars_str}_"
+        f"{mlp_str}.png"
+    )
+    save_path = os.path.join(out_folder, fname)
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
+    print(f"Lead‐time MSE plot saved to: {save_path}")
+
+
+
 def generate_global_map(
     dirs,
     train_start, train_end,
@@ -635,6 +799,7 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
     training_vars_str = "_".join(training_vars)
     output_vars_str = "_".join(output_vars)
     mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
+    time_str = "train2018-01-01-2021-12-31_test2022-01-01-2022-12-31"
 
     # Define the lead times and regions to consider.
     lead_times = [24, 72, 168] # possible lead times
@@ -649,92 +814,60 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
     # Loop over each combination to get original and forecast
     for lt in lead_times:
         for region in regions:
-            pattern = os.path.join(input_folder, f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h*{mlp_str}*.zarr")
-            files = glob.glob(pattern)
-            ifs_pattern = os.path.join(input_folder, f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h*{mlp_str}*.zarr")
-            ifs_files = glob.glob(ifs_pattern)
-            if not files:
-                print(f"No files found for {model} in {region} with lead time {lt}h")
+
+            file_path = os.path.join(input_folder, f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
+            ifs_file_path = os.path.join(input_folder, f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
+
+            try:
+                ds = xr.open_zarr(file_path)
+            except Exception as e:
+                print(f"Error opening {file_path}: {e}")
                 continue
-            mse_orig_list = []
-            mse_corr_list = []
-            for f in files:
-                try:
-                    ds = xr.open_zarr(f)
-                except Exception as e:
-                    print(f"Error opening {f}: {e}")
-                    continue
 
-                if prediction_var == "wind_speed":
-                    ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
-                    ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
-                    ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
-                ground_truth = ds[f"{prediction_var}_ground_truth"]
-                orig = ds[f"{prediction_var}_original"]
-                corr = ds[f"{prediction_var}_corrected"]
+            if prediction_var == "wind_speed":
+                ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+                ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+                ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
+            ground_truth = ds[f"{prediction_var}_ground_truth"]
+            orig = ds[f"{prediction_var}_original"]
+            corr = ds[f"{prediction_var}_corrected"]
 
-                # normalize by test‐set truth
-                mean = ground_truth.mean().values
-                std  = ground_truth.std().values
-                gt_n   = (ground_truth - mean) / std
-                orig_n = (orig            - mean) / std
-                corr_n = (corr           - mean) / std
+            # normalize by test‐set truth
+            mean = ground_truth.mean().values
+            std  = ground_truth.std().values
+            gt_n   = (ground_truth - mean) / std
+            orig_n = (orig            - mean) / std
+            corr_n = (corr           - mean) / std
 
-                mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
-                mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+            mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
+            mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+            results[(lt, region)] = (mse_total_orig, mse_total_corr)
 
+            # repeat for ifs
+            try:
+                ds = xr.open_zarr(ifs_file_path)
+            except Exception as e:
+                print(f"Error opening {ifs_file_path}: {e}")
+                continue
+            if prediction_var == "wind_speed":
+                ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
+                ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
+                ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
 
-                mse_orig_list.append(mse_total_orig)
-                mse_corr_list.append(mse_total_corr)
+            ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
+            ifs_fc_original = ds[f"{prediction_var}_original"]
+            ifs_fc_corrected = ds[f"{prediction_var}_corrected"]
 
-            ifs_mse_orig_list = []
-            ifs_mse_corr_list = []
-            for f in ifs_files:
-                try:
-                    ds = xr.open_zarr(f)
-                except Exception as e:
-                    print(f"Error opening {f}: {e}")
-                    continue
-                if prediction_var == "wind_speed":
-                    ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
-                    ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
-                    ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
-                    # print mean wind speed for original and corrected
-                    # print(f"Mean wind speed original: {ds['wind_speed_original'].mean().values}")
-                    # print(f"Mean wind speed corrected: {ds['wind_speed_corrected'].mean().values}")
-                    # print(f"Mean wind speed ground truth: {ds['wind_speed_ground_truth'].mean().values}")
+            # normalize by test‐set truth
+            mean = ground_truth.mean().values
+            std  = ground_truth.std().values
+            gt_n   = (ifs_ground_truth - mean) / std
+            orig_n = (ifs_fc_original - mean) / std
+            corr_n = (ifs_fc_corrected - mean) / std
 
-                ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
-                ifs_fc_original = ds[f"{prediction_var}_original"]
-                ifs_fc_corrected = ds[f"{prediction_var}_corrected"]
-                ifs_mse_total_orig = float(((ifs_fc_original - ifs_ground_truth) ** 2).mean().values)
-                ifs_mse_total_corr = float(((ifs_fc_corrected - ifs_ground_truth) ** 2).mean().values)
-
-                ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
-                ifs_orig = ds[f"{prediction_var}_original"]
-                ifs_corr = ds[f"{prediction_var}_corrected"]
-
-                # normalize by test‐set truth
-                mean = ground_truth.mean().values
-                std  = ground_truth.std().values
-                gt_n   = (ifs_ground_truth - mean) / std
-                orig_n = (ifs_orig            - mean) / std
-                corr_n = (ifs_corr           - mean) / std
-
-                ifs_mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
-                ifs_mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
-
-                ifs_mse_orig_list.append(ifs_mse_total_orig)
-                ifs_mse_corr_list.append(ifs_mse_total_corr)
-
-            if mse_orig_list and mse_corr_list:
-                avg_mse_orig = np.mean(mse_orig_list)
-                avg_mse_corr = np.mean(mse_corr_list)
-                results[(lt, region)] = (avg_mse_orig, avg_mse_corr)
-            if ifs_mse_orig_list and ifs_mse_corr_list:
-                avg_mse_orig_ifs = np.mean(ifs_mse_orig_list)
-                avg_mse_corr_ifs = np.mean(ifs_mse_corr_list)
-                ifs_results[(lt, region)] = (avg_mse_orig_ifs, avg_mse_corr_ifs)
+            ifs_mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
+            ifs_mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+            ifs_results[(lt, region)] = (ifs_mse_total_corr, ifs_mse_total_orig)
 
     # Prepare data for the single grouped bar plot.
     x_positions = []
@@ -792,30 +925,6 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
 def main():
 
-    # # testing
-    # usa_south_path= "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/wb_finetune_test/pangu/usa_south/train_2m_temperature_test_2m_temperature_dim10x10_leadtime_168h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp512x5.zarr"
-    # amazon_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/wb_finetune_test/pangu/amazon/train_2m_temperature_test_2m_temperature_dim10x10_leadtime_168h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp512x5.zarr"
-
-    # usa_south = xr.open_zarr(usa_south_path)
-    # amazon = xr.open_zarr(amazon_path)
-
-    # # print max min and mean for 2m temperature
-    # print(f"USA South 2m temperature original: {usa_south['2m_temperature_original'].max().values}, {usa_south['2m_temperature_original'].min().values}, {usa_south['2m_temperature_original'].mean().values}")
-    # print(f"Amazon 2m temperature original: {amazon['2m_temperature_original'].max().values}, {amazon['2m_temperature_original'].min().values}, {amazon['2m_temperature_original'].mean().values}")
-
-    # print("===============")
-    # print(f"USA South 2m temperature corrected: {usa_south['2m_temperature_corrected'].max().values}, {usa_south['2m_temperature_corrected'].min().values}, {usa_south['2m_temperature_corrected'].mean().values}")
-    # print(f"Amazon 2m temperature corrected: {amazon['2m_temperature_corrected'].max().values}, {amazon['2m_temperature_corrected'].min().values}, {amazon['2m_temperature_corrected'].mean().values}")
-    # print("===============")
-    # print(f"USA South 2m temperature ground truth: {usa_south['2m_temperature_ground_truth'].max().values}, {usa_south['2m_temperature_ground_truth'].min().values}, {usa_south['2m_temperature_ground_truth'].mean().values}")
-    # print(f"Amazon 2m temperature ground truth: {amazon['2m_temperature_ground_truth'].max().values}, {amazon['2m_temperature_ground_truth'].min().values}, {amazon['2m_temperature_ground_truth'].mean().values}")
-
-    # usa_mse = ((usa_south['2m_temperature_original'] - usa_south['2m_temperature_ground_truth']) ** 2).values.mean()
-    # amazon_mse = ((amazon['2m_temperature_original'] - amazon['2m_temperature_ground_truth']) ** 2).values.mean()
-
-    # print(usa_mse)
-    # print(amazon_mse)
-
     dirs = setup_directories()
 
     # three options for training and output variable combinations, uncomment the one you want to use
@@ -831,6 +940,22 @@ def main():
     # training_vars = ["2m_temperature", "geopotential_1000hPa", "specific_humidity_1000hPa"]
     # output_vars = ["2m_temperature"]
     # prediction_var = "2m_temperature"
+
+    generate_lead_time_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        mlp_params=(512, 5),
+        region = "india",
+        subregion="10x10"
+    )
+
+    exit()
 
     generate_subregion_comparison_plots(
         dirs = dirs,
@@ -852,6 +977,7 @@ def main():
         prediction_var=prediction_var,
         mlp_params=(512, 5)
     )
+
 
     generate_global_map(
         dirs = dirs,
