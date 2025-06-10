@@ -1,7 +1,9 @@
 # Fdb version 4
-["pdflatex"] 1747863584 "/Users/ohouck/vc/ai_weather_ag/report.tex" "report.pdf" "report" 1747863586 0
+["pdflatex"] 1749218421 "/Users/ohouck/vc/ai_weather_ag/report.tex" "report.pdf" "report" 1749218423 0
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//comparison/mse_comparison_pangu_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_outputwind_speed_mlp512x5.png" 1747853666 59978 a6b14be417a9b7047d7862d4f4ac3138 ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png" 1747863584 60263 e9e59a89278a29f89413594cbfd63c55 ""
+  "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//lead_time/india/10x10/leadtime_mse_2m_temperature_trainedwith_2m_temperature_mlp512x5.png" 1749163324 100012 f8f6073653ebe1ab9d1ca95ba4299dc9 ""
+  "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//lead_time/india/10x10/leadtime_mse_wind_speed_trainedwith_10m_v_component_of_wind_10m_u_component_of_wind_mlp512x5.png" 1749163356 93108 1e2b274c5e312908391bb9d899b0ec27 ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png" 1746814933 61265 38f8f2bcac3219f91b610322acbf3b8c ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/amazon/10x10/mse_map_difference_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png" 1747249569 63869 62ac21a76406919a95bdbbefbc4b9336 ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//maps/india/10x10/mse_map_difference_2m_temperature_trained_with_2m_temperature_168h.png" 1746814957 75985 764434643e7e14b70e1c266109ac8d2c ""
@@ -26,7 +28,7 @@
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/pakistan/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png" 1747249654 48259 3f59f3505f6d7198fe774aecb8917c7d ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/usa_south/10x10/mse_time_series_2m_temperature_trained_with_2m_temperature_168h.png" 1746814907 47153 78c2ee05a6132470032ef10da02a6b6d ""
   "../../OneDrive - The University of Chicago/ai_weather_ag/figures/finetuning/pangu//time_series/usa_south/10x10/mse_time_series_wind_speed_trained_with_10m_v_component_of_wind_10m_u_component_of_wind_168h.png" 1747249538 43410 f17feff52eaa1e7abd307a4b1fcee376 ""
-  "/Users/ohouck/vc/ai_weather_ag/report.tex" 1747248742 12247 f45006fe8d6a655c9f0a8e033d9c5df1 ""
+  "/Users/ohouck/vc/ai_weather_ag/report.tex" 1749218421 12854 c05051058d67224c0bd2117acade1b1e ""
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcrm1095.tfm" 1136768653 1536 02c06700a42be0f5a28664c7273f82e7 ""
@@ -86,9 +88,9 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "report.aux" 1747863586 11458 b135e76eb5d150f77cda5d4b79601110 "pdflatex"
-  "report.out" 1747863585 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "report.tex" 1747248742 12247 f45006fe8d6a655c9f0a8e033d9c5df1 ""
+  "report.aux" 1749218423 12058 07f729a37c837baa83bba1ede5efadeb "pdflatex"
+  "report.out" 1749218421 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "report.tex" 1749218421 12854 c05051058d67224c0bd2117acade1b1e ""
   (generated)
   "report.aux"
   "report.log"

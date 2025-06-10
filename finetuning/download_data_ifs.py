@@ -14,7 +14,7 @@ import xarray as xr
 import numpy as np
 import time
 
-def save_data_locally(ds, full_surface_var_list, full_atm_var_list, lat_values, lon_values,
+def save_data_locally(ds, full_surface_var_list, full_atm_var_list, 
               time_values, lead_time_hours, output_path):
     
     # Ensure consistent ordering of latitude
@@ -33,15 +33,10 @@ def save_data_locally(ds, full_surface_var_list, full_atm_var_list, lat_values, 
             ds = ds.rename({'lon': 'longitude'})
 
     # Select region, time, and variables
-    ds_surface = ds.sel(time=time_values,
-                latitude=slice(lat_values.min(), lat_values.max()),
-                longitude=slice(lon_values.min(), lon_values.max()))[full_surface_var_list]
+    ds_surface = ds.sel(time=time_values)[full_surface_var_list]
     # select atm vars for 1000 hPa level
     level = 1000
-    ds_atm = ds.sel(time=time_values,
-                latitude=slice(lat_values.min(), lat_values.max()),
-                longitude=slice(lon_values.min(), lon_values.max()),
-                level = level)[full_atm_var_list].drop_vars('level')
+    ds_atm = ds.sel(time=time_values, level = level)[full_atm_var_list].drop_vars('level')
     # rename all atm vars to include the level with hte label "1khPa"
     ds_atm = ds_atm.rename({v: f"{v}_{level}hPa" for v in full_atm_var_list})
 
@@ -119,7 +114,7 @@ def get_year_ranges(start_date_str, end_date_str):
 def main():
     # possible regions
     # regions = ["india", "usa_south", "amazon", "british_columbia"]
-    region = "india"
+    region = "global"
     # model_names = ["pangu", "ifs"]
     model_name = "ifs"
 
@@ -188,15 +183,28 @@ def main():
     # 0) Download and save the data locally (if needed)
     # =========================================================================
 
-    # Open datasets (supporting Zarr or NetCDF)
-    ds_forecast = (
-        xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
-        else xr.open_dataset(forecast_path)
-    )
-    # ds_obs = (
-    #     xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
-    #     else xr.open_dataset(obs_path)
-    # )
+    if region == "global":
+        # Open datasets (supporting Zarr or NetCDF)
+        ds_forecast = (
+            xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
+            else xr.open_dataset(forecast_path)
+        )
+        ds_obs = (
+            xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
+            else xr.open_dataset(obs_path)
+        )
+    else:
+        ds_forecast = (
+            xr.open_zarr(forecast_path) if forecast_path.endswith('.zarr')
+            else xr.open_dataset(forecast_path)
+        ).sel(latitude=slice(full_lat_values.min(), full_lat_values.max()),
+            longitude=slice(full_lon_values.min(), full_lon_values.max()))
+        ds_obs = (
+            xr.open_zarr(obs_path) if obs_path.endswith('.zarr')
+            else xr.open_dataset(obs_path)
+        ).sel(latitude=slice(full_lat_values.min(), full_lat_values.max()),
+               longitude=slice(full_lon_values.min(), full_lon_values.max()))
+    
 
      # ---- Training data ---- 
     train_months = get_month_ranges(full_train_start, full_train_end)
@@ -219,19 +227,17 @@ def main():
         if not os.path.exists(forecast_output_path):
             start_time = time.time()
             save_data_locally(ds_forecast, full_surface_var_list, full_atm_var_list,
-                          full_lat_values, full_lon_values, time_values,
-                          full_lead_time_hours, forecast_output_path)
+                          time_values,full_lead_time_hours, forecast_output_path)
             print("Training Forecast data saved successfully for:", date_str, "in region:", region)
             end_time = time.time()
             print("Time taken to save forecast data:", (end_time - start_time) / 3600, "hours")
-        # if not os.path.exists(obs_output_path):
-        #     start_time = time.time()
-        #     save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
-        #                     full_lat_values, full_lon_values, time_values,
-        #                     full_lead_time_hours, obs_output_path)
-        #     end_time = time.time()
-        #     print("Training Obs data saved successfully for:", date_str, "in region:", region)
-        #     print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
+        if not os.path.exists(obs_output_path):
+            start_time = time.time()
+            save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
+                            time_values, full_lead_time_hours, obs_output_path)
+            end_time = time.time()
+            print("Training Obs data saved successfully for:", date_str, "in region:", region)
+            print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
     
     # ---- Test data ----
     test_months = get_month_ranges(full_test_start, full_test_end)
@@ -253,21 +259,19 @@ def main():
         if not os.path.exists(forecast_output_path):
             time_start = time.time()
             save_data_locally(ds_forecast, full_surface_var_list, full_atm_var_list,
-                            full_lat_values, full_lon_values, time_values,
-                            full_lead_time_hours, forecast_output_path)
+                            time_values, full_lead_time_hours, forecast_output_path)
             time_end = time.time()
             print("Testing Forecast data saved successfully for date:", date_str, "in region:", region)
             # print time in hours
             print("Time taken to save forecast data:", (time_end - time_start) / 3600, "hours")
         
-        # if not os.path.exists(obs_output_path):
-        #     time_start = time.time()
-        #     save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
-        #                     full_lat_values, full_lon_values, time_values,
-        #                     full_lead_time_hours, obs_output_path)
-        #     time_end = time.time()
-        #     print("Testing Obs data saved successfully for date:", date_str, "in region:", region)
-        #     print("Time taken to save obs data:", (time_end - time_start) / 3600, "hours")
+        if not os.path.exists(obs_output_path):
+            time_start = time.time()
+            save_data_locally(ds_obs, full_surface_var_list, full_atm_var_list,
+                            time_values, full_lead_time_hours, obs_output_path)
+            time_end = time.time()
+            print("Testing Obs data saved successfully for date:", date_str, "in region:", region)
+            print("Time taken to save obs data:", (time_end - time_start) / 3600, "hours")
     
 if __name__ == "__main__":
     main()
