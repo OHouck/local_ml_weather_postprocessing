@@ -116,7 +116,7 @@ def main():
     # regions = ["india", "usa_south", "amazon", "british_columbia"]
     region = "global"
     # model_names = ["pangu", "ifs"]
-    model_name = "ifs"
+    model_name = "pangu"
 
     if model_name == "pangu":
         forecast_path = "gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr"

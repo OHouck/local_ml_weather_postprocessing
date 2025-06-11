@@ -2,6 +2,19 @@
 """
 finetuning.py with optional bootstrap sampling of subregions
 Author: Ozma Houck 
+
+# example call
+python3 finetuning/1_finetune.py \
+    --data_dir="/Volumes/wd_external_hd/weatherbench" \
+    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+    --training_vars 2m_temperature \
+    --output_vars 2m_temperature \
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --model_name="pangu" \
+    --region="global" \
+    --subregion="2x2" \
+    --lead_time_hours="24" --bootstrap="2"
 """
 import argparse
 import os
@@ -16,7 +29,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import copy
+import time
 
+# Map the new region strings to Koppen‐Geiger codes:
+CLIMATE_ZONE_MAP = {
+    'tropical':  1,
+    'arid':       2,
+    'temperate':  3,
+    'cold':       4,
+    'polar':      5,
+}
 # ------------------------------
 # Simple MLP definition
 # ------------------------------
@@ -38,6 +60,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune MLP for regional post-processing')
     parser.add_argument('--data_dir',     type=str, default="~/weatherbench2_data")
     parser.add_argument('--output_dir',   type=str, required=True)
+    parser.add_argument('--climate_zones_file', type=str, default=None)
     parser.add_argument('--model_name',   type=str, required=True)
     parser.add_argument('--region',       type=str, default="india")
     parser.add_argument('--subregion',    type=str, default="2x2")
@@ -77,11 +100,15 @@ def get_region_grid(args):
     elif args.region == "pakistan":
         lat0, lat1 = 25, 34
         lon0, lon1 = 60, 70
+    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP:
+        lat0, lat1 = -90, 90
+        lon0, lon1 = 0, 360
     else:
         raise ValueError(f"Unknown region '{args.region}'")
     # include the upper bound +0.25 so arange includes endpoint
     lat_values = np.arange(lat0, lat1 + 0.25, 0.25)
     lon_values = np.arange(lon0, lon1 + 0.25, 0.25)
+
     return lat_values, lon_values
 
 def get_patch_shape(args):
@@ -105,11 +132,45 @@ def generate_output_path(args):
     output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
     return output_path 
 
+def sample_climate_zone_patches(
+    cz_da: xr.DataArray,
+    zone: int,
+    lat_vals: np.ndarray,
+    lon_vals: np.ndarray,
+    nlat: int,
+    nlon: int,
+    N: int,
+    threshold: float = 0.75
+):
+    """
+    Return a list of N (lat_slice, lon_slice) each of shape (nlat,nlon),
+    drawn at random (with replacement) from cz_da restricted to
+    lat_vals×lon_vals, such that ≥threshold fraction = zone.
+    """
+    # restrict to your region grid
+    cz = cz_da.sel(latitude=lat_vals, longitude=lon_vals)
+    lats = cz.latitude.values
+    lons = cz.longitude.values
+    H, W = len(lats), len(lons)
+
+    patches = []
+    for _ in range(N):
+        while True:
+            i = random.randint(0, H - nlat)
+            j = random.randint(0, W - nlon)
+            block = cz.isel(latitude=slice(i, i+nlat),
+                            longitude=slice(j, j+nlon))
+            frac = (block.values == zone).sum() / float(nlat * nlon)
+            if frac >= threshold:
+                patches.append((lats[i:i+nlat], lons[j:j+nlon]))
+                break
+    return patches
+
 def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
     
-def load_combined_dataset(root_dir, file_pattern):
+def load_combined_dataset(args, lat_values, lon_values, root_dir, file_pattern):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     """
@@ -119,12 +180,24 @@ def load_combined_dataset(root_dir, file_pattern):
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     # print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
-    return xr.open_mfdataset(
-        file_paths,
-        combine="by_coords",
-        preprocess=lambda ds: ds.sortby('latitude'),
-        decode_timedelta=True     # if you still want your lead-time axis as timedelta
-    )
+
+    if args.region == "global" or args.region in CLIMATE_ZONE_MAP:
+        datasets = []
+        for fn in file_paths:
+            ds = xr.open_dataset(fn, decode_times=False, decode_timedelta=False)
+            ds = ds.sel(latitude=lat_values, longitude=lon_values)
+            datasets.append(ds)
+        combined_ds = xr.concat(datasets, dim='time')
+        print("combined_ds", combined_ds)
+        return combined_ds.sortby(['latitude', 'longitude'])
+
+    else: 
+        return xr.open_mfdataset(
+            file_paths,
+            combine="by_coords",
+            preprocess=lambda ds: ds.sortby('latitude'),
+            decode_timedelta=True     # if you still want your lead-time axis as timedelta
+        )
 
 def get_bounds(args):
 
@@ -193,13 +266,19 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True):
     n_output_vars = len(args.output_vars)
 
     # ----- Loading combined training data from monthly files -----
-    fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
+    if args.region in CLIMATE_ZONE_MAP:
+        # use global data for climate zone regions
+        fc_dir = os.path.join(data_dir, f"{ver_str}_global")
+    else:
+        fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
     # For forecast and observation data, we define the patterns for monthly file names.
     fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
-    forecast_ds = load_combined_dataset(fc_dir, fc_pattern)
+    forecast_ds = load_combined_dataset(args, lat_values, lon_values, fc_dir, fc_pattern)
+    print(f"forecast_ds", forecast_ds)
 
-    train_obs_ds = load_combined_dataset(fc_dir, obs_pattern)
+    train_obs_ds = load_combined_dataset(args, lat_values, lon_values, fc_dir, obs_pattern)
+    print(f"train_obs_ds", train_obs_ds)
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = forecast_ds.sel(
@@ -412,6 +491,7 @@ def check_2m_temperature(files):
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device):
     # 1) Load train
+    print("Loading training data...")
     fc_ds, fc_ds_output, obs_ds, train_time_values, n_train_time, n_training_vars, n_output_vars = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
     # save unique lat/lon
@@ -477,21 +557,19 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 def main():
 
     # Check for NaNs in 2m_temperature variable across all files, this can happen if download gets interrupted
-    file_list = sorted(glob.glob(" /Volumes/wd_external_hd/weatherbench/test_global/**/*.nc", recursive=True))
-   
-    summary = check_2m_temperature(file_list)
-    # Print a quick report
-    for path, info in summary.items():
-        if "error" in info:
-            print(f"[ERROR] {path}: {info['error']}")
-        else:
-            status = "contains NaNs" if info["has_nans"] else "no NaNs"
-            if status == "contains NaNs":
-                print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
-        args = parse_args()
+    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/train_global/**/*pangu*.nc", recursive=True))
+    # summary = check_2m_temperature(file_list)
+    # # Print a quick report
+    # for path, info in summary.items():
+    #     if "error" in info:
+    #         print(f"[ERROR] {path}: {info['error']}")
+    #     else:
+    #         status = "contains NaNs" if info["has_nans"] else "no NaNs"
+    #         if status == "contains NaNs":
+    #             print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
 
-    exit()
-
+    # parse command line arguments
+    args = parse_args()
     # prepare output dir and base path
     output_dir = os.path.expanduser(args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -503,12 +581,43 @@ def main():
                           'cpu')
     torch.manual_seed(58); random.seed(58)
 
-    # full region grid
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # bootstrap mode
-    if args.bootstrap:
+    # ---- decide if we're in a climate‐zone region or a geographic one ----
+    if args.region in CLIMATE_ZONE_MAP:
+        # bootstrapping for climate zone regions
+        # full grid comes from the mask coords:
+        cz_da = xr.open_dataset(os.path.expanduser(args.climate_zones_file), 
+                                engine = "netcdf4")["climate_zones"]
+        zone_id = CLIMATE_ZONE_MAP[args.region]
+        region_lat = cz_da.latitude.values
+        region_lon = cz_da.longitude.values
+
+        # sample N patches within that zone:
+        patches = sample_climate_zone_patches(
+            cz_da, zone_id,
+            region_lat, region_lon,
+            nlat_patch, nlon_patch,
+            args.bootstrap,
+            threshold=0.9
+        )
+
+        for idx, (lat_vals, lon_vals) in enumerate(patches, start=1):
+            out_path = base_path.replace(
+                '.zarr', f'_{args.region}_bs{idx}.zarr'
+            )
+            start_time = time.time()
+            run_subregion_experiment(
+                lat_vals, lon_vals, out_path,
+                args, os.path.expanduser(args.data_dir), device
+            )
+            end_time = time.time()
+            elapsed_minutes = (end_time - start_time) / 60
+            print(f"Saved [{args.region} zone] sample {idx}/{args.bootstrap} in {elapsed_minutes} minutes")
+
+    elif args.bootstrap:
+        # bootstrap sampling for uniform-grid regions
         for i in range(args.bootstrap):
             si = random.randint(0, len(region_lat) - nlat_patch)
             sj = random.randint(0, len(region_lon) - nlon_patch)

@@ -38,12 +38,12 @@ def regrid_to_025(
     lon_min: float = 0,
     lon_max: float = 360,
     lat_min: float = -90,
-    lat_max: float = 90,
+    lat_max: float = 90.25,
 ) -> xr.DataArray:
     """
     Reproject any EPSG:4326 DataArray onto a strict 0.25° global grid:
       lon = [0, 0.25, …, 359.75]
-      lat = [-90, -89.75, …, 89.75]
+      lat = [-90, -89.75, …, 90] 
 
     Parameters
     ----------
@@ -148,11 +148,17 @@ def main():
     # Apply the sea mask to the climate zones data
     climate_zones_simplified = climate_zones_simplified.where(sea_mask == 1)
 
+    # rename lat and lon to latitude and longitude
+    climate_zones_simplified = climate_zones_simplified.rename({"lat": "latitude", "lon": "longitude"})
+
     # save masked climate zones
     climate_zones_simplified.name = "climate_zones"
     climate_zones_simplified.attrs = climate_zones.attrs  # carry over any metadata
+
     climate_zones_path = os.path.join(dirs["processed"], "climate_zones_0p25.nc")
     climate_zones_simplified.to_netcdf(climate_zones_path)
+
+    
 
     # # plot mask and climate zones
     # plt.figure(figsize=(12, 6))

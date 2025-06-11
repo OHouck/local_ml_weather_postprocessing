@@ -867,7 +867,7 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
             ifs_mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
             ifs_mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
-            ifs_results[(lt, region)] = (ifs_mse_total_corr, ifs_mse_total_orig)
+            ifs_results[(lt, region)] = (ifs_mse_total_orig, ifs_mse_total_corr)
 
     # Prepare data for the single grouped bar plot.
     x_positions = []
@@ -905,12 +905,32 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
     x_positions_offset = np.array(x_positions) + 0.3  # Offset for IFS bars
 
-    # Create the grouped bar plot.
+    # # Create the grouped bar plot.
     fig, ax = plt.subplots(figsize=(max(8, len(x_positions)*0.8), 6))
     # Overlap the two bars at the same positions with transparency.
     ax.bar(x_positions, mse_orig_vals, color='blue', width=0.8, alpha=0.5, label='Original MSE')
     ax.bar(x_positions, mse_corr_vals, color='red', width=0.8, alpha=0.5, label='Corrected MSE')
-    ax.bar(x_positions_offset , ifs_mse_orig_vals, color='blue', width=0.1, alpha=.75, label='IFS Baseline MSE')
+
+    ifs_bar_width = 0.18
+    # first IFS bar (baseline)
+    ax.bar(
+        x_positions_offset,
+        ifs_mse_orig_vals,
+        width=ifs_bar_width,
+        alpha=0.75,
+        label='IFS Baseline MSE'
+    )
+    # second IFS bar (corrected), shifted over by one bar‐width
+    ax.bar(
+        x_positions_offset + ifs_bar_width,
+        ifs_mse_corr_vals,
+        width=ifs_bar_width,
+        alpha=0.75,
+        color='#ADD8E6',        # light‐blue
+        label='IFS Corrected MSE'
+    )
+
+    # rest stays the same
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=45, ha='right')
     ax.set_ylabel("Overall MSE")
@@ -929,17 +949,27 @@ def main():
 
     # three options for training and output variable combinations, uncomment the one you want to use
 
-    # training_vars = ["2m_temperature"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
+    training_vars = ["2m_temperature"]
+    output_vars = ["2m_temperature"]
+    prediction_var = "2m_temperature"
 
-    training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    prediction_var = "wind_speed"
+    # training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    # output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
+    # prediction_var = "wind_speed"
 
     # training_vars = ["2m_temperature", "geopotential_1000hPa", "specific_humidity_1000hPa"]
     # output_vars = ["2m_temperature"]
     # prediction_var = "2m_temperature"
+
+    # Compare multiple runs across lead times and regions in a single plot.
+    compare_runs_mse(
+        dirs=dirs,
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        mlp_params=(512, 5)
+    )
+    exit()
 
     generate_lead_time_plots(
         dirs = dirs,
@@ -955,7 +985,6 @@ def main():
         subregion="10x10"
     )
 
-    exit()
 
     generate_subregion_comparison_plots(
         dirs = dirs,
@@ -969,14 +998,6 @@ def main():
         mlp_params=(512, 5)
     )
 
-    # Compare multiple runs across lead times and regions in a single plot.
-    compare_runs_mse(
-        dirs=dirs,
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5)
-    )
 
 
     generate_global_map(
