@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-finetuning.py with optional bootstrap sampling of subregions
 Author: Ozma Houck 
+
+# Purpose: use a simple MLP to post-process weather forecasts trained on
+specific regions and variables. Call this script from command line or with 
+1_run_experiments.sh script. 
 
 # example call
 python3 finetuning/1_finetune.py \
@@ -170,7 +173,7 @@ def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
     
-def load_combined_dataset(args, lat_values, lon_values, root_dir, file_pattern):
+def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     """
@@ -181,23 +184,12 @@ def load_combined_dataset(args, lat_values, lon_values, root_dir, file_pattern):
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     # print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
 
-    if args.region == "global" or args.region in CLIMATE_ZONE_MAP:
-        datasets = []
-        for fn in file_paths:
-            ds = xr.open_dataset(fn, decode_times=False, decode_timedelta=False)
-            ds = ds.sel(latitude=lat_values, longitude=lon_values)
-            datasets.append(ds)
-        combined_ds = xr.concat(datasets, dim='time')
-        print("combined_ds", combined_ds)
-        return combined_ds.sortby(['latitude', 'longitude'])
-
-    else: 
-        return xr.open_mfdataset(
-            file_paths,
-            combine="by_coords",
-            preprocess=lambda ds: ds.sortby('latitude'),
-            decode_timedelta=True     # if you still want your lead-time axis as timedelta
-        )
+    return xr.open_mfdataset(
+        file_paths,
+        combine="by_coords",
+        preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
+        decode_timedelta=True     # if you still want your lead-time axis as timedelta
+    )
 
 def get_bounds(args):
 
@@ -274,24 +266,17 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True):
     # For forecast and observation data, we define the patterns for monthly file names.
     fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
     obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
-    forecast_ds = load_combined_dataset(args, lat_values, lon_values, fc_dir, fc_pattern)
-    print(f"forecast_ds", forecast_ds)
-
-    train_obs_ds = load_combined_dataset(args, lat_values, lon_values, fc_dir, obs_pattern)
-    print(f"train_obs_ds", train_obs_ds)
+    forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
+    train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = forecast_ds.sel(
         time=time_values,
-        latitude=lat_values,
-        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.training_vars].drop_vars('prediction_timedelta').compute()
     
     fc_ds_output = forecast_ds.sel(
         time=time_values,
-        latitude=lat_values,
-        longitude=lon_values,
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.output_vars].drop_vars('prediction_timedelta').compute()
     
@@ -491,9 +476,9 @@ def check_2m_temperature(files):
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device):
     # 1) Load train
-    print("Loading training data...")
     fc_ds, fc_ds_output, obs_ds, train_time_values, n_train_time, n_training_vars, n_output_vars = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
+    print("Loaded Forecasts")
     # save unique lat/lon
     lat_u = np.unique(fc_ds.latitude.values)
     lon_u = np.unique(fc_ds.longitude.values)
@@ -524,6 +509,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     model = train_model(model, train_loader, val_loader,
                          epochs=1000, lr=1e-5, device=device,
                          patience=50, min_delta=0.0)
+    print("Training complete.")
 
     # load test
     test_fc_ds, test_fc_o_ds, test_obs_ds, test_times, n_test_time, _, _ = \
@@ -557,7 +543,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 def main():
 
     # Check for NaNs in 2m_temperature variable across all files, this can happen if download gets interrupted
-    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/train_global/**/*pangu*.nc", recursive=True))
+    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/test_global/**/*pangu*.nc", recursive=True))
     # summary = check_2m_temperature(file_list)
     # # Print a quick report
     # for path, info in summary.items():
@@ -571,8 +557,9 @@ def main():
     # parse command line arguments
     args = parse_args()
     # prepare output dir and base path
-    output_dir = os.path.expanduser(args.output_dir)
-    os.makedirs(output_dir, exist_ok=True)
+    args.output_dir = os.path.expanduser(args.output_dir)
+    args.data_dir = os.path.expanduser(args.data_dir)
+    os.makedirs(args.output_dir, exist_ok=True)
     base_path = generate_output_path(args)
 
     # setup device & seeds

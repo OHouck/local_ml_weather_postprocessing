@@ -2,9 +2,9 @@
 # lat must be between -90 and 90
 # lon must be between 0 and 360 (0 is at prime meridian)
 source .venv/bin/activate
-    # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
     # --data_dir="/Users/ohouck/test_wb_finetune_data" \
     # --data_dir="/Volumes/wd_external_hd/weatherbench" \
+    # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 
 python3 finetuning/1_finetune.py \
     --data_dir="/Volumes/wd_external_hd/weatherbench" \
@@ -15,8 +15,8 @@ python3 finetuning/1_finetune.py \
     --train_start="2018-01-01" --train_end="2021-12-31" \
     --test_start="2022-01-01" --test_end="2022-12-31" \
     --model_name="pangu" \
-    --region="india" \
-    --subregion="2x2" \
+    --region="tropical" \
+    --subregion="1x1" \
     --lead_time_hours="24" --bootstrap="2"
 
 # # # regions=("amazon" "usa_south" "british_columbia" "india" "pakistan")

@@ -98,7 +98,8 @@ def main():
 
     nlat_patch, nlon_patch = get_patch_shape(subregion)
 
-    climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
+    # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
+    climate_zone_list = ["tropical"]
     for zone in climate_zone_list:
         zone_code = CLIMATE_ZONE_MAP[zone]
         print(f"Sampling {zone} patches...")
@@ -114,47 +115,57 @@ def main():
             nlon_patch,
             N
         )
-        pangu_fc_file_paths = sorted(glob.glob(os.path.join(dirs["external"], "train_global", "*pangu*forecast*.nc"), recursive=True))
-        pangu_obs_file_paths = sorted(glob.glob(os.path.join(dirs["external"], "train_global", "*pangu*obs*.nc"), recursive=True))
+        base_dir = "/Volumes/wd_external_hd/weatherbench/train_global"
+        pangu_fc_file_paths = sorted(glob.glob(os.path.join(base_dir, "**", "pangu_train_forecast_data*.nc"), recursive=True))
+        pangu_obs_file_paths = sorted(glob.glob(os.path.join(base_dir,"**", "pangu_train_obs_data*.nc"), recursive=True))
+
+        train_out_folder = os.path.join(
+            dirs["processed"],
+            'cleaned_weatherbench_downloads',
+            f"train_{zone}",
+            "pangu")
+        # make folder if it does not exist
+        os.makedirs(train_out_folder, exist_ok=True)
 
         for idx, (lat_values, lon_values) in enumerate(patches, start = 1):
 
             # Save patches of forecast data
-            fc_out_path = os.path.join(
-                dirs["processed"],
-                'cleaned_weatherbench_downloads',
-                f"train_{zone}",
-                "pangu"
-                f"pangu_train_forecast_data_{zone}_{subregion}_patch_{idx}.nc"
-            )
+            fc_patch_path = os.path.join(train_out_folder, f"pangu_train_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
 
             # delete the file if it already exists
-            if os.path.exists(fc_out_path):
-                os.remove(fc_out_path)
+            if os.path.exists(fc_patch_path):
+                os.remove(fc_patch_path)
 
-            for fc_file_path in pangu_fc_file_paths:
-                fc= xr.open_dataset(fc_file_path)
-                fc= fc.sel(latitude=lat_values, longitude=lon_values)
-                fc.to_netcdf(fc_out_path, mode='a', format='NETCDF4')
+            # define a little function that selects your patch
+            def preprocess_patch(ds):
+                return ds.sel(latitude=lat_values, longitude=lon_values)
 
+            # open, slice, and concat in one go
+            ds_patch = xr.open_mfdataset(
+                pangu_fc_file_paths,
+                preprocess=preprocess_patch,
+                concat_dim="time",
+                combine="nested",       # or "by_coords" if you know each time is strictly increasing
+                engine="netcdf4"
+)
+            # now write the single, stitched‐together file
+            ds_patch.to_netcdf(fc_patch_path, format="NETCDF4")
 
-            # Save patches of observation data
-            obs_out_path = os.path.join(
-                dirs["processed"],
-                'cleaned_weatherbench_downloads',
-                f"train_{zone}",
-                "pangu"
-                f"pangu_train_obs_data_{zone}_{subregion}_patch_{idx}.nc"
-            )
+            # for fc_file_path in pangu_fc_file_paths:
+            #     fc= xr.open_dataset(fc_file_path)
+            #     fc= fc.sel(latitude=lat_values, longitude=lon_values)
+            #     fc.to_netcdf(fc_patch_path, mode='a', format='NETCDF4')
 
-            # delete the file if it already exists
-            if os.path.exists(obs_out_path):
-                os.remove(obs_out_path)
+            # obs_patch_path = os.path.join(train_out_folder, f"pangu_train_obs_data_{zone}_{subregion}_patch_{idx}.nc")
 
-            for obs_file_path in pangu_obs_file_paths:
-                obs = xr.open_dataset(obs_file_path)
-                obs = obs.sel(latitude=lat_values, longitude=lon_values)
-                obs.to_netcdf(obs_out_path, mode='a', format='NETCDF4')
+            # # delete the file if it already exists
+            # if os.path.exists(obs_patch_path):
+            #     os.remove(obs_patch_path)
+
+            # for obs_file_path in pangu_obs_file_paths:
+            #     obs = xr.open_dataset(obs_file_path)
+            #     obs = obs.sel(latitude=lat_values, longitude=lon_values)
+            #     obs.to_netcdf(obs_patch_path, mode='a', format='NETCDF4')
 
 
 
