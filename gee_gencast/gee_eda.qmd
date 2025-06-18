@@ -1,0 +1,433 @@
+```{python}
+import os
+import ee
+import socket
+import geemap
+import pandas as pd
+import numpy as np
+from IPython.display import Image
+
+
+ee.Authenticate()  # Authenticate Earth Engine
+ee.Initialize()
+
+import os
+import ee
+import geemap
+import pandas as pd
+import numpy as np
+import xarray as xr
+from datetime import datetime, timedelta
+from tqdm import tqdm
+import json
+
+# Initialize Earth Engine
+ee.Authenticate()
+ee.Initialize()
+# Purpose: save patches of of climate zones to be used for bootstrapping
+def setup_directories():
+    # Determine root directory based on environment.
+    nodename = socket.gethostname()
+    if nodename == "oMac.local":  # local laptop
+        root = os.path.expanduser(
+            "~/OneDrive - The University of Chicago/ai_weather_ag/data"
+        )
+    else:
+        raise Exception("Unknown environment, please specify the root directory")
+
+    dirs = {
+        "root": root,
+        "raw": os.path.join(root, "raw"),
+        "processed": os.path.join(root, "processed"),
+        "fig": os.path.join(root, "../figures/finetuning"),
+        "external": os.path.join("Volumes" ,"wd_external_hd", "weatherbench")
+    }
+    for path in dirs.values():
+        os.makedirs(path, exist_ok=True)
+    return dirs
+```
+
+
+```{python}
+# ============================================
+# Configuration
+# ============================================
+
+# Date range for 2020
+start_date = '2020-01-01'
+end_date = '2020-12-31'
+
+# Forecast hours to collect (24-168 hours = 1-7 days)
+forecast_hours = [24, 48, 72, 96, 120, 144, 168]
+
+# Initialization times (00:00 and 12:00 UTC)
+init_times = ['00', '12']
+
+# Variable to collect
+variable = '2m_temperature'
+
+dirs = setup_directories()
+
+# Output directory
+output_dir = os.path.join(dirs['processed'], 'gee_output', 'graphcast_2020')
+os.makedirs(output_dir, exist_ok=True)
+
+# GraphCast collection ID in Earth Engine
+graphcast_collection = 'projects/gcp-public-data-weathernext/assets/59572747_4_0'
+```
+
+```{python}
+# ============================================
+# Helper Functions
+# ============================================
+
+def create_date_range(start_date, end_date):
+    """Create a list of dates between start and end date."""
+    start = pd.to_datetime(start_date)
+    end = pd.to_datetime(end_date)
+    return pd.date_range(start=start, end=end, freq='D')
+
+def get_graphcast_forecast(date, init_time, forecast_hour):
+    """
+    Retrieve GraphCast forecast for a specific date, initialization time, and forecast hour.
+    
+    Args:
+        date: datetime object
+        init_time: '00' or '12' (UTC hours)
+        forecast_hour: forecast lead time in hours
+    
+    Returns:
+        ee.Image or None if not available
+    """
+    # Format the initialization datetime
+    init_datetime = date.strftime(f'%Y-%m-%dT{init_time}:00:00Z')
+    
+    # Create filters
+    collection = (ee.ImageCollection(graphcast_collection)
+                 .filter(ee.Filter.eq('initialization_time', init_datetime))
+                 .filter(ee.Filter.eq('forecast_hour', forecast_hour))
+                 .select(variable))
+    
+    # Get the first image (should only be one)
+    image = collection.first()
+    
+    return image
+
+def export_to_drive(image, description, folder, scale=27750):
+    """
+    Export an Earth Engine image to Google Drive.
+    
+    Args:
+        image: ee.Image to export
+        description: export task description
+        folder: Google Drive folder name
+        scale: resolution in meters (27750m ≈ 0.25 degrees)
+    """
+    task = ee.batch.Export.image.toDrive(
+        image=image,
+        description=description,
+        folder=folder,
+        scale=scale,
+        region=ee.Geometry.Rectangle([-180, -90, 180, 90]),
+        crs='EPSG:4326',
+        maxPixels=1e9,
+        fileFormat='GeoTIFF'
+    )
+    task.start()
+    return task
+
+def collect_graphcast_data_batch():
+    """
+    Collect GraphCast data for all of 2020 in batches.
+    This version exports to Google Drive for later download.
+    """
+    dates = create_date_range(start_date, end_date)
+    tasks = []
+    
+    print(f"Setting up exports for {len(dates)} days...")
+    
+    for date in tqdm(dates):
+        for init_time in init_times:
+            for forecast_hour in forecast_hours:
+                # Get the forecast image
+                image = get_graphcast_forecast(date, init_time, forecast_hour)
+                
+                if image is not None:
+                    # Create descriptive filename
+                    date_str = date.strftime('%Y%m%d')
+                    description = f'graphcast_2m_temp_{date_str}_{init_time}Z_f{forecast_hour:03d}'
+                    
+                    # Export to Drive
+                    task = export_to_drive(
+                        image=image,
+                        description=description,
+                        folder='graphcast_2020_exports'
+                    )
+                    
+                    tasks.append({
+                        'task': task,
+                        'description': description,
+                        'date': date_str,
+                        'init_time': init_time,
+                        'forecast_hour': forecast_hour
+                    })
+    
+    # Save task metadata
+    task_metadata = []
+    for t in tasks:
+        task_metadata.append({
+            'description': t['description'],
+            'date': t['date'],
+            'init_time': t['init_time'],
+            'forecast_hour': t['forecast_hour'],
+            'task_id': t['task'].id
+        })
+    
+    with open(os.path.join(output_dir, 'export_tasks.json'), 'w') as f:
+        json.dump(task_metadata, f, indent=2)
+    
+    print(f"\nExported {len(tasks)} tasks to Google Drive")
+    print(f"Task metadata saved to {os.path.join(output_dir, 'export_tasks.json')}")
+    print("\nMonitor task progress at: https://code.earthengine.google.com/tasks")
+    
+    return tasks
+
+def convert_geotiffs_to_netcdf(geotiff_dir, output_file):
+    """
+    Convert downloaded GeoTIFF files to a single NetCDF dataset.
+    
+    Args:
+        geotiff_dir: directory containing downloaded GeoTIFF files
+        output_file: path to output NetCDF file
+    """
+    import rasterio
+    from glob import glob
+    
+    # Get all GeoTIFF files
+    tiff_files = sorted(glob(os.path.join(geotiff_dir, '*.tif')))
+    
+    if not tiff_files:
+        print(f"No GeoTIFF files found in {geotiff_dir}")
+        return
+    
+    print(f"Found {len(tiff_files)} GeoTIFF files")
+    
+    # Initialize lists to store data
+    data_arrays = []
+    
+    for tiff_file in tqdm(tiff_files, desc="Processing GeoTIFFs"):
+        # Parse filename to extract metadata
+        filename = os.path.basename(tiff_file)
+        parts = filename.replace('.tif', '').split('_')
+        
+        date_str = parts[3]
+        init_time = parts[4].replace('Z', '')
+        forecast_hour = int(parts[5].replace('f', ''))
+        
+        # Create datetime objects
+        init_datetime = pd.to_datetime(f"{date_str} {init_time}:00:00")
+        valid_datetime = init_datetime + timedelta(hours=forecast_hour)
+        
+        # Read the GeoTIFF
+        with rasterio.open(tiff_file) as src:
+            data = src.read(1)  # Read first band
+            transform = src.transform
+            height, width = data.shape
+            
+            # Get coordinates
+            lon = np.array([transform[2] + transform[0] * i for i in range(width)])
+            lat = np.array([transform[5] + transform[4] * i for i in range(height)])
+        
+        # Create xarray DataArray
+        da = xr.DataArray(
+            data,
+            dims=['latitude', 'longitude'],
+            coords={
+                'latitude': lat,
+                'longitude': lon,
+                'initialization_time': init_datetime,
+                'valid_time': valid_datetime,
+                'forecast_hour': forecast_hour
+            },
+            name='2m_temperature'
+        )
+        
+        data_arrays.append(da)
+    
+    # Combine all arrays into a single dataset
+    print("Combining all data arrays...")
+    
+    # Group by initialization time and forecast hour
+    grouped_data = {}
+    for da in data_arrays:
+        key = (da.initialization_time.values, da.forecast_hour.values)
+        if key not in grouped_data:
+            grouped_data[key] = []
+        grouped_data[key].append(da)
+    
+    # Stack arrays
+    stacked_arrays = []
+    for (init_time, fh), arrays in grouped_data.items():
+        stacked = xr.concat(arrays, dim='time')
+        stacked = stacked.assign_coords(
+            time=stacked.initialization_time,
+            forecast_hour=fh
+        )
+        stacked_arrays.append(stacked)
+    
+    # Combine all forecast hours
+    ds = xr.concat(stacked_arrays, dim='forecast_hour')
+    
+    # Add attributes
+    ds.attrs['title'] = 'GraphCast 2m Temperature Forecasts for 2020'
+    ds.attrs['source'] = 'Google Earth Engine - WeatherNext GraphCast'
+    ds.attrs['history'] = f'Created on {datetime.now().isoformat()}'
+    ds.attrs['variable'] = '2m_temperature'
+    ds.attrs['units'] = 'K'  # GraphCast outputs in Kelvin
+    
+    ds['2m_temperature'].attrs['long_name'] = '2 meter temperature'
+    ds['2m_temperature'].attrs['units'] = 'K'
+    
+    # Sort dimensions
+    ds = ds.sortby(['time', 'forecast_hour', 'latitude', 'longitude'])
+    
+    # Save to NetCDF
+    print(f"Saving to {output_file}...")
+    ds.to_netcdf(output_file, engine='netcdf4', encoding={
+        '2m_temperature': {
+            'zlib': True,
+            'complevel': 4,
+            'dtype': 'float32'
+        }
+    })
+    
+    print(f"Successfully saved {output_file}")
+    print(f"Dataset shape: {ds.dims}")
+    
+    return ds
+
+# ============================================
+# Alternative: Direct Download Function
+# ============================================
+
+def collect_graphcast_data_direct():
+    """
+    Alternative method to directly download data if you have 
+    computational resources to process Earth Engine requests locally.
+    """
+    dates = create_date_range(start_date, end_date)
+    all_data = []
+    
+    print(f"Collecting GraphCast data for {len(dates)} days...")
+    
+    for date in tqdm(dates):
+        for init_time in init_times:
+            daily_data = {}
+            
+            for forecast_hour in forecast_hours:
+                # Get the forecast image
+                image = get_graphcast_forecast(date, init_time, forecast_hour)
+                
+                if image is not None:
+                    try:
+                        # Sample the image (reduce resolution for faster processing)
+                        # Adjust scale parameter based on your needs
+                        sample = image.sample(
+                            region=ee.Geometry.Rectangle([-180, -90, 180, 90]),
+                            scale=55000,  # ~0.5 degree resolution
+                            geometries=True
+                        )
+                        
+                        # Get the data
+                        features = sample.getInfo()['features']
+                        
+                        # Extract temperature values and coordinates
+                        temps = []
+                        lats = []
+                        lons = []
+                        
+                        for feature in features:
+                            coords = feature['geometry']['coordinates']
+                            temp = feature['properties'].get(variable)
+                            
+                            if temp is not None:
+                                lons.append(coords[0])
+                                lats.append(coords[1])
+                                temps.append(temp)
+                        
+                        daily_data[forecast_hour] = {
+                            'temperature': temps,
+                            'latitude': lats,
+                            'longitude': lons
+                        }
+                    
+                    except Exception as e:
+                        print(f"Error processing {date} {init_time}Z f{forecast_hour}: {e}")
+            
+            if daily_data:
+                all_data.append({
+                    'date': date,
+                    'init_time': init_time,
+                    'data': daily_data
+                })
+    
+    return all_data
+
+# ============================================
+# Main Execution
+# ============================================
+
+print("GraphCast 2020 Data Collection Script")
+print("=====================================")
+print(f"Date range: {start_date} to {end_date}")
+print(f"Forecast hours: {forecast_hours}")
+print(f"Initialization times: {init_times}")
+print(f"Variable: {variable}")
+
+# Method 1: Export to Google Drive (recommended for large datasets)
+print("\nStarting data export to Google Drive...")
+tasks = collect_graphcast_data_batch()
+
+print("\n" + "="*50)
+print("NEXT STEPS:")
+print("1. Wait for Earth Engine exports to complete")
+print("2. Download GeoTIFF files from Google Drive")
+print("3. Place files in a local directory")
+print("4. Run the conversion function:")
+print("\n# Example conversion code:")
+print("geotiff_dir = './downloaded_geotiffs'")
+print("output_file = './graphcast_2020_2m_temperature.nc'")
+print("ds = convert_geotiffs_to_netcdf(geotiff_dir, output_file)")
+    
+# Method 2: Direct download (for smaller samples or testing)
+# Uncomment to use:
+# print("\nCollecting sample data directly...")
+# sample_data = collect_graphcast_data_direct()
+# print(f"Collected {len(sample_data)} data points")
+
+```
+
+
+<!-- # Select the temperature band
+temperature = gencast.select('2m_temperature')
+
+temp_error = temperature.subtract(temp_era5)
+
+# Define visualization parameters
+vis_params = {
+    'min': 220,
+    'max': 350,
+    'palette': [
+        'darkblue', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred'
+    ]
+}
+
+# Create a map and add the layer
+Map = geemap.Map()
+Map.addLayer(temperature, vis_params, 'GenCast 2m Temperature')
+Map.addLayer(temp_era5, vis_params, 'ERA 5 2m Temperature')
+Map.addLayer(temp_error, vis_params, 'Diff 2m Temperature')
+
+# Display the map
+Map
+``` -->

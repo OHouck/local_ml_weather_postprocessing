@@ -21,8 +21,10 @@ python3 finetuning/1_finetune.py \
 """
 import argparse
 import os
+import socket
 import random
 import glob
+import math
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -30,6 +32,7 @@ import xarray as xr
 from xarray.coding.times import CFDatetimeCoder
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import copy
 import time
@@ -42,6 +45,28 @@ CLIMATE_ZONE_MAP = {
     'cold':       4,
     'polar':      5,
 }
+
+# Purpose: save patches of of climate zones to be used for bootstrapping
+def setup_directories():
+    # Determine root directory based on environment.
+    nodename = socket.gethostname()
+    if nodename == "oMac.local":  # local laptop
+        root = os.path.expanduser(
+            "~/OneDrive - The University of Chicago/ai_weather_ag/data"
+        )
+    else:
+        raise Exception("Unknown environment, please specify the root directory")
+
+    dirs = {
+        "root": root,
+        "raw": os.path.join(root, "raw"),
+        "processed": os.path.join(root, "processed"),
+        "fig": os.path.join(root, "../figures/finetuning"),
+        "external": os.path.join("Volumes" ,"wd_external_hd", "weatherbench")
+    }
+    for path in dirs.values():
+        os.makedirs(path, exist_ok=True)
+    return dirs
 # ------------------------------
 # Simple MLP definition
 # ------------------------------
@@ -55,6 +80,179 @@ class SimpleMLP(nn.Module):
         self.net = nn.Sequential(*layers)
     def forward(self, x):
         return self.net(x)
+
+# ------------------------------
+# U-Net definition 
+# ------------------------------
+class UNet(nn.Module):
+    """
+    U-Net architecture for weather forecast bias correction.
+    Designed as a drop-in replacement for SimpleMLP.
+    
+    Based on the CU-net architecture from:
+    "A Deep Learning Method for Bias Correction of ECMWF 24-240 h Forecasts"
+    """
+    
+    def __init__(self, input_dim, hidden_dim=128, output_dim=1,
+                 n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None):
+        """
+        Initialize U-Net with spatial dimension information.
+        
+        Args:
+            input_dim: Flattened input dimension (n_input_vars * n_lat * n_lon)
+            hidden_dim: Base number of channels (default: 128)
+            output_dim: Flattened output dimension (n_output_vars * n_lat * n_lon)
+            num_levels: Number of encoding/decoding levels (will be adjusted based on spatial dims)
+            n_lat: Number of latitude points
+            n_lon: Number of longitude points
+            n_input_vars: Number of input variables/channels
+            n_output_vars: Number of output variables/channels
+        """
+        super(UNet, self).__init__()
+        
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim = hidden_dim
+
+        # Use provided spatial dimensions if available
+        if n_lat is not None and n_lon is not None and n_input_vars is not None:
+            self.height = n_lat
+            self.width = n_lon
+            self.in_channels = n_input_vars
+            self.out_channels = n_output_vars if n_output_vars is not None else 1
+            
+            # Verify dimensions match
+            expected_input = self.in_channels * self.height * self.width
+            expected_output = self.out_channels * self.height * self.width
+            
+            if expected_input != input_dim:
+                print(f"Warning: Expected input dim {expected_input} but got {input_dim}")
+            if expected_output != output_dim:
+                print(f"Warning: Expected output dim {expected_output} but got {output_dim}")
+        else:
+            raise ValueError("Dimensions not provided")
+        
+        # Calculate maximum number of levels based on spatial dimensions
+        # Each pooling operation halves the spatial dimensions
+        # We need at least 2x2 spatial dims before the last pooling
+        min_spatial_dim = min(self.height, self.width)
+        max_pools = 0
+        current_dim = min_spatial_dim
+        while current_dim >= 4:  # Need at least 4x4 to pool down to 2x2
+            max_pools += 1
+            current_dim = current_dim // 2
+        self.num_levels = max_pools + 1
+
+        # Build encoder (downsampling path)
+        self.encoders = nn.ModuleList()
+        self.pools = nn.ModuleList()
+        
+        in_ch = self.in_channels
+        out_ch = hidden_dim
+        
+        for i in range(self.num_levels):
+            self.encoders.append(self._make_conv_block(in_ch, out_ch))
+            if i < self.num_levels - 1:
+                self.pools.append(nn.MaxPool2d(2))
+            in_ch = out_ch
+            # Reduce channel growth for smaller networks
+            # out_ch = min(out_ch * 2, hidden_dim * 4)  # Cap at 4x hidden_dim instead of 8x
+            out_ch = out_ch * 2
+            print("out_ch", out_ch)
+        # Build decoder (upsampling path)
+        self.decoders = nn.ModuleList()
+        self.upconvs = nn.ModuleList()
+        
+        for i in range(self.num_levels - 1):
+            in_ch = self.encoders[self.num_levels - 1 - i].out_channels
+            print("in_ch", in_ch)
+            if i > 0:
+                in_ch = self.decoders[i-1].out_channels
+            
+            # Account for skip connection
+            skip_ch = self.encoders[self.num_levels - 2 - i].out_channels
+            combined_ch = in_ch + skip_ch
+            print("combined_ch", combined_ch)
+            
+            out_ch = self.encoders[self.num_levels - 2 - i].out_channels
+            print("out_ch", out_ch)
+            
+            self.upconvs.append(self._make_upconv(in_ch, out_ch))
+            self.decoders.append(self._make_conv_block(combined_ch, out_ch))
+
+        # Final output layer
+        final_in_ch = self.decoders[-1].out_channels if self.decoders else self.encoders[-1].out_channels
+        self.final_conv = nn.Conv2d(final_in_ch, self.out_channels, kernel_size=1)
+
+        print(self.upconvs)
+        print(self.decoders)
+        exit()
+    
+    def _make_conv_block(self, in_channels, out_channels):
+        """Create a convolutional block with two conv layers."""
+        block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+        block.out_channels = out_channels
+        return block
+    
+    def _make_upconv(self, in_channels, out_channels):
+        """Create upsampling layer using transposed convolution."""
+        return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+    
+    def forward(self, x):
+        """
+        Forward pass through U-Net.
+        
+        Args:
+            x: Input tensor of shape (batch_size, input_dim)
+            
+        Returns:
+            Output tensor of shape (batch_size, output_dim)
+        """
+        batch_size = x.shape[0]
+        
+        # Reshape flat input to spatial format: (batch, channels, lat, lon)
+        x = x.view(batch_size, self.in_channels, self.height, self.width)
+        
+        # Encoder path with skip connections
+        encoder_outputs = []
+        
+        for i in range(len(self.encoders) - 1):
+            x = self.encoders[i](x)
+            encoder_outputs.append(x)
+            if i < len(self.pools):
+                x = self.pools[i](x)
+        
+        # Process bottommost layer (no pooling)
+        x = self.encoders[-1](x)
+        
+        # Decoder path with skip connections
+        for i, (upconv, decoder) in enumerate(zip(self.upconvs, self.decoders)):
+            x = upconv(x)
+            
+            # Get skip connection
+            skip_connection = encoder_outputs[-(i+1)]
+            
+            # Handle size mismatches due to odd dimensions
+            if x.shape[2:] != skip_connection.shape[2:]:
+                x = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
+            
+            # Concatenate along channel dimension
+            x = torch.cat([x, skip_connection], dim=1)
+            x = decoder(x)
+        
+        # Final convolution
+        x = self.final_conv(x)
+        
+        # Reshape back to flat output: (batch, n_output_vars * n_lat * n_lon)
+        x = x.view(batch_size, -1)
+        
+        return x
+
 
 # ------------------------------
 # Argument parsing
@@ -74,6 +272,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
+    parser.add_argument('--model_type',   type=str, default='MLP', choices=['MLP', 'UNet'])
     parser.add_argument('--mlp_hidden_dim', type=int, default=512)
     parser.add_argument('--mlp_layers',     type=int, default=5)
     parser.add_argument('--bootstrap',      type=int, default=None,
@@ -129,10 +328,15 @@ def generate_output_path(args):
     dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
     training_vars_str = "_".join(args.training_vars)
     output_vars_str = "_".join(args.output_vars)
-    mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+
+    if args.model_type == "UNet":
+        model_str = "unet"
+
+    else: 
+        model_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
     lead_time = f"leadtime_{args.lead_time_hours}"
 
-    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
+    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{model_str}.zarr"
     return output_path 
 
 def sample_climate_zone_patches(
@@ -172,7 +376,7 @@ def sample_climate_zone_patches(
 def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
-    
+
 def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
@@ -182,15 +386,23 @@ def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
 
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
-    # print(f"Combining {len(file_paths)} files for pattern: {file_pattern}")
-
-    return xr.open_mfdataset(
-        file_paths,
-        combine="by_coords",
-        preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
-        decode_timedelta=True     # if you still want your lead-time axis as timedelta
-    )
-
+    
+    # If lat_values or lon_values are None, skip spatial selection (for pre-filtered climate zone patches)
+    if lat_values is None or lon_values is None:
+        return xr.open_mfdataset(
+            file_paths,
+            combine="by_coords",
+            preprocess=lambda ds: ds.sortby('latitude'),
+            decode_timedelta=True
+        )
+    else:
+        return xr.open_mfdataset(
+            file_paths,
+            combine="by_coords",
+            preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
+            decode_timedelta=True
+        )
+    
 def get_bounds(args):
 
     # set up lat and lon bounds for each region.
@@ -236,7 +448,7 @@ def get_bounds(args):
     lon_values = np.arange(lon_min, lon_max, 0.25)
     return lat_values, lon_values
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True): 
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num = None): 
     """
     loads forecast data, forecast output data and observation data for training or testing.
     """
@@ -257,15 +469,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True):
     n_training_vars = len(args.training_vars)
     n_output_vars = len(args.output_vars)
 
-    # ----- Loading combined training data from monthly files -----
+    fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
     if args.region in CLIMATE_ZONE_MAP:
-        # use global data for climate zone regions
-        fc_dir = os.path.join(data_dir, f"{ver_str}_global")
+        # if in climate map, then we have already cleaned and combined the patches ahead of time
+        fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
+        obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
     else:
-        fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
-    # For forecast and observation data, we define the patterns for monthly file names.
-    fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
-    obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
+        fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
+        obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
+
     forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
     train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
 
@@ -280,14 +492,19 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True):
         prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
     )[args.output_vars].drop_vars('prediction_timedelta').compute()
     
-    obs_ds = train_obs_ds.sel(
-        time=time_values,
-        latitude=lat_values,
-        longitude=lon_values,
-    )[args.output_vars].compute()
+    # Handle spatial selection for obs_ds - skip if lat/lon are None (climate zone patches)
+    if lat_values is None or lon_values is None:
+        obs_ds = train_obs_ds.sel(
+            time=time_values
+        )[args.output_vars].compute()
+    else:
+        obs_ds = train_obs_ds.sel(
+            time=time_values,
+            latitude=lat_values,
+            longitude=lon_values,
+        )[args.output_vars].compute()
 
     return fc_ds, fc_ds_output , obs_ds, time_values, n_time, n_training_vars, n_output_vars
-
 
 def create_dataloader(forecast_data, obs_data, batch_size):
     """
@@ -474,10 +691,11 @@ def check_2m_temperature(files):
         ds.close()
     return results
 
-def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device):
+def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num = None):
+
     # 1) Load train
     fc_ds, fc_ds_output, obs_ds, train_time_values, n_train_time, n_training_vars, n_output_vars = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num = patch_num)
     print("Loaded Forecasts")
     # save unique lat/lon
     lat_u = np.unique(fc_ds.latitude.values)
@@ -505,7 +723,17 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # init & train
     input_dim  = n_training_vars * n_lat * n_lon
     output_dim = n_output_vars    * n_lat * n_lon
-    model = SimpleMLP(input_dim, args.mlp_hidden_dim, output_dim, args.mlp_layers).to(device)
+
+    # Choose model type based on args
+    if hasattr(args, 'model_type') and args.model_type == 'UNet':
+        print(f"Using UNet with spatial dims: {n_lat}x{n_lon}, {n_training_vars} input vars, {n_output_vars} output vars")
+        unet_hidden_dim = 32 
+        model = UNet(input_dim, unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon, 
+                     n_input_vars=n_training_vars, n_output_vars=n_output_vars).to(device)
+    else:
+        print("Using SimpleMLP")
+        model = SimpleMLP(input_dim, args.mlp_hidden_dim, output_dim, args.mlp_layers).to(device)
+    
     model = train_model(model, train_loader, val_loader,
                          epochs=1000, lr=1e-5, device=device,
                          patience=50, min_delta=0.0)
@@ -513,7 +741,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     # load test
     test_fc_ds, test_fc_o_ds, test_obs_ds, test_times, n_test_time, _, _ = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num = patch_num)
     tfc   = test_fc_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
     tfco  = test_fc_o_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
     tobs  = test_obs_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
@@ -525,14 +753,15 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     print(f"MSE original: {np.mean((tfco - tobs)**2):.6f}")
     print(f"MSE corrected: {np.mean((corrected - tobs)**2):.6f}")
+    exit()
 
     # save
     save_output(
         output_path=output_path,
         model_name=args.model_name,
         output_vars=args.output_vars,
-        lon_values=lon_vals,
-        lat_values=lat_vals,
+        lon_values=lon_u,
+        lat_values=lat_u,
         time_values=test_times,
         original_fc=tfco,
         corrected_fc=corrected,
@@ -541,6 +770,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
 
 def main():
+
+    dirs = setup_directories()
 
     # Check for NaNs in 2m_temperature variable across all files, this can happen if download gets interrupted
     # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/test_global/**/*pangu*.nc", recursive=True))
@@ -573,35 +804,43 @@ def main():
 
     # ---- decide if we're in a climate‐zone region or a geographic one ----
     if args.region in CLIMATE_ZONE_MAP:
-        # bootstrapping for climate zone regions
-        # full grid comes from the mask coords:
-        cz_da = xr.open_dataset(os.path.expanduser(args.climate_zones_file), 
-                                engine = "netcdf4")["climate_zones"]
-        zone_id = CLIMATE_ZONE_MAP[args.region]
-        region_lat = cz_da.latitude.values
-        region_lon = cz_da.longitude.values
 
-        # sample N patches within that zone:
-        patches = sample_climate_zone_patches(
-            cz_da, zone_id,
-            region_lat, region_lon,
-            nlat_patch, nlon_patch,
-            args.bootstrap,
-            threshold=0.9
-        )
+        # check folders for numbers of patches we have data downloaded for
+        # the patch number is the last part of the title before .nc
+        test_path = os.path.join(args.data_dir, f"test_{args.region}", args.model_name)
+        # Count the number of .nc files in this path, ignoring hidden files
+        test_count = len([
+            name for name in os.listdir(test_path)
+            if name.endswith(".nc") and os.path.isfile(os.path.join(test_path, name))
+        ])
+        num_test_patches = math.floor(test_count / 2)
 
-        for idx, (lat_vals, lon_vals) in enumerate(patches, start=1):
+        train_path = os.path.join(args.data_dir, f"train_{args.region}", args.model_name)
+        train_count = len([
+            name for name in os.listdir(train_path)
+            if name.endswith(".nc") and os.path.isfile(os.path.join(train_path, name))
+        ])
+        num_train_patches = math.floor(train_count / 2)
+        num_patches = min(num_test_patches, num_train_patches)
+
+        # since climate zone patches are precomputed don't need to pass in lon/lat
+        # instead just pass in None
+        lat_vals = None
+        lon_vals = None
+        
+        for idx in range(1, num_patches + 1):
             out_path = base_path.replace(
                 '.zarr', f'_{args.region}_bs{idx}.zarr'
             )
             start_time = time.time()
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,
-                args, os.path.expanduser(args.data_dir), device
+                args, os.path.expanduser(args.data_dir), device, patch_num = idx
             )
             end_time = time.time()
             elapsed_minutes = (end_time - start_time) / 60
-            print(f"Saved [{args.region} zone] sample {idx}/{args.bootstrap} in {elapsed_minutes} minutes")
+            print(f"Saved [{args.region} zone] sample {idx}/{num_patches} in {elapsed_minutes} minutes")
+            
 
     elif args.bootstrap:
         # bootstrap sampling for uniform-grid regions

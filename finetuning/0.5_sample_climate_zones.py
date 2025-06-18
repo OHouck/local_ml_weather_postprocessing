@@ -91,7 +91,7 @@ def main():
     climate_zones = xr.open_dataset(climate_zones_path, engine = "netcdf4")
 
     # determines degrees of different patches
-    subregion = "1x1"
+    subregion = "2x2"
 
     lat_values = climate_zones.latitude.values
     lon_values = climate_zones.longitude.values
@@ -99,13 +99,13 @@ def main():
     nlat_patch, nlon_patch = get_patch_shape(subregion)
 
     # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
-    climate_zone_list = ["tropical"]
+    climate_zone_list = ["polar"]
     for zone in climate_zone_list:
         zone_code = CLIMATE_ZONE_MAP[zone]
         print(f"Sampling {zone} patches...")
 
         # Sample N patches for this zone
-        N = 100 
+        N = 50
         patches = sample_climate_zone_patches(
             climate_zones.climate_zones,
             zone_code,
@@ -115,9 +115,18 @@ def main():
             nlon_patch,
             N
         )
-        base_dir = "/Volumes/wd_external_hd/weatherbench/train_global"
-        pangu_fc_file_paths = sorted(glob.glob(os.path.join(base_dir, "**", "pangu_train_forecast_data*.nc"), recursive=True))
-        pangu_obs_file_paths = sorted(glob.glob(os.path.join(base_dir,"**", "pangu_train_obs_data*.nc"), recursive=True))
+
+        # save patches to disk
+        patch_path = os.path.join(dirs["processed"], f"climate_zone_patches_{zone}_{subregion}.npy")
+        np.save(patch_path, patches)
+
+        train_base_dir = "/Volumes/wd_external_hd/weatherbench/train_global"
+        pangu_fc_train_file_paths = sorted(glob.glob(os.path.join(train_base_dir, "**", "pangu_train_forecast_data*.nc"), recursive=True))
+        pangu_obs_train_file_paths = sorted(glob.glob(os.path.join(train_base_dir,"**", "pangu_train_obs_data*.nc"), recursive=True))
+
+        test_base_dir = "/Volumes/wd_external_hd/weatherbench/test_global"
+        pangu_fc_test_file_paths = sorted(glob.glob(os.path.join(test_base_dir, "**", "pangu_test_forecast_data*.nc"), recursive=True))
+        pangu_obs_test_file_paths = sorted(glob.glob(os.path.join(test_base_dir,"**", "pangu_test_obs_data*.nc"), recursive=True))
 
         train_out_folder = os.path.join(
             dirs["processed"],
@@ -127,46 +136,79 @@ def main():
         # make folder if it does not exist
         os.makedirs(train_out_folder, exist_ok=True)
 
-        for idx, (lat_values, lon_values) in enumerate(patches, start = 1):
+        test_out_folder = os.path.join(
+            dirs["processed"],
+            'cleaned_weatherbench_downloads',
+            f"test_{zone}",
+            "pangu")
 
-            # Save patches of forecast data
-            fc_patch_path = os.path.join(train_out_folder, f"pangu_train_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
+        # read the patches back in
+        patches = np.load(patch_path, allow_pickle=True)
 
-            # delete the file if it already exists
-            if os.path.exists(fc_patch_path):
-                os.remove(fc_patch_path)
+        # count patches already saved for this zone and subregion
+        num_patches_saved = len(glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"train_{zone}", "pangu", f"pangu_train_forecast_data_{zone}_{subregion}_patch_*.nc")))
+        starting_idx = num_patches_saved + 1
+
+        for idx, (lat_coords, lon_coords) in enumerate(patches, start = starting_idx):
+
+
+            lat_min = lat_coords.min()
+            lat_max = lat_coords.max()
+            lon_min = lon_coords.min()
+            lon_max = lon_coords.max()
+
+            lat_values  = np.arange(lat_min, lat_max + 0.25, 0.25)
+            lon_values = np.arange(lon_min, lon_max + 0.25, 0.25)
 
             # define a little function that selects your patch
             def preprocess_patch(ds):
-                return ds.sel(latitude=lat_values, longitude=lon_values)
+                return ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
+
+            # Save patches of forecast data
+            fc_train_patch_path = os.path.join(train_out_folder, f"pangu_train_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
 
             # open, slice, and concat in one go
-            ds_patch = xr.open_mfdataset(
-                pangu_fc_file_paths,
+            fc_train_patch = xr.open_mfdataset(
+                pangu_fc_train_file_paths,
                 preprocess=preprocess_patch,
                 concat_dim="time",
                 combine="nested",       # or "by_coords" if you know each time is strictly increasing
                 engine="netcdf4"
-)
+            )
             # now write the single, stitched‐together file
-            ds_patch.to_netcdf(fc_patch_path, format="NETCDF4")
+            fc_train_patch.to_netcdf(fc_train_patch_path)
 
-            # for fc_file_path in pangu_fc_file_paths:
-            #     fc= xr.open_dataset(fc_file_path)
-            #     fc= fc.sel(latitude=lat_values, longitude=lon_values)
-            #     fc.to_netcdf(fc_patch_path, mode='a', format='NETCDF4')
+            fc_test_patch_path = os.path.join(test_out_folder, f"pangu_test_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
+            fc_test_patch = xr.open_mfdataset(
+                pangu_fc_test_file_paths,
+                preprocess=preprocess_patch,
+                concat_dim="time",
+                combine="nested",       # or "by_coords" if you know each time is strictly increasing
+                engine="netcdf4"
 
-            # obs_patch_path = os.path.join(train_out_folder, f"pangu_train_obs_data_{zone}_{subregion}_patch_{idx}.nc")
+            )
+            fc_test_patch.to_netcdf(fc_test_patch_path)
 
-            # # delete the file if it already exists
-            # if os.path.exists(obs_patch_path):
-            #     os.remove(obs_patch_path)
 
-            # for obs_file_path in pangu_obs_file_paths:
-            #     obs = xr.open_dataset(obs_file_path)
-            #     obs = obs.sel(latitude=lat_values, longitude=lon_values)
-            #     obs.to_netcdf(obs_patch_path, mode='a', format='NETCDF4')
+            obs_train_patch_path = os.path.join(train_out_folder, f"pangu_train_obs_data_{zone}_{subregion}_patch_{idx}.nc")
+            obs_train_patch = xr.open_mfdataset(
+                pangu_obs_train_file_paths,
+                preprocess=preprocess_patch,
+                concat_dim="time",
+                combine="nested",       # or "by_coords" if you know each time is strictly increasing
+                engine="netcdf4"
+            )
+            obs_train_patch.to_netcdf(obs_train_patch_path)
 
+            obs_test_patch_path = os.path.join(test_out_folder, f"pangu_test_obs_data_{zone}_{subregion}_patch_{idx}.nc")
+            obs_test_patch = xr.open_mfdataset(
+                pangu_obs_test_file_paths,
+                preprocess=preprocess_patch,
+                concat_dim="time",
+                combine="nested",       # or "by_coords" if you know each time is strictly increasing
+                engine="netcdf4"
+            )
+            obs_test_patch.to_netcdf(obs_test_patch_path)
 
 
 
