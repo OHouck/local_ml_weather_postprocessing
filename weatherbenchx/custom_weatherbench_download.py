@@ -315,9 +315,10 @@ def main():
     target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
     
     full_surface_var_list = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"] 
-    full_atm_var_list = ["geopotential", "v_component_of_wind", "u_component_of_wind", 
-                         "specific_humidity", "temperature"]
-    variables = full_surface_var_list + full_atm_var_list
+    # full_atm_var_list = ["geopotential", "v_component_of_wind", "u_component_of_wind", 
+    #                      "specific_humidity", "temperature"]
+    # variables = full_surface_var_list + full_atm_var_list
+    variables = full_surface_var_list
     
     # Fix: Use a directory path, not a file path
     dirs = setup_directories()
@@ -328,38 +329,43 @@ def main():
     if download_single_chunk_test(prediction_path, target_path, variables, output_path):
         logger.info("Test successful! Proceeding with full pipeline...")
         
-        # Time configuration for full run
-        start_date = datetime.strptime("2018-01-01", '%Y-%m-%d')
-        end_date = datetime.strptime("2018-01-02", '%Y-%m-%d')
-        
-        date_list = np.arange(
-            np.datetime64(start_date), 
-            np.datetime64(end_date), 
-            dtype='datetime64[D]'
-        ) + np.timedelta64(12, 'h')
-        
-        init_times = np.array(date_list, dtype='datetime64[ns]')
-        lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').astype('timedelta64[ns]')
-        
-        # Run pipeline
-        logger.info("Starting full data download pipeline...")
+        start_year = 2018
+        end_year = 2018 
+        years = list(range(start_year, end_year + 1))
+
         start_time = time.time()
-        
-        run_download_pipeline_with_auth(
-            prediction_path=prediction_path,
-            target_path=target_path,
-            variables=variables,
-            init_times=init_times,
-            lead_times=lead_times,
-            output_path=output_path,
-            init_time_chunk_size=1,
-            lead_time_chunk_size=7,
-            runner='DirectRunner',
-            beam_options={
-                'direct_num_workers': 2,
-            },
-            use_anonymous_access=True
-        )
+        for year in years:
+            # Time configuration for full run
+            start_date = datetime.strptime(f"{year}-01-01", '%Y-%m-%d')
+            end_date = datetime.strptime(f"{year}-12-31", '%Y-%m-%d')
+            
+            date_list = np.arange(
+                np.datetime64(start_date), 
+                np.datetime64(end_date), 
+                dtype='datetime64[D]'
+            ) + np.timedelta64(12, 'h')
+            
+            init_times = np.array(date_list, dtype='datetime64[ns]')
+            lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').astype('timedelta64[ns]')
+            
+            # Run pipeline
+            logger.info("Starting full data download pipeline...")
+            
+            run_download_pipeline_with_auth(
+                prediction_path=prediction_path,
+                target_path=target_path,
+                variables=variables,
+                init_times=init_times,
+                lead_times=lead_times,
+                output_path=output_path,
+                init_time_chunk_size=1,
+                lead_time_chunk_size=7,
+                runner='DirectRunner',
+                beam_options={
+                    'direct_num_workers': 2,
+                },
+                use_anonymous_access=True
+            )
         
         end_time = time.time()
         logger.info(f"Pipeline completed in {(end_time - start_time)/60:.2f} minutes")

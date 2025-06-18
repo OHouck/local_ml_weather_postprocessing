@@ -1,13 +1,13 @@
 import xarray as xr
-import gcsfs
+import os
 
-# Test anonymous access
-fs = gcsfs.GCSFileSystem(token='anon')
 
 # Test reading a small subset
-test_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
-ds = xr.open_zarr(test_path, storage_options={'token': 'anon'})
+path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu2018_raw_data"
+ds = xr.open_dataset(os.path.join(path, "targets_2018-01-01_2018-01-01.nc"))
 
-# Check if you can access the data
-print(f"Variables available: {list(ds.data_vars)}")
-print(f"Time range: {ds.time.values[0]} to {ds.time.values[-1]}")
+print(ds)
+
+# print all level coordinates
+print(ds.level)
+print(len(ds.level))
