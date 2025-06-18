@@ -35,20 +35,35 @@ prediction_data_loader = xarray_loaders.PredictionsFromXarray(
 )
 
 start_date = datetime.strptime("2018-01-01", '%Y-%m-%d')
-end_date = datetime.strptime("2018-02-01", '%Y-%m-%d')
-
-date_list= np.arange(
+end_date = datetime.strptime("2018-01-4", '%Y-%m-%d')
+date_list = np.arange(
     np.datetime64(start_date), 
     np.datetime64(end_date), 
     dtype='datetime64[D]'
-)
+) + np.timedelta64(12, 'h') # to be at noon instead of midnight
+
 init_times = np.array(date_list, dtype='datetime64[ns]')
 # lead_times = np.array([24], dtype='timedelta64[h]').astype('timedelta64[ns]')   # To silence xr warnings.
 lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').astype('timedelta64[ns]')   # To silence xr warnings.
-full_lat_values = np.arange(16.75, 17.25, 0.25)
-full_lon_values = np.arange(71.75, 72.25, 0.25)
+
+times = time_chunks.TimeChunks(
+    init_times,
+    lead_times,
+    init_chunk_size = 3,
+    lead_time_chunk = 1
+)
 
 prediction_chunk = prediction_data_loader.load_chunk(init_times, lead_times)
 prediction_chunk
 time_end = time.time()
 print(f"Time taken to load prediction chunk: {(time_end - start)/60} minutes")
+
+root = beam.Pipeline(runner='DirectRunner')
+beam_pipeline.define_pipeline(
+    root=root,
+    times=times,
+    predictions_loader=prediction_data_loader,
+    targets_loader=target_data_loader,
+    out_path='./pangu2018.nc',
+)
+root.run()
