@@ -3,7 +3,6 @@
 Fixed version of the WeatherBench download script with proper error handling,
 authentication setup, and path corrections.
 """
-
 import os
 import warnings
 
@@ -413,11 +412,11 @@ def main():
                 init_times=init_times,
                 lead_times=lead_times,
                 output_path=output_path,
-                init_time_chunk_size=2,
+                init_time_chunk_size=1,
                 lead_time_chunk_size=7,
                 runner='DirectRunner',
                 beam_options={
-                    'direct_num_workers': 2,
+                    'direct_num_workers': 16,
                 },
                 use_anonymous_access=True
             )
