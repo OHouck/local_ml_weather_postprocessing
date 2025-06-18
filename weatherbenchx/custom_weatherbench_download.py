@@ -4,23 +4,79 @@ Fixed version of the WeatherBench download script with proper error handling,
 authentication setup, and path corrections.
 """
 
-import apache_beam as beam
-import numpy as np
-import xarray as xr
-import weatherbenchX
-from weatherbenchX.data_loaders import xarray_loaders
-from weatherbenchX import time_chunks
-from datetime import datetime
-import time
 import os
-import socket
 import warnings
-from typing import List, Tuple
-from apache_beam.options.pipeline_options import PipelineOptions
-import logging
-import dask
 
-dask.config.set({'distributed.comm.timeouts.tcp': '60s'})
+# CRITICAL: Set these environment variables BEFORE importing any packages
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/dev/null'  # Force no credentials
+os.environ['GCSFS_TOKEN'] = 'anon'  # Force anonymous token
+os.environ['GCSFS_ACCESS'] = 'read_only'  # Force read-only access
+os.environ['GOOGLE_AUTH_DISABLE'] = 'true'  # Disable authentication entirely
+os.environ['GCLOUD_PROJECT'] = ''
+os.environ['GOOGLE_CLOUD_PROJECT'] = ''
+
+# Set environment variables for performance
+os.environ['NUMEXPR_MAX_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['DASK_DISTRIBUTED__COMM__TIMEOUTS__TCP'] = '60s'
+os.environ['DASK_DISTRIBUTED__COMM__TIMEOUTS__CONNECT'] = '60s'
+os.environ['GCSFS_REQUEST_TIMEOUT'] = '60'
+
+# Now import other packages
+import sys
+import socket
+from typing import List, Tuple
+import time
+from datetime import datetime
+import numpy as np
+import logging
+
+try:
+    import apache_beam as beam
+    from apache_beam.options.pipeline_options import PipelineOptions
+    import xarray as xr
+    import weatherbenchX
+    from weatherbenchX.data_loaders import xarray_loaders
+    from weatherbenchX import time_chunks
+    import dask
+    dask.config.set({'distributed.comm.timeouts.tcp': '60s'})
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("\nPlease run the following to fix dependencies:")
+    print("pip install --force-reinstall 'numpy<2.0'")
+    print("pip install --force-reinstall pandas==2.0.3 pyarrow==12.0.1")
+    print("pip install --force-reinstall apache-beam==2.52.0")
+    sys.exit(1)
+
+def patch_gcsfs_for_anonymous():
+    """
+    Monkey patch gcsfs to use anonymous access by default
+    """
+    try:
+        import gcsfs
+        
+        # Store original init
+        original_init = gcsfs.GCSFileSystem.__init__
+        
+        def anonymous_init(self, *args, **kwargs):
+            # Force anonymous parameters
+            kwargs['token'] = 'anon'
+            kwargs['access'] = 'read_only'
+            kwargs['project'] = None
+            # Call original init with forced params
+            original_init(self, *args, **kwargs)
+        
+        # Replace the init method
+        gcsfs.GCSFileSystem.__init__ = anonymous_init
+        
+        logger.info("Successfully patched gcsfs for anonymous access")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to patch gcsfs: {e}")
+        return False
 
 def setup_directories():
     # Determine root directory based on environment.
@@ -29,8 +85,14 @@ def setup_directories():
         root = os.path.expanduser(
             "~/OneDrive - The University of Chicago/ai_weather_ag/data"
         )
+    elif "anvil" in nodename.lower():  # anvil - more flexible matching
+        root = os.path.expanduser(
+            "/anvil/projects/x-atm170020/ohouck/data"
+        )
     else:
-        raise Exception("Unknown environment, please specify the root directory")
+        # Default fallback
+        root = os.path.expanduser("~/ai_weather_ag/data")
+        print(f"Warning: Unknown environment '{nodename}', using default root: {root}")
 
     dirs = {
         "root": root,
@@ -47,24 +109,16 @@ def setup_directories():
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Suppress the xarray FutureWarning
+# Suppress the xarray FutureWarning and authentication warnings
 warnings.filterwarnings('ignore', category=FutureWarning, module='weatherbenchX.data_loaders.xarray_loaders')
+warnings.filterwarnings('ignore', category=UserWarning, module='google')
 
 def setup_gcs_authentication():
     """
-    Set up Google Cloud Storage authentication for local development.
+    Set up Google Cloud Storage authentication for anonymous access.
+    This function is kept for compatibility but now just patches gcsfs.
     """
-    # For anonymous access to public buckets
-    # This should work for WeatherBench2 public data
-    try:
-        import gcsfs
-        # Create anonymous access
-        fs = gcsfs.GCSFileSystem(token='anon')
-        return fs
-    except ImportError:
-        logger.warning("gcsfs not installed. Install with: pip install gcsfs")
-        return None
-
+    return patch_gcsfs_for_anonymous()
 
 class LoadAndSaveChunk(beam.DoFn):
     """
@@ -83,6 +137,8 @@ class LoadAndSaveChunk(beam.DoFn):
         """Setup method called once per worker."""
         # Create output directory if it doesn't exist
         os.makedirs(self.output_path, exist_ok=True)
+        # Setup anonymous access for this worker
+        patch_gcsfs_for_anonymous()
     
     def process(self, element):
         """Process a single time chunk."""
@@ -137,7 +193,6 @@ class LoadAndSaveChunk(beam.DoFn):
             logger.error(error_msg)
             yield error_msg
 
-
 def create_time_chunks(times: time_chunks.TimeChunks) -> List[Tuple[np.ndarray, np.ndarray]]:
     """Create a list of time chunks from TimeChunks object."""
     chunks = []
@@ -154,7 +209,6 @@ def create_time_chunks(times: time_chunks.TimeChunks) -> List[Tuple[np.ndarray, 
                 chunks.append((init_chunk, lead_chunk))
     
     return chunks
-
 
 def run_download_pipeline_with_auth(
     prediction_path: str,
@@ -184,11 +238,10 @@ def run_download_pipeline_with_auth(
     # Set up authentication
     if use_anonymous_access:
         logger.info("Setting up anonymous access for public GCS buckets...")
-        fs = setup_gcs_authentication()
+        setup_gcs_authentication()
     
     # Create data loaders with proper xarray options
     # Suppress the warning at the source
-    import warnings
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=FutureWarning)
         
@@ -238,7 +291,6 @@ def run_download_pipeline_with_auth(
         # Log results
         results | 'LogResults' >> beam.Map(print)
 
-
 def download_single_chunk_test(
     prediction_path: str,
     target_path: str,
@@ -249,7 +301,6 @@ def download_single_chunk_test(
     Test function to download a single small chunk without beam.
     Useful for debugging authentication and data access issues.
     """
-    import warnings
     
     logger.info("Running single chunk test...")
     
@@ -292,23 +343,27 @@ def download_single_chunk_test(
         
         # Save test data
         pred_path = os.path.join(output_path, 'test_predictions.nc')
-        target_path = os.path.join(output_path, 'test_targets.nc')
+        target_path_out = os.path.join(output_path, 'test_targets.nc')
         
         pred_data.to_netcdf(pred_path)
-        target_data.to_netcdf(target_path)
+        target_data.to_netcdf(target_path_out)
         
         logger.info(f"Test successful! Data saved to {output_path}")
         return True
         
     except Exception as e:
         logger.error(f"Test failed: {str(e)}")
-        logger.error("This might be due to authentication issues or network connectivity.")
-        logger.error("Try running: gcloud auth application-default login")
+        logger.error("This might be due to network connectivity or package version issues.")
         return False
-
 
 def main():
     """Example usage with fixed paths and authentication."""
+    
+    # Setup environment for anonymous access
+    logger.info("Setting up anonymous access...")
+    if not patch_gcsfs_for_anonymous():
+        logger.error("Failed to setup anonymous access. Exiting.")
+        return
     
     # Configuration
     prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
@@ -358,7 +413,7 @@ def main():
                 init_times=init_times,
                 lead_times=lead_times,
                 output_path=output_path,
-                init_time_chunk_size=1,
+                init_time_chunk_size=2,
                 lead_time_chunk_size=7,
                 runner='DirectRunner',
                 beam_options={
@@ -370,12 +425,10 @@ def main():
         end_time = time.time()
         logger.info(f"Pipeline completed in {(end_time - start_time)/60:.2f} minutes")
     else:
-        logger.error("Test failed. Please check authentication and network connectivity.")
-        logger.info("\nTo set up authentication:")
-        logger.info("1. Install gcloud CLI: https://cloud.google.com/sdk/docs/install")
-        logger.info("2. Run: gcloud auth application-default login")
-        logger.info("3. Or for anonymous access: pip install gcsfs")
-
+        logger.error("Test failed. Please check:")
+        logger.info("1. Network connectivity from Anvil to Google Cloud Storage")
+        logger.info("2. Package versions - ensure NumPy < 2.0")
+        logger.info("3. Try running the direct xarray approach as an alternative")
 
 if __name__ == "__main__":
     main()
