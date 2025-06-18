@@ -11,10 +11,41 @@ from weatherbenchX import weighting
 from weatherbenchX import binning
 from weatherbenchX import time_chunks
 from weatherbenchX import beam_pipeline
+import dask
 
 from datetime import datetime, timedelta
+from custom_weatherbench_download import run_download_pipeline
 
-import time
+import time 
+import socket
+import os
+
+dask.config.set({'distributed.comm.timeouts.tcp': '60s'})
+
+def setup_directories():
+    # Determine root directory based on environment.
+    nodename = socket.gethostname()
+    if nodename == "oMac.local":  # local laptop
+        root = os.path.expanduser(
+            "~/OneDrive - The University of Chicago/ai_weather_ag/data"
+        )
+    else:
+        raise Exception("Unknown environment, please specify the root directory")
+
+    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/train_global/**/*pangu*.nc", recursive=True))
+
+    dirs = {
+        "root": root,
+        "raw": os.path.join(root, "raw"),
+        "processed": os.path.join(root, "processed"),
+        "fig": os.path.join(root, "../figures/finetuning"),
+        "external": os.path.join("Volumes" ,"wd_external_hd", "weatherbench")
+    }
+    for path in dirs.values():
+        os.makedirs(path, exist_ok=True)
+    return dirs
+
+dirs = setup_directories()
 
 start = time.time()
 
@@ -35,7 +66,7 @@ prediction_data_loader = xarray_loaders.PredictionsFromXarray(
 )
 
 start_date = datetime.strptime("2018-01-01", '%Y-%m-%d')
-end_date = datetime.strptime("2018-01-4", '%Y-%m-%d')
+end_date = datetime.strptime("2018-01-2", '%Y-%m-%d')
 date_list = np.arange(
     np.datetime64(start_date), 
     np.datetime64(end_date), 
@@ -49,21 +80,26 @@ lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').a
 times = time_chunks.TimeChunks(
     init_times,
     lead_times,
-    init_chunk_size = 3,
-    lead_time_chunk = 1
+    init_time_chunk_size = 1,
+    lead_time_chunk_size = 1
+)
+# prediction_chunk = prediction_data_loader.load_chunk(init_times, lead_times)
+# prediction_chunk
+# time_end = time.time()
+# print(f"Time taken to load prediction chunk: {(time_end - start)/60} minutes")
+
+output_path = os.path.join(dirs['raw'], 'pangu2018_raw_data')
+# make sure output path exists
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+# Your existing configuration
+run_download_pipeline(
+    prediction_path=prediction_path,
+    target_path=target_path,
+    variables=variables,
+    init_times=init_times,
+    lead_times=lead_times,
+    output_path=output_path,
+    runner='DirectRunner'
 )
 
-prediction_chunk = prediction_data_loader.load_chunk(init_times, lead_times)
-prediction_chunk
-time_end = time.time()
-print(f"Time taken to load prediction chunk: {(time_end - start)/60} minutes")
-
-root = beam.Pipeline(runner='DirectRunner')
-beam_pipeline.define_pipeline(
-    root=root,
-    times=times,
-    predictions_loader=prediction_data_loader,
-    targets_loader=target_data_loader,
-    out_path='./pangu2018.nc',
-)
-root.run()
