@@ -78,7 +78,7 @@ trap cleanup SIGTERM SIGINT
 
 # Run the script with enhanced logging
 # Using timeout to ensure graceful shutdown before SLURM kills the job
-timeout 23h50m python3 -u weatherbenchx/weatherbench_download.py \
+python3 -u weatherbenchx/weatherbench_download.py \
     2>&1 | tee /anvil/projects/x-atm170020/ohouck/ai_weather_ag/logs/wbx_detailed_${SLURM_JOB_ID}.log
 
 # Capture exit code

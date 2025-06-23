@@ -282,8 +282,8 @@ def run_download_by_month(
     
     # Load checkpoint to see where we left off
     checkpoint = checkpoint_manager.load_checkpoint()
-    start_from_year = checkpoint.get("last_year", start_year)
-    start_from_month = checkpoint.get("last_month", 1)
+    start_from_year = checkpoint.get("last_year") or start_year
+    start_from_month = checkpoint.get("last_month") or 1
     
     # Lead times (in hours converted to nanoseconds)
     lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').astype('timedelta64[ns]')
@@ -431,7 +431,7 @@ def main():
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], 'pangu_raw_data')
+    output_path = os.path.join(dirs['raw'], 'pangu2018_raw_data')
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])

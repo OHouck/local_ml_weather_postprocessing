@@ -1,0 +1,24 @@
+2025-06-23 18:12:50,312 - __main__ - INFO - Setting up anonymous access...
+2025-06-23 18:12:50,489 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-23 18:12:50,489 - __main__ - INFO - 
+==================================================
+2025-06-23 18:12:50,489 - __main__ - INFO - Running diagnostic tests...
+2025-06-23 18:12:50,489 - __main__ - INFO - ==================================================
+2025-06-23 18:12:50,489 - __main__ - INFO - Running target loading diagnostic test...
+2025-06-23 18:12:50,489 - __main__ - INFO - Creating target data loader...
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-06-23 18:12:56,653 - __main__ - INFO - Attempting to load target data for time: 2018-01-02T12:00:00.000000000
+2025-06-23 18:12:57,729 - __main__ - INFO - Success! Target data shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 1}
+2025-06-23 18:12:57,729 - __main__ - INFO - Target variables: ['2m_temperature']
+2025-06-23 18:13:03,269 - __main__ - ERROR - Pipeline failed with error: 'NoneType' object cannot be interpreted as an integer
+2025-06-23 18:13:03,269 - __main__ - ERROR - You can restart the script and it will resume from the last checkpoint
+Traceback (most recent call last):
+  File "/anvil/projects/x-atm170020/ohouck/ai_weather_ag/weatherbenchx/weatherbench_download.py", line 463, in <module>
+    main()
+  File "/anvil/projects/x-atm170020/ohouck/ai_weather_ag/weatherbenchx/weatherbench_download.py", line 444, in main
+    run_download_by_month(
+  File "/anvil/projects/x-atm170020/ohouck/ai_weather_ag/weatherbenchx/weatherbench_download.py", line 306, in run_download_by_month
+    for year in range(start_from_year, end_year + 1):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object cannot be interpreted as an integer
