@@ -1,5 +1,5 @@
 #!/bin/sh -l
-# FILENAME: wbx_anvil_optimized.sh
+# FILENAME: wbx_anvil.sh
 #SBATCH --account=atm170020-gpu
 #SBATCH -p gpu 
 #SBATCH --time=24:00:00  # Increased to 24 hours for full dataset
@@ -16,6 +16,9 @@
 
 # Create logs directory if it doesn't exist
 mkdir -p /anvil/projects/x-atm170020/ohouck/ai_weather_ag/logs
+
+# Create the data directory if it doesn't exist
+mkdir -p /anvil/projects/x-atm170020/ohouck/data/raw/pangu_raw_data
 
 # Load modules and activate environment
 module load anaconda/2024.02-py311

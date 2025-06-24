@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Fixed and optimized WeatherBench download script with checkpointing,
-better error handling, and improved performance.
+Name: weatherbench_download.py
+Author: Ozma Houck
+Date Created: 6/24/25
+
+Purpose: WeatherBench download script with checkpointing,
+error handling, and improved performance.
 """
 import os
 import warnings
@@ -33,7 +37,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import logging
 
-try: # was running into numpy 2.0 issues, so force numpy < 2.0 
+try:
     import apache_beam as beam
     from apache_beam.options.pipeline_options import PipelineOptions
     import xarray as xr
@@ -156,6 +160,8 @@ class LoadAndSaveChunk(beam.DoFn):
         self.target_loader = target_loader
         self.output_path = output_path
         self.checkpoint_manager = checkpoint_manager
+        if self.output_path.endswith('.nc'):
+            self.output_path = self.output_path[:-3]
     
     def setup(self):
         """Setup method called once per worker"""
@@ -280,8 +286,25 @@ def run_download_by_month(
     
     # Load checkpoint to see where we left off
     checkpoint = checkpoint_manager.load_checkpoint()
-    start_from_year = checkpoint.get("last_year") or start_year
-    start_from_month = checkpoint.get("last_month") or 1
+    last_completed_year = checkpoint.get("last_year")
+    last_completed_month = checkpoint.get("last_month")
+    
+    # Determine where to start 
+    if last_completed_year and last_completed_month:
+        # Start from the next month after the last completed one
+        if last_completed_month == 12:
+            start_from_year = last_completed_year + 1
+            start_from_month = 1
+        else:
+            start_from_year = last_completed_year
+            start_from_month = last_completed_month + 1
+            
+        logger.info(f"Resuming from {start_from_year}-{start_from_month:02d}")
+    else:
+        # No checkpoint, start from the beginning
+        start_from_year = start_year
+        start_from_month = 1
+        logger.info(f"Starting fresh from {start_from_year}-{start_from_month:02d}")
     
     # Lead times (in hours converted to nanoseconds)
     lead_times = np.array([24, 48, 72, 96, 120, 144, 168], dtype='timedelta64[h]').astype('timedelta64[ns]')
@@ -302,28 +325,37 @@ def run_download_by_month(
     
     # Process each month
     for year in range(start_from_year, end_year + 1):
-        for month in range(1, 13):
-            # Skip months we've already processed
-            if year == start_from_year and month < start_from_month:
-                continue
-            
+        start_month = 1 if year > start_from_year else start_from_month
+        
+        for month in range(start_month, 13):
             logger.info(f"\n{'='*50}")
             logger.info(f"Processing {year}-{month:02d}")
             logger.info(f"{'='*50}")
-            
-            # Update checkpoint
-            checkpoint["last_year"] = year
-            checkpoint["last_month"] = month
-            checkpoint_manager.save_checkpoint(checkpoint)
             
             # Create chunks for this month
             month_chunks = create_monthly_chunks(year, month, lead_times)
             logger.info(f"Created {len(month_chunks)} chunks for {year}-{month:02d}")
             
+            # Check if all chunks for this month are already completed
+            all_completed = True
+            for init_times, _ in month_chunks:
+                chunk_id = f"{str(init_times[0])[:10]}_{str(init_times[-1])[:10]}".replace(":", "-")
+                if not checkpoint_manager.is_chunk_completed(chunk_id):
+                    all_completed = False
+                    break
+            
+            if all_completed:
+                logger.info(f"All chunks for {year}-{month:02d} already completed, skipping to next month")
+                # Update checkpoint to mark this month as completed
+                checkpoint["last_year"] = year
+                checkpoint["last_month"] = month
+                checkpoint_manager.save_checkpoint(checkpoint)
+                continue
+            
             # Process chunks using Beam
             pipeline_options = PipelineOptions(
                 runner='DirectRunner',
-                direct_num_workers=4,
+                direct_num_workers=1,
                 direct_running_mode='multi_threading'
             )
             
@@ -341,7 +373,15 @@ def run_download_by_month(
                 
                 results | f'LogResults_{year}_{month}' >> beam.Map(print)
             
+            # Update checkpoint after successfully processing the month
+            checkpoint["last_year"] = year
+            checkpoint["last_month"] = month
+            checkpoint_manager.save_checkpoint(checkpoint)
             logger.info(f"Completed processing {year}-{month:02d}")
+    
+    logger.info(f"\n{'='*50}")
+    logger.info(f"Completed all months from {start_year} to {end_year}")
+    logger.info(f"{'='*50}")
 
 def test_target_loading(target_path: str, variables: List[str]):
     """Test function to diagnose target loading issues"""
@@ -403,6 +443,7 @@ def test_target_loading(target_path: str, variables: List[str]):
         return False
 
 def main():
+    """Main function with improved error handling and checkpointing"""
     
     # Setup
     logger.info("Setting up anonymous access...")
@@ -428,7 +469,7 @@ def main():
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], 'pangu2018_raw_data')
+    output_path = os.path.join(dirs['raw'], 'pangu_raw_data')
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])
