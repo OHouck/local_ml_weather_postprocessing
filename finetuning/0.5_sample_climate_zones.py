@@ -99,7 +99,7 @@ def main():
     nlat_patch, nlon_patch = get_patch_shape(subregion)
 
     # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
-    climate_zone_list = ["temperate"]
+    climate_zone_list = ["arid"]
     for zone in climate_zone_list:
         zone_code = CLIMATE_ZONE_MAP[zone]
         print(f"Sampling {zone} patches...")

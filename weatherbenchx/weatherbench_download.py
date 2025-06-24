@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import logging
 
-try:
+try: # was running into numpy 2.0 issues, so force numpy < 2.0 
     import apache_beam as beam
     from apache_beam.options.pipeline_options import PipelineOptions
     import xarray as xr
@@ -156,8 +156,6 @@ class LoadAndSaveChunk(beam.DoFn):
         self.target_loader = target_loader
         self.output_path = output_path
         self.checkpoint_manager = checkpoint_manager
-        if self.output_path.endswith('.nc'):
-            self.output_path = self.output_path[:-3]
     
     def setup(self):
         """Setup method called once per worker"""
@@ -405,7 +403,6 @@ def test_target_loading(target_path: str, variables: List[str]):
         return False
 
 def main():
-    """Main function with improved error handling and checkpointing"""
     
     # Setup
     logger.info("Setting up anonymous access...")
