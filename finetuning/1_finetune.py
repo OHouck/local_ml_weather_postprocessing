@@ -102,7 +102,6 @@ class UNet(nn.Module):
             input_dim: Flattened input dimension (n_input_vars * n_lat * n_lon)
             hidden_dim: Base number of channels (default: 128)
             output_dim: Flattened output dimension (n_output_vars * n_lat * n_lon)
-            num_levels: Number of encoding/decoding levels (will be adjusted based on spatial dims)
             n_lat: Number of latitude points
             n_lon: Number of longitude points
             n_input_vars: Number of input variables/channels
@@ -147,46 +146,58 @@ class UNet(nn.Module):
         self.encoders = nn.ModuleList()
         self.pools = nn.ModuleList()
         
+        # Track channel sizes for each encoder level
+        self.encoder_channels = []
+        
         in_ch = self.in_channels
         out_ch = hidden_dim
         
         for i in range(self.num_levels):
             self.encoders.append(self._make_conv_block(in_ch, out_ch))
+            self.encoder_channels.append(out_ch)
             if i < self.num_levels - 1:
                 self.pools.append(nn.MaxPool2d(2))
             in_ch = out_ch
-            # Reduce channel growth for smaller networks
-            # out_ch = min(out_ch * 2, hidden_dim * 4)  # Cap at 4x hidden_dim instead of 8x
             out_ch = out_ch * 2
-            print("out_ch", out_ch)
+        
+        print(f"Encoder channels: {self.encoder_channels}")
+        
         # Build decoder (upsampling path)
         self.decoders = nn.ModuleList()
         self.upconvs = nn.ModuleList()
-        
+
         for i in range(self.num_levels - 1):
-            in_ch = self.encoders[self.num_levels - 1 - i].out_channels
-            print("in_ch", in_ch)
-            if i > 0:
-                in_ch = self.decoders[i-1].out_channels
+            # Current level index in decoder (starting from deepest)
+            decoder_level = self.num_levels - 1 - i
+            # Corresponding encoder level for skip connection
+            skip_level = self.num_levels - 2 - i
             
-            # Account for skip connection
-            skip_ch = self.encoders[self.num_levels - 2 - i].out_channels
-            combined_ch = in_ch + skip_ch
-            print("combined_ch", combined_ch)
+            # Input channels (from bottleneck or previous decoder layer)
+            # Note: decoder_level = skip_level + 1, so this is always the same
+            in_ch = self.encoder_channels[decoder_level]
             
-            out_ch = self.encoders[self.num_levels - 2 - i].out_channels
-            print("out_ch", out_ch)
+            # Skip connection channels
+            skip_ch = self.encoder_channels[skip_level]
             
+            # Output channels (matching the skip connection level)
+            out_ch = skip_ch
+            
+            print(f"Decoder {i}: in_ch={in_ch}, skip_ch={skip_ch}, out_ch={out_ch}")
+            
+            # Upsampling layer
             self.upconvs.append(self._make_upconv(in_ch, out_ch))
+            
+            # Decoder conv block (input = upsampled + skip connection)
+            combined_ch = out_ch + skip_ch
             self.decoders.append(self._make_conv_block(combined_ch, out_ch))
 
         # Final output layer
-        final_in_ch = self.decoders[-1].out_channels if self.decoders else self.encoders[-1].out_channels
+        if self.decoders:
+            final_in_ch = self.encoder_channels[0]  # Same as first encoder level
+        else:
+            final_in_ch = self.encoder_channels[-1]  # If no decoders, use last encoder
+            
         self.final_conv = nn.Conv2d(final_in_ch, self.out_channels, kernel_size=1)
-
-        print(self.upconvs)
-        print(self.decoders)
-        exit()
     
     def _make_conv_block(self, in_channels, out_channels):
         """Create a convolutional block with two conv layers."""
@@ -221,20 +232,19 @@ class UNet(nn.Module):
         # Encoder path with skip connections
         encoder_outputs = []
         
-        for i in range(len(self.encoders) - 1):
+        for i in range(len(self.encoders)):
             x = self.encoders[i](x)
-            encoder_outputs.append(x)
+            if i < len(self.encoders) - 1:  # Don't store the bottleneck as skip connection
+                encoder_outputs.append(x)
             if i < len(self.pools):
                 x = self.pools[i](x)
         
-        # Process bottommost layer (no pooling)
-        x = self.encoders[-1](x)
-        
         # Decoder path with skip connections
         for i, (upconv, decoder) in enumerate(zip(self.upconvs, self.decoders)):
+            # Upsample
             x = upconv(x)
             
-            # Get skip connection
+            # Get skip connection (in reverse order)
             skip_connection = encoder_outputs[-(i+1)]
             
             # Handle size mismatches due to odd dimensions
@@ -480,6 +490,16 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
     train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+
+    # create 10m wind speed from u and v components of wind if needed
+    if "10m_wind_speed" in args.training_vars:
+        u_component = forecast_ds["10m_u_component_of_wind"]
+        v_component = forecast_ds["10m_v_component_of_wind"]
+        forecast_ds["10m_wind_speed"] = np.sqrt(u_component**2 + v_component**2)
+    if "10m_wind_speed" in args.output_vars:
+        u_component = train_obs_ds["10m_u_component_of_wind"]
+        v_component = train_obs_ds["10m_v_component_of_wind"]
+        train_obs_ds["10m_wind_speed"] = np.sqrt(u_component**2 + v_component**2)
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = forecast_ds.sel(
@@ -753,7 +773,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     print(f"MSE original: {np.mean((tfco - tobs)**2):.6f}")
     print(f"MSE corrected: {np.mean((corrected - tobs)**2):.6f}")
-    exit()
 
     # save
     save_output(

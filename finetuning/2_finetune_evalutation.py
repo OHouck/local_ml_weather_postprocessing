@@ -1105,11 +1105,6 @@ def main():
     output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
     prediction_var = "wind_speed"
 
-    # training_vars = ["2m_temperature", "geopotential_1000hPa", "specific_humidity_1000hPa"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
-
-
     generate_lead_time_plots(
         dirs = dirs,
         train_start="2018-01-01",
@@ -1120,7 +1115,7 @@ def main():
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
         mlp_params=(512, 5),
-        region = "tropical",
+        region = "arid",
         subregion="2x2",
         bootstrap=True
     )
