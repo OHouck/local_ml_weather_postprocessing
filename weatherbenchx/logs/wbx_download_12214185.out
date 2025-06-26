@@ -1,0 +1,99 @@
+==================================
+[Tue Jun 24 13:28:24 EDT 2025] Disk usage in data directory:
+Job started at: Tue Jun 24 13:28:24 EDT 2025
+Node: g001.anvil.rcac.purdue.edu
+Job ID: 12214185
+CPUs allocated: 8
+Memory allocated: 131072 MB
+Filesystem      Size  Used Avail Use% Mounted on
+anvil           5.0T  3.1T  2.0T  61% /anvil
+Working directory: /anvil/projects/x-atm170020/ohouck/ai_weather_ag
+[Tue Jun 24 13:28:24 EDT 2025] Number of files downloaded:
+0
+---
+Python version: Python 3.11.7
+NumPy version: 1.26.4
+No checkpoint found - starting fresh download
+==================================
+2025-06-24 13:28:28,752 - __main__ - INFO - Setting up anonymous access...
+2025-06-24 13:28:28,951 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-24 13:28:28,951 - __main__ - INFO - 
+==================================================
+2025-06-24 13:28:28,951 - __main__ - INFO - Running diagnostic tests...
+2025-06-24 13:28:28,951 - __main__ - INFO - ==================================================
+2025-06-24 13:28:28,951 - __main__ - INFO - Running target loading diagnostic test...
+2025-06-24 13:28:28,951 - __main__ - INFO - Creating target data loader...
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-06-24 13:28:35,378 - __main__ - INFO - Attempting to load target data for time: 2018-01-02T12:00:00.000000000
+2025-06-24 13:28:36,358 - __main__ - INFO - Success! Target data shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 1}
+2025-06-24 13:28:36,358 - __main__ - INFO - Target variables: ['2m_temperature']
+2025-06-24 13:28:42,038 - __main__ - INFO - 
+==================================================
+2025-06-24 13:28:42,039 - __main__ - INFO - Processing 2018-01
+2025-06-24 13:28:42,039 - __main__ - INFO - ==================================================
+2025-06-24 13:28:42,042 - __main__ - INFO - Created 5 chunks for 2018-01
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-06-24 13:28:46,613 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting control server on port 40629
+2025-06-24 13:28:46,613 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting data server on port 32777
+2025-06-24 13:28:46,614 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting state server on port 38445
+2025-06-24 13:28:46,614 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting logging server on port 39287
+2025-06-24 13:28:46,618 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-06-24 13:28:46,618 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:40629.
+2025-06-24 13:28:46,621 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-06-24 13:28:46,621 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-06-24 13:28:46,622 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-06-24 13:28:46,622 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:40629.
+2025-06-24 13:28:46,624 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-06-24 13:28:46,624 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-06-24 13:28:46,625 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-06-24 13:28:46,625 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:40629.
+2025-06-24 13:28:46,626 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-06-24 13:28:46,626 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-06-24 13:28:46,627 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-06-24 13:28:46,627 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:40629.
+2025-06-24 13:28:46,629 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-06-24 13:28:46,630 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-06-24 13:28:46,638 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:38445.
+2025-06-24 13:28:46,639 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-06-24 13:28:46,639 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:38445.
+2025-06-24 13:28:46,639 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-06-24 13:28:46,640 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:38445.
+2025-06-24 13:28:46,640 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-06-24 13:28:46,640 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:38445.
+2025-06-24 13:28:46,641 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-06-24 13:28:46,642 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:32777
+2025-06-24 13:28:46,642 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:32777
+2025-06-24 13:28:46,643 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:32777
+2025-06-24 13:28:46,645 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:32777
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-06-24 13:28:52,481 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-24 13:28:52,672 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-24 13:28:52,852 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-24 13:28:53,025 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-06-24 13:28:53,053 - __main__ - INFO - Loading predictions for chunk 2018-01-08_2018-01-14
+2025-06-24 13:28:53,066 - __main__ - INFO - Loading predictions for chunk 2018-01-01_2018-01-07
+2025-06-24 13:28:53,077 - __main__ - INFO - Loading predictions for chunk 2018-01-22_2018-01-28
+2025-06-24 13:28:53,114 - __main__ - INFO - Loading predictions for chunk 2018-01-15_2018-01-21
+2025-06-24 13:29:02,177 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-06-24 13:29:02,650 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-06-24 13:29:03,020 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-06-24 13:29:03,230 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-06-24 13:29:18,563 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/pangu_raw_data/predictions_2018-01-01_2018-01-07.nc
+2025-06-24 13:29:18,563 - __main__ - INFO - Calculated 13 valid times for targets
+2025-06-24 13:29:18,563 - __main__ - INFO - Loading targets for chunk 2018-01-01_2018-01-07 (valid times: 2018-01-02T12:00:00.000000000 to 2018-01-14T12:00:00.000000000)
+2025-06-24 13:29:21,675 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+==================================
+Job finished at: Tue Jun 24 13:29:55 EDT 2025
+Exit code: 0
+Final disk usage:
+Filesystem      Size  Used Avail Use% Mounted on
+anvil           5.0T  3.1T  2.0T  61% /anvil
+Total files downloaded:
+5
+Log files:
+  SLURM output: logs/wbx_download_12214185.out
+  SLURM error:  logs/wbx_download_12214185.err
+  Detailed log: logs/wbx_detailed_12214185.log
