@@ -1,0 +1,14 @@
+2025-06-26 17:00:56,039 - __main__ - INFO - opened pangu for india
+2025-06-26 17:00:56,041 - __main__ - INFO - <xarray.Dataset> Size: 80GB
+Dimensions:                  (time: 296, init_time: 1826, lead_time: 7,
+                              latitude: 42, longitude: 42)
+Coordinates:
+  * latitude                 (latitude) float32 168B 16.75 17.0 ... 26.75 27.0
+  * longitude                (longitude) float32 168B 71.75 72.0 ... 81.75 82.0
+  * lead_time                (lead_time) int64 56B 24 48 72 96 120 144 168
+  * init_time                (init_time) datetime64[ns] 15kB 2018-01-01T12:00...
+Dimensions without coordinates: time
+Data variables:
+    2m_temperature           (time, init_time, lead_time, latitude, longitude) float32 27GB dask.array<chunksize=(1, 1, 3, 42, 42), meta=np.ndarray>
+    10m_u_component_of_wind  (time, init_time, lead_time, latitude, longitude) float32 27GB dask.array<chunksize=(1, 1, 3, 42, 42), meta=np.ndarray>
+    10m_v_component_of_wind  (time, init_time, lead_time, latitude, longitude) float32 27GB dask.array<chunksize=(1, 1, 3, 42, 42), meta=np.ndarray>
