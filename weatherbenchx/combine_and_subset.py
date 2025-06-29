@@ -315,7 +315,9 @@ def determine_optimal_chunks(sample_file, region):
                 chunks['time'] = 1  # Process one time step at a time
             
             if 'init_time' in sizes:
-                chunks['init_time'] = min(2, sizes['init_time'])  # Small chunks
+                # IMPORTANT: Each file has 7 init_times, so don't chunk smaller than 7
+                # to avoid the "separating stored chunks" warning
+                chunks['init_time'] = min(7, sizes['init_time'])  # Keep file boundaries
             
             if 'lead_time' in sizes:
                 chunks['lead_time'] = -1  # Keep lead_time together (only 7 steps)
@@ -338,7 +340,7 @@ def determine_optimal_chunks(sample_file, region):
         # Fallback to conservative manual chunks
         return {
             'time': 1,
-            'init_time': 2,
+            'init_time': 7,  # Match file structure
             'lead_time': -1,
             'latitude': 50,
             'longitude': 50
@@ -538,27 +540,217 @@ def process_dataset(file_paths, region, output_path, data_type, use_dask_progres
     logger.info(f"Combining {len(yearly_datasets)} years for {data_type} {region}")
     combined_ds = xr.concat(yearly_datasets, dim='time')
     
+    # CRITICAL FIX: Load small regions into memory before saving
+    # For India (43x43 points), the data is small enough to fit in memory
+    if hasattr(combined_ds, 'chunks'):
+        # Calculate approximate memory usage
+        total_size = sum(combined_ds[var].nbytes for var in combined_ds.data_vars)
+        logger.info(f"Dataset size: {total_size/1e9:.2f} GB")
+        
+        if total_size < 5e9:  # If less than 5GB, load into memory
+            logger.info("Loading small dataset into memory before saving...")
+            combined_ds = combined_ds.compute()
+            log_memory_usage("after_compute")
+        else:
+            # For larger datasets, rechunk to avoid the chunk explosion
+            logger.info("Rechunking large dataset for efficient saving...")
+            # Consolidate chunks along time dimension
+            new_chunks = {
+                'time': -1,  # Single chunk for time
+                'latitude': -1,
+                'longitude': -1,
+                'lead_time': -1
+            }
+            if 'init_time' in combined_ds.dims:
+                new_chunks['init_time'] = -1
+            
+            combined_ds = combined_ds.chunk(new_chunks)
+            logger.info(f"Rechunked to: {combined_ds.chunks}")
+    
     # Save with compression
     logger.info(f"Saving {data_type} {region} to {output_path}")
     encoding = {var: {'zlib': True, 'complevel': 4} for var in combined_ds.data_vars}
     
-    # Use dask progress bar if enabled
-    if use_dask_progress and hasattr(combined_ds, 'chunks'):
-        with ProgressBar():
-            combined_ds.to_netcdf(output_path, encoding=encoding, compute=True)
-    else:
+    # Save without progress bar for small datasets
+    try:
         combined_ds.to_netcdf(output_path, encoding=encoding)
+        logger.info(f"Successfully saved {data_type} {region}")
+    except Exception as e:
+        logger.error(f"Failed to save with compression: {e}")
+        logger.info("Trying to save without compression...")
+        try:
+            # Try without compression
+            combined_ds.to_netcdf(output_path)
+            logger.info(f"Successfully saved without compression")
+        except Exception as e2:
+            logger.error(f"Failed to save without compression: {e2}")
+            raise
     
-    logger.info(f"Successfully saved {data_type} {region}")
     log_memory_usage(f"after_save_{data_type}_{region}")
     
     # Cleanup
     combined_ds.close()
     for ds in yearly_datasets:
-        ds.close()
+        if hasattr(ds, 'close'):
+            ds.close()
     gc.collect()
 
-def save_run_info(regions_processed, start_time, end_time):
+def process_small_region_simple(file_paths, region, output_path, data_type):
+    """
+    Simple processing for small regions - load everything into memory
+    This is the most reliable approach for regions like India (43x43 points)
+    """
+    logger.info(f"Processing {data_type} for {region} using simple in-memory approach")
+    
+    # Group files by year
+    files_by_year = group_files_by_year(file_paths)
+    logger.info(f"Found years: {sorted(files_by_year.keys())}")
+    
+    if not files_by_year:
+        logger.error(f"No valid files found for {data_type}")
+        return
+    
+    # Process all data into memory
+    all_data = []
+    
+    for year in sorted(files_by_year.keys()):
+        logger.info(f"Loading year {year} ({len(files_by_year[year])} files)")
+        
+        for file_path in files_by_year[year]:
+            try:
+                # Open and subset each file individually
+                with xr.open_dataset(file_path, decode_timedelta=False) as ds:
+                    ds_subset = preprocess_and_subset(ds, region)
+                    # Load into memory immediately
+                    ds_subset = ds_subset.load()
+                    all_data.append(ds_subset)
+                    
+            except Exception as e:
+                logger.error(f"Failed to process {os.path.basename(file_path)}: {e}")
+                continue
+        
+        log_memory_usage(f"after_year_{year}")
+        gc.collect()
+    
+    if not all_data:
+        logger.error("No data could be loaded")
+        return
+    
+    # Combine all data
+    logger.info(f"Combining {len(all_data)} datasets...")
+    combined = xr.concat(all_data, dim='time')
+    
+    # Sort by time
+    combined = combined.sortby('time')
+    
+    # Save with compression
+    logger.info(f"Saving to {output_path}")
+    encoding = {var: {'zlib': True, 'complevel': 4} for var in combined.data_vars}
+    
+    try:
+        combined.to_netcdf(output_path, encoding=encoding)
+        logger.info(f"Successfully saved {data_type} {region}")
+    except Exception as e:
+        logger.error(f"Failed to save with compression: {e}")
+        logger.info("Trying without compression...")
+        combined.to_netcdf(output_path)
+        logger.info("Saved without compression")
+    
+    # Cleanup
+    del combined
+    del all_data
+    gc.collect()
+
+def process_dataset_incremental(file_paths, region, output_path, data_type):
+    """
+    Alternative: Process dataset year by year and append to output file
+    This avoids memory issues with large concatenations
+    """
+    logger.info(f"Processing {data_type} for {region} using incremental approach")
+    
+    # Group files by year
+    files_by_year = group_files_by_year(file_paths)
+    logger.info(f"Found years: {sorted(files_by_year.keys())}")
+    
+    if not files_by_year:
+        logger.error(f"No valid files found for {data_type}")
+        return
+    
+    # Process first year to create the file
+    years = sorted(files_by_year.keys())
+    first_year = years[0]
+    
+    logger.info(f"Processing first year {first_year} to create output file")
+    
+    # Determine chunks
+    chunks = determine_optimal_chunks(files_by_year[first_year][0], region)
+    
+    # Process first year
+    try:
+        year_ds = process_year_data_safe(
+            files_by_year[first_year], 
+            region, 
+            first_year, 
+            data_type,
+            chunks
+        )
+        
+        # Load into memory if small
+        if hasattr(year_ds, 'chunks'):
+            total_size = sum(year_ds[var].nbytes for var in year_ds.data_vars)
+            if total_size < 1e9:  # Less than 1GB
+                logger.info(f"Loading year {first_year} into memory")
+                year_ds = year_ds.compute()
+        
+        # Save first year
+        encoding = {var: {'zlib': True, 'complevel': 4} for var in year_ds.data_vars}
+        year_ds.to_netcdf(output_path, encoding=encoding, mode='w')
+        logger.info(f"Saved year {first_year}")
+        year_ds.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to process first year {first_year}: {e}")
+        raise
+    
+    # Append remaining years
+    for year in years[1:]:
+        try:
+            logger.info(f"Processing year {year}")
+            year_ds = process_year_data_safe(
+                files_by_year[year], 
+                region, 
+                year, 
+                data_type,
+                chunks
+            )
+            
+            # Load into memory if small
+            if hasattr(year_ds, 'chunks'):
+                total_size = sum(year_ds[var].nbytes for var in year_ds.data_vars)
+                if total_size < 1e9:
+                    logger.info(f"Loading year {year} into memory")
+                    year_ds = year_ds.compute()
+            
+            # Append to existing file
+            with xr.open_dataset(output_path) as existing:
+                combined = xr.concat([existing, year_ds], dim='time')
+                
+                # Save with same encoding
+                encoding = {var: {'zlib': True, 'complevel': 4} for var in combined.data_vars}
+                combined.to_netcdf(output_path + '.tmp', encoding=encoding, mode='w')
+            
+            # Replace original file
+            os.replace(output_path + '.tmp', output_path)
+            logger.info(f"Appended year {year}")
+            
+            year_ds.close()
+            gc.collect()
+            
+        except Exception as e:
+            logger.error(f"Failed to process year {year}: {e}")
+            continue
+    
+    logger.info(f"Successfully saved all years for {data_type} {region}")
     """Save information about the run for debugging"""
     dirs = setup_directories()
     run_info = {
@@ -579,7 +771,7 @@ def save_run_info(regions_processed, start_time, end_time):
     
     logger.info(f"Run info saved to {info_file}")
 
-def main(use_dask_client=False, diagnose_only=False):
+def main(use_dask_client=False, diagnose_only=False, use_incremental=False, use_simple=False):
     """
     Main processing function
     
@@ -589,6 +781,10 @@ def main(use_dask_client=False, diagnose_only=False):
         Whether to use a local dask client
     diagnose_only : bool
         If True, only run diagnostics without processing
+    use_incremental : bool
+        If True, use incremental year-by-year processing (more memory efficient)
+    use_simple : bool
+        If True, use simple in-memory processing (best for small regions)
     """
     start_time = datetime.now()
     
@@ -599,7 +795,7 @@ def main(use_dask_client=False, diagnose_only=False):
     
     # Setup dask client if requested
     client = None
-    if use_dask_client:
+    if use_dask_client and not use_simple:
         client = setup_dask_client()
     
     try:
@@ -625,8 +821,19 @@ def main(use_dask_client=False, diagnose_only=False):
             era5_output = os.path.join(dirs["processed"], f"era5_{region}.nc")
             
             try:
-                process_dataset(pangu_files, region, pangu_output, "pangu")
-                process_dataset(era5_files, region, era5_output, "era5")
+                if use_simple:
+                    # Use simple in-memory approach
+                    process_small_region_simple(pangu_files, region, pangu_output, "pangu")
+                    process_small_region_simple(era5_files, region, era5_output, "era5")
+                elif use_incremental:
+                    # Use incremental approach
+                    process_dataset_incremental(pangu_files, region, pangu_output, "pangu")
+                    process_dataset_incremental(era5_files, region, era5_output, "era5")
+                else:
+                    # Use standard approach
+                    process_dataset(pangu_files, region, pangu_output, "pangu")
+                    process_dataset(era5_files, region, era5_output, "era5")
+                    
                 logger.info(f"Completed region: {region}")
                 regions_processed.append(region)
                 
@@ -640,8 +847,6 @@ def main(use_dask_client=False, diagnose_only=False):
         
         # Save run information
         end_time = datetime.now()
-        save_run_info(regions_processed, start_time, end_time)
-        
         logger.info(f"Total processing time: {(end_time - start_time).total_seconds():.1f} seconds")
 
 if __name__ == "__main__":
@@ -652,6 +857,10 @@ if __name__ == "__main__":
                        help='Use a local dask client for processing')
     parser.add_argument('--diagnose-only', action='store_true',
                        help='Only run diagnostics without processing')
+    parser.add_argument('--use-incremental', action='store_true',
+                       help='Use incremental year-by-year processing (more memory efficient)')
+    parser.add_argument('--use-simple', action='store_true',
+                       help='Use simple in-memory processing (best for small regions like India)')
     
     args = parser.parse_args()
     
@@ -670,6 +879,17 @@ if __name__ == "__main__":
         print("4. After subsetting, data size reduces by ~500x")
         print("5. Consider processing without dask for small regions")
         print("-" * 40)
+        
+        if args.use_simple:
+            print("\nUsing SIMPLE in-memory processing (recommended for India)")
+        elif args.use_incremental:
+            print("\nUsing INCREMENTAL year-by-year processing")
+        else:
+            print("\nUsing STANDARD dask-based processing")
+        
         print("\nStarting processing...\n")
     
-    main(use_dask_client=args.use_dask_client, diagnose_only=args.diagnose_only)
+    main(use_dask_client=args.use_dask_client, 
+         diagnose_only=args.diagnose_only,
+         use_incremental=args.use_incremental,
+         use_simple=args.use_simple)

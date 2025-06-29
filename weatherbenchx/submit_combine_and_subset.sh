@@ -49,7 +49,7 @@ echo "Node: $(hostname)"
 echo "Job ID: $SLURM_JOB_ID"
 echo "=================================="
 
-python3 -u weatherbenchx/combine_and_subset.py
+python3 -u weatherbenchx/combine_and_subset.py --use-incremental
 
 # Capture exit code and cleanup
 EXIT_CODE=$?

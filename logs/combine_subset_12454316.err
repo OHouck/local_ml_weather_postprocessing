@@ -1,7 +1,0 @@
-2025-06-29 16:41:06,124 - __main__ - INFO - Starting region: india
-2025-06-29 16:41:06,127 - __main__ - INFO - Processing pangu for india
-2025-06-29 16:41:06,128 - __main__ - INFO - Found years: ['2018', '2019', '2020', '2021', '2022']
-2025-06-29 16:41:06,128 - __main__ - INFO - Processing pangu for india, year 2018 (59 files)
-2025-06-29 16:41:06,128 - __main__ - INFO - Memory at start_pangu_india: RSS=0.12GB, VMS=0.53GB
-/var/spool/slurm/job12454316/slurm_script: line 52: 4086387 Segmentation fault      python3 -u weatherbenchx/combine_and_subset.py
-/var/spool/slurm/job12454316/slurm_script: line 60: 4086382 Terminated              monitor_progress

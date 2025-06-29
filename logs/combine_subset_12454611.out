@@ -1,8 +1,8 @@
 ==================================
-Job started at: Sun Jun 29 17:09:17 EDT 2025
-[Sun Jun 29 17:09:17 EDT 2025] Progress check:
+Job started at: Sun Jun 29 17:49:36 EDT 2025
+[Sun Jun 29 17:49:36 EDT 2025] Progress check:
 Node: g000.anvil.rcac.purdue.edu
-Job ID: 12454395
+Job ID: 12454611
 ==================================
 ---
 
@@ -84,5 +84,13 @@ PROCESSING RECOMMENDATIONS:
 5. Consider processing without dask for small regions
 ----------------------------------------
 
+Using INCREMENTAL year-by-year processing
+
 Starting processing...
 
+==================================
+Job finished at: Sun Jun 29 17:50:03 EDT 2025
+Exit code: 139
+Final output files:
+-rw-rw-r-- 1 x-ohouck x-atm170020 41K Jun 29 17:50 /anvil/projects/x-atm170020/ohouck/data/processed/pangu_india.nc
+==================================
