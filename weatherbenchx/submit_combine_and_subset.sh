@@ -2,12 +2,13 @@
 # FILENAME: submit_combine_and_subset_simple.sh
 #SBATCH --account=atm170020-gpu
 #SBATCH -p gpu 
-#SBATCH --time=8:00:00
+#SBATCH --time=24:00:00  # Increased to 24 hours for full dataset
 #SBATCH --mem=128GB
 #SBATCH --nodes=1
+#SBATCH --gpus-per-node=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
-#SBATCH --job-name combine_subset
+#SBATCH --cpus-per-task=8
+#SBATCH --job-name weatherbenchx_download
 #SBATCH -e logs/combine_subset_%j.err
 #SBATCH -o logs/combine_subset_%j.out
 #SBATCH --mail-user=ohouck@uchicago.edu

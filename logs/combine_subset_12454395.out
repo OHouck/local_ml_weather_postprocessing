@@ -1,0 +1,88 @@
+==================================
+Job started at: Sun Jun 29 17:09:17 EDT 2025
+[Sun Jun 29 17:09:17 EDT 2025] Progress check:
+Node: g000.anvil.rcac.purdue.edu
+Job ID: 12454395
+==================================
+---
+
+================================================================================
+DATA STRUCTURE DIAGNOSTICS
+================================================================================
+
+PREDICTIONS FILES:
+Total files found: 296
+Date range: predictions_2018-01-01_2018-01-07.nc to predictions_2022-12-29_2022-12-31.nc
+
+  File 1: predictions_2018-01-01_2018-01-07.nc
+  Size: 0.416 GB
+  Dimensions: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+  Coordinates: ['latitude', 'longitude', 'lead_time', 'init_time']
+  Data variables: ['2m_temperature', '10m_u_component_of_wind', '10m_v_component_of_wind']
+  No native chunking detected
+  Estimated memory (uncompressed): 0.61 GB
+
+  File 2: predictions_2018-01-08_2018-01-14.nc
+  Size: 0.415 GB
+  Dimensions: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+  Coordinates: ['latitude', 'longitude', 'lead_time', 'init_time']
+  Data variables: ['2m_temperature', '10m_u_component_of_wind', '10m_v_component_of_wind']
+  No native chunking detected
+  Estimated memory (uncompressed): 0.61 GB
+
+TARGETS FILES:
+Total files found: 296
+Date range: targets_2018-01-01_2018-01-07.nc to targets_2022-12-29_2022-12-31.nc
+
+  File 1: targets_2018-01-01_2018-01-07.nc
+  Size: 0.109 GB
+  Dimensions: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+  Coordinates: ['latitude', 'longitude', 'valid_time']
+  Data variables: ['2m_temperature', '10m_u_component_of_wind', '10m_v_component_of_wind']
+  No native chunking detected
+  Estimated memory (uncompressed): 0.16 GB
+
+  File 2: targets_2018-01-08_2018-01-14.nc
+  Size: 0.109 GB
+  Dimensions: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+  Coordinates: ['latitude', 'longitude', 'valid_time']
+  Data variables: ['2m_temperature', '10m_u_component_of_wind', '10m_v_component_of_wind']
+  No native chunking detected
+  Estimated memory (uncompressed): 0.16 GB
+
+================================================================================
+REGION SUBSET TEST
+================================================================================
+
+Coordinate ranges in data:
+  Latitude: -90.00 to 90.00
+  Longitude: 0.00 to 359.75
+  Latitude is sorted: descending
+
+INDIA:
+  Requested lat bounds: (16.75, 27.25)
+  Requested lon bounds: (71.75, 82.25)
+  Grid points found: 43 x 43 = 1849
+  Actual lat range: 16.75 to 27.25
+  Actual lon range: 71.75 to 82.25
+
+USA_SOUTH:
+  Requested lat bounds: (29.75, 40.25)
+  Requested lon bounds: (254.75, 265.25)
+  Grid points found: 43 x 43 = 1849
+  Actual lat range: 29.75 to 40.25
+  Actual lon range: 254.75 to 265.25
+
+================================================================================
+
+PROCESSING RECOMMENDATIONS:
+----------------------------------------
+1. Data files have NO native chunking
+2. Each predictions file is ~0.4GB, targets ~0.1GB
+3. India region subset is only ~43x43 grid points
+4. After subsetting, data size reduces by ~500x
+5. Consider processing without dask for small regions
+----------------------------------------
+
+Starting processing...
+
