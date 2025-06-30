@@ -34,42 +34,18 @@ source .venv/bin/activate
 #     --lead_time_hours="24" 
 
 # regions=("amazon" "usa_south" "british_columbia" "pakistan")
-regions=("india")
-# regions=("tropical" "temperate" "arid")
-subregions=(2x2 4x4 6x6 8x8 10x10)
+# regions=("india")
+regions=("tropical" "temperate" "arid")
+# subregions=(2x2 4x4 6x6 8x8 10x10)
+subregions=("2x2")
 lead_times=(24 48 72 96 120 144 168)
-# lead_times=(48 96 120 144)
+# lead_times=(48 72 168)
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
         for lead_time in "${lead_times[@]}"; do
 
-            # 2m temp
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="pangu" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-
-            # 10 m wind
+            # 10 m wind speed
             python3 finetuning/1_finetune.py \
                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
                 --training_vars 10m_wind_speed \
@@ -78,18 +54,6 @@ for region in "${regions[@]}"; do
                 --train_start="2018-01-01" --train_end="2021-12-31" \
                 --test_start="2022-01-01" --test_end="2022-12-31" \
                 --model_name="pangu" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 10m_wind_speed \
-                --output_vars 10m_wind_speed \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
                 --region="$region" \
                 --subregion="$subregion" \
                 --lead_time_hours="$lead_time"

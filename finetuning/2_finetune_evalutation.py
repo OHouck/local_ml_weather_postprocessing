@@ -73,14 +73,6 @@ def create_metrics(ds_forecasts, prediction_var):
       mse_spatial_corr: Spatial MSE map for the corrected forecast.
     """
 
-    # If forecasting wind_speed, compute it from u and v components.
-    if prediction_var== "wind_speed":
-        for tag in ["corrected", "original", "ground_truth"]:
-            u_component = ds_forecasts[f"10m_u_component_of_wind_{tag}"]
-            v_component = ds_forecasts[f"10m_v_component_of_wind_{tag}"]
-            wind_speed = np.sqrt(u_component**2 + v_component**2)
-            ds_forecasts[f"wind_speed_{tag}"] = wind_speed
-
     # Extract data arrays.
     ground_truth = ds_forecasts[f"{prediction_var}_ground_truth"]
     fc_original  = ds_forecasts[f"{prediction_var}_original"]
@@ -143,7 +135,8 @@ def generate_lead_time_plots(
         bootstrap = None,
 ):
     """
-    Generates line plot that shows how MSE changes as lead time increases
+    Generates plot with bars for RMSE by lead time for a given model and region.
+    and a line for % improvement relative to original forecast. on the same plot.
     """
     training_vars, output_vars = training_output_vars
 
@@ -163,6 +156,9 @@ def generate_lead_time_plots(
     forecast_corr_mse = {}
     ifs_orig_mse = {}
     ifs_corr_mse = {}
+
+    forecast_pct_improvement = {}
+    ifs_pct_improvement = {}
 
     for lt in lead_times:
 
@@ -187,23 +183,14 @@ def generate_lead_time_plots(
                 print(f"Error opening {file_path}: {e}")
                 continue
 
-            if prediction_var == "wind_speed":
-                ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
-                ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
-                ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
             ground_truth = ds[f"{prediction_var}_ground_truth"]
             orig = ds[f"{prediction_var}_original"]
             corr = ds[f"{prediction_var}_corrected"]
 
-            # normalize by test‐set truth
-            mean = ground_truth.mean().values
-            std  = ground_truth.std().values
-            gt_n   = (ground_truth - mean) / std
-            orig_n = (orig            - mean) / std
-            corr_n = (corr           - mean) / std
-
-            mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
-            mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+            mse_total_orig = float(((orig - ground_truth) ** 2).mean().values)
+            mse_total_corr = float(((corr - ground_truth) ** 2).mean().values)
+            pct_improvement = (mse_total_orig - mse_total_corr) / mse_total_orig * 100 if mse_total_orig != 0 else 0
+            forecast_pct_improvement[(lt, idx)] = pct_improvement
             forecast_orig_mse[(lt, idx)] = mse_total_orig
             forecast_corr_mse[(lt, idx)] = mse_total_corr
 
@@ -212,25 +199,20 @@ def generate_lead_time_plots(
             if ifs_file_paths and idx < len(ifs_file_paths):
                 try:
                     ifs_ds = xr.open_zarr(ifs_file_paths[idx])
-                    
-                    if prediction_var == "wind_speed":
-                        ifs_ds["wind_speed_ground_truth"] = np.sqrt(ifs_ds["10m_u_component_of_wind_ground_truth"]**2 + ifs_ds["10m_v_component_of_wind_ground_truth"]**2)
-                        ifs_ds["wind_speed_original"] = np.sqrt(ifs_ds["10m_u_component_of_wind_original"]**2 + ifs_ds["10m_v_component_of_wind_original"]**2)
-                        ifs_ds["wind_speed_corrected"] = np.sqrt(ifs_ds["10m_u_component_of_wind_corrected"]**2 + ifs_ds["10m_v_component_of_wind_corrected"]**2)
 
                     ifs_ground_truth = ifs_ds[f"{prediction_var}_ground_truth"]
                     ifs_fc_original = ifs_ds[f"{prediction_var}_original"]
                     ifs_fc_corrected = ifs_ds[f"{prediction_var}_corrected"]
 
-                    # normalize by test‐set truth (using same normalization as forecast)
-                    ifs_gt_n   = (ifs_ground_truth - mean) / std
-                    ifs_orig_n = (ifs_fc_original - mean) / std
-                    ifs_corr_n = (ifs_fc_corrected - mean) / std
 
-                    ifs_mse_total_orig = float(((ifs_orig_n - ifs_gt_n) ** 2).mean().values)
-                    ifs_mse_total_corr = float(((ifs_corr_n - ifs_gt_n) ** 2).mean().values)
+                    # mse for IFS
+                    ifs_mse_total_orig = float(((ifs_fc_original - ifs_ground_truth) ** 2).mean().values)
+                    ifs_mse_total_corr = float(((ifs_fc_corrected - ifs_ground_truth) ** 2).mean().values)
+                    pct_improvement = (ifs_mse_total_orig - ifs_mse_total_corr) / ifs_mse_total_orig * 100 if ifs_mse_total_orig != 0 else 0
                     ifs_orig_mse[(lt, idx)] = ifs_mse_total_orig
                     ifs_corr_mse[(lt, idx)] = ifs_mse_total_corr
+                    ifs_pct_improvement[(lt, idx)] = pct_improvement
+
                 except Exception as e:
                     print(f"Error opening IFS file {ifs_file_paths[idx]}: {e}")
                     continue
@@ -265,9 +247,12 @@ def generate_lead_time_plots(
         # Aggregate bootstrap results
         forecast_orig_agg = aggregate_bootstrap_results(forecast_orig_mse, lead_times)
         forecast_corr_agg = aggregate_bootstrap_results(forecast_corr_mse, lead_times)
+        forecast_pct_improvement_agg = aggregate_bootstrap_results(forecast_pct_improvement, lead_times)
 
+        # IFS data (if available) XX 6/30/25 don't have downloaded for climate regions
         ifs_orig_agg = aggregate_bootstrap_results(ifs_orig_mse, lead_times) if ifs_orig_mse else {}
         ifs_corr_agg = aggregate_bootstrap_results(ifs_corr_mse, lead_times) if ifs_corr_mse else {}
+        ifs_pct_improvement_agg = aggregate_bootstrap_results(ifs_pct_improvement, lead_times) if ifs_pct_improvement else {}
         
         # Extract plotting data
         forecast_orig_mean = [forecast_orig_agg[lt]['mean'] for lt in lead_times if lt in forecast_orig_agg]
@@ -277,6 +262,11 @@ def generate_lead_time_plots(
         forecast_corr_mean = [forecast_corr_agg[lt]['mean'] for lt in lead_times if lt in forecast_corr_agg]
         forecast_corr_ci_lower = [forecast_corr_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_corr_agg]
         forecast_corr_ci_upper = [forecast_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_corr_agg]
+        
+        forecast_pct_improvement_mean = [forecast_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in forecast_pct_improvement_agg]
+        # XX currently not using CI for percentage improvement
+        forecast_pct_improvement_ci_lower = [forecast_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_pct_improvement_agg]
+        forecast_pct_improvement_ci_upper = [forecast_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_pct_improvement_agg]
         
         # IFS data (if available)
         if ifs_orig_agg:
@@ -292,6 +282,11 @@ def generate_lead_time_plots(
             ifs_corr_ci_upper = [ifs_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_corr_agg]
         else:
             ifs_corr_mean = ifs_corr_ci_lower = ifs_corr_ci_upper = []
+        if ifs_pct_improvement_agg:
+            ifs_pct_improvement_mean = [ifs_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in ifs_pct_improvement_agg]
+            # XX currently not using CI for percentage improvement
+            ifs_pct_improvement_ci_lower = [ifs_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_pct_improvement_agg]
+            ifs_pct_improvement_ci_upper = [ifs_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_pct_improvement_agg]
         
         plot_lead_times = [lt for lt in lead_times if lt in forecast_orig_agg]
         
@@ -299,8 +294,11 @@ def generate_lead_time_plots(
         # Single value case
         forecast_orig_mean = [forecast_orig_mse[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_orig_mse]
         forecast_corr_mean = [forecast_corr_mse[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_corr_mse]
+        forecast_pct_improvement_mean = [forecast_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_pct_improvement]
+
         ifs_orig_mean = [ifs_orig_mse[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_orig_mse]
         ifs_corr_mean = [ifs_corr_mse[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_corr_mse]
+        ifs_pct_improvement_mean = [ifs_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_pct_improvement]
         
         # No confidence intervals for single values
         forecast_orig_ci_lower = forecast_orig_ci_upper = []
@@ -310,92 +308,140 @@ def generate_lead_time_plots(
         
         plot_lead_times = [lt for lt in lead_times if (lt, 0) in forecast_orig_mse]
 
-    # Choose colors: Different shades for original vs corrected
-    # Pangu: blue shades, IFS: orange shades
-    color_forecast_orig = '#ff7f0e'         # darker orange for original  
-    color_forecast_corr = '#ffb366'         # lighter orange for corrected
-    color_ifs_orig = '#1f77b4'    # darker blue for original
-    color_ifs_corr = '#7bb3e8'    # lighter blue for corrected
+        # Replace the existing plotting section with this modified code:
 
-    # Line styles (all solid now since color distinguishes orig vs corrected)
-    ls_style = "solid"
-    alpha_fill = 0.2
+    # Choose colors for consistency with your image style
+    color_forecast_orig = '#1f77b4'    # blue for Pangu original
+    color_forecast_corr = '#aec7e8'    # light blue for Pangu corrected  
+    color_ifs_orig = '#ff7f0e'         # orange for IFS original
+    color_ifs_corr = '#ffbb78'         # light orange for IFS corrected
 
-    # Create the plot
-    plt.figure(figsize=(8, 6))
-    
-    # Plot forecast results
+    # Line colors for percentage improvements
+    color_forecast_pct = '#d62728'     # red for Pangu improvement line
+    color_ifs_pct = '#9467bd'          # purple for IFS improvement line
+
+    # Create the dual-axis plot
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax2 = ax1.twinx()  # Create second y-axis
+
+    # Set up bar positions
+    n_groups = len(plot_lead_times)
+    bar_width = 0.15
+    x_pos = np.arange(n_groups)
+
+    # Plot MSE bars on left axis (ax1)
+    bars = []
+
+    # Pangu bars
     if forecast_orig_mean:
-        plt.plot(
-            plot_lead_times, forecast_orig_mean,
-            label="Pangu: Original",
-            color=color_forecast_orig,
-            linestyle=ls_style,
-            marker="o"
-        )
+        bars1 = ax1.bar(x_pos - 1.5*bar_width, forecast_orig_mean, bar_width, 
+                        label='Pangu Original', color=color_forecast_orig, alpha=0.8)
+        bars.extend(bars1)
+        
+        # Add error bars for bootstrap if available
         if bootstrap and forecast_orig_ci_lower:
-            plt.fill_between(
-                plot_lead_times, forecast_orig_ci_lower, forecast_orig_ci_upper,
-                color=color_forecast_orig, alpha=alpha_fill
-            )
-    
-    if forecast_corr_mean:
-        plt.plot(
-            plot_lead_times, forecast_corr_mean,
-            label="Pangu: Corrected",
-            color=color_forecast_corr,
-            linestyle=ls_style,
-            marker="o"
-        )
-        if bootstrap and forecast_corr_ci_lower:
-            plt.fill_between(
-                plot_lead_times, forecast_corr_ci_lower, forecast_corr_ci_upper,
-                color=color_forecast_corr, alpha=alpha_fill
-            )
-    
-    # Plot IFS results (if available)
-    if ifs_orig_mean:
-        ifs_lead_times = [lt for lt in lead_times if (lt, 0) in ifs_orig_mse] if not bootstrap else [lt for lt in lead_times if lt in ifs_orig_agg]
-        plt.plot(
-            ifs_lead_times, ifs_orig_mean,
-            label="IFS: Original",
-            color=color_ifs_orig,
-            linestyle=ls_style,
-            marker="s"
-        )
-        if bootstrap and ifs_orig_ci_lower:
-            plt.fill_between(
-                ifs_lead_times, ifs_orig_ci_lower, ifs_orig_ci_upper,
-                color=color_ifs_orig, alpha=alpha_fill
-            )
-    
-    if ifs_corr_mean:
-        ifs_lead_times = [lt for lt in lead_times if (lt, 0) in ifs_corr_mse] if not bootstrap else [lt for lt in lead_times if lt in ifs_corr_agg]
-        plt.plot(
-            ifs_lead_times, ifs_corr_mean,
-            label="IFS: Corrected",
-            color=color_ifs_corr,
-            linestyle=ls_style,
-            marker="s"
-        )
-        if bootstrap and ifs_corr_ci_lower:
-            plt.fill_between(
-                ifs_lead_times, ifs_corr_ci_lower, ifs_corr_ci_upper,
-                color=color_ifs_corr, alpha=alpha_fill
-            )
+            forecast_orig_errors = [
+                [forecast_orig_mean[i] - forecast_orig_ci_lower[i] for i in range(len(forecast_orig_mean))],
+                [forecast_orig_ci_upper[i] - forecast_orig_mean[i] for i in range(len(forecast_orig_mean))]
+            ]
+            ax1.errorbar(x_pos - 1.5*bar_width, forecast_orig_mean, yerr=forecast_orig_errors,
+                        fmt='none', ecolor='black', capsize=3, alpha=0.7)
 
-    plt.xlabel("Lead Time (hours)")
-    plt.ylabel("Normalized MSE")
-    
+    if forecast_corr_mean:
+        bars2 = ax1.bar(x_pos - 0.5*bar_width, forecast_corr_mean, bar_width,
+                        label='Pangu Corrected', color=color_forecast_corr, alpha=0.8)
+        bars.extend(bars2)
+        
+        # Add error bars for bootstrap if available
+        if bootstrap and forecast_corr_ci_lower:
+            forecast_corr_errors = [
+                [forecast_corr_mean[i] - forecast_corr_ci_lower[i] for i in range(len(forecast_corr_mean))],
+                [forecast_corr_ci_upper[i] - forecast_corr_mean[i] for i in range(len(forecast_corr_mean))]
+            ]
+            ax1.errorbar(x_pos - 0.5*bar_width, forecast_corr_mean, yerr=forecast_corr_errors,
+                        fmt='none', ecolor='black', capsize=3, alpha=0.7)
+
+    # IFS bars (if available)
+    if ifs_orig_mean:
+        ifs_lead_times_indices = [i for i, lt in enumerate(plot_lead_times) 
+                                if (not bootstrap and (lt, 0) in ifs_orig_mse) or 
+                                    (bootstrap and lt in ifs_orig_agg)]
+        if ifs_lead_times_indices:
+            bars3 = ax1.bar(np.array(ifs_lead_times_indices) + 0.5*bar_width, ifs_orig_mean, bar_width,
+                            label='IFS Original', color=color_ifs_orig, alpha=0.8)
+            bars.extend(bars3)
+            
+            # Add error bars for bootstrap if available
+            if bootstrap and ifs_orig_ci_lower:
+                ifs_orig_errors = [
+                    [ifs_orig_mean[i] - ifs_orig_ci_lower[i] for i in range(len(ifs_orig_mean))],
+                    [ifs_orig_ci_upper[i] - ifs_orig_mean[i] for i in range(len(ifs_orig_mean))]
+                ]
+                ax1.errorbar(np.array(ifs_lead_times_indices) + 0.5*bar_width, ifs_orig_mean, 
+                            yerr=ifs_orig_errors, fmt='none', ecolor='black', capsize=3, alpha=0.7)
+
+    if ifs_corr_mean:
+        ifs_lead_times_indices = [i for i, lt in enumerate(plot_lead_times) 
+                                if (not bootstrap and (lt, 0) in ifs_corr_mse) or 
+                                    (bootstrap and lt in ifs_corr_agg)]
+        if ifs_lead_times_indices:
+            bars4 = ax1.bar(np.array(ifs_lead_times_indices) + 1.5*bar_width, ifs_corr_mean, bar_width,
+                            label='IFS Corrected', color=color_ifs_corr, alpha=0.8)
+            bars.extend(bars4)
+            
+            # Add error bars for bootstrap if available
+            if bootstrap and ifs_corr_ci_lower:
+                ifs_corr_errors = [
+                    [ifs_corr_mean[i] - ifs_corr_ci_lower[i] for i in range(len(ifs_corr_mean))],
+                    [ifs_corr_ci_upper[i] - ifs_corr_mean[i] for i in range(len(ifs_corr_mean))]
+                ]
+                ax1.errorbar(np.array(ifs_lead_times_indices) + 1.5*bar_width, ifs_corr_mean, 
+                            yerr=ifs_corr_errors, fmt='none', ecolor='black', capsize=3, alpha=0.7)
+
+    # Plot percentage improvement lines on right axis (ax2)
+    if forecast_pct_improvement_mean:
+        line1 = ax2.plot(x_pos, forecast_pct_improvement_mean, 'o-', 
+                        color=color_forecast_pct, linewidth=2, markersize=6,
+                        label='Pangu (%)') 
+        
+        # Add confidence intervals for percentage improvement if bootstrap
+        if bootstrap and forecast_pct_improvement_ci_lower:
+            ax2.fill_between(x_pos, forecast_pct_improvement_ci_lower, forecast_pct_improvement_ci_upper,
+                            color=color_forecast_pct, alpha=0.2)
+
+    if ifs_pct_improvement_mean:
+        ifs_lead_times_indices = [i for i, lt in enumerate(plot_lead_times) 
+                                if (not bootstrap and (lt, 0) in ifs_pct_improvement) or 
+                                    (bootstrap and lt in ifs_pct_improvement_agg)]
+        if ifs_lead_times_indices:
+            line2 = ax2.plot(ifs_lead_times_indices, ifs_pct_improvement_mean, 's-',
+                            color=color_ifs_pct, linewidth=2, markersize=6,
+                            label='IFS (%)')
+            
+            # Add confidence intervals for IFS percentage improvement if bootstrap
+            if bootstrap and ifs_pct_improvement_ci_lower:
+                ax2.fill_between(ifs_lead_times_indices, ifs_pct_improvement_ci_lower, ifs_pct_improvement_ci_upper,
+                                color=color_ifs_pct, alpha=0.2)
+
+    # Customize the axes
+    ax1.set_xlabel("Forecast Lead Time (h)", fontsize=12)
+    ax1.set_ylabel("MSE", fontsize=12)
+    ax2.set_ylabel("Percentage Decrease", fontsize=12)
+
+    # Set x-axis ticks and labels
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels([f"{lt}h" for lt in plot_lead_times])
+
+    # Add horizontal line at 0% improvement
+    ax2.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+
+    # Title
     title_suffix = " (Bootstrap)" if bootstrap else ""
-    plt.title(
-        f"Lead‐Time MSE for {prediction_var.replace('_',' ')}{title_suffix}\n"
-        f"Region: {region}, Subregion: {subregion}"
-    )
-    
+    plt.title(f"MSE and Improvement for {prediction_var.replace('_',' ')}{title_suffix}\n"
+            f"Region: {region}, Subregion: {subregion}", fontsize=14)
+
     # Add bootstrap sample count annotation if bootstrap is used
     if bootstrap:
-        # Get the number of bootstrap samples from the first available lead time
         n_bootstrap = None
         if forecast_orig_agg:
             first_lt = min(forecast_orig_agg.keys())
@@ -410,10 +456,18 @@ def generate_lead_time_plots(
                         verticalalignment='top', horizontalalignment='left',
                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
                         fontsize=10)
-    
-    plt.grid(True)
-    plt.legend(loc="upper right", frameon=True)
-    plt.xticks(lead_times, lead_times)
+
+    # Create combined legend
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, 
+            loc='upper left', bbox_to_anchor=(0.02, 0.88), frameon=True)
+
+    # Grid
+    ax1.grid(True, alpha=0.3)
+    ax1.set_axisbelow(True)
+
+    # Adjust layout
     plt.tight_layout()
 
     # Create output folder
@@ -422,22 +476,22 @@ def generate_lead_time_plots(
 
     # Generate filename
     bootstrap_suffix = "_bootstrap" if bootstrap else ""
-    fname = (
-        f"leadtime_mse_{prediction_var}_trainedwith_{training_vars_str}_"
-        f"{mlp_str}{bootstrap_suffix}.png"
-    )
+    fname = (f"leadtime_mse_pct_{prediction_var}_trainedwith_{training_vars_str}_"
+            f"{mlp_str}{bootstrap_suffix}.png")
     save_path = os.path.join(out_folder, fname)
-    plt.savefig(save_path, dpi=150)
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f"Lead‐time MSE plot saved to: {save_path}")
-    
+    print(f"Lead‐time MSE and percentage improvement plot saved to: {save_path}")
+
     if bootstrap:
         print(f"Bootstrap aggregation completed with {len(forecast_orig_agg)} lead times")
         # Optionally print some statistics
         for lt in sorted(forecast_orig_agg.keys()):
             n_samples = len(forecast_orig_agg[lt]['values'])
             print(f"  Lead time {lt}h: {n_samples} bootstrap samples")
+
+
     
 
 def generate_global_map(
@@ -468,7 +522,7 @@ def generate_global_map(
     training_output_vars : tuple (training_vars, output_vars)
       Each a list or single‐element list.
     prediction_var : str
-      e.g. "2m_temperature" or "wind_speed"
+      e.g. "2m_temperature" or "10m_wind_speed"
     mlp_params : tuple (hidden_dim, n_layers)
     regions : list of str
       e.g. ["amazon","india","pakistan","usa_south"]
@@ -829,20 +883,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
             lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
             lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
 
-            if prediction_var == "wind_speed":
-            
-                ds2["wind_speed_ground_truth"] = np.sqrt(
-                    ds2["10m_u_component_of_wind_ground_truth"]**2 + 
-                    ds2["10m_v_component_of_wind_ground_truth"]**2
-                )
-                ds2["wind_speed_original"] = np.sqrt(
-                    ds2["10m_u_component_of_wind_original"]**2 + 
-                    ds2["10m_v_component_of_wind_original"]**2
-                )
-                ds2["wind_speed_corrected"] = np.sqrt(
-                    ds2["10m_u_component_of_wind_corrected"]**2 + 
-                    ds2["10m_v_component_of_wind_corrected"]**2
-                )
             gt2 = ds2[f"{prediction_var}_ground_truth"]
             mu, sigma = float(gt2.mean()), float(gt2.std())
 
@@ -864,22 +904,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                     ds = ds.sel(latitude=slice(lat_min,lat_max),
                                 longitude=slice(lon_min,lon_max))
                     
-                    if prediction_var == "wind_speed":
-                    
-                        ds["wind_speed_ground_truth"] = np.sqrt(
-                            ds["10m_u_component_of_wind_ground_truth"]**2 + 
-                            ds["10m_v_component_of_wind_ground_truth"]**2
-                        )
-                        ds["wind_speed_original"] = np.sqrt(
-                            ds["10m_u_component_of_wind_original"]**2 + 
-                            ds["10m_v_component_of_wind_original"]**2
-                        )
-                        ds["wind_speed_corrected"] = np.sqrt(
-                            ds["10m_u_component_of_wind_corrected"]**2 + 
-                            ds["10m_v_component_of_wind_corrected"]**2
-                        )
-                    
-                    # compute wind_speed if needed…
                     # normalize using mu, sigma
                     gt_n   = (ds[f"{prediction_var}_ground_truth"] - mu) / sigma
                     orig_n = (ds[f"{prediction_var}_original"]      - mu) / sigma
@@ -972,10 +996,6 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
                 print(f"Error opening {file_path}: {e}")
                 continue
 
-            if prediction_var == "wind_speed":
-                ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
-                ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
-                ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
             ground_truth = ds[f"{prediction_var}_ground_truth"]
             orig = ds[f"{prediction_var}_original"]
             corr = ds[f"{prediction_var}_corrected"]
@@ -993,28 +1013,17 @@ def compare_runs_mse(dirs, model, training_output_vars, prediction_var, mlp_para
 
             # repeat for ifs
             try:
-                ds = xr.open_zarr(ifs_file_path)
+                ifs_ds = xr.open_zarr(ifs_file_path)
             except Exception as e:
                 print(f"Error opening {ifs_file_path}: {e}")
                 continue
-            if prediction_var == "wind_speed":
-                ds["wind_speed_ground_truth"] = np.sqrt(ds["10m_u_component_of_wind_ground_truth"]**2 + ds["10m_v_component_of_wind_ground_truth"]**2)
-                ds["wind_speed_original"] = np.sqrt(ds["10m_u_component_of_wind_original"]**2 + ds["10m_v_component_of_wind_original"]**2)
-                ds["wind_speed_corrected"] = np.sqrt(ds["10m_u_component_of_wind_corrected"]**2 + ds["10m_v_component_of_wind_corrected"]**2)
 
-            ifs_ground_truth = ds[f"{prediction_var}_ground_truth"]
-            ifs_fc_original = ds[f"{prediction_var}_original"]
-            ifs_fc_corrected = ds[f"{prediction_var}_corrected"]
+            ifs_ground_truth = ifs_ds[f"{prediction_var}_ground_truth"]
+            ifs_fc_original = ifs_ds[f"{prediction_var}_original"]
+            ifs_fc_corrected = ifs_ds[f"{prediction_var}_corrected"]
 
-            # normalize by test‐set truth
-            mean = ground_truth.mean().values
-            std  = ground_truth.std().values
-            gt_n   = (ifs_ground_truth - mean) / std
-            orig_n = (ifs_fc_original - mean) / std
-            corr_n = (ifs_fc_corrected - mean) / std
-
-            ifs_mse_total_orig = float(((orig_n - gt_n) ** 2).mean().values)
-            ifs_mse_total_corr = float(((corr_n - gt_n) ** 2).mean().values)
+            ifs_mse_total_orig = float(((ifs_fc_original- ifs_ground_truth) ** 2).mean().values)
+            ifs_mse_total_corr = float(((ifs_fc_corrected - ifs_ground_truth) ** 2).mean().values)
             ifs_results[(lt, region)] = (ifs_mse_total_orig, ifs_mse_total_corr)
 
     # Prepare data for the single grouped bar plot.
@@ -1101,9 +1110,9 @@ def main():
     # output_vars = ["2m_temperature"]
     # prediction_var = "2m_temperature"
 
-    training_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    output_vars = ["10m_v_component_of_wind", "10m_u_component_of_wind"]
-    prediction_var = "wind_speed"
+    training_vars = ["10m_wind_speed"]
+    output_vars = ["10m_wind_speed"]
+    prediction_var = "10m_wind_speed"
 
     generate_lead_time_plots(
         dirs = dirs,
