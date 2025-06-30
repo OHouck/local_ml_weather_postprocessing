@@ -1,20 +1,20 @@
 #!/bin/sh -l
-# FILENAME: submit_combine_and_subset.sh
+# FILENAME: submit_combine_and_subset_simple.sh
 #SBATCH --account=atm170020-gpu
 #SBATCH -p gpu 
-#SBATCH --time=6:00:00  
+#SBATCH --time=24:00:00  # Increased to 24 hours for full dataset
 #SBATCH --mem=128GB
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
-#SBATCH --job-name combine_and_subset
-#SBATCH -e logs/combine_and_subset_%j.err
-#SBATCH -o logs/combine_and_subset_%j.out
+#SBATCH --cpus-per-task=8
+#SBATCH --job-name weatherbenchx_download
+#SBATCH -e logs/combine_subset_%j.err
+#SBATCH -o logs/combine_subset_%j.out
 #SBATCH --mail-user=ohouck@uchicago.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
 
-# Create logs directory if it doesn't exist
+# Create logs directory
 mkdir -p /anvil/projects/x-atm170020/ohouck/ai_weather_ag/logs
 
 # Load modules and activate environment
@@ -24,69 +24,42 @@ conda activate /home/x-ohouck/aiw_env
 # Move to code directory
 cd /anvil/projects/x-atm170020/ohouck/ai_weather_ag
 
-# Function to monitor disk usage
-monitor_disk_usage() {
+# Set essential environment variables
+export PYTHONUNBUFFERED=1
+export HDF5_USE_FILE_LOCKING=FALSE
+
+# Simple monitoring function
+monitor_progress() {
     while true; do
-        echo "[$(date)] Disk usage in data directory:"
-        df -h /anvil/projects/x-atm170020/ohouck/data
-        echo "[$(date)] Number of files downloaded:"
-        find /anvil/projects/x-atm170020/ohouck/data/processed/ -name "*.nc" | wc -l
+        echo "[$(date)] Progress check:"
+        find /anvil/projects/x-atm170020/ohouck/data/processed/ -name "*.nc" -exec ls -lh {} \; 2>/dev/null
         echo "---"
-        sleep 300  # Check every 5 minutes
+        sleep 900  # Check every 15 minutes
     done
 }
 
-# Start disk monitoring in background
-monitor_disk_usage &
+# Start monitoring in background
+monitor_progress &
 MONITOR_PID=$!
 
-# Set up logging environment variables
-export PYTHONUNBUFFERED=1
-export DASK_LOGGING__DISTRIBUTED=info
-export BEAM_LOG_LEVEL=INFO
-
-# Print job information
+# Run the script
 echo "=================================="
 echo "Job started at: $(date)"
 echo "Node: $(hostname)"
 echo "Job ID: $SLURM_JOB_ID"
-echo "CPUs allocated: $SLURM_CPUS_PER_TASK"
-echo "Memory allocated: $SLURM_MEM_PER_NODE MB"
-echo "Working directory: $(pwd)"
-echo "Python version: $(python --version)"
+echo "=================================="
 
-# Function to handle interruption
-cleanup() {
-    echo "Job interrupted - checkpoint saved for resumption"
-    kill $MONITOR_PID 2>/dev/null
-    exit 0
-}
+python3 -u weatherbenchx/combine_and_subset.py --use-incremental
 
-# Set up trap for graceful shutdown
-trap cleanup SIGTERM SIGINT
-
-python3 -u weatherbenchx/combine_and_subset.py \
-    2>&1 | tee /anvil/projects/x-atm170020/ohouck/ai_weather_ag/logs/combined_and_subset_detailed_${SLURM_JOB_ID}.log
-
-# Capture exit code
+# Capture exit code and cleanup
 EXIT_CODE=$?
-
-# Stop monitoring
 kill $MONITOR_PID 2>/dev/null
 
 echo "=================================="
 echo "Job finished at: $(date)"
 echo "Exit code: $EXIT_CODE"
-
-echo "Final disk usage:"
-df -h /anvil/projects/x-atm170020/ohouck/data
-echo "Total files downloaded:"
-find /anvil/projects/x-atm170020/ohouck/data/processed -name "*.nc" | wc -l
-
-
-echo "Log files:"
-echo "  SLURM output: logs/combine_and_subset${SLURM_JOB_ID}.out"
-echo "  SLURM error:  logs/combine_and_subset${SLURM_JOB_ID}.err"
-echo "  Detailed log: logs/combine_and_subset${SLURM_JOB_ID}.log"
+echo "Final output files:"
+find /anvil/projects/x-atm170020/ohouck/data/processed -name "*.nc" -exec ls -lh {} \; 2>/dev/null
+echo "=================================="
 
 exit $EXIT_CODE
