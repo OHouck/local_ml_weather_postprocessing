@@ -3,11 +3,11 @@
 #SBATCH --account=atm170020-gpu
 #SBATCH -p gpu 
 #SBATCH --time=24:00:00  # Increased to 24 hours for full dataset
-#SBATCH --mem=128GB
+#SBATCH --mem=64GB
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --job-name weatherbenchx_download
 #SBATCH -e logs/combine_subset_%j.err
 #SBATCH -o logs/combine_subset_%j.out

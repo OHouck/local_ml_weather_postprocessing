@@ -595,72 +595,6 @@ def process_dataset(file_paths, region, output_path, data_type, use_dask_progres
             ds.close()
     gc.collect()
 
-def process_small_region_simple(file_paths, region, output_path, data_type):
-    """
-    Simple processing for small regions - load everything into memory
-    This is the most reliable approach for regions like India (43x43 points)
-    """
-    logger.info(f"Processing {data_type} for {region} using simple in-memory approach")
-    
-    # Group files by year
-    files_by_year = group_files_by_year(file_paths)
-    logger.info(f"Found years: {sorted(files_by_year.keys())}")
-    
-    if not files_by_year:
-        logger.error(f"No valid files found for {data_type}")
-        return
-    
-    # Process all data into memory
-    all_data = []
-    
-    for year in sorted(files_by_year.keys()):
-        logger.info(f"Loading year {year} ({len(files_by_year[year])} files)")
-        
-        for file_path in files_by_year[year]:
-            try:
-                # Open and subset each file individually
-                with xr.open_dataset(file_path, decode_timedelta=False) as ds:
-                    ds_subset = preprocess_and_subset(ds, region)
-                    # Load into memory immediately
-                    ds_subset = ds_subset.load()
-                    all_data.append(ds_subset)
-                    
-            except Exception as e:
-                logger.error(f"Failed to process {os.path.basename(file_path)}: {e}")
-                continue
-        
-        log_memory_usage(f"after_year_{year}")
-        gc.collect()
-    
-    if not all_data:
-        logger.error("No data could be loaded")
-        return
-    
-    # Combine all data
-    logger.info(f"Combining {len(all_data)} datasets...")
-    combined = xr.concat(all_data, dim='time')
-    
-    # Sort by time
-    combined = combined.sortby('time')
-    
-    # Save with compression
-    logger.info(f"Saving to {output_path}")
-    encoding = {var: {'zlib': True, 'complevel': 4} for var in combined.data_vars}
-    
-    try:
-        combined.to_netcdf(output_path, encoding=encoding)
-        logger.info(f"Successfully saved {data_type} {region}")
-    except Exception as e:
-        logger.error(f"Failed to save with compression: {e}")
-        logger.info("Trying without compression...")
-        combined.to_netcdf(output_path)
-        logger.info("Saved without compression")
-    
-    # Cleanup
-    del combined
-    del all_data
-    gc.collect()
-
 def process_dataset_incremental(file_paths, region, output_path, data_type):
     """
     Alternative: Process dataset year by year and append to output file
@@ -771,7 +705,7 @@ def process_dataset_incremental(file_paths, region, output_path, data_type):
     
     logger.info(f"Run info saved to {info_file}")
 
-def main(use_dask_client=False, diagnose_only=False, use_incremental=False, use_simple=False):
+def main(use_dask_client=False, diagnose_only=False, use_incremental=False):
     """
     Main processing function
     
@@ -783,8 +717,6 @@ def main(use_dask_client=False, diagnose_only=False, use_incremental=False, use_
         If True, only run diagnostics without processing
     use_incremental : bool
         If True, use incremental year-by-year processing (more memory efficient)
-    use_simple : bool
-        If True, use simple in-memory processing (best for small regions)
     """
     start_time = datetime.now()
     
@@ -795,7 +727,7 @@ def main(use_dask_client=False, diagnose_only=False, use_incremental=False, use_
     
     # Setup dask client if requested
     client = None
-    if use_dask_client and not use_simple:
+    if use_dask_client: 
         client = setup_dask_client()
     
     try:
@@ -821,11 +753,7 @@ def main(use_dask_client=False, diagnose_only=False, use_incremental=False, use_
             era5_output = os.path.join(dirs["processed"], f"era5_{region}.nc")
             
             try:
-                if use_simple:
-                    # Use simple in-memory approach
-                    process_small_region_simple(pangu_files, region, pangu_output, "pangu")
-                    process_small_region_simple(era5_files, region, era5_output, "era5")
-                elif use_incremental:
+                if use_incremental:
                     # Use incremental approach
                     process_dataset_incremental(pangu_files, region, pangu_output, "pangu")
                     process_dataset_incremental(era5_files, region, era5_output, "era5")
@@ -859,9 +787,7 @@ if __name__ == "__main__":
                        help='Only run diagnostics without processing')
     parser.add_argument('--use-incremental', action='store_true',
                        help='Use incremental year-by-year processing (more memory efficient)')
-    parser.add_argument('--use-simple', action='store_true',
-                       help='Use simple in-memory processing (best for small regions like India)')
-    
+
     args = parser.parse_args()
     
     # Run diagnostics first if not diagnose-only mode
@@ -870,19 +796,7 @@ if __name__ == "__main__":
         diagnose_data_structure(n_files=2)
         print("\n" + "="*80 + "\n")
         
-        # Print recommendations based on diagnostics
-        print("PROCESSING RECOMMENDATIONS:")
-        print("-" * 40)
-        print("1. Data files have NO native chunking")
-        print("2. Each predictions file is ~0.4GB, targets ~0.1GB")
-        print("3. India region subset is only ~43x43 grid points")
-        print("4. After subsetting, data size reduces by ~500x")
-        print("5. Consider processing without dask for small regions")
-        print("-" * 40)
-        
-        if args.use_simple:
-            print("\nUsing SIMPLE in-memory processing (recommended for India)")
-        elif args.use_incremental:
+        if args.use_incremental:
             print("\nUsing INCREMENTAL year-by-year processing")
         else:
             print("\nUsing STANDARD dask-based processing")
@@ -891,5 +805,5 @@ if __name__ == "__main__":
     
     main(use_dask_client=args.use_dask_client, 
          diagnose_only=args.diagnose_only,
-         use_incremental=args.use_incremental,
-         use_simple=args.use_simple)
+         use_incremental=args.use_incremental
+    )
