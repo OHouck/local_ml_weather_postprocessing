@@ -493,13 +493,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     # create 10m wind speed from u and v components of wind if needed
     if "10m_wind_speed" in args.training_vars:
-        u_component = forecast_ds["10m_u_component_of_wind"]
-        v_component = forecast_ds["10m_v_component_of_wind"]
-        forecast_ds["10m_wind_speed"] = np.sqrt(u_component**2 + v_component**2)
+        fc_u_component = forecast_ds["10m_u_component_of_wind"]
+        fc_v_component = forecast_ds["10m_v_component_of_wind"]
+        forecast_ds["10m_wind_speed"] = np.sqrt(fc_u_component**2 + fc_v_component**2)
     if "10m_wind_speed" in args.output_vars:
-        u_component = train_obs_ds["10m_u_component_of_wind"]
-        v_component = train_obs_ds["10m_v_component_of_wind"]
-        train_obs_ds["10m_wind_speed"] = np.sqrt(u_component**2 + v_component**2)
+        obs_u_component = train_obs_ds["10m_u_component_of_wind"]
+        obs_v_component = train_obs_ds["10m_v_component_of_wind"]
+        train_obs_ds["10m_wind_speed"] = np.sqrt(obs_u_component**2 + obs_v_component**2)
 
     # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
     fc_ds = forecast_ds.sel(
@@ -607,7 +607,7 @@ def apply_correction(model, forecast_data, device):
 
 
 def save_output(output_path, model_name, output_vars, lon_values, lat_values,
-                time_values, original_fc, corrected_fc, ground_truth_data=None):
+                time_values, original_fc, corrected_fc, ground_truth_data=None, training_mean_forecast_error=None):
     """
     Save original and corrected forecasts (and optionally ground truth) in Zarr format.
     Supports both single and multiple variables.
@@ -641,7 +641,7 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
                 "latitude": lat_values,
                 "longitude": lon_values}
         )
-
+    
 
     if ground_truth_data is not None:
         ground_truth_data = ground_truth_data.reshape(n_time, n_vars, n_lat, n_lon)
@@ -664,6 +664,9 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
         # Select the slice for this variable (dims will then be time, latitude, longitude)
         data_vars[f"{var}_original"] = original_fc_da.sel(variable=var).drop_vars("variable")
         data_vars[f"{var}_corrected"] = corrected_fc_da.sel(variable=var).drop_vars("variable")
+        # Simple ANO style correction
+        if training_mean_forecast_error is not None:
+            data_vars[f"{var}_mean_corrected"]= data_vars[f"{var}_original"] - training_mean_forecast_error[var]
         if ground_truth_data is not None:
             data_vars[f"{var}_ground_truth"] = ground_truth_da.sel(variable=var).drop_vars("variable")
 
@@ -716,7 +719,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # 1) Load train
     fc_ds, fc_ds_output, obs_ds, train_time_values, n_train_time, n_training_vars, n_output_vars = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num = patch_num)
-    print("Loaded Forecasts")
+
+    # save mean forecast error in the training data for mean debiasing correction
+    training_mean_forecast_error = fc_ds_output.mean(dim='time') - obs_ds.mean(dim='time')
+
     # save unique lat/lon
     lat_u = np.unique(fc_ds.latitude.values)
     lon_u = np.unique(fc_ds.longitude.values)
@@ -771,6 +777,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     corrected   = apply_correction(model, tfc_norm, device)
     corrected   = (corrected * stats_out['std']) + stats_out['mean']
 
+
     print(f"MSE original: {np.mean((tfco - tobs)**2):.6f}")
     print(f"MSE corrected: {np.mean((corrected - tobs)**2):.6f}")
 
@@ -784,7 +791,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         time_values=test_times,
         original_fc=tfco,
         corrected_fc=corrected,
-        ground_truth_data=tobs
+        ground_truth_data=tobs,
+        training_mean_forecast_error=training_mean_forecast_error
     )
 
 
@@ -824,33 +832,37 @@ def main():
     # ---- decide if we're in a climate‐zone region or a geographic one ----
     if args.region in CLIMATE_ZONE_MAP:
 
-        # check folders for numbers of patches we have data downloaded for
-        # the patch number is the last part of the title before .nc
-        test_path = os.path.join(args.data_dir, f"test_{args.region}", args.model_name)
-        # Count the number of .nc files in this path, ignoring hidden files
-        test_count = len([
-            name for name in os.listdir(test_path)
-            if name.endswith(".nc") and os.path.isfile(os.path.join(test_path, name))
-        ])
-        num_test_patches = math.floor(test_count / 2)
+        def find_available_patches(region, model_name, train_or_test):
+            """
+            Find available patches for a given region and model name.
+            Returns a list of patch numbers that have data downloaded.
+            """
+            test_path = os.path.join(args.data_dir, f"{train_or_test}_{region}", model_name)
+            patch_files = glob.glob(os.path.join(test_path, "*.nc"))
+            patch_nums = [int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in patch_files]
+            return sorted(patch_nums)
+        
+        train_patch_nums = find_available_patches(args.region, args.model_name, 'train')
+        test_patch_nums  = find_available_patches(args.region, args.model_name, 'test')
 
-        train_path = os.path.join(args.data_dir, f"train_{args.region}", args.model_name)
-        train_count = len([
-            name for name in os.listdir(train_path)
-            if name.endswith(".nc") and os.path.isfile(os.path.join(train_path, name))
-        ])
-        num_train_patches = math.floor(train_count / 2)
-        num_patches = min(num_test_patches, num_train_patches)
+        # save patch numbers that are in both train and test patches
+        common_patch_nums = set(train_patch_nums) & set(test_patch_nums)
 
         # since climate zone patches are precomputed don't need to pass in lon/lat
         # instead just pass in None
         lat_vals = None
         lon_vals = None
         
-        for idx in range(1, num_patches + 1):
+        for idx in common_patch_nums:
             out_path = base_path.replace(
                 '.zarr', f'_{args.region}_bs{idx}.zarr'
             )
+
+            # check if output file already exists XX will have to comment out to redo
+            if os.path.exists(out_path):
+                print(f"Skipping already existing output: {out_path}")
+                continue
+
             start_time = time.time()
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,
@@ -858,7 +870,7 @@ def main():
             )
             end_time = time.time()
             elapsed_minutes = (end_time - start_time) / 60
-            print(f"Saved [{args.region} zone] sample {idx}/{num_patches} in {elapsed_minutes} minutes")
+            print(f"Saved [{args.region} zone] sample {idx}/{len(common_patch_nums)} in {elapsed_minutes} minutes")
             
 
     elif args.bootstrap:

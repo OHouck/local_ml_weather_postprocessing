@@ -98,11 +98,17 @@ def main():
 
     nlat_patch, nlon_patch = get_patch_shape(subregion)
 
-    # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
-    climate_zone_list = ["tropical"]
+    # sample and create patches
+    climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
     for zone in climate_zone_list:
         zone_code = CLIMATE_ZONE_MAP[zone]
         print(f"Sampling {zone} patches...")
+
+        patch_path = os.path.join(dirs["processed"], f"climate_zone_patches_{zone}_{subregion}.npy")
+        # check if the patches already exist
+        if os.path.exists(patch_path):
+            print(f"Patch file {patch_path} already exists. Skipping sampling.")
+            continue
 
         # Sample N patches for this zone
         N = 50
@@ -115,10 +121,18 @@ def main():
             nlon_patch,
             N
         )
-
         # save patches to disk
-        patch_path = os.path.join(dirs["processed"], f"climate_zone_patches_{zone}_{subregion}.npy")
         np.save(patch_path, patches)
+
+    # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
+    climate_zone_list = ["tropical"]
+    for zone in climate_zone_list:
+
+        # read in the patches
+        patch_path = os.path.join(dirs["processed"], f"climate_zone_patches_{zone}_{subregion}.npy")
+        patches = np.load(patch_path, allow_pickle=True)
+
+        assert len(patches) == 50   
 
         train_base_dir = "/Volumes/wd_external_hd/weatherbench/train_global"
         pangu_fc_train_file_paths = sorted(glob.glob(os.path.join(train_base_dir, "**", "pangu_train_forecast_data*.nc"), recursive=True))
@@ -142,20 +156,24 @@ def main():
             f"test_{zone}",
             "pangu")
 
-        # read the patches back in
-        patches = np.load(patch_path, allow_pickle=True)
 
         # count patches already saved for this zone and subregion
-        num_patches_saved = len(glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"train_{zone}", "pangu", f"pangu_train_forecast_data_{zone}_{subregion}_patch_*.nc")))
-        starting_idx = num_patches_saved + 1
+        patch_files = glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"train_{zone}", "pangu", f"pangu_train_forecast_data_{zone}_{subregion}_patch_*.nc"))
 
-        for idx, (lat_coords, lon_coords) in enumerate(patches, start = starting_idx):
+        # save the index of all saved patches and process the unsaved ones
+        patch_nums = [int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in patch_files]
 
+        unsaved_patch_nums = set(range(50)) - set(patch_nums)
+        print(f"unsaved patches for {zone} {subregion}: {unsaved_patch_nums}")
+        unsaved_patches = [patches[i] for i in unsaved_patch_nums]
 
-            lat_min = lat_coords.min()
-            lat_max = lat_coords.max()
-            lon_min = lon_coords.min()
-            lon_max = lon_coords.max()
+        for patch in unsaved_patches:
+
+            print(patch.shape)
+            lat_min = patch[0,].min()
+            lat_max = patch[0,].max()
+            lon_min = patch[1,].min()
+            lon_max = patch[1,].max()
 
             lat_values  = np.arange(lat_min, lat_max + 0.25, 0.25)
             lon_values = np.arange(lon_min, lon_max + 0.25, 0.25)
