@@ -1,15 +1,10 @@
 """
-Name: combine_and_subset.py
-Author: Ozma Houck
-Date: 6/24/25
+Name: combine_and_subset_incremental.py
+Author: Ozma Houck (Enhanced)
+Date: 7/3/25
 
-Purpose: Take output created from weatherbench_download.py and combine and filter
-them into region specific datasets that can be exported to laptop
-
-Enhanced with:
-- Dask configuration and optional local cluster
-- Comprehensive diagnostics
-- Better error handling and chunking strategies
+Purpose: Combine and filter weatherbench data incrementally to avoid memory issues
+This version processes data year by year and appends to the output file
 """
 
 import os
@@ -23,24 +18,9 @@ import psutil
 import gc
 import json
 from datetime import datetime
+import tempfile
 
-# Dask imports
-import dask
-import dask.array as da
-from dask.distributed import Client, as_completed
-from dask.diagnostics import ProgressBar
-
-# Configure dask for optimal performance
-dask.config.set({
-    'array.chunk-size': '128MB',  # Target chunk size
-    'array.slicing.split_large_chunks': True,
-    'distributed.worker.memory.target': 0.8,  # Use 80% of memory before spilling
-    'distributed.worker.memory.spill': 0.85,
-    'distributed.worker.memory.pause': 0.90,
-    'distributed.worker.memory.terminate': 0.95
-})
-
-# Set up logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -52,174 +32,6 @@ def log_memory_usage(stage):
     process = psutil.Process()
     mem_info = process.memory_info()
     logger.info(f"Memory at {stage}: RSS={mem_info.rss/1e9:.2f}GB, VMS={mem_info.vms/1e9:.2f}GB")
-
-def setup_dask_client(n_workers=None, threads_per_worker=None, memory_limit=None):
-    """
-    Setup a local dask client for better control over parallel processing
-    
-    Parameters:
-    -----------
-    n_workers : int, optional
-        Number of worker processes. If None, uses SLURM_CPUS_PER_TASK / 2
-    threads_per_worker : int, optional
-        Threads per worker. If None, set to 2
-    memory_limit : str, optional
-        Memory limit per worker. If None, calculated from available memory
-    
-    Returns:
-    --------
-    client : dask.distributed.Client or None
-    """
-    try:
-        # Get SLURM resources if available
-        slurm_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK', psutil.cpu_count()))
-        total_memory = psutil.virtual_memory().total
-        
-        # Default values based on SLURM allocation
-        if n_workers is None:
-            n_workers = max(1, slurm_cpus // 2)  # Use half CPUs for workers
-        if threads_per_worker is None:
-            threads_per_worker = 2
-        if memory_limit is None:
-            # Divide 80% of total memory among workers
-            memory_per_worker = int(0.8 * total_memory / n_workers)
-            memory_limit = f"{memory_per_worker}B"
-        
-        logger.info(f"Starting Dask LocalCluster with {n_workers} workers, "
-                   f"{threads_per_worker} threads each, {memory_limit} per worker")
-        
-        client = Client(
-            n_workers=n_workers,
-            threads_per_worker=threads_per_worker,
-            memory_limit=memory_limit,
-            silence_logs=logging.WARNING
-        )
-        
-        logger.info(f"Dask client started: {client}")
-        logger.info(f"Dashboard available at: {client.dashboard_link}")
-        
-        return client
-        
-    except Exception as e:
-        logger.warning(f"Could not start dask client: {e}")
-        logger.warning("Proceeding with dask's default threaded scheduler")
-        return None
-
-def diagnose_data_structure(n_files=3):
-    """
-    Diagnose the data structure before processing
-    
-    Parameters:
-    -----------
-    n_files : int
-        Number of files to inspect
-    """
-    dirs = setup_directories()
-    
-    print("\n" + "="*80)
-    print("DATA STRUCTURE DIAGNOSTICS")
-    print("="*80)
-    
-    # Check both pangu and era5 files
-    for data_type in ['predictions', 'targets']:
-        files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", f"{data_type}*.nc")))
-        
-        if not files:
-            print(f"\nNo {data_type} files found!")
-            continue
-            
-        print(f"\n{data_type.upper()} FILES:")
-        print(f"Total files found: {len(files)}")
-        print(f"Date range: {os.path.basename(files[0])} to {os.path.basename(files[-1])}")
-        
-        # Inspect first few files
-        for i, f in enumerate(files[:n_files]):
-            print(f"\n  File {i+1}: {os.path.basename(f)}")
-            print(f"  Size: {os.path.getsize(f)/1e9:.3f} GB")
-            
-            try:
-                with xr.open_dataset(f, engine='netcdf4', decode_timedelta=False) as ds:
-                    print(f"  Dimensions: {dict(ds.sizes)}")  # Use .sizes instead of .dims
-                    print(f"  Coordinates: {list(ds.coords)}")
-                    print(f"  Data variables: {list(ds.data_vars)[:5]}")  # First 5 vars
-                    if len(ds.data_vars) > 5:
-                        print(f"    ... and {len(ds.data_vars) - 5} more variables")
-                    
-                    # Check native chunking
-                    chunked_vars = []
-                    for var in list(ds.data_vars)[:2]:  # Check first 2 variables
-                        var_data = ds[var]
-                        if hasattr(var_data, 'encoding') and 'chunks' in var_data.encoding:
-                            chunked_vars.append(f"{var}: {var_data.encoding['chunks']}")
-                    
-                    if chunked_vars:
-                        print(f"  Native chunking found:")
-                        for cv in chunked_vars:
-                            print(f"    {cv}")
-                    else:
-                        print(f"  No native chunking detected")
-                    
-                    # Memory estimate for full dataset
-                    total_size = sum(ds[var].nbytes for var in ds.data_vars)
-                    print(f"  Estimated memory (uncompressed): {total_size/1e9:.2f} GB")
-                    
-            except Exception as e:
-                print(f"  ERROR reading file: {e}")
-    
-    # Test region subsetting
-    print("\n" + "="*80)
-    print("REGION SUBSET TEST")
-    print("="*80)
-    
-    test_file = files[0] if files else None
-    if test_file:
-        try:
-            with xr.open_dataset(test_file, decode_timedelta=False) as ds:
-                # Check coordinate ranges
-                lat_dim = 'latitude' if 'latitude' in ds.dims else 'lat'
-                lon_dim = 'longitude' if 'longitude' in ds.dims else 'lon'
-                
-                print(f"\nCoordinate ranges in data:")
-                print(f"  Latitude: {float(ds[lat_dim].min().values):.2f} to {float(ds[lat_dim].max().values):.2f}")
-                print(f"  Longitude: {float(ds[lon_dim].min().values):.2f} to {float(ds[lon_dim].max().values):.2f}")
-                
-                # Check if latitude is sorted
-                lat_diff = np.diff(ds[lat_dim].values)
-                if np.all(lat_diff > 0):
-                    print(f"  Latitude is sorted: ascending")
-                elif np.all(lat_diff < 0):
-                    print(f"  Latitude is sorted: descending")
-                else:
-                    print(f"  WARNING: Latitude is not monotonic!")
-                
-                for region in ["india", "usa_south"]:
-                    lat_bounds, lon_bounds = get_region_bounds(region)
-                    
-                    print(f"\n{region.upper()}:")
-                    print(f"  Requested lat bounds: {lat_bounds}")
-                    print(f"  Requested lon bounds: {lon_bounds}")
-                    
-                    # Get actual subset - handle both ascending and descending latitude
-                    if ds[lat_dim].values[0] > ds[lat_dim].values[-1]:  # Descending
-                        lat_slice = ds[lat_dim].where(
-                            (ds[lat_dim] >= lat_bounds[0]) & (ds[lat_dim] <= lat_bounds[1]), 
-                            drop=True
-                        )
-                    else:  # Ascending
-                        lat_slice = ds[lat_dim].sel({lat_dim: slice(lat_bounds[0], lat_bounds[1])})
-                    
-                    lon_slice = ds[lon_dim].sel({lon_dim: slice(lon_bounds[0], lon_bounds[1])})
-                    
-                    print(f"  Grid points found: {len(lat_slice)} x {len(lon_slice)} = {len(lat_slice) * len(lon_slice)}")
-                    
-                    if len(lat_slice) > 0 and len(lon_slice) > 0:
-                        print(f"  Actual lat range: {float(lat_slice.min().values):.2f} to {float(lat_slice.max().values):.2f}")
-                        print(f"  Actual lon range: {float(lon_slice.min().values):.2f} to {float(lon_slice.max().values):.2f}")
-                    else:
-                        print(f"  WARNING: No data found in region!")
-                    
-        except Exception as e:
-            print(f"Error in region subset test: {e}")
 
 def setup_directories():
     """Set up directory structure based on environment"""
@@ -258,22 +70,23 @@ def get_region_bounds(region):
 def preprocess_and_subset(ds, region):
     """Preprocess dataset and subset to region"""
     # Standardize dimension names
-    if 'lat' in ds.dims:
-        ds = ds.rename({'lat': 'latitude'})
-    if 'lon' in ds.dims:
-        ds = ds.rename({'lon': 'longitude'})
-    if 'valid_time' in ds.dims:
-        ds = ds.rename({'valid_time': 'time'})
+    dim_mapping = {
+        'lat': 'latitude',
+        'lon': 'longitude',
+        'valid_time': 'time'
+    }
+    
+    for old_name, new_name in dim_mapping.items():
+        if old_name in ds.dims and new_name not in ds.dims:
+            ds = ds.rename({old_name: new_name})
     
     # Get region bounds
     lat_bounds, lon_bounds = get_region_bounds(region)
     
     # Handle latitude selection based on ordering
-    # Check if latitude is ascending or descending
     if ds['latitude'].values[0] > ds['latitude'].values[-1]:  # Descending
-        # For descending latitude, we need to reverse the bounds
         ds = ds.sel(
-            latitude=slice(lat_bounds[1], lat_bounds[0]),  # Reversed!
+            latitude=slice(lat_bounds[1], lat_bounds[0]),
             longitude=slice(lon_bounds[0], lon_bounds[1])
         )
     else:  # Ascending
@@ -282,528 +95,190 @@ def preprocess_and_subset(ds, region):
             longitude=slice(lon_bounds[0], lon_bounds[1])
         )
     
-    # Ensure latitude is in ascending order for consistency
+    # Ensure latitude is in ascending order
     if ds['latitude'].values[0] > ds['latitude'].values[-1]:
         ds = ds.reindex(latitude=ds['latitude'][::-1])
     
     return ds
 
-def determine_optimal_chunks(sample_file, region):
-    """
-    Determine optimal chunk sizes based on data structure and region
+def process_year_files(file_paths, region, year):
+    """Process all files for a single year and return combined dataset"""
+    logger.info(f"Processing {len(file_paths)} files for year {year}")
     
-    Returns:
-    --------
-    chunks : dict or 'auto'
-    """
-    try:
-        with xr.open_dataset(sample_file, decode_timedelta=False) as ds:
-            # Get dimension sizes after preprocessing
-            ds_subset = preprocess_and_subset(ds, region)
-            
-            # Calculate sizes
-            sizes = dict(ds_subset.sizes)  # Already using sizes, good!
-            
-            logger.info(f"Region {region} subset dimensions: {sizes}")
-            
-            # Since files have no native chunking and are ~0.4GB each,
-            # we should be conservative with chunk sizes
-            chunks = {}
-            
-            # Time-like dimensions - keep small for memory efficiency
-            if 'time' in sizes:
-                chunks['time'] = 1  # Process one time step at a time
-            
-            if 'init_time' in sizes:
-                # IMPORTANT: Each file has 7 init_times, so don't chunk smaller than 7
-                # to avoid the "separating stored chunks" warning
-                chunks['init_time'] = min(7, sizes['init_time'])  # Keep file boundaries
-            
-            if 'lead_time' in sizes:
-                chunks['lead_time'] = -1  # Keep lead_time together (only 7 steps)
-            
-            # Spatial dimensions - based on region size
-            # For a 0.25° grid, India is roughly 43x43 points
-            for dim in ['latitude', 'longitude']:
-                if dim in sizes:
-                    if sizes[dim] < 50:
-                        chunks[dim] = -1  # Don't chunk small regions
-                    else:
-                        # Use ~50-100 points per chunk for spatial dims
-                        chunks[dim] = min(100, sizes[dim])
-            
-            logger.info(f"Recommended chunks for {region}: {chunks}")
-            return chunks
-            
-    except Exception as e:
-        logger.warning(f"Could not determine optimal chunks: {e}")
-        # Fallback to conservative manual chunks
-        return {
-            'time': 1,
-            'init_time': 7,  # Match file structure
-            'lead_time': -1,
-            'latitude': 50,
-            'longitude': 50
-        }
-
-def validate_netcdf_file(filepath):
-    """Check if a NetCDF file is valid and can be opened"""
-    try:
-        with xr.open_dataset(filepath, engine='netcdf4', decode_timedelta=False) as ds:
-            # Try to access basic metadata
-            _ = ds.sizes  # Use sizes instead of dims
-            _ = ds.attrs
-        return True
-    except Exception as e:
-        logger.warning(f"Invalid file {filepath}: {e}")
-        return False
-
-def group_files_by_year(file_paths):
-    """Group files by year, filtering out invalid files"""
-    files_by_year = defaultdict(list)
-    invalid_files = []
-    
-    logger.info(f"Validating {len(file_paths)} files...")
-    
-    for i, file_path in enumerate(file_paths):
-        if i % 10 == 0:
-            logger.info(f"  Validated {i}/{len(file_paths)} files...")
-            
-        if validate_netcdf_file(file_path):
-            filename = os.path.basename(file_path)
-            year = filename.split('_')[1][:4]
-            files_by_year[year].append(file_path)
-        else:
-            invalid_files.append(file_path)
-    
-    if invalid_files:
-        logger.warning(f"Found {len(invalid_files)} invalid files:")
-        for f in invalid_files[:5]:  # Show first 5
-            logger.warning(f"  - {os.path.basename(f)}")
-        if len(invalid_files) > 5:
-            logger.warning(f"  ... and {len(invalid_files) - 5} more")
-    
-    return dict(files_by_year)
-
-def process_year_data_safe(file_paths, region, year, data_type, chunks='auto'):
-    """
-    Process data for a single year with multiple fallback strategies
-    """
-    logger.info(f"Processing {data_type} for {region}, year {year} ({len(file_paths)} files)")
-    log_memory_usage(f"start_{data_type}_{region}_{year}")
-    
-    def preprocess_func(ds):
-        return preprocess_and_subset(ds, region)
-    
-    # For regions like India (43x43 points), the subset is small enough to load entirely
-    # Each file after subsetting is only ~3MB instead of 400MB
-    
-    # Strategy 1: Try loading all files with minimal chunking (best for small regions)
-    strategies = [
-        ("minimal chunks for small region", chunks, False),
-        ("no chunks (load all)", None, False),  # Try loading without dask
-        ("auto chunks", 'auto', False),
-        ("conservative chunks", {'time': 1, 'latitude': -1, 'longitude': -1}, False)
-    ]
-    
-    for strategy_name, chunk_spec, use_parallel in strategies:
-        logger.info(f"Trying strategy: {strategy_name}")
-        try:
-            # Add decode_timedelta=False to avoid warnings
-            open_kwargs = {
-                'preprocess': preprocess_func,
-                'concat_dim': 'time',
-                'combine': 'nested',
-                'engine': 'netcdf4',
-                'parallel': use_parallel,
-                'lock': False,
-                'decode_timedelta': False
-            }
-            
-            # Only add chunks if specified
-            if chunk_spec is not None:
-                open_kwargs['chunks'] = chunk_spec
-                
-            ds = xr.open_mfdataset(file_paths, **open_kwargs)
-            
-            # Log actual chunk sizes if using dask
-            if hasattr(ds, 'chunks') and ds.chunks:
-                logger.info(f"Successfully loaded with chunks: {ds.chunks}")
-            else:
-                logger.info(f"Successfully loaded without chunking (in-memory)")
-            
-            return ds
-            
-        except Exception as e:
-            logger.warning(f"Strategy '{strategy_name}' failed: {e}")
-            gc.collect()  # Clean up before next attempt
-            
-    # If all strategies fail, try batch processing
-    logger.info("All strategies failed, trying batch processing...")
-    return batch_process_files(file_paths, region, preprocess_func)
-
-def batch_process_files(file_paths, region, preprocess_func, batch_size=5):
-    """Process files in batches when other methods fail"""
     datasets = []
-    n_batches = (len(file_paths) - 1) // batch_size + 1
-    
-    for i in range(0, len(file_paths), batch_size):
-        batch = file_paths[i:i+batch_size]
-        batch_num = i // batch_size + 1
-        logger.info(f"Processing batch {batch_num}/{n_batches}")
-        
+    for i, file_path in enumerate(file_paths):
         try:
-            batch_ds = xr.open_mfdataset(
-                batch,
-                preprocess=preprocess_func,
-                concat_dim='time',
-                combine='nested',
-                chunks='auto',
-                engine='netcdf4',
-                parallel=False,
-                lock=False,
-                decode_timedelta=False
-            )
-            datasets.append(batch_ds)
-            log_memory_usage(f"batch_{batch_num}")
+            with xr.open_dataset(file_path, engine='netcdf4', decode_timedelta=False) as ds:
+                ds_subset = preprocess_and_subset(ds, region)
+                ds_loaded = ds_subset.load()
+                datasets.append(ds_loaded)
             
+            if (i + 1) % 10 == 0:
+                logger.info(f"  Processed {i + 1}/{len(file_paths)} files")
+                gc.collect()
+                
         except Exception as e:
-            logger.error(f"Failed to process batch {batch_num}: {e}")
-            # Try files individually in this batch
-            for f in batch:
-                try:
-                    with xr.open_dataset(f, chunks='auto', decode_timedelta=False) as single_ds:
-                        processed = preprocess_func(single_ds)
-                        # Load the processed subset into memory since it's small
-                        processed = processed.load()
-                        datasets.append(processed)
-                except Exception as e2:
-                    logger.error(f"Failed to process individual file {os.path.basename(f)}: {e2}")
+            logger.error(f"Failed to process {os.path.basename(file_path)}: {e}")
     
     if not datasets:
-        raise RuntimeError("No files could be processed")
+        raise ValueError(f"No datasets processed for year {year}")
     
-    # Combine all datasets
-    logger.info(f"Combining {len(datasets)} datasets...")
-    combined = xr.concat(datasets, dim='time')
+    # Combine all datasets for this year
+    logger.info(f"Combining {len(datasets)} datasets for year {year}")
+    year_combined = xr.concat(datasets, dim='time')
+    year_combined = year_combined.sortby('time')
     
-    # Clean up
+    # Clean up individual datasets
     for ds in datasets:
-        if hasattr(ds, 'close'):
-            ds.close()
+        ds.close()
+    gc.collect()
     
-    return combined
+    return year_combined
 
-def process_dataset(file_paths, region, output_path, data_type, use_dask_progress=True):
-    """Process entire dataset by combining yearly data"""
-    logger.info(f"Processing {data_type} for {region}")
-    log_memory_usage(f"start_process_{data_type}_{region}")
-    
-    # Determine optimal chunks from first file
-    if file_paths:
-        chunks = determine_optimal_chunks(file_paths[0], region)
-    else:
-        chunks = 'auto'
+def process_region_incremental(region, data_type, file_paths, output_dir):
+    """Process region data incrementally, year by year"""
+    logger.info(f"\nProcessing {data_type} for {region} (incremental mode)")
+    log_memory_usage(f"start_{data_type}_{region}")
     
     # Group files by year
-    files_by_year = group_files_by_year(file_paths)
-    logger.info(f"Found years: {sorted(files_by_year.keys())}")
+    files_by_year = defaultdict(list)
+    for file_path in sorted(file_paths):
+        filename = os.path.basename(file_path)
+        year = filename.split('_')[1][:4]
+        files_by_year[year].append(file_path)
     
-    if not files_by_year:
+    years = sorted(files_by_year.keys())
+    logger.info(f"Found years: {years}")
+    
+    if not years:
         logger.error(f"No valid files found for {data_type}")
-        return
+        return False
     
-    # Process each year
-    yearly_datasets = []
-    for year in sorted(files_by_year.keys()):
+    output_path = os.path.join(output_dir, f"{data_type}_{region}.nc")
+    temp_path = output_path + '.tmp'
+    
+    # Process first year to create the base file
+    first_year = years[0]
+    logger.info(f"\nProcessing first year {first_year} to create base file")
+    
+    try:
+        year_data = process_year_files(files_by_year[first_year], region, first_year)
+        
+        # Save with compression
+        encoding = {var: {'zlib': True, 'complevel': 4} for var in year_data.data_vars}
+        year_data.to_netcdf(output_path, encoding=encoding, engine='netcdf4', mode='w')
+        logger.info(f"Created base file with year {first_year}")
+        
+        year_data.close()
+        log_memory_usage(f"after_year_{first_year}")
+        gc.collect()
+        
+    except Exception as e:
+        logger.error(f"Failed to process first year {first_year}: {e}")
+        return False
+    
+    # Process remaining years one at a time
+    for year in years[1:]:
         try:
-            year_ds = process_year_data_safe(
-                files_by_year[year], 
-                region, 
-                year, 
-                data_type,
-                chunks
-            )
-            yearly_datasets.append(year_ds)
+            logger.info(f"\nProcessing year {year}")
+            year_data = process_year_files(files_by_year[year], region, year)
+            
+            # Read existing data
+            logger.info(f"Reading existing data and appending year {year}")
+            with xr.open_dataset(output_path, engine='netcdf4', decode_timedelta=False) as existing_data:
+                # Combine with new year
+                combined = xr.concat([existing_data, year_data], dim='time')
+                combined = combined.sortby('time')
+                
+                # Save to temporary file
+                encoding = {var: {'zlib': True, 'complevel': 4} for var in combined.data_vars}
+                combined.to_netcdf(temp_path, encoding=encoding, engine='netcdf4', mode='w')
+            
+            # Replace original with temporary
+            os.replace(temp_path, output_path)
+            logger.info(f"Successfully appended year {year}")
+            
+            year_data.close()
             log_memory_usage(f"after_year_{year}")
             gc.collect()
             
         except Exception as e:
-            logger.error(f"Error processing {data_type} {region} {year}: {e}")
-            continue
-    
-    if not yearly_datasets:
-        logger.error(f"No data processed for {data_type} {region}")
-        return
-    
-    # Combine all years
-    logger.info(f"Combining {len(yearly_datasets)} years for {data_type} {region}")
-    combined_ds = xr.concat(yearly_datasets, dim='time')
-    
-    # CRITICAL FIX: Load small regions into memory before saving
-    # For India (43x43 points), the data is small enough to fit in memory
-    if hasattr(combined_ds, 'chunks'):
-        # Calculate approximate memory usage
-        total_size = sum(combined_ds[var].nbytes for var in combined_ds.data_vars)
-        logger.info(f"Dataset size: {total_size/1e9:.2f} GB")
-        
-        if total_size < 5e9:  # If less than 5GB, load into memory
-            logger.info("Loading small dataset into memory before saving...")
-            combined_ds = combined_ds.compute()
-            log_memory_usage("after_compute")
-        else:
-            # For larger datasets, rechunk to avoid the chunk explosion
-            logger.info("Rechunking large dataset for efficient saving...")
-            # Consolidate chunks along time dimension
-            new_chunks = {
-                'time': -1,  # Single chunk for time
-                'latitude': -1,
-                'longitude': -1,
-                'lead_time': -1
-            }
-            if 'init_time' in combined_ds.dims:
-                new_chunks['init_time'] = -1
-            
-            combined_ds = combined_ds.chunk(new_chunks)
-            logger.info(f"Rechunked to: {combined_ds.chunks}")
-    
-    # Save with compression
-    logger.info(f"Saving {data_type} {region} to {output_path}")
-    encoding = {var: {'zlib': True, 'complevel': 4} for var in combined_ds.data_vars}
-    
-    # Save without progress bar for small datasets
-    try:
-        combined_ds.to_netcdf(output_path, encoding=encoding)
-        logger.info(f"Successfully saved {data_type} {region}")
-    except Exception as e:
-        logger.error(f"Failed to save with compression: {e}")
-        logger.info("Trying to save without compression...")
-        try:
-            # Try without compression
-            combined_ds.to_netcdf(output_path)
-            logger.info(f"Successfully saved without compression")
-        except Exception as e2:
-            logger.error(f"Failed to save without compression: {e2}")
-            raise
-    
-    log_memory_usage(f"after_save_{data_type}_{region}")
-    
-    # Cleanup
-    combined_ds.close()
-    for ds in yearly_datasets:
-        if hasattr(ds, 'close'):
-            ds.close()
-    gc.collect()
-
-def process_dataset_incremental(file_paths, region, output_path, data_type):
-    """
-    Alternative: Process dataset year by year and append to output file
-    This avoids memory issues with large concatenations
-    """
-    logger.info(f"Processing {data_type} for {region} using incremental approach")
-    
-    # Group files by year
-    files_by_year = group_files_by_year(file_paths)
-    logger.info(f"Found years: {sorted(files_by_year.keys())}")
-    
-    if not files_by_year:
-        logger.error(f"No valid files found for {data_type}")
-        return
-    
-    # Process first year to create the file
-    years = sorted(files_by_year.keys())
-    first_year = years[0]
-    
-    logger.info(f"Processing first year {first_year} to create output file")
-    
-    # Determine chunks
-    chunks = determine_optimal_chunks(files_by_year[first_year][0], region)
-    
-    # Process first year
-    try:
-        year_ds = process_year_data_safe(
-            files_by_year[first_year], 
-            region, 
-            first_year, 
-            data_type,
-            chunks
-        )
-        
-        # Load into memory if small
-        if hasattr(year_ds, 'chunks'):
-            total_size = sum(year_ds[var].nbytes for var in year_ds.data_vars)
-            if total_size < 1e9:  # Less than 1GB
-                logger.info(f"Loading year {first_year} into memory")
-                year_ds = year_ds.compute()
-        
-        # Save first year
-        encoding = {var: {'zlib': True, 'complevel': 4} for var in year_ds.data_vars}
-        year_ds.to_netcdf(output_path, encoding=encoding, mode='w')
-        logger.info(f"Saved year {first_year}")
-        year_ds.close()
-        
-    except Exception as e:
-        logger.error(f"Failed to process first year {first_year}: {e}")
-        raise
-    
-    # Append remaining years
-    for year in years[1:]:
-        try:
-            logger.info(f"Processing year {year}")
-            year_ds = process_year_data_safe(
-                files_by_year[year], 
-                region, 
-                year, 
-                data_type,
-                chunks
-            )
-            
-            # Load into memory if small
-            if hasattr(year_ds, 'chunks'):
-                total_size = sum(year_ds[var].nbytes for var in year_ds.data_vars)
-                if total_size < 1e9:
-                    logger.info(f"Loading year {year} into memory")
-                    year_ds = year_ds.compute()
-            
-            # Append to existing file
-            with xr.open_dataset(output_path) as existing:
-                combined = xr.concat([existing, year_ds], dim='time')
-                
-                # Save with same encoding
-                encoding = {var: {'zlib': True, 'complevel': 4} for var in combined.data_vars}
-                combined.to_netcdf(output_path + '.tmp', encoding=encoding, mode='w')
-            
-            # Replace original file
-            os.replace(output_path + '.tmp', output_path)
-            logger.info(f"Appended year {year}")
-            
-            year_ds.close()
-            gc.collect()
-            
-        except Exception as e:
             logger.error(f"Failed to process year {year}: {e}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             continue
     
-    logger.info(f"Successfully saved all years for {data_type} {region}")
-    """Save information about the run for debugging"""
-    dirs = setup_directories()
-    run_info = {
-        'start_time': start_time.isoformat(),
-        'end_time': end_time.isoformat(),
-        'duration_seconds': (end_time - start_time).total_seconds(),
-        'regions_processed': regions_processed,
-        'hostname': socket.gethostname(),
-        'slurm_job_id': os.environ.get('SLURM_JOB_ID', 'local'),
-        'python_version': os.sys.version,
-        'xarray_version': xr.__version__,
-        'dask_version': dask.__version__
-    }
-    
-    info_file = os.path.join(dirs['processed'], f"run_info_{start_time.strftime('%Y%m%d_%H%M%S')}.json")
-    with open(info_file, 'w') as f:
-        json.dump(run_info, f, indent=2)
-    
-    logger.info(f"Run info saved to {info_file}")
+    # Verify final output
+    try:
+        with xr.open_dataset(output_path) as ds:
+            logger.info(f"\nFinal dataset for {data_type} {region}:")
+            logger.info(f"  Shape: {dict(ds.sizes)}")
+            logger.info(f"  Time range: {ds.time.values[0]} to {ds.time.values[-1]}")
+            logger.info(f"  Variables: {list(ds.data_vars)}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to verify output file: {e}")
+        return False
 
-def main(use_dask_client=False, diagnose_only=False, use_incremental=False):
-    """
-    Main processing function
-    
-    Parameters:
-    -----------
-    use_dask_client : bool
-        Whether to use a local dask client
-    diagnose_only : bool
-        If True, only run diagnostics without processing
-    use_incremental : bool
-        If True, use incremental year-by-year processing (more memory efficient)
-    """
+def main():
+    """Main processing function"""
     start_time = datetime.now()
-    
-    # Run diagnostics first
-    if diagnose_only:
-        diagnose_data_structure()
-        return
-    
-    # Setup dask client if requested
-    client = None
-    if use_dask_client: 
-        client = setup_dask_client()
     
     try:
         dirs = setup_directories()
-        regions = ["india"]  # Start with just India for testing
-        # regions = ["india", "usa_south", "amazon", "british_columbia"]  # Full list
+        regions = ["india"]  # Start with India
         
         regions_processed = []
         
         for region in regions:
+            logger.info(f"\n{'='*60}")
             logger.info(f"Starting region: {region}")
+            logger.info(f"{'='*60}")
             
             # Get file paths
             pangu_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "predictions*.nc")))
             era5_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "targets*.nc")))
             
-            if not pangu_files or not era5_files:
-                logger.error(f"Missing files for {region}")
+            if not pangu_files:
+                logger.error(f"No pangu files found")
+                continue
+            if not era5_files:
+                logger.error(f"No era5 files found")
                 continue
             
             # Process both datasets
-            pangu_output = os.path.join(dirs["processed"], f"pangu_{region}.nc")
-            era5_output = os.path.join(dirs["processed"], f"era5_{region}.nc")
+            success_pangu = process_region_incremental(region, "pangu", pangu_files, dirs["processed"])
+            success_era5 = process_region_incremental(region, "era5", era5_files, dirs["processed"])
             
-            try:
-                if use_incremental:
-                    # Use incremental approach
-                    process_dataset_incremental(pangu_files, region, pangu_output, "pangu")
-                    process_dataset_incremental(era5_files, region, era5_output, "era5")
-                else:
-                    # Use standard approach
-                    process_dataset(pangu_files, region, pangu_output, "pangu")
-                    process_dataset(era5_files, region, era5_output, "era5")
-                    
-                logger.info(f"Completed region: {region}")
+            if success_pangu and success_era5:
                 regions_processed.append(region)
-                
-            except Exception as e:
-                logger.error(f"Error processing region {region}: {e}", exc_info=True)
+                logger.info(f"\nSuccessfully completed region: {region}")
+            else:
+                logger.error(f"\nFailed to process region: {region}")
+            
+            gc.collect()
     
     finally:
-        # Cleanup
-        if client:
-            client.close()
-        
         # Save run information
         end_time = datetime.now()
-        logger.info(f"Total processing time: {(end_time - start_time).total_seconds():.1f} seconds")
+        run_info = {
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
+            'duration_seconds': (end_time - start_time).total_seconds(),
+            'regions_processed': regions_processed,
+            'hostname': socket.gethostname(),
+            'slurm_job_id': os.environ.get('SLURM_JOB_ID', 'local'),
+            'mode': 'incremental'
+        }
+        
+        info_file = os.path.join(dirs['processed'], f"run_info_{start_time.strftime('%Y%m%d_%H%M%S')}.json")
+        with open(info_file, 'w') as f:
+            json.dump(run_info, f, indent=2)
+        
+        logger.info(f"\nTotal processing time: {(end_time - start_time).total_seconds():.1f} seconds")
+        logger.info(f"Run info saved to {info_file}")
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Process WeatherBench data')
-    parser.add_argument('--use-dask-client', action='store_true', 
-                       help='Use a local dask client for processing')
-    parser.add_argument('--diagnose-only', action='store_true',
-                       help='Only run diagnostics without processing')
-    parser.add_argument('--use-incremental', action='store_true',
-                       help='Use incremental year-by-year processing (more memory efficient)')
-
-    args = parser.parse_args()
-    
-    # Run diagnostics first if not diagnose-only mode
-    if not args.diagnose_only:
-        logger.info("Running initial diagnostics...")
-        diagnose_data_structure(n_files=2)
-        print("\n" + "="*80 + "\n")
-        
-        if args.use_incremental:
-            print("\nUsing INCREMENTAL year-by-year processing")
-        else:
-            print("\nUsing STANDARD dask-based processing")
-        
-        print("\nStarting processing...\n")
-    
-    main(use_dask_client=args.use_dask_client, 
-         diagnose_only=args.diagnose_only,
-         use_incremental=args.use_incremental
-    )
+    logger.info("Starting WeatherBench data processing (incremental mode)...")
+    main()

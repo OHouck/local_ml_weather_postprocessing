@@ -1,0 +1,43 @@
+2025-07-03 16:39:31,190 - __main__ - INFO - Starting WeatherBench data processing (incremental mode)...
+2025-07-03 16:39:31,191 - __main__ - INFO - 
+============================================================
+2025-07-03 16:39:31,191 - __main__ - INFO - Starting region: india
+2025-07-03 16:39:31,191 - __main__ - INFO - ============================================================
+2025-07-03 16:39:31,194 - __main__ - INFO - 
+Processing pangu for india (incremental mode)
+2025-07-03 16:39:31,194 - __main__ - INFO - Memory at start_pangu_india: RSS=0.12GB, VMS=0.52GB
+2025-07-03 16:39:31,194 - __main__ - INFO - Found years: ['2018', '2019', '2020', '2021', '2022']
+2025-07-03 16:39:31,194 - __main__ - INFO - 
+Processing first year 2018 to create base file
+2025-07-03 16:39:31,194 - __main__ - INFO - Processing 59 files for year 2018
+2025-07-03 16:39:39,998 - __main__ - INFO -   Processed 10/59 files
+2025-07-03 16:39:46,995 - __main__ - INFO -   Processed 20/59 files
+2025-07-03 16:39:54,036 - __main__ - INFO -   Processed 30/59 files
+2025-07-03 16:40:01,116 - __main__ - INFO -   Processed 40/59 files
+2025-07-03 16:40:08,303 - __main__ - INFO -   Processed 50/59 files
+2025-07-03 16:40:14,439 - __main__ - INFO - Combining 59 datasets for year 2018
+2025-07-03 16:40:45,312 - __main__ - INFO - Created base file with year 2018
+2025-07-03 16:40:45,312 - __main__ - INFO - Memory at after_year_2018: RSS=3.64GB, VMS=4.28GB
+2025-07-03 16:40:45,361 - __main__ - INFO - 
+Processing year 2019
+2025-07-03 16:40:45,361 - __main__ - INFO - Processing 59 files for year 2019
+2025-07-03 16:40:52,442 - __main__ - INFO -   Processed 10/59 files
+2025-07-03 16:40:59,473 - __main__ - INFO -   Processed 20/59 files
+2025-07-03 16:41:06,737 - __main__ - INFO -   Processed 30/59 files
+2025-07-03 16:41:13,567 - __main__ - INFO -   Processed 40/59 files
+2025-07-03 16:41:20,304 - __main__ - INFO -   Processed 50/59 files
+2025-07-03 16:41:26,451 - __main__ - INFO - Combining 59 datasets for year 2019
+2025-07-03 16:41:31,533 - __main__ - INFO - Reading existing data and appending year 2019
+2025-07-03 17:30:38,700 - __main__ - INFO - Successfully appended year 2019
+2025-07-03 17:30:38,701 - __main__ - INFO - Memory at after_year_2019: RSS=20.47GB, VMS=21.11GB
+2025-07-03 17:30:38,753 - __main__ - INFO - 
+Processing year 2020
+2025-07-03 17:30:38,753 - __main__ - INFO - Processing 60 files for year 2020
+2025-07-03 17:30:45,656 - __main__ - INFO -   Processed 10/60 files
+2025-07-03 17:30:52,487 - __main__ - INFO -   Processed 20/60 files
+2025-07-03 17:30:59,597 - __main__ - INFO -   Processed 30/60 files
+2025-07-03 17:31:06,646 - __main__ - INFO -   Processed 40/60 files
+2025-07-03 17:31:13,881 - __main__ - INFO -   Processed 50/60 files
+2025-07-03 17:31:20,837 - __main__ - INFO -   Processed 60/60 files
+2025-07-03 17:31:20,895 - __main__ - INFO - Combining 60 datasets for year 2020
+2025-07-03 17:31:25,209 - __main__ - INFO - Reading existing data and appending year 2020
