@@ -124,7 +124,7 @@ def main():
         # save patches to disk
         np.save(patch_path, patches)
 
-    # climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
+    # climate_zone_list = ["tropical", "arid", "temperate"]
     climate_zone_list = ["tropical"]
     for zone in climate_zone_list:
 
@@ -158,18 +158,20 @@ def main():
 
 
         # count patches already saved for this zone and subregion
-        patch_files = glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"train_{zone}", "pangu", f"pangu_train_forecast_data_{zone}_{subregion}_patch_*.nc"))
+        train_patch_files = glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"train_{zone}", "pangu", f"pangu_train_forecast_data_{zone}_{subregion}_patch_*.nc"))
+        test_patch_files = glob.glob(os.path.join(dirs["processed"], 'cleaned_weatherbench_downloads', f"test_{zone}", "pangu", f"pangu_test_forecast_data_{zone}_{subregion}_patch_*.nc"))
 
         # save the index of all saved patches and process the unsaved ones
-        patch_nums = [int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in patch_files]
+        train_patch_nums = sorted(list([int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in train_patch_files]))
+        test_patch_nums = sorted(list([int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in test_patch_files]))
 
-        unsaved_patch_nums = set(range(50)) - set(patch_nums)
+        # unsaved patches are those that are not in both train and test sets   
+        unsaved_patch_nums = sorted(list(set(range(1, 50 + 1)) - (set(train_patch_nums) & set(test_patch_nums))))
         print(f"unsaved patches for {zone} {subregion}: {unsaved_patch_nums}")
-        unsaved_patches = [patches[i] for i in unsaved_patch_nums]
 
-        for patch in unsaved_patches:
+        for patch_num in unsaved_patch_nums:
 
-            print(patch.shape)
+            patch = patches[patch_num-1]
             lat_min = patch[0,].min()
             lat_max = patch[0,].max()
             lon_min = patch[1,].min()
@@ -183,7 +185,7 @@ def main():
                 return ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
 
             # Save patches of forecast data
-            fc_train_patch_path = os.path.join(train_out_folder, f"pangu_train_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
+            fc_train_patch_path = os.path.join(train_out_folder, f"pangu_train_forecast_data_{zone}_{subregion}_patch_{patch_num}.nc")
 
             # open, slice, and concat in one go
             fc_train_patch = xr.open_mfdataset(
@@ -191,40 +193,43 @@ def main():
                 preprocess=preprocess_patch,
                 concat_dim="time",
                 combine="nested",       # or "by_coords" if you know each time is strictly increasing
-                engine="netcdf4"
+                engine="netcdf4",
+                decode_timedelta = False
             )
             # now write the single, stitched‐together file
             fc_train_patch.to_netcdf(fc_train_patch_path)
 
-            fc_test_patch_path = os.path.join(test_out_folder, f"pangu_test_forecast_data_{zone}_{subregion}_patch_{idx}.nc")
+            fc_test_patch_path = os.path.join(test_out_folder, f"pangu_test_forecast_data_{zone}_{subregion}_patch_{patch_num}.nc")
             fc_test_patch = xr.open_mfdataset(
                 pangu_fc_test_file_paths,
                 preprocess=preprocess_patch,
                 concat_dim="time",
                 combine="nested",       # or "by_coords" if you know each time is strictly increasing
-                engine="netcdf4"
+                engine="netcdf4",
+                decode_timedelta = False
 
             )
             fc_test_patch.to_netcdf(fc_test_patch_path)
-
-
-            obs_train_patch_path = os.path.join(train_out_folder, f"pangu_train_obs_data_{zone}_{subregion}_patch_{idx}.nc")
+            obs_train_patch_path = os.path.join(train_out_folder, f"pangu_train_obs_data_{zone}_{subregion}_patch_{patch_num}.nc")
+            
             obs_train_patch = xr.open_mfdataset(
                 pangu_obs_train_file_paths,
                 preprocess=preprocess_patch,
                 concat_dim="time",
                 combine="nested",       # or "by_coords" if you know each time is strictly increasing
-                engine="netcdf4"
+                engine="netcdf4",
+                decode_timedelta = False
             )
             obs_train_patch.to_netcdf(obs_train_patch_path)
 
-            obs_test_patch_path = os.path.join(test_out_folder, f"pangu_test_obs_data_{zone}_{subregion}_patch_{idx}.nc")
+            obs_test_patch_path = os.path.join(test_out_folder, f"pangu_test_obs_data_{zone}_{subregion}_patch_{patch_num}.nc")
             obs_test_patch = xr.open_mfdataset(
                 pangu_obs_test_file_paths,
                 preprocess=preprocess_patch,
                 concat_dim="time",
                 combine="nested",       # or "by_coords" if you know each time is strictly increasing
-                engine="netcdf4"
+                engine="netcdf4",
+                decode_timedelta = False
             )
             obs_test_patch.to_netcdf(obs_test_patch_path)
 
