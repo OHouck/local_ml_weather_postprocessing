@@ -3,21 +3,10 @@
 
 import xarray as xr
 import numpy as np
-import random
 import os
 import socket
 import glob
 
-# Map the new region strings to Koppen‐Geiger codes:
-CLIMATE_ZONE_MAP = {
-    'tropical':  1,
-    'arid':       2,
-    'temperate':  3,
-    'cold':       4,
-    'polar':      5,
-}
-
-# Purpose: save patches of of climate zones to be used for bootstrapping
 def setup_directories():
     # Determine root directory based on environment.
     nodename = socket.gethostname()
@@ -27,8 +16,6 @@ def setup_directories():
         )
     else:
         raise Exception("Unknown environment, please specify the root directory")
-
-    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/train_global/**/*pangu*.nc", recursive=True))
 
     dirs = {
         "root": root,
@@ -41,88 +28,12 @@ def setup_directories():
         os.makedirs(path, exist_ok=True)
     return dirs
 
-def get_patch_shape(subregion):
-    """
-    Given args.subregion like '2x2', return number of gridpoints in lat and lon
-    """
-    deg_lat, deg_lon = map(int, subregion.split('x'))
-    nlat = int(deg_lat / 0.25)
-    nlon = int(deg_lon / 0.25)
-    return nlat, nlon
-
-def sample_climate_zone_patches(
-    cz_da: xr.DataArray,
-    zone: int,
-    lat_vals: np.ndarray,
-    lon_vals: np.ndarray,
-    nlat: int,
-    nlon: int,
-    N: int,
-    threshold: float = 0.75
-):
-    """
-    Return a list of N (lat_slice, lon_slice) each of shape (nlat,nlon),
-    drawn at random (with replacement) from cz_da restricted to
-    lat_vals×lon_vals, such that ≥threshold fraction = zone.
-    """
-    # restrict to your region grid
-    cz = cz_da.sel(latitude=lat_vals, longitude=lon_vals)
-    lats = cz.latitude.values
-    lons = cz.longitude.values
-    H, W = len(lats), len(lons)
-
-    patches = []
-    for _ in range(N):
-        while True:
-            i = random.randint(0, H - nlat)
-            j = random.randint(0, W - nlon)
-            block = cz.isel(latitude=slice(i, i+nlat),
-                            longitude=slice(j, j+nlon))
-            frac = (block.values == zone).sum() / float(nlat * nlon)
-            if frac >= threshold:
-                patches.append((lats[i:i+nlat], lons[j:j+nlon]))
-                break
-    return patches
 
 def main():
     dirs = setup_directories()
 
-    climate_zones_path = os.path.join(dirs["processed"], "climate_zones_0p25.nc")
-    climate_zones = xr.open_dataset(climate_zones_path, engine = "netcdf4")
-
     # determines degrees of different patches
     subregion = "2x2"
-
-    lat_values = climate_zones.latitude.values
-    lon_values = climate_zones.longitude.values
-
-    nlat_patch, nlon_patch = get_patch_shape(subregion)
-
-    # sample and create patches
-    climate_zone_list = ["tropical", "arid", "temperate", "cold", "polar"]
-    for zone in climate_zone_list:
-        zone_code = CLIMATE_ZONE_MAP[zone]
-        print(f"Sampling {zone} patches...")
-
-        patch_path = os.path.join(dirs["processed"], f"climate_zone_patches_{zone}_{subregion}.npy")
-        # check if the patches already exist
-        if os.path.exists(patch_path):
-            print(f"Patch file {patch_path} already exists. Skipping sampling.")
-            continue
-
-        # Sample N patches for this zone
-        N = 50
-        patches = sample_climate_zone_patches(
-            climate_zones.climate_zones,
-            zone_code,
-            lat_values,
-            lon_values,
-            nlat_patch,
-            nlon_patch,
-            N
-        )
-        # save patches to disk
-        np.save(patch_path, patches)
 
     # climate_zone_list = ["tropical", "arid", "temperate"]
     climate_zone_list = ["tropical"]
