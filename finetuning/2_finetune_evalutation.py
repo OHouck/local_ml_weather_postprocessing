@@ -121,6 +121,7 @@ def create_metrics(ds_forecasts, prediction_var):
         raw_spatial_orig, raw_spatial_corr, raw_spatial_diff,
         mse_spatial_orig, mse_spatial_corr
     )
+
 def generate_lead_time_plots(
         dirs,
         train_start, train_end,
@@ -370,10 +371,10 @@ def generate_lead_time_plots(
     color_ifs_base = '#ff7f0e'         # base orange color
 
     # Line colors for percentage improvements
-    color_pangu_nn_pct = '#d62728'    # red for Pangu NN improvement line
-    color_pangu_ano_pct = '#e74c3c'   # slightly different red for Pangu ano improvement
-    color_ifs_nn_pct = '#9467bd'      # purple for IFS NN improvement line
-    color_ifs_ano_pct = '#bb86fc'     # light purple for IFS ano improvement
+    color_pangu_nn_pct = '#DC2626' # Strong red for Pangu NN improvement   
+    color_pangu_ano_pct = '#F97316'    # Orange-red for Pangu mean improvement
+    color_ifs_nn_pct = '#7C3AED'        # Purple for IFS NN improvement
+    color_ifs_ano_pct = '#A855F7'      # Light purple for IFS mean improvement
 
     # Create the dual-axis plot
     fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -384,9 +385,25 @@ def generate_lead_time_plots(
     bar_width = 0.35   # Width for overlapping bars
     x_pos = np.arange(n_groups)
     
-    # Offset positions for Pangu (left) and IFS (right)
-    pangu_pos = x_pos - 0.2  # Shift Pangu bars slightly left
+    # Offset positions for Pangu (left) and IFS (right) if both are present
+    if ifs_orig_mean:
+        pangu_pos = x_pos - 0.2  # Shift Pangu bars slightly left
+    else:
+        pangu_pos = x_pos
     ifs_pos = x_pos + 0.2    # Shift IFS bars slightly right
+
+    # Helper function to add black edge lines to bars
+    def add_bar_edges(bars, edge_color='black', edge_width=0.8):
+        """Add thin black lines to the top edge of bars for better delineation"""
+        for bar in bars:
+            # Get bar position and dimensions
+            x = bar.get_x()
+            width = bar.get_width()
+            height = bar.get_height()
+            
+            # Draw a line at the top of the bar
+            ax1.plot([x, x + width], [height, height], 
+                    color=edge_color, linewidth=edge_width, zorder=10)
 
     # Plot RMSE bars on left axis (ax1) - overlapping bars with different alphas
     bars = []
@@ -408,11 +425,13 @@ def generate_lead_time_plots(
     if forecast_ano_corr_mean:
         bars3 = ax1.bar(pangu_pos, forecast_ano_corr_mean, bar_width,
                         label='Pangu Mean Error Debiasing', color=color_pangu_base, alpha=alpha_ano, zorder=4)
+        add_bar_edges(bars3)
         bars.extend(bars3)
 
     if forecast_nn_corr_mean:
         bars2 = ax1.bar(pangu_pos, forecast_nn_corr_mean, bar_width,
                         label='Pangu NN Correction', color=color_pangu_base, alpha=alpha_nn, zorder=5)
+        add_bar_edges(bars2)
         bars.extend(bars2)
 
     # IFS bars - plot in order: original (lightest), ano, NN (darkest)
@@ -431,6 +450,7 @@ def generate_lead_time_plots(
             ifs_positions_ano = [ifs_pos[i] for i in ifs_ano_indices]
             bars6 = ax1.bar(ifs_positions_ano, ifs_ano_corr_mean, bar_width,
                             label='IFS Mean Error Debiasing', color=color_ifs_base, alpha=alpha_ano, zorder=4)
+            add_bar_edges(bars6)
             bars.extend(bars6)
 
     if ifs_nn_corr_mean and ifs_available_indices:
@@ -442,6 +462,7 @@ def generate_lead_time_plots(
             ifs_positions_nn = [ifs_pos[i] for i in ifs_nn_indices]
             bars5 = ax1.bar(ifs_positions_nn, ifs_nn_corr_mean, bar_width,
                             label='IFS NN Correction', color=color_ifs_base, alpha=alpha_nn, zorder=5)
+            add_bar_edges(bars5)
             bars.extend(bars5)
 
     # Add error bars for bootstrap if available (only for original bars to avoid clutter)
@@ -451,8 +472,9 @@ def generate_lead_time_plots(
                 [forecast_orig_mean[i] - forecast_orig_ci_lower[i] for i in range(len(forecast_orig_mean))],
                 [forecast_orig_ci_upper[i] - forecast_orig_mean[i] for i in range(len(forecast_orig_mean))]
             ]
-            ax1.errorbar(pangu_pos, forecast_orig_mean, yerr=forecast_orig_errors,
-                        fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
+            # XX # Uncomment if you want to plot error bars for original forecast
+            # ax1.errorbar(pangu_pos, forecast_orig_mean, yerr=forecast_orig_errors,
+            #             fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
 
         if ifs_orig_ci_lower and ifs_available_indices:
             ifs_orig_errors = [
@@ -460,8 +482,8 @@ def generate_lead_time_plots(
                 [ifs_orig_ci_upper[i] - ifs_orig_mean[i] for i in range(len(ifs_orig_mean))]
             ]
             ifs_positions_err = [ifs_pos[i] for i in ifs_available_indices]
-            ax1.errorbar(ifs_positions_err, ifs_orig_mean, 
-                        yerr=ifs_orig_errors, fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
+            # ax1.errorbar(ifs_positions_err, ifs_orig_mean, 
+            #             yerr=ifs_orig_errors, fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
 
     # Plot percentage improvement lines on right axis (ax2)
     if forecast_nn_pct_improvement_mean:
@@ -530,23 +552,56 @@ def generate_lead_time_plots(
             
         if n_bootstrap is not None:
             plt.annotate(f'Num Patches Used = {n_bootstrap}', 
-                        xy=(0.02, 0.82), xycoords='axes fraction',
+                        xy=(0, 0.2), xycoords='axes fraction',
                         verticalalignment='top', horizontalalignment='left',
                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
                         fontsize=10)
 
-    # Create combined legend
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, 
-            loc='upper left', bbox_to_anchor=(0.02, 0.98), frameon=True, fontsize=9)
+    # Get legend handles and labels
+    bar_handles, bar_labels = ax1.get_legend_handles_labels()
+    line_handles, line_labels = ax2.get_legend_handles_labels()
+    
+    legend_loc = 'center left'
+    bbox_anchor = (.65, 0.5)
+    ncol = 1
+    
+    # Combine all legend elements
+    all_handles = bar_handles + line_handles
+    all_labels = bar_labels + line_labels
+    
+    # Create legend with better formatting
+    legend = ax1.legend(all_handles, all_labels, 
+                       loc=legend_loc, 
+                       bbox_to_anchor=bbox_anchor,
+                       frameon=True, 
+                       fancybox=True,
+                       shadow=True,
+                       fontsize=9,
+                       ncol=ncol,
+                       columnspacing=0.8,
+                       handletextpad=0.5)
+    
+    # Style the legend
+    legend.get_frame().set_facecolor('white')
+    legend.get_frame().set_alpha(0.9)
+    legend.get_frame().set_edgecolor('gray')
 
-    # Grid
-    ax1.grid(True, alpha=0.3)
+    # Grid - make it more subtle
+    ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax1.set_axisbelow(True)
 
-    # Adjust layout
-    plt.tight_layout()
+    # Improve axis styling
+    ax1.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+    
+    # Adjust layout to accommodate legend
+    if ifs_orig_mean: # if IFS data is available, adjust layout
+        plt.tight_layout()
+        # Make room for external legend
+        plt.subplots_adjust(right=0.75)
+    else:
+        plt.tight_layout()
+
 
     # Create output folder
     out_folder = os.path.join(dirs["fig"], model, "lead_time", region, subregion)
@@ -583,20 +638,20 @@ def generate_global_map(
     lead_time=168
 ):
     """
-    Generates a world‐map of spatial MSE difference (corrected − original)
+    generates a world‐map of spatial mse difference (corrected − original)
     for a single `prediction_var` over the list of `regions`.
 
-    Parameters
+    parameters
     ----------
     dirs : dict
-      From setup_directories(), to find dirs['input'] & dirs['fig'].
+      from setup_directories(), to find dirs['input'] & dirs['fig'].
     train_start, train_end : str
     test_start,  test_end  : str
       e.g. "2018-01-01"
     model : str
-      Your model folder name, e.g. "pangu"
+      your model folder name, e.g. "pangu"
     training_output_vars : tuple (training_vars, output_vars)
-      Each a list or single‐element list.
+      each a list or single‐element list.
     prediction_var : str
       e.g. "2m_temperature" or "10m_wind_speed"
     mlp_params : tuple (hidden_dim, n_layers)
@@ -605,7 +660,7 @@ def generate_global_map(
     subregion : str, optional
       e.g. "10x10"
     lead_time : int, optional
-      Forecast lead time (hours).
+      forecast lead time (hours).
     """
     # unpack and normalize
     training_vars, output_vars = training_output_vars
@@ -617,13 +672,13 @@ def generate_global_map(
     # prepare labels
     mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
 
-    # 1) compute the spatial‐MSE difference for each region and track min/max
+    # 1) compute the spatial‐mse difference for each region and track min/max
     diffs = {}
     mins, maxs = [], []
     for region in regions:
-        # build an Args object just like in your other functions
-        class Args: pass
-        args = Args()
+        # build an args object just like in your other functions
+        class args: pass
+        args = args()
         args.model_name     = model
         args.region         = region
         args.subregion      = subregion
@@ -657,25 +712,25 @@ def generate_global_map(
     # 2) plot
     fig, ax = plt.subplots(
         figsize=(12, 6),
-        subplot_kw={'projection': ccrs.PlateCarree()}
+        subplot_kw={'projection': ccrs.platecarree()}
     )
     for region, diff in diffs.items():
         diff.plot(
             ax=ax,
-            transform=ccrs.PlateCarree(),
+            transform=ccrs.platecarree(),
             cmap='coolwarm',
             vmin=vmin, vmax=vmax,
-            add_colorbar=False
+            add_colorbar=false
         )
 
     ax.coastlines()
-    ax.add_feature(cfeature.BORDERS, linestyle=':')
-    ax.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax.add_feature(cfeature.borders, linestyle=':')
+    ax.add_feature(cfeature.land, facecolor='lightgray')
     ax.set_global()
-    ax.set_title(f"Global MSE Improvement (orig − corr) for {prediction_var.replace('_',' ')}")
+    ax.set_title(f"global mse improvement (orig − corr) for {prediction_var.replace('_',' ')}")
 
     # shared colorbar
-    mappable = plt.cm.ScalarMappable(cmap='coolwarm')
+    mappable = plt.cm.scalarmappable(cmap='coolwarm')
     mappable.set_clim(vmin, vmax)
     cbar = fig.colorbar(
         mappable,
@@ -684,11 +739,11 @@ def generate_global_map(
         pad=0.05,
         fraction=0.05
     )
-    cbar.set_label("Normalized MSE Improvement")
+    cbar.set_label("normalized mse improvement")
 
     plt.tight_layout()
     out_dir = os.path.join(dirs['fig'], model, "global_maps")
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=true)
     fname = f"global_map_mse_diff_{prediction_var}.png"
     fig.savefig(os.path.join(out_dir, fname), dpi=150)
     plt.close(fig)
@@ -696,61 +751,61 @@ def generate_global_map(
 
 
 #######################
-# Plotting Functions (Individual Figures)
+# plotting functions (individual figures)
 #######################
 
 
 def plot_monthly_mse(mse_orig, mse_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
-    """Generates and saves a bar plot of monthly MSE for the original and corrected forecasts."""
+    """generates and saves a bar plot of monthly mse for the original and corrected forecasts."""
     months = [calendar.month_name[i] for i in mse_orig['month'].values]
 
     plt.figure(figsize=(10, 6))
-    plt.bar(months, mse_orig, width=0.4, label='Original MSE', align='center', color='green')
-    plt.bar(months, mse_corr, width=0.4, label='Corrected MSE', align='edge', color='lightgreen')
-    plt.title(f"Monthly MSE comparison for {model} {var_name}\n(Original vs Corrected)")
-    plt.xlabel("Month")
-    plt.ylabel("MSE")
+    plt.bar(months, mse_orig, width=0.4, label='original mse', align='center', color='green')
+    plt.bar(months, mse_corr, width=0.4, label='corrected mse', align='edge', color='lightgreen')
+    plt.title(f"monthly mse comparison for {model} {var_name}\n(original vs corrected)")
+    plt.xlabel("month")
+    plt.ylabel("mse")
     plt.legend()
-    plt.grid(True)
+    plt.grid(true)
     plt.tight_layout()
 
     out_folder = os.path.join(dirs["fig"], model, "time_series", region, subregion)
-    os.makedirs(out_folder, exist_ok=True)
+    os.makedirs(out_folder, exist_ok=true)
     save_path = os.path.join(out_folder, f"mse_time_series_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
 
     plt.savefig(save_path, dpi=150)
     plt.close()
 
 def plot_raw_forecast_original(raw_spatial_orig, model, region, subregion, var_name, dirs, training_vars, lead_time):
-    """Generates and saves a map for the original forecast values."""
+    """generates and saves a map for the original forecast values."""
     vmin = float(raw_spatial_orig.min().values)
     vmax = float(raw_spatial_orig.max().values)
     fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    raw_spatial_orig.plot(ax=ax, cmap='viridis', add_colorbar=True, vmin=vmin, vmax=vmax)
-    ax.set_title("Original Forecast Values")
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.platecarree())
+    raw_spatial_orig.plot(ax=ax, cmap='viridis', add_colorbar=true, vmin=vmin, vmax=vmax)
+    ax.set_title("original forecast values")
+    ax.set_xlabel("longitude")
+    ax.set_ylabel("latitude")
     ax.coastlines()
-    ax.add_feature(cfeature.BORDERS, linestyle=':')
-    ax.add_feature(cfeature.LAND, facecolor='lightgray')
-    ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+    ax.add_feature(cfeature.borders, linestyle=':')
+    ax.add_feature(cfeature.land, facecolor='lightgray')
+    ax.gridlines(draw_labels=true, dms=true, x_inline=false, y_inline=false)
     plt.tight_layout()
 
     out_folder = os.path.join(dirs["fig"], model, "maps", region, subregion)
-    os.makedirs(out_folder, exist_ok=True)
+    os.makedirs(out_folder, exist_ok=true)
     save_path = os.path.join(out_folder, f"raw_map_original_{var_name}_trained_with_{'_'.join(training_vars)}_{lead_time}h.png")
 
     plt.savefig(save_path, dpi=150)
     plt.close()
 
 def plot_raw_forecast_corrected(raw_spatial_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
-    """Generates and saves a map for the corrected forecast values."""
+    """generates and saves a map for the corrected forecast values."""
     vmin = float(raw_spatial_corr.min().values)
     vmax = float(raw_spatial_corr.max().values)
     fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    raw_spatial_corr.plot(ax=ax, cmap='viridis', add_colorbar=True, vmin=vmin, vmax=vmax)
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.platecarree())
+    raw_spatial_corr.plot(ax=ax, cmap='viridis', add_colorbar=true, vmin=vmin, vmax=vmax)
     ax.set_title("Corrected Forecast Values")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
@@ -1190,16 +1245,16 @@ def main():
 
     # three options for training and output variable combinations, uncomment the one you want to use
 
-    # training_vars = ["2m_temperature"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
+    training_vars = ["2m_temperature"]
+    output_vars = ["2m_temperature"]
+    prediction_var = "2m_temperature"
 
-    training_vars = ["10m_wind_speed"]
-    output_vars = ["10m_wind_speed"]
-    prediction_var = "10m_wind_speed"
+    # training_vars = ["10m_wind_speed"]
+    # output_vars = ["10m_wind_speed"]
+    # prediction_var = "10m_wind_speed"
 
     # regions = ["india", "amazon", "british_columbia", "usa_south"]
-    regions = ["india"]
+    regions = ["temperate", "arid", "tropical"]
     for region in regions:
         generate_lead_time_plots(
             dirs = dirs,
@@ -1212,8 +1267,8 @@ def main():
             prediction_var=prediction_var,
             mlp_params=(512, 5), 
             region = region,
-            subregion="10x10",
-            bootstrap=False
+            subregion="2x2",
+            bootstrap=True
         )
 
     exit()

@@ -21,11 +21,11 @@ source .venv/bin/activate
 #     --lead_time_hours="24"
 
 # regions=("amazon" "usa_south" "british_columbia" "india")
-regions=("india")
 # regions=("tropical" "temperate" "arid")
+regions=("temperate")
 # subregions=(2x2 4x4 6x6 8x8 10x10)
-subregions=("10x10")
-lead_times=(24 48 72 96 120 144 168) # currently only have full lead times for india
+subregions=("2x2")
+lead_times=(24 48 72 96 120 144 168) # currently only have full lead times for india and climate zones
 # lead_times=(24)
 
 for region in "${regions[@]}"; do
@@ -47,19 +47,6 @@ for region in "${regions[@]}"; do
                 --subregion="$subregion" \
                 --lead_time_hours="$lead_time"
 
-            echo "Running fine-tuning for 2m_temperature ifs"
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-
             # 10 m wind speed
             echo "Running fine-tuning for 10m_wind_speed pangu"
             python3 finetuning/1_finetune.py \
@@ -73,21 +60,6 @@ for region in "${regions[@]}"; do
                 --region="$region" \
                 --subregion="$subregion" \
                 --lead_time_hours="$lead_time"
-
-            # 10 m wind speed
-            echo "Running fine-tuning for 10m_wind_speed ifs"
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 10m_wind_speed \
-                --output_vars 10m_wind_speed \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-
         done
     done
 done

@@ -36,7 +36,7 @@ def main():
     subregion = "2x2"
 
     # climate_zone_list = ["tropical", "arid", "temperate"]
-    climate_zone_list = ["tropical"]
+    climate_zone_list = ["temperate"]
     for zone in climate_zone_list:
 
         # read in the patches
@@ -143,7 +143,6 @@ def main():
                 decode_timedelta = False
             )
             obs_test_patch.to_netcdf(obs_test_patch_path)
-
 
 
 if __name__ == "__main__":
