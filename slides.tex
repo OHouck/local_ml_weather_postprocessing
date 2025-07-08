@@ -1,0 +1,240 @@
+\documentclass[aspectratio=169, xcolor=dvipsnames]{beamer}
+
+\useoutertheme{miniframes}
+\useinnertheme{circles}
+\usepackage{appendixnumberbeamer}
+\setbeamertemplate{footline}[frame number]
+
+\definecolor{main_color}{HTML}{7D9D33}
+\definecolor{secondary_color}{HTML}{CED38C}
+
+\setbeamercolor{palette primary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette secondary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette tertiary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette quaternary}{bg=secondary_color,fg=white}
+\setbeamercolor{structure}{fg=main_color}
+\setbeamercolor{section in toc}{fg=secondary_color}
+\setbeamercolor{subsection in head/foot}{bg=main_color,fg=white}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{caption}
+
+% Set the path for figures
+\graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
+
+\title{Tailoring Machine Learning Weather Predictions for Local Impacts}
+\author{\textbf{Ozma Houck, James Franke}}
+\date{}
+
+\usepackage{bbm}
+
+\begin{document}
+
+\maketitle
+
+
+\begin{frame}{Research Goal and Overview}
+\begin{itemize}
+    \item Show the feasibility of finetuning (localizing) weather forecasts for specific outcomes using minimal compute power
+    \item Demonstrate the method using 2 meter temperature and 10 meter wind speed across a variety of regions and lead times
+    \item Show that an ML forecast like Pangu can be corrected in the same way as traditional NWP forecast like IFS
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Key Contribution:} Demonstrating a simple method to significantly improve forecast accuracy using limited computational power.
+\end{frame}
+
+
+\begin{frame}{Method}
+\begin{itemize}
+    \item Uses Pangu and IFS HRES forecasts with lead times from 1 to 7 days
+    \begin{itemize}
+        \item Target Pangu predictions using ERA5 and IFS HRES using its t=0 initialization
+    \end{itemize}
+    \item Filter to a single variable and lead time, in a particular region
+    \item Train simple MLP network that takes in Pangu/IFS forecast outputs and minimizes the forecast error
+    \begin{itemize}
+        \item Train using a single forecast per day for years 2018-2021
+        \item Test using daily forecasts from 2022
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+
+\begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Forecasts}
+\begin{itemize}
+    \item Simple MLP method works across variety of regions and climates
+    \item Training a correction model for a 10x10 degree region takes about 2.5 minutes on an M3 max MacBook Pro
+    \item Similar improvements to both Pangu and IFS forecasts
+\end{itemize}
+
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png}
+        \caption{2m Temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/comparison/mse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png}
+        \caption{Wind Speed}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{See Similar Percent Improvements Across Different Lead Times}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png}
+        \caption{2m Temperature: 10x10 degree}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png}
+        \caption{Wind Speed: 10x10 degree}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{How to Explore Heterogeneity by Climate Region}
+\begin{itemize}
+    \item Define tropical, temperate, and arid pixels on an 0.25 degree grid using broad Koppen-Geiger classes
+    \item Train fine-tuning model on randomly sampled 2x2 degree patches
+\end{itemize}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.7\linewidth]{finetuning/climate_zones_with_patches.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Heterogeneity by Climate Region: 2m Temperature}
+    \begin{figure}[ht]
+    \centering
+    % Top row with 2 figures
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    
+    \vspace{0.5em} % Add vertical space between rows
+    
+    % Bottom row with 1 centered figure
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    \end{figure}
+    \end{frame}
+    
+    \begin{frame}{Heterogeneity by Climate Region: 10m Wind Speed}
+    \begin{figure}[ht]
+    \centering
+    % Top row with 2 figures
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    
+    \vspace{0.5em} % Add vertical space between rows
+    
+    % Bottom row with 1 centered figure
+    \begin{subfigure}[t]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png}
+    \end{subfigure}
+    \end{figure}
+    \end{frame}
+
+
+
+\begin{frame}{Amazon}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png}
+        \caption{2m Temperature: 10x10 degree}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png}
+        \caption{Wind Speed: 10x10 degree}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{US South}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png}
+        \caption{2m Temperature: 10x10 degree}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png}
+        \caption{Wind Speed: 10x10 degree}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{British Columbia}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png}
+        \caption{2m Temperature: 10x10 degree}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png}
+        \caption{Wind Speed: 10x10 degree}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Previous Paper Corrected IFS Used a U-net}
+\begin{itemize}
+    \item \cite{hanDeepLearningMethod2021} trained a U-Net to correct IFS Forecasts in Northern China using 12 years of data and a NVIDIA GPU
+    \begin{itemize}
+        \item Outperforms traditional method of correcting by subtracting mean forecast error
+    \end{itemize}
+    \item Uses RMSE error instead of MSE but I find a larger percent improvement for both 2m temperature and 10m wind speed
+\end{itemize}
+\end{frame}
+
+\begin{frame}{What I'm Actively Working on}
+\begin{itemize}
+    \item Rewriting the databuild to be able to take advantage of the new WeatherbenchX package and also be able to run on a server and be more flexible
+    \item Implementing a U-Net model for fine-tuning
+    \begin{itemize}
+        \item Early results suggest it significantly ups compute time without much improved performance
+    \end{itemize}
+    \item Implement ANO Correction (subtracting mean error) method to compare to MLP correction
+\end{itemize}
+\end{frame}
+
+\end{document}

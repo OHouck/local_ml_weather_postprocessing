@@ -15,6 +15,7 @@ from matplotlib.colors import TwoSlopeNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
 
+
 #######################
 # Utility Functions
 #######################
@@ -34,10 +35,11 @@ def generate_output_path(args):
 def setup_directories():
     # Determine root directory based on environment.
     nodename = socket.gethostname()
-    if nodename == "oMac.local":  # local laptop
+    if nodename == "oMac.local":
         root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
     else:
-        raise Exception("Unknown environment, Please specify the root directory")
+        raise Exception(f"Unknown environment, Please specify the root directory. \
+                        Nodename found: {nodename}")
 
     dirs = {
         'root': root,
@@ -130,630 +132,368 @@ def generate_lead_time_plots(
         training_output_vars,
         prediction_var,
         mlp_params,
-        region,
+        regions,
         subregion,
-        bootstrap = None,
+        bootstrap=None,
 ):
     """
-    Generates plot with bars for RMSE by lead time for a given model and region.
-    and a line for % improvement relative to original forecast. on the same plot.
+    Generates a single plot showing percent improvement in RMSE by lead time for neural network
+    and anomaly correction methods across all specified regions.
+    
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary containing paths for input and figure directories
+    train_start, train_end : str
+        Training period boundaries
+    test_start, test_end : str
+        Testing period boundaries
+    model : str
+        Model name (e.g., 'pangu', 'ifs')
+    training_output_vars : tuple
+        Tuple of (training_vars, output_vars)
+    prediction_var : str
+        Variable to predict
+    mlp_params : tuple
+        MLP architecture parameters
+    regions : list
+        List of regions to process
+    subregion : str
+        Subregion identifier
+    bootstrap : bool, optional
+        Whether to use bootstrap samples for confidence intervals
     """
+    
+    # Parse training and output variables
     training_vars, output_vars = training_output_vars
-
     if not isinstance(training_vars, (list, tuple)):
         training_vars = [training_vars]
     if not isinstance(output_vars, (list, tuple)):
         output_vars = [output_vars]
 
+    # Create string representations for file naming
     training_vars_str = "_".join(training_vars)
     output_vars_str = "_".join(output_vars)
     mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
-    time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}" 
+    time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    lead_times = [24, 48, 72, 96, 120, 144, 168]  # possible lead times
+    lead_times = [24, 48, 72, 96, 120, 144, 168]  # Possible lead times in hours
 
-    forecast_orig_rmse = {}
-    forecast_nn_corr_rmse = {}
-    forecast_ano_corr_rmse = {}
-    ifs_orig_rmse = {}
-    ifs_nn_corr_rmse = {}
-    ifs_ano_corr_rmse = {}
+    # Define colors for different regions (can handle up to 10 regions)
+    region_colors = [
+        '#1f77b4',  # Blue
+        '#ff7f0e',  # Orange
+        '#2ca02c',  # Green
+        '#d62728',  # Red
+        '#9467bd',  # Purple
+        '#8c564b',  # Brown
+        '#e377c2',  # Pink
+        '#7f7f7f',  # Gray
+        '#bcbd22',  # Olive
+        '#17becf'   # Cyan
+    ]
+    
+    # Define line styles and markers for different methods
+    method_styles = {
+        'nn': {'linestyle': '-', 'marker': 'o', 'markersize': 8},
+        'ano': {'linestyle': '--', 'marker': 's', 'markersize': 7}
+    }
+    
+    # Store all improvements for all regions
+    all_improvements = {}
+    
+    # Process each region
+    for region_idx, region in enumerate(regions):
+        # Initialize storage for improvement percentages for this region
+        improvements = {
+            'pangu_nn': {},
+            'pangu_ano': {},
+            'ifs_nn': {},
+            'ifs_ano': {}
+        }
+        
+        # Process each lead time
+        for lt in lead_times:
+            # Construct file paths
+            if bootstrap:
+                pangu_pattern = os.path.join(
+                    dirs['input'], 
+                    f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
+                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr"
+                )
+                ifs_pattern = os.path.join(
+                    dirs['input'],
+                    f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_"
+                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr"
+                )
+            else:
+                pangu_pattern = os.path.join(
+                    dirs['input'],
+                    f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
+                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr"
+                )
+                ifs_pattern = os.path.join(
+                    dirs['input'],
+                    f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_"
+                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr"
+                )
 
-    forecast_nn_pct_improvement = {}
-    forecast_ano_pct_improvement = {}
-    ifs_nn_pct_improvement = {} 
-    ifs_ano_pct_improvement = {}
+            # Process Pangu model files
+            pangu_files = glob.glob(pangu_pattern)
+            if not bootstrap and len(pangu_files) > 1:
+                raise ValueError(f"Multiple files found for lead time {lt}h: {pangu_files}")
 
-    for lt in lead_times:
-
-        # if using boostrap look for files with _bs suffix
-        if bootstrap:
-            file_path = os.path.join(dirs['input'], f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr")
-            ifs_file_path = os.path.join(dirs['input'], f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr")
-        else:
-            file_path = os.path.join(dirs['input'], f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
-            ifs_file_path = os.path.join(dirs['input'], f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
-
-        file_paths = glob.glob(file_path)
-
-        if not bootstrap and len(file_paths) > 1:
-            raise ValueError(f"Multiple files found for lead time {lt}h: {file_paths}")
-
-        for idx, file_path in enumerate(file_paths):
-
-            try:
-                ds = xr.open_zarr(file_path)
-            except Exception as e:
-                print(f"Error opening {file_path}: {e}")
-                continue
-
-            ground_truth = ds[f"{prediction_var}_ground_truth"]
-            orig = ds[f"{prediction_var}_original"]
-            nn_corr = ds[f"{prediction_var}_corrected"]
-            # correction using mean debiasing
-            ano_corr = ds[f"{prediction_var}_mean_corrected"] if f"{prediction_var}_mean_corrected" in ds else None
-
-            rmse_total_orig = float(np.sqrt(((orig - ground_truth) ** 2).mean().values))
-            rmse_total_nn_corr = float(np.sqrt(((nn_corr - ground_truth) ** 2).mean().values))
-            rmse_total_ano_corr = float(np.sqrt(((ano_corr - ground_truth) ** 2).mean().values)) if ano_corr is not None else None
-
-            current_nn_pct_improvement = (rmse_total_orig - rmse_total_nn_corr) / rmse_total_orig * 100 if rmse_total_orig != 0 else 0
-            current_ano_pct_improvement = (rmse_total_orig - rmse_total_ano_corr) / rmse_total_orig * 100 if rmse_total_orig != 0 and rmse_total_ano_corr is not None else 0
-
-            forecast_orig_rmse[(lt, idx)] = rmse_total_orig
-            forecast_nn_corr_rmse[(lt, idx)] = rmse_total_nn_corr
-            forecast_ano_corr_rmse[(lt, idx)] = rmse_total_ano_corr
-            forecast_nn_pct_improvement[(lt, idx)] = current_nn_pct_improvement
-            forecast_ano_pct_improvement[(lt, idx)] = current_ano_pct_improvement
-
-            # IFS processing (structure ready for when data is available)
-            ifs_file_paths = glob.glob(ifs_file_path)
-            if ifs_file_paths and idx < len(ifs_file_paths):
+            for idx, file_path in enumerate(pangu_files):
                 try:
-                    ifs_ds = xr.open_zarr(ifs_file_paths[idx])
-                    print(ifs_ds)
+                    ds = xr.open_zarr(file_path)
+                    
+                    # Extract data
+                    ground_truth = ds[f"{prediction_var}_ground_truth"]
+                    original = ds[f"{prediction_var}_original"]
+                    nn_corrected = ds[f"{prediction_var}_corrected"]
+                    ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
 
-                    ifs_ground_truth = ifs_ds[f"{prediction_var}_ground_truth"]
-                    ifs_fc_original = ifs_ds[f"{prediction_var}_original"]
-                    ifs_fc_nn_corrected = ifs_ds[f"{prediction_var}_corrected"]
-                    ifs_fc_ano_corrected = ifs_ds[f"{prediction_var}_mean_corrected"] if f"{prediction_var}_mean_corrected" in ifs_ds else None
-
-                    # rmse for IFS
-                    ifs_rmse_total_orig = float(np.sqrt(((ifs_fc_original - ifs_ground_truth) ** 2).mean().values))
-                    ifs_rmse_total_nn_corr = float(np.sqrt(((ifs_fc_nn_corrected - ifs_ground_truth) ** 2).mean().values))
-                    ifs_rmse_total_ano_corr = float(np.sqrt(((ifs_fc_ano_corrected - ifs_ground_truth) ** 2).mean().values)) if ifs_fc_ano_corrected is not None else None
-                    current_ifs_nn_pct_improvement = (ifs_rmse_total_orig - ifs_rmse_total_nn_corr) / ifs_rmse_total_orig * 100 if ifs_rmse_total_orig != 0 else 0
-                    current_ifs_ano_pct_improvement = (ifs_rmse_total_orig - ifs_rmse_total_ano_corr) / ifs_rmse_total_orig * 100 if ifs_rmse_total_orig != 0 and ifs_rmse_total_ano_corr is not None else 0
-
-                    ifs_orig_rmse[(lt, idx)] = ifs_rmse_total_orig
-                    ifs_nn_corr_rmse[(lt, idx)] = ifs_rmse_total_nn_corr
-                    ifs_ano_corr_rmse[(lt, idx)] = ifs_rmse_total_ano_corr
-                    ifs_nn_pct_improvement[(lt, idx)] = current_ifs_nn_pct_improvement
-                    ifs_ano_pct_improvement[(lt, idx)] = current_ifs_ano_pct_improvement
+                    # Calculate RMSE
+                    rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
+                    rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
+                    
+                    # Calculate percent improvements
+                    pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
+                                          if rmse_original != 0 else 0)
+                    improvements['pangu_nn'][(lt, idx)] = pct_improvement_nn
+                    
+                    if ano_corrected is not None:
+                        rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
+                        pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
+                                               if rmse_original != 0 else 0)
+                        improvements['pangu_ano'][(lt, idx)] = pct_improvement_ano
 
                 except Exception as e:
-                    print(f"Error opening IFS file {ifs_file_paths[idx]}: {e}")
+                    print(f"Error processing {file_path}: {e}")
                     continue
 
-    # Helper function to aggregate bootstrap results
-    def aggregate_bootstrap_results(rmse_dict, lead_times):
-        """Aggregate bootstrap results by lead time"""
-        results = {}
-        for lt in lead_times:
-            # Get all RMSE values for this lead time, filtering out None values
-            lt_values = [rmse_dict[(lt, idx)] for (lead_time, idx) in rmse_dict.keys() 
-                        if lead_time == lt and rmse_dict[(lt, idx)] is not None]
-            if lt_values:
-                n = len(lt_values)
-                mean = np.mean(lt_values)
-                std = np.std(lt_values, ddof = 1)
-                se = std / np.sqrt(n)
-                alpha = 0.05
-                t_crit = stats.t.ppf(1 - alpha/2, df=n-1)
+            # Process IFS model files
+            ifs_files = glob.glob(ifs_pattern)
+            if ifs_files:  # Evaluates to True if the list is empty
+                assert len(ifs_files) == len(pangu_files)
+                
+            for idx, file_path in enumerate(ifs_files):  
+                try:
+                    ds = xr.open_zarr(file_path)
+                    
+                    # Extract data
+                    ground_truth = ds[f"{prediction_var}_ground_truth"]
+                    original = ds[f"{prediction_var}_original"]
+                    nn_corrected = ds[f"{prediction_var}_corrected"]
+                    ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
 
-                results[lt] = {
-                    'mean': mean,
-                    'std': std,
-                    'ci_lower': mean - (t_crit * se),
-                    'ci_upper': mean + (t_crit * se),
-                    'count': n,
-                    'values': lt_values
-                }
-        return results
+                    # Calculate RMSE
+                    rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
+                    rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
+                    
+                    # Calculate percent improvements
+                    pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
+                                          if rmse_original != 0 else 0)
+                    improvements['ifs_nn'][(lt, idx)] = pct_improvement_nn
+                    
+                    if ano_corrected is not None:
+                        rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
+                        pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
+                                               if rmse_original != 0 else 0)
+                        improvements['ifs_ano'][(lt, idx)] = pct_improvement_ano
 
-    # Prepare data for plotting
-    if bootstrap:
-        # Aggregate bootstrap results
-        forecast_orig_agg = aggregate_bootstrap_results(forecast_orig_rmse, lead_times)
-        forecast_nn_corr_agg = aggregate_bootstrap_results(forecast_nn_corr_rmse, lead_times)
-        forecast_ano_corr_agg = aggregate_bootstrap_results(forecast_ano_corr_rmse, lead_times)
-        forecast_nn_pct_improvement_agg = aggregate_bootstrap_results(forecast_nn_pct_improvement, lead_times)
-        forecast_ano_pct_improvement_agg = aggregate_bootstrap_results(forecast_ano_pct_improvement, lead_times)
-
-        # IFS data (if available)
-        ifs_orig_agg = aggregate_bootstrap_results(ifs_orig_rmse, lead_times) if ifs_orig_rmse else {}
-        ifs_nn_corr_agg = aggregate_bootstrap_results(ifs_nn_corr_rmse, lead_times) if ifs_nn_corr_rmse else {}
-        ifs_ano_corr_agg = aggregate_bootstrap_results(ifs_ano_corr_rmse, lead_times) if ifs_ano_corr_rmse else {}
-        ifs_nn_pct_improvement_agg = aggregate_bootstrap_results(ifs_nn_pct_improvement, lead_times) if ifs_nn_pct_improvement else {}
-        ifs_ano_pct_improvement_agg = aggregate_bootstrap_results(ifs_ano_pct_improvement, lead_times) if ifs_ano_pct_improvement else {}
+                except Exception as e:
+                    print(f"Error processing IFS file {file_path}: {e}")
+                    continue
         
-        # Extract plotting data
-        forecast_orig_mean = [forecast_orig_agg[lt]['mean'] for lt in lead_times if lt in forecast_orig_agg]
-        forecast_orig_ci_lower = [forecast_orig_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_orig_agg]
-        forecast_orig_ci_upper = [forecast_orig_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_orig_agg]
-        
-        forecast_nn_corr_mean = [forecast_nn_corr_agg[lt]['mean'] for lt in lead_times if lt in forecast_nn_corr_agg]
-        forecast_nn_corr_ci_lower = [forecast_nn_corr_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_nn_corr_agg]
-        forecast_nn_corr_ci_upper = [forecast_nn_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_nn_corr_agg]
+        # Store improvements for this region
+        all_improvements[region] = improvements
 
-        forecast_ano_corr_mean = [forecast_ano_corr_agg[lt]['mean'] for lt in lead_times if lt in forecast_ano_corr_agg]
-        forecast_ano_corr_ci_lower = [forecast_ano_corr_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_ano_corr_agg]
-        forecast_ano_corr_ci_upper = [forecast_ano_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_ano_corr_agg]
-        
-        forecast_nn_pct_improvement_mean = [forecast_nn_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in forecast_nn_pct_improvement_agg]
-        forecast_nn_pct_improvement_ci_lower = [forecast_nn_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_nn_pct_improvement_agg]
-        forecast_nn_pct_improvement_ci_upper = [forecast_nn_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_nn_pct_improvement_agg]
-
-        forecast_ano_pct_improvement_mean = [forecast_ano_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in forecast_ano_pct_improvement_agg]
-        forecast_ano_pct_improvement_ci_lower = [forecast_ano_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in forecast_ano_pct_improvement_agg]
-        forecast_ano_pct_improvement_ci_upper = [forecast_ano_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in forecast_ano_pct_improvement_agg]
-        
-        # IFS data (if available)
-        if ifs_orig_agg:
-            ifs_orig_mean = [ifs_orig_agg[lt]['mean'] for lt in lead_times if lt in ifs_orig_agg]
-            ifs_orig_ci_lower = [ifs_orig_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_orig_agg]
-            ifs_orig_ci_upper = [ifs_orig_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_orig_agg]
-        else:
-            ifs_orig_mean = ifs_orig_ci_lower = ifs_orig_ci_upper = []
-            
-        if ifs_nn_corr_agg:
-            ifs_nn_corr_mean = [ifs_nn_corr_agg[lt]['mean'] for lt in lead_times if lt in ifs_nn_corr_agg]
-            ifs_nn_corr_ci_lower = [ifs_nn_corr_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_nn_corr_agg]
-            ifs_nn_corr_ci_upper = [ifs_nn_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_nn_corr_agg]
-        else:
-            ifs_nn_corr_mean = ifs_nn_corr_ci_lower = ifs_nn_corr_ci_upper = []
-
-        if ifs_ano_corr_agg:
-            ifs_ano_corr_mean = [ifs_ano_corr_agg[lt]['mean'] for lt in lead_times if lt in ifs_ano_corr_agg]
-            ifs_ano_corr_ci_lower = [ifs_ano_corr_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_ano_corr_agg]
-            ifs_ano_corr_ci_upper = [ifs_ano_corr_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_ano_corr_agg]
-        else:
-            ifs_ano_corr_mean = ifs_ano_corr_ci_lower = ifs_ano_corr_ci_upper = []
-
-        if ifs_nn_pct_improvement_agg:
-            ifs_nn_pct_improvement_mean = [ifs_nn_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in ifs_nn_pct_improvement_agg]
-            ifs_nn_pct_improvement_ci_lower = [ifs_nn_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_nn_pct_improvement_agg]
-            ifs_nn_pct_improvement_ci_upper = [ifs_nn_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_nn_pct_improvement_agg]
-        else:
-            ifs_nn_pct_improvement_mean = ifs_nn_pct_improvement_ci_lower = ifs_nn_pct_improvement_ci_upper = []
-
-        if ifs_ano_pct_improvement_agg:
-            ifs_ano_pct_improvement_mean = [ifs_ano_pct_improvement_agg[lt]['mean'] for lt in lead_times if lt in ifs_ano_pct_improvement_agg]
-            ifs_ano_pct_improvement_ci_lower = [ifs_ano_pct_improvement_agg[lt]['ci_lower'] for lt in lead_times if lt in ifs_ano_pct_improvement_agg]
-            ifs_ano_pct_improvement_ci_upper = [ifs_ano_pct_improvement_agg[lt]['ci_upper'] for lt in lead_times if lt in ifs_ano_pct_improvement_agg]
-        else:
-            ifs_ano_pct_improvement_mean = ifs_ano_pct_improvement_ci_lower = ifs_ano_pct_improvement_ci_upper = []
-        
-        plot_lead_times = [lt for lt in lead_times if lt in forecast_orig_agg]
-        
-    else:
-        # Single value case
-        forecast_orig_mean = [forecast_orig_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_orig_rmse]
-        forecast_nn_corr_mean = [forecast_nn_corr_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_nn_corr_rmse and forecast_nn_corr_rmse[(lt, 0)] is not None]
-        forecast_ano_corr_mean = [forecast_ano_corr_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_ano_corr_rmse and forecast_ano_corr_rmse[(lt, 0)] is not None]
-        forecast_nn_pct_improvement_mean = [forecast_nn_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_nn_pct_improvement]
-        forecast_ano_pct_improvement_mean = [forecast_ano_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in forecast_ano_pct_improvement]
-
-        ifs_orig_mean = [ifs_orig_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_orig_rmse]
-        ifs_nn_corr_mean = [ifs_nn_corr_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_nn_corr_rmse and ifs_nn_corr_rmse[(lt, 0)] is not None]
-        ifs_ano_corr_mean = [ifs_ano_corr_rmse[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_ano_corr_rmse and ifs_ano_corr_rmse[(lt, 0)] is not None]
-        ifs_nn_pct_improvement_mean = [ifs_nn_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_nn_pct_improvement]
-        ifs_ano_pct_improvement_mean = [ifs_ano_pct_improvement[(lt, 0)] for lt in lead_times if (lt, 0) in ifs_ano_pct_improvement]
-        
-        # No confidence intervals for single values
-        forecast_orig_ci_lower = forecast_orig_ci_upper = []
-        forecast_nn_corr_ci_lower = forecast_nn_corr_ci_upper = []
-        forecast_ano_corr_ci_lower = forecast_ano_corr_ci_upper = []
-        ifs_orig_ci_lower = ifs_orig_ci_upper = []
-        ifs_nn_corr_ci_lower = ifs_nn_corr_ci_upper = []
-        ifs_ano_corr_ci_lower = ifs_ano_corr_ci_upper = []
-        
-        plot_lead_times = [lt for lt in lead_times if (lt, 0) in forecast_orig_rmse]
-
-    # Choose colors - using the same base color for each model with different alphas
-    # Pangu colors (blues) - darkest to lightest: NN, ano, original
-    color_pangu_base = '#1f77b4'      # base blue color
-    alpha_orig = 0.4                   # lightest for original
-    alpha_ano = 0.6                    # medium for ano correction
-    alpha_nn = 0.9                     # darkest for NN correction
+    # Create a single plot for all regions
+    fig, ax = plt.subplots(figsize=(14, 8))
     
-    # IFS colors (oranges) - darkest to lightest: NN, ano, original
-    color_ifs_base = '#ff7f0e'         # base orange color
-
-    # Line colors for percentage improvements
-    color_pangu_nn_pct = '#DC2626' # Strong red for Pangu NN improvement   
-    color_pangu_ano_pct = '#F97316'    # Orange-red for Pangu mean improvement
-    color_ifs_nn_pct = '#7C3AED'        # Purple for IFS NN improvement
-    color_ifs_ano_pct = '#A855F7'      # Light purple for IFS mean improvement
-
-    # Create the dual-axis plot
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    ax2 = ax1.twinx()  # Create second y-axis
-
-    # Set up bar positions - overlapping bars
-    n_groups = len(plot_lead_times)
-    bar_width = 0.35   # Width for overlapping bars
-    x_pos = np.arange(n_groups)
+    # Track which lead times actually have data across all regions
+    all_valid_lead_times = set()
     
-    # Offset positions for Pangu (left) and IFS (right) if both are present
-    if ifs_orig_mean:
-        pangu_pos = x_pos - 0.2  # Shift Pangu bars slightly left
-    else:
-        pangu_pos = x_pos
-    ifs_pos = x_pos + 0.2    # Shift IFS bars slightly right
+    # Plot each region's data
+    for region_idx, (region, improvements) in enumerate(all_improvements.items()):
+        # Get color for this region
+        color = region_colors[region_idx % len(region_colors)]
 
-    # Helper function to add black edge lines to bars
-    def add_bar_edges(bars, edge_color='black', edge_width=0.8):
-        """Add thin black lines to the top edge of bars for better delineation"""
-        for bar in bars:
-            # Get bar position and dimensions
-            x = bar.get_x()
-            width = bar.get_width()
-            height = bar.get_height()
+        # Process each improvement type for this region
+        for imp_type, imp_data in improvements.items():
+            if not imp_data:
+                continue
             
-            # Draw a line at the top of the bar
-            ax1.plot([x, x + width], [height, height], 
-                    color=edge_color, linewidth=edge_width, zorder=10)
-
-    # Plot RMSE bars on left axis (ax1) - overlapping bars with different alphas
-    bars = []
-
-    # Determine which lead times have IFS data
-    ifs_available_indices = []
-    if ifs_orig_mean:
-        ifs_available_indices = [i for i, lt in enumerate(plot_lead_times) 
-                               if (not bootstrap and (lt, 0) in ifs_orig_rmse) or 
-                                   (bootstrap and lt in ifs_orig_agg)]
-
-    # Pangu bars - plot in order: original (lightest), ano, NN (darkest)
-    # This ensures the darkest bars are on top
-    if forecast_orig_mean:
-        bars1 = ax1.bar(pangu_pos, forecast_orig_mean, bar_width, 
-                        label='Pangu Original', color=color_pangu_base, alpha=alpha_orig, zorder=3)
-        bars.extend(bars1)
-
-    if forecast_ano_corr_mean:
-        bars3 = ax1.bar(pangu_pos, forecast_ano_corr_mean, bar_width,
-                        label='Pangu Mean Error Debiasing', color=color_pangu_base, alpha=alpha_ano, zorder=4)
-        add_bar_edges(bars3)
-        bars.extend(bars3)
-
-    if forecast_nn_corr_mean:
-        bars2 = ax1.bar(pangu_pos, forecast_nn_corr_mean, bar_width,
-                        label='Pangu NN Correction', color=color_pangu_base, alpha=alpha_nn, zorder=5)
-        add_bar_edges(bars2)
-        bars.extend(bars2)
-
-    # IFS bars - plot in order: original (lightest), ano, NN (darkest)
-    if ifs_orig_mean and ifs_available_indices:
-        ifs_positions = [ifs_pos[i] for i in ifs_available_indices]
-        bars4 = ax1.bar(ifs_positions, ifs_orig_mean, bar_width,
-                        label='IFS Original', color=color_ifs_base, alpha=alpha_orig, zorder=3)
-        bars.extend(bars4)
-
-    if ifs_ano_corr_mean and ifs_available_indices:
-        # Make sure ifs_ano_corr_mean aligns with available indices
-        ifs_ano_indices = [i for i, lt in enumerate(plot_lead_times) 
-                          if (not bootstrap and (lt, 0) in ifs_ano_corr_rmse and ifs_ano_corr_rmse.get((lt, 0)) is not None) or 
-                              (bootstrap and lt in ifs_ano_corr_agg)]
-        if ifs_ano_indices and len(ifs_ano_corr_mean) == len(ifs_ano_indices):
-            ifs_positions_ano = [ifs_pos[i] for i in ifs_ano_indices]
-            bars6 = ax1.bar(ifs_positions_ano, ifs_ano_corr_mean, bar_width,
-                            label='IFS Mean Error Debiasing', color=color_ifs_base, alpha=alpha_ano, zorder=4)
-            add_bar_edges(bars6)
-            bars.extend(bars6)
-
-    if ifs_nn_corr_mean and ifs_available_indices:
-        # Make sure ifs_nn_corr_mean aligns with available indices
-        ifs_nn_indices = [i for i, lt in enumerate(plot_lead_times) 
-                         if (not bootstrap and (lt, 0) in ifs_nn_corr_rmse and ifs_nn_corr_rmse.get((lt, 0)) is not None) or 
-                             (bootstrap and lt in ifs_nn_corr_agg)]
-        if ifs_nn_indices and len(ifs_nn_corr_mean) == len(ifs_nn_indices):
-            ifs_positions_nn = [ifs_pos[i] for i in ifs_nn_indices]
-            bars5 = ax1.bar(ifs_positions_nn, ifs_nn_corr_mean, bar_width,
-                            label='IFS NN Correction', color=color_ifs_base, alpha=alpha_nn, zorder=5)
-            add_bar_edges(bars5)
-            bars.extend(bars5)
-
-    # Add error bars for bootstrap if available (only for original bars to avoid clutter)
-    if bootstrap:
-        if forecast_orig_ci_lower:
-            forecast_orig_errors = [
-                [forecast_orig_mean[i] - forecast_orig_ci_lower[i] for i in range(len(forecast_orig_mean))],
-                [forecast_orig_ci_upper[i] - forecast_orig_mean[i] for i in range(len(forecast_orig_mean))]
-            ]
-            # XX # Uncomment if you want to plot error bars for original forecast
-            # ax1.errorbar(pangu_pos, forecast_orig_mean, yerr=forecast_orig_errors,
-            #             fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
-
-        if ifs_orig_ci_lower and ifs_available_indices:
-            ifs_orig_errors = [
-                [ifs_orig_mean[i] - ifs_orig_ci_lower[i] for i in range(len(ifs_orig_mean))],
-                [ifs_orig_ci_upper[i] - ifs_orig_mean[i] for i in range(len(ifs_orig_mean))]
-            ]
-            ifs_positions_err = [ifs_pos[i] for i in ifs_available_indices]
-            # ax1.errorbar(ifs_positions_err, ifs_orig_mean, 
-            #             yerr=ifs_orig_errors, fmt='none', ecolor='black', capsize=3, alpha=0.7, zorder=6)
-
-    # Plot percentage improvement lines on right axis (ax2)
-    if forecast_nn_pct_improvement_mean:
-        line1 = ax2.plot(x_pos, forecast_nn_pct_improvement_mean, 'o-', 
-                        color=color_pangu_nn_pct, linewidth=2, markersize=6,
-                        label='Pangu NN Improvement (%)', zorder=7) 
-        
-        # Add confidence intervals for percentage improvement if bootstrap
-        if bootstrap and forecast_nn_pct_improvement_ci_lower:
-            ax2.fill_between(x_pos, forecast_nn_pct_improvement_ci_lower, forecast_nn_pct_improvement_ci_upper,
-                            color=color_pangu_nn_pct, alpha=0.2, zorder=1)
-
-    if forecast_ano_pct_improvement_mean:
-        line2 = ax2.plot(x_pos, forecast_ano_pct_improvement_mean, 's-', 
-                        color=color_pangu_ano_pct, linewidth=2, markersize=6,
-                        label='Pangu Mean Debiasing Improvement (%)', zorder=7) 
-        
-        # Add confidence intervals for percentage improvement if bootstrap
-        if bootstrap and forecast_ano_pct_improvement_ci_lower:
-            ax2.fill_between(x_pos, forecast_ano_pct_improvement_ci_lower, forecast_ano_pct_improvement_ci_upper,
-                            color=color_pangu_ano_pct, alpha=0.2, zorder=1)
-
-    if ifs_nn_pct_improvement_mean and ifs_available_indices:
-        line3 = ax2.plot(ifs_available_indices, ifs_nn_pct_improvement_mean, '^-',
-                        color=color_ifs_nn_pct, linewidth=2, markersize=6,
-                        label='IFS NN Improvement (%)', zorder=7)
-        
-        # Add confidence intervals for IFS percentage improvement if bootstrap
-        if bootstrap and ifs_nn_pct_improvement_ci_lower:
-            ax2.fill_between(ifs_available_indices, ifs_nn_pct_improvement_ci_lower, ifs_nn_pct_improvement_ci_upper,
-                            color=color_ifs_nn_pct, alpha=0.2, zorder=1)
-
-    if ifs_ano_pct_improvement_mean and ifs_available_indices:
-        line4 = ax2.plot(ifs_available_indices, ifs_ano_pct_improvement_mean, 'd-',
-                        color=color_ifs_ano_pct, linewidth=2, markersize=6,
-                        label='IFS Mean Debiasing Improvement (%)', zorder=7)
-        
-        # Add confidence intervals for IFS percentage improvement if bootstrap
-        if bootstrap and ifs_ano_pct_improvement_ci_lower:
-            ax2.fill_between(ifs_available_indices, ifs_ano_pct_improvement_ci_lower, ifs_ano_pct_improvement_ci_upper,
-                            color=color_ifs_ano_pct, alpha=0.2, zorder=1)
-
-    # Customize the axes
-    ax1.set_xlabel("Forecast Lead Time (h)", fontsize=12)
-    ax1.set_ylabel("RMSE", fontsize=12)
-    ax2.set_ylabel("Percentage Decrease in RMSE", fontsize=12)
-
-    # Set x-axis ticks and labels
-    ax1.set_xticks(x_pos)
-    ax1.set_xticklabels([f"{lt}h" for lt in plot_lead_times])
-
+            # Determine if this is NN or anomaly correction
+            method_type = 'nn' if 'nn' in imp_type else 'ano'
+            style = method_styles[method_type]
+            
+            # Determine if this is Pangu or IFS (for alpha transparency)
+            is_ifs = 'ifs' in imp_type
+            line_alpha = 0.6 if is_ifs else 1.0
+            
+            if bootstrap:
+                # Aggregate bootstrap results
+                aggregated = {}
+                for lt in lead_times:
+                    # Extract all values for this lead time
+                    lt_values = [imp_data[(lead_time, idx)] 
+                                 for (lead_time, idx) in imp_data.keys() 
+                                 if lead_time == lt]
+                    
+                    if lt_values:
+                        n = len(lt_values)
+                        mean = np.mean(lt_values)
+                        std = np.std(lt_values, ddof=1)
+                        se = std / np.sqrt(n)
+                        
+                        # Calculate 95% confidence interval using t-distribution
+                        alpha_ci = 0.05
+                        t_crit = stats.t.ppf(1 - alpha_ci/2, df=n-1)
+                        
+                        aggregated[lt] = {
+                            'mean': mean,
+                            'ci_lower': mean - (t_crit * se),
+                            'ci_upper': mean + (t_crit * se),
+                            'count': n
+                        }
+                
+                # Extract data for plotting
+                valid_lead_times = sorted(aggregated.keys())
+                if not valid_lead_times:
+                    continue
+                
+                all_valid_lead_times.update(valid_lead_times)
+                means = [aggregated[lt]['mean'] for lt in valid_lead_times]
+                ci_lower = [aggregated[lt]['ci_lower'] for lt in valid_lead_times]
+                ci_upper = [aggregated[lt]['ci_upper'] for lt in valid_lead_times]
+                
+                # Create label
+                label = f"{region} - {imp_type.replace('_', ' ').title()}"
+                
+                # Plot line with markers
+                x_pos = [lead_times.index(lt) for lt in valid_lead_times]
+                ax.plot(x_pos, means, 
+                       marker=style['marker'], 
+                       linestyle=style['linestyle'], 
+                       color=color, 
+                       linewidth=2.5, 
+                       markersize=style['markersize'],
+                       label=label,
+                       alpha=line_alpha,
+                       zorder=3)
+                
+                # Add confidence interval bands
+                ax.fill_between(x_pos, ci_lower, ci_upper,
+                               color=color, 
+                               alpha=0.1 * line_alpha, 
+                               zorder=1)
+                
+            else:
+                # Non-bootstrap case
+                valid_data = [(lt, imp_data[(lt, 0)]) for lt in lead_times 
+                             if (lt, 0) in imp_data]
+                if not valid_data:
+                    continue
+                    
+                valid_lead_times, values = zip(*valid_data)
+                all_valid_lead_times.update(valid_lead_times)
+                
+                # Create label
+                label = f"{region} - {imp_type.replace('_', ' ').title()}"
+                
+                # Plot line
+                x_pos = [lead_times.index(lt) for lt in valid_lead_times]
+                ax.plot(x_pos, values, 
+                       marker=style['marker'], 
+                       linestyle=style['linestyle'],
+                       color=color, 
+                       linewidth=2.5, 
+                       markersize=style['markersize'],
+                       label=label,
+                       alpha=line_alpha,
+                       zorder=3)
+    
+    # Set x-axis to show all lead times but only label those with data
+    ax.set_xticks(range(len(lead_times)))
+    ax.set_xticklabels([f"{lt}h" if lt in all_valid_lead_times else "" 
+                       for lt in lead_times])
+    
+    # Customize plot appearance
+    ax.set_xlabel("Forecast Lead Time", fontsize=13)
+    ax.set_ylabel("RMSE Improvement (%)", fontsize=13)
+    
+    # Add horizontal line at y=0 for reference
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    
     # Title
-    title_suffix = " (Bootstrap)" if bootstrap else ""
-    plt.title(f"RMSE and Improvement for {prediction_var.replace('_',' ')}{title_suffix}\n"
-            f"Region: {region}, Patch Size: {subregion}", fontsize=14)
-
-    # Add bootstrap sample count annotation if bootstrap is used
+    regions_str = ", ".join(regions)
+    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()}"]
+    title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
     if bootstrap:
-        n_bootstrap = None
-        if forecast_orig_agg:
-            first_lt = min(forecast_orig_agg.keys())
-            n_bootstrap = forecast_orig_agg[first_lt]['count']
-        elif forecast_nn_corr_agg:
-            first_lt = min(forecast_nn_corr_agg.keys())
-            n_bootstrap = forecast_nn_corr_agg[first_lt]['count']
-            
-        if n_bootstrap is not None:
-            plt.annotate(f'Num Patches Used = {n_bootstrap}', 
-                        xy=(0, 0.2), xycoords='axes fraction',
-                        verticalalignment='top', horizontalalignment='left',
-                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                        fontsize=10)
-
-    # Get legend handles and labels
-    bar_handles, bar_labels = ax1.get_legend_handles_labels()
-    line_handles, line_labels = ax2.get_legend_handles_labels()
+        title_parts[0] += " (with 95% CI)"
+    ax.set_title('\n'.join(title_parts), fontsize=14, pad=15)
     
-    legend_loc = 'center left'
-    bbox_anchor = (.65, 0.5)
-    ncol = 1
+    # Grid
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
     
-    # Combine all legend elements
-    all_handles = bar_handles + line_handles
-    all_labels = bar_labels + line_labels
-    
-    # Create legend with better formatting
-    legend = ax1.legend(all_handles, all_labels, 
-                       loc=legend_loc, 
-                       bbox_to_anchor=bbox_anchor,
-                       frameon=True, 
-                       fancybox=True,
-                       shadow=True,
-                       fontsize=9,
-                       ncol=ncol,
-                       columnspacing=0.8,
-                       handletextpad=0.5)
-    
-    # Style the legend
-    legend.get_frame().set_facecolor('white')
-    legend.get_frame().set_alpha(0.9)
-    legend.get_frame().set_edgecolor('gray')
-
-    # Grid - make it more subtle
-    ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    ax1.set_axisbelow(True)
-
-    # Improve axis styling
-    ax1.spines['top'].set_visible(False)
-    ax2.spines['top'].set_visible(False)
-    
-    # Adjust layout to accommodate legend
-    if ifs_orig_mean: # if IFS data is available, adjust layout
-        plt.tight_layout()
-        # Make room for external legend
-        plt.subplots_adjust(right=0.75)
+    # Legend - position it outside the plot area if many lines
+    n_lines = len([h for h in ax.get_legend_handles_labels()[0]])
+    if n_lines > 6:
+        legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left',
+                          frameon=True, fancybox=True,
+                          shadow=True, fontsize=10, ncol=1)
     else:
-        plt.tight_layout()
-
-
-    # Create output folder
-    out_folder = os.path.join(dirs["fig"], model, "lead_time", region, subregion)
-    os.makedirs(out_folder, exist_ok=True)
-
-    # Generate filename
-    bootstrap_suffix = "_bootstrap" if bootstrap else ""
-    fname = (f"leadtime_rmse_pct_{prediction_var}_trainedwith_{training_vars_str}_"
-            f"{mlp_str}{bootstrap_suffix}.png")
-    save_path = os.path.join(out_folder, fname)
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print(f"Lead‐time RMSE and percentage improvement plot saved to: {save_path}")
-
-    if bootstrap:
-        print(f"Bootstrap aggregation completed with {len(forecast_orig_agg)} lead times")
-        # Optionally print some statistics
-        for lt in sorted(forecast_orig_agg.keys()):
-            n_samples = len(forecast_orig_agg[lt]['values'])
-            print(f"  Lead time {lt}h: {n_samples} bootstrap samples")
-
-
-def generate_global_map(
-    dirs,
-    train_start, train_end,
-    test_start,  test_end,
-    model,
-    training_output_vars,
-    prediction_var,
-    mlp_params,
-    regions,
-    subregion="10x10",
-    lead_time=168
-):
-    """
-    generates a world‐map of spatial mse difference (corrected − original)
-    for a single `prediction_var` over the list of `regions`.
-
-    parameters
-    ----------
-    dirs : dict
-      from setup_directories(), to find dirs['input'] & dirs['fig'].
-    train_start, train_end : str
-    test_start,  test_end  : str
-      e.g. "2018-01-01"
-    model : str
-      your model folder name, e.g. "pangu"
-    training_output_vars : tuple (training_vars, output_vars)
-      each a list or single‐element list.
-    prediction_var : str
-      e.g. "2m_temperature" or "10m_wind_speed"
-    mlp_params : tuple (hidden_dim, n_layers)
-    regions : list of str
-      e.g. ["amazon","india", "usa_south"]
-    subregion : str, optional
-      e.g. "10x10"
-    lead_time : int, optional
-      forecast lead time (hours).
-    """
-    # unpack and normalize
-    training_vars, output_vars = training_output_vars
-    if not isinstance(training_vars, (list, tuple)):
-        training_vars = [training_vars]
-    if not isinstance(output_vars, (list, tuple)):
-        output_vars = [output_vars]
-
-    # prepare labels
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
-
-    # 1) compute the spatial‐mse difference for each region and track min/max
-    diffs = {}
-    mins, maxs = [], []
-    for region in regions:
-        # build an args object just like in your other functions
-        class args: pass
-        args = args()
-        args.model_name     = model
-        args.region         = region
-        args.subregion      = subregion
-        args.train_start    = train_start
-        args.train_end      = train_end
-        args.test_start     = test_start
-        args.test_end       = test_end
-        args.training_vars  = training_vars
-        args.output_vars    = output_vars
-        args.mlp_hidden_dim = mlp_params[0]
-        args.mlp_layers     = mlp_params[1]
-        args.lead_time_hours= lead_time
-
-        path = os.path.join(dirs['input'], generate_output_path(args))
-        ds   = xr.open_zarr(path)
-
-        # create_metrics will handle wind_speed from u/v automatically
-        mse_o, mse_c, *_ , mse_sp_o, mse_sp_c = create_metrics(ds, prediction_var)
-        diff = mse_sp_o - mse_sp_c
-
-        diffs[region] = diff
-        mins.append(float(diff.min().values))
-        maxs.append(float(diff.max().values))
-
-    vmin, vmax = min(mins), max(maxs)
-    # enforce symmetry about zero
-    m = max(abs(vmin), abs(vmax))
-    vmin, vmax = -m, m
-
-
-    # 2) plot
-    fig, ax = plt.subplots(
-        figsize=(12, 6),
-        subplot_kw={'projection': ccrs.platecarree()}
-    )
-    for region, diff in diffs.items():
-        diff.plot(
-            ax=ax,
-            transform=ccrs.platecarree(),
-            cmap='coolwarm',
-            vmin=vmin, vmax=vmax,
-            add_colorbar=false
-        )
-
-    ax.coastlines()
-    ax.add_feature(cfeature.borders, linestyle=':')
-    ax.add_feature(cfeature.land, facecolor='lightgray')
-    ax.set_global()
-    ax.set_title(f"global mse improvement (orig − corr) for {prediction_var.replace('_',' ')}")
-
-    # shared colorbar
-    mappable = plt.cm.scalarmappable(cmap='coolwarm')
-    mappable.set_clim(vmin, vmax)
-    cbar = fig.colorbar(
-        mappable,
-        ax=ax,
-        orientation='horizontal',
-        pad=0.05,
-        fraction=0.05
-    )
-    cbar.set_label("normalized mse improvement")
-
+        legend = ax.legend(loc='best', frameon=True, fancybox=True,
+                          shadow=True, fontsize=10, ncol=1)
+    
+    legend.get_frame().set_facecolor('white')
+    legend.get_frame().set_alpha(0.95)
+    legend.get_frame().set_edgecolor('gray')
+    
+    # Remove top and right spines
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Adjust layout
     plt.tight_layout()
-    out_dir = os.path.join(dirs['fig'], model, "global_maps")
-    os.makedirs(out_dir, exist_ok=true)
-    fname = f"global_map_mse_diff_{prediction_var}.png"
-    fig.savefig(os.path.join(out_dir, fname), dpi=150)
-    plt.close(fig)
-
-
+    
+    # Save figure
+    out_folder = os.path.join(dirs["fig"], model, "lead_time", "multi_region", subregion)
+    os.makedirs(out_folder, exist_ok=True)
+    
+    bootstrap_suffix = "_bootstrap" if bootstrap else ""
+    regions_file_str = "_".join(regions)
+    if "arid" in regions or "tropical" in regions or "temperate" in regions:
+        region_type = "climate_zones"
+    else:
+        region_type = ""
+    fname = (f"leadtime_improvement_{prediction_var}_trainedwith_{training_vars_str}_"
+            f"{region_type}{bootstrap_suffix}.png")
+    save_path = os.path.join(out_folder, fname)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Multi-region lead-time improvement plot saved to: {save_path}")
+    
+    if bootstrap:
+        # Print summary statistics for each region
+        for region in regions:
+            print(f"\nRegion {region}:")
+            for imp_type in ['pangu_nn', 'pangu_ano', 'ifs_nn', 'ifs_ano']:
+                if all_improvements[region][imp_type]:
+                    # Get sample count from first lead time
+                    first_lt = next(iter([lt for (lt, idx) in all_improvements[region][imp_type].keys()]))
+                    n_samples = len([v for (lt, idx), v in all_improvements[region][imp_type].items() 
+                                   if lt == first_lt])
+                    if n_samples > 0:
+                        print(f"  {imp_type}: {n_samples} bootstrap samples")
 
 #######################
 # plotting functions (individual figures)
 #######################
-
 
 def plot_monthly_mse(mse_orig, mse_corr, model, region, subregion, var_name, dirs, training_vars, lead_time):
     """generates and saves a bar plot of monthly mse for the original and corrected forecasts."""
@@ -1031,19 +771,21 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                         lead_time_hours=lt
                     ))
                 )
+                # open and slice to 2x2 grid in the center of the region
                 with xr.open_zarr(path) as ds:
                     ds = ds.sel(latitude=slice(lat_min,lat_max),
                                 longitude=slice(lon_min,lon_max))
                     
                     # normalize using mu, sigma
-                    gt_n   = (ds[f"{prediction_var}_ground_truth"] - mu) / sigma
-                    orig_n = (ds[f"{prediction_var}_original"]      - mu) / sigma
-                    corr_n = (ds[f"{prediction_var}_corrected"]     - mu) / sigma
+                    gt_n   = ds[f"{prediction_var}_ground_truth"] 
+                    orig_n = ds[f"{prediction_var}_original"]     
+                    corr_n = ds[f"{prediction_var}_corrected"]    
 
-                    mse_orig = float(((orig_n - gt_n)**2).mean())
-                    mse_corr = float(((corr_n - gt_n)**2).mean())
+                    rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
+                    rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
+                    pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
                     size = int(sub.split('x')[0])
-                    improvement[region][lt].append((size, mse_orig - mse_corr))
+                    improvement[region][lt].append((size, pct_improvement))
 
     # ---- plotting ----
     cmap = plt.get_cmap('tab10')
@@ -1059,15 +801,15 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                      label=f"{lt}-h lead")
         plt.xticks(degrees, subregions)
         plt.xlabel("Patch size (degrees)")
-        plt.ylabel("MSE improvement\n(original − corrected)")
-        plt.title(f"{region.replace('_',' ').title()}: MSE Improvement")
+        plt.ylabel("RMSE pct improvement\n(original − corrected)")
+        plt.title(f"{region.replace('_',' ').title()}: RMSE PCT Improvement by Patch Size")
         plt.grid(True)
         plt.legend(title="Lead time")
         plt.tight_layout()
 
         out_folder = os.path.join(dirs["fig"], model, "subregion")
         os.makedirs(out_folder, exist_ok=True)
-        fname = f"subregion_mse_improvement_{region}_{'_'.join(training_vars)}_{prediction_var}_{mlp_str}.png"
+        fname = f"subregion_rmse_improvement_{region}_{'_'.join(training_vars)}_{prediction_var}_{mlp_str}.png"
         plt.savefig(os.path.join(out_folder, fname), dpi=150)
         plt.close()
 
@@ -1253,42 +995,31 @@ def main():
     # output_vars = ["10m_wind_speed"]
     # prediction_var = "10m_wind_speed"
 
+    # Compare multiple runs across lead times and regions in a single plot.
+    # compare_runs_rmse(
+    #     dirs=dirs,
+    #     model="pangu",
+    #     training_output_vars=(training_vars, output_vars),
+    #     prediction_var=prediction_var,
+    #     mlp_params=(512, 5)
+    # )
+
     # regions = ["india", "amazon", "british_columbia", "usa_south"]
-    regions = ["temperate", "arid", "tropical"]
-    for region in regions:
-        generate_lead_time_plots(
-            dirs = dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            mlp_params=(512, 5), 
-            region = region,
-            subregion="2x2",
-            bootstrap=True
-        )
-
-    exit()
-    # Compare multiple runs across lead times and regions in a single plot.
-    compare_runs_rmse(
-        dirs=dirs,
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5)
-    )
-
-    # Compare multiple runs across lead times and regions in a single plot.
-    compare_runs_mse(
-        dirs=dirs,
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5)
-    )
+    # # regions = ["tropical", "arid", "temperate"]
+    # generate_lead_time_plots(
+    #     dirs = dirs,
+    #     train_start="2018-01-01",
+    #     train_end="2021-12-31",
+    #     test_start="2022-01-01",
+    #     test_end="2022-12-31",
+    #     model="pangu",
+    #     training_output_vars=(training_vars, output_vars),
+    #     prediction_var=prediction_var,
+    #     mlp_params=(512, 5), 
+    #     regions = regions,
+    #     subregion="10x10",
+    #     bootstrap=False
+    # )
 
     generate_subregion_comparison_plots(
         dirs = dirs,
@@ -1302,43 +1033,30 @@ def main():
         mlp_params=(512, 5)
     )
 
+    exit()
 
+    # regions = ["usa_south", "amazon", "india", "british_columbia"]
+    # subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
+    # lead_times = [24, 72, 168]
 
-    generate_global_map(
-        dirs = dirs,
-        train_start = "2018-01-01", train_end = "2021-12-31",
-        test_start = "2022-01-01", test_end = "2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512,5),
-        regions=["amazon","india","usa_south", "british_columbia"],
-        subregion="10x10",
-        lead_time=168
-    )
-
-    regions = ["usa_south", "amazon", "india", "british_columbia"]
-    subregions = ["2x2", "4x4", "6x6", "8x8", "10x10"]
-    lead_times = [24, 72, 168]
-
-    for region in regions:
-        for lead_time in lead_times:
-            for subregion in subregions:
-                print(f"Generating plots for {region} with lead time {lead_time} hours")
-                generate_plots(
-                    dirs=dirs,
-                    train_start="2018-01-01",
-                    train_end="2021-12-31",
-                    test_start="2022-01-01",
-                    test_end="2022-12-31",
-                    model="pangu",
-                    region=region,
-                    subregion=subregion,
-                    lead_time=lead_time,
-                    training_output_vars=(training_vars, output_vars),
-                    prediction_var=prediction_var,
-                    mlp_params=(512, 5)
-                )
+    # for region in regions:
+    #     for lead_time in lead_times:
+    #         for subregion in subregions:
+    #             print(f"Generating plots for {region} with lead time {lead_time} hours")
+    #             generate_plots(
+    #                 dirs=dirs,
+    #                 train_start="2018-01-01",
+    #                 train_end="2021-12-31",
+    #                 test_start="2022-01-01",
+    #                 test_end="2022-12-31",
+    #                 model="pangu",
+    #                 region=region,
+    #                 subregion=subregion,
+    #                 lead_time=lead_time,
+    #                 training_output_vars=(training_vars, output_vars),
+    #                 prediction_var=prediction_var,
+    #                 mlp_params=(512, 5)
+    #             )
 
 if __name__ == "__main__":
     main()

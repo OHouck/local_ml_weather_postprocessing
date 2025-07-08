@@ -485,7 +485,7 @@ def main():
             variables=variables,
             output_path=output_path,
             start_year=2018,
-            end_year=2022,
+            end_year=2018,
             checkpoint_manager=checkpoint_manager
         )
         
