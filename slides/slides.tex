@@ -37,8 +37,10 @@
 
 \begin{frame}{Research Goal and Overview}
 \begin{itemize}
-    \item Show the feasibility of finetuning (localizing) weather forecasts for specific outcomes using minimal compute power
+    \item Show the feasibility of finetuning weather forecasts for specific outcomes using minimal compute power
     \item Demonstrate the method using 2 meter temperature and 10 meter wind speed across a variety of regions and lead times
+        \item 2m Temp Imrovements range from  XX-XX
+        \item 10m Wind Speed Improvements range from XX-XX
     \item Show that an ML forecast like Pangu can be corrected in the same way as traditional NWP forecast like IFS
 \end{itemize}
 
@@ -46,6 +48,17 @@
 \textbf{Key Contribution:} Demonstrating a simple method to significantly improve forecast accuracy using limited computational power.
 \end{frame}
 
+\begin{frame}{Previous that Post-Processing NWP Forecasts with Neural Networks is Effective}
+\begin{itemize}
+    \item cite{hanDeepLearningMethod2021} trained a U-Net to correct IFS Forecasts in Northern China using 12 years of data and a NVIDIA GPU
+    \begin{itemize}
+        \item Improvements in 2m Temp RMSE go range from 30\% to 12\% for lead times 1 to 7 days
+        \item Improvements in 10m Wind Speed RMSE Range from 25\% to 20\% for lead times 1 to 7 days 
+    \end{itemize}
+    \item cite{araujoPostProcessingAirTemperature2022} test using both a CNN and MLP to further improve post processing model GRIDPP over Norway
+    \item Uses RMSE error instead of MSE but I find a larger percent improvement for both 2m temperature and 10m wind speed
+\end{itemize}
+\end{frame}
 
 \begin{frame}{Method}
 \begin{itemize}
@@ -216,15 +229,6 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Previous Paper Corrected IFS Used a U-net}
-\begin{itemize}
-    \item \cite{hanDeepLearningMethod2021} trained a U-Net to correct IFS Forecasts in Northern China using 12 years of data and a NVIDIA GPU
-    \begin{itemize}
-        \item Outperforms traditional method of correcting by subtracting mean forecast error
-    \end{itemize}
-    \item Uses RMSE error instead of MSE but I find a larger percent improvement for both 2m temperature and 10m wind speed
-\end{itemize}
-\end{frame}
 
 \begin{frame}{What I'm Actively Working on}
 \begin{itemize}

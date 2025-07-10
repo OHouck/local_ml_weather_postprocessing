@@ -1,8 +1,8 @@
-PWD /Users/ohouck/vc/ai_weather_ag
+PWD /Users/ohouck/vc/ai_weather_ag/slides
 INPUT /usr/local/texlive/2023/texmf.cnf
 INPUT /usr/local/texlive/2023/texmf-dist/web2c/texmf.cnf
 INPUT /usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt
-INPUT /Users/ohouck/vc/ai_weather_ag/slides.tex
+INPUT /Users/ohouck/vc/ai_weather_ag/slides/slides.tex
 OUTPUT slides.log
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/beamer/beamer.cls
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/beamer/beamer.cls
@@ -1216,9 +1216,6 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.de
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT ./slides.aux
-INPUT slides.aux
-INPUT slides.aux
 OUTPUT slides.aux
 INPUT /usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 INPUT /usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
@@ -1239,16 +1236,6 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
-INPUT ./slides.out
-INPUT slides.out
-INPUT ./slides.out
-INPUT slides.out
-INPUT ./slides.out
-INPUT slides.out
-INPUT ./slides.out
-INPUT slides.out
-INPUT ./slides.out
-INPUT ./slides.out
 OUTPUT slides.out
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-basic-dictionary-English.dict
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-basic-dictionary-English.dict
@@ -1327,75 +1314,12 @@ INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm5
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss9.tfm
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/mse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/india/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/temperate/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/arid/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/tropical/2x2/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5_bootstrap.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/amazon/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/usa_south/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_2m_temperature_trainedwith_2m_temperature_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/british_columbia/10x10/leadtime_rmse_pct_10m_wind_speed_trainedwith_10m_wind_speed_mlp512x5.png
 OUTPUT slides.nav
 OUTPUT slides.toc
 OUTPUT slides.snm
@@ -1408,3 +1332,4 @@ INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pf
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb
