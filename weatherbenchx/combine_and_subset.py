@@ -406,7 +406,8 @@ def main():
         dirs = setup_directories()
         
         # Choose processing mode
-        process_mode = "climate"  # "geographic" or "climate"
+        process_mode = "geographic"  # "geographic" or "climate"
+        model = "ifs"
         
         if process_mode == "geographic":
             regions = ["india", "usa_south", "amazon", "british_columbia"]  
@@ -418,21 +419,25 @@ def main():
                 logger.info(f"{'='*60}")
                 
                 # Get file paths
-                pangu_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "predictions*.nc")))
-                era5_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "targets*.nc")))
+                prediction_files = sorted(glob.glob(os.path.join(dirs["raw"], f"{model}_raw_data", "predictions*.nc")))
+                target_files = sorted(glob.glob(os.path.join(dirs["raw"], f"{model}_raw_data", "targets*.nc")))
                 
-                if not pangu_files:
+                if not prediction_files:
                     logger.error(f"No pangu files found")
                     continue
-                if not era5_files:
+                if not target_files:
                     logger.error(f"No era5 files found")
                     continue
                 
                 # Process both datasets
-                success_pangu = process_region_incremental(region, "pangu", pangu_files, dirs["processed"])
-                success_era5 = process_region_incremental(region, "era5", era5_files, dirs["processed"])
+                if model == "pangu":
+                    success_prediction= process_region_incremental(region, "pangu", prediction_files, dirs["processed"])
+                    success_target= process_region_incremental(region, "era5", target_files, dirs["processed"])
+                if model == "ifs":
+                    success_prediction = process_region_incremental(region, "ifs", prediction_files, dirs["processed"])
+                    success_target= process_region_incremental(region, "ifs_init", target_files, dirs["processed"])
                 
-                if success_pangu and success_era5:
+                if success_prediction and success_target:
                     regions_processed.append(region)
                     logger.info(f"\nSuccessfully completed region: {region}")
                 else:
@@ -450,25 +455,33 @@ def main():
                 logger.info(f"{'='*60}")
                 
                 # Get file paths
-                pangu_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "predictions*.nc")))
-                era5_files = sorted(glob.glob(os.path.join(dirs["raw"], "pangu_raw_data", "targets*.nc")))
+                prediction_files = sorted(glob.glob(os.path.join(dirs["raw"], f"{model}_raw_data", "predictions*.nc")))
+                target_files = sorted(glob.glob(os.path.join(dirs["raw"], f"{model}_raw_data", "targets*.nc")))
                 
-                if not pangu_files:
-                    logger.error(f"No pangu files found")
+                if not prediction_files:
+                    logger.error(f"No prediction files found")
                     continue
-                if not era5_files:
-                    logger.error(f"No era5 files found")
+                if not target_files:
+                    logger.error(f"No target files found")
                     continue
                 
                 # Process climate region patches
-                success_pangu = process_climate_region_incremental(
-                    climate_region, "pangu", pangu_files, dirs["processed"], patch_size="2x2"
-                )
-                success_era5 = process_climate_region_incremental(
-                    climate_region, "era5", era5_files, dirs["processed"], patch_size="2x2"
-                )
+                if model == "pangu":
+                    success_prediction = process_climate_region_incremental(
+                        climate_region, "pangu", prediction_files, dirs["processed"], patch_size="2x2"
+                    )
+                    success_target = process_climate_region_incremental(
+                        climate_region, "era5", target_files, dirs["processed"], patch_size="2x2"
+                    )
+                if model == "ifs":
+                    success_prediction = process_climate_region_incremental(
+                        climate_region, "pangu", prediction_files, dirs["processed"], patch_size="2x2"
+                    )
+                    success_target = process_climate_region_incremental(
+                        climate_region, "era5", target_files, dirs["processed"], patch_size="2x2"
+                    )
                 
-                if success_pangu and success_era5:
+                if success_prediction and success_target:
                     regions_processed.append(climate_region)
                     logger.info(f"\nSuccessfully completed climate region: {climate_region}")
                 else:
