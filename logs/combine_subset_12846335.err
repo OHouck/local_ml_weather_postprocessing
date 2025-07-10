@@ -1,0 +1,26 @@
+2025-07-10 15:05:56,466 - __main__ - INFO - Starting WeatherBench data processing (incremental mode)...
+2025-07-10 15:05:56,467 - __main__ - INFO - 
+============================================================
+2025-07-10 15:05:56,467 - __main__ - INFO - Starting region: india
+2025-07-10 15:05:56,467 - __main__ - INFO - ============================================================
+2025-07-10 15:05:56,470 - __main__ - INFO - 
+Processing ifs for india (incremental mode)
+2025-07-10 15:05:56,470 - __main__ - INFO - Memory at start_ifs_india: RSS=0.13GB, VMS=0.53GB
+2025-07-10 15:05:56,470 - __main__ - INFO - Found years: ['2018', '2019', '2020', '2021', '2022']
+2025-07-10 15:05:56,470 - __main__ - INFO - 
+Processing first year 2018 to create base file
+2025-07-10 15:05:56,471 - __main__ - INFO - Processing 59 files for year 2018
+2025-07-10 15:06:05,553 - __main__ - INFO -   Processed 10/59 files
+2025-07-10 15:06:13,633 - __main__ - INFO -   Processed 20/59 files
+2025-07-10 15:06:21,852 - __main__ - INFO -   Processed 30/59 files
+2025-07-10 15:06:29,854 - __main__ - INFO -   Processed 40/59 files
+2025-07-10 15:06:38,282 - __main__ - INFO -   Processed 50/59 files
+2025-07-10 15:06:45,678 - __main__ - INFO - Combining 59 datasets for year 2018
+2025-07-10 15:07:15,604 - __main__ - INFO - Created base file with year 2018
+2025-07-10 15:07:15,605 - __main__ - INFO - Memory at after_year_2018: RSS=7.05GB, VMS=7.70GB
+2025-07-10 15:07:15,646 - __main__ - INFO - 
+Processing year 2019
+2025-07-10 15:07:15,646 - __main__ - INFO - Processing 59 files for year 2019
+2025-07-10 15:07:24,315 - __main__ - INFO -   Processed 10/59 files
+2025-07-10 15:07:32,513 - __main__ - INFO -   Processed 20/59 files
+2025-07-10 15:07:40,793 - __main__ - INFO -   Processed 30/59 files

@@ -1,0 +1,32 @@
+==================================
+[Thu Jul 10 15:05:55 EDT 2025] System status:
+Memory usage:
+Job started at: Thu Jul 10 15:05:55 EDT 2025
+Node: g004.anvil.rcac.purdue.edu
+Job ID: 12846335
+CPUs: 4
+Memory: 65536
+==================================
+              total        used        free      shared  buff/cache   available
+Mem:          503Gi        71Gi       429Gi       2.1Gi       2.7Gi       428Gi
+Swap:         178Gi        32Gi       146Gi
+
+Disk usage:
+Filesystem      Size  Used Avail Use% Mounted on
+anvil           5.0T  3.3T  1.8T  65% /anvil
+
+Processing progress:
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.7M Jul  4 13:40 /anvil/projects/x-atm170020/ohouck/data/processed/era5_amazon_2020.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 47M Jul  4 13:27 /anvil/projects/x-atm170020/ohouck/data/processed/pangu_usa_south_2022.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.9M Jul  4 13:20 /anvil/projects/x-atm170020/ohouck/data/processed/era5_pakistan_2021.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.9M Jul  4 13:20 /anvil/projects/x-atm170020/ohouck/data/processed/era5_pakistan_2019.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.8M Jul  4 13:12 /anvil/projects/x-atm170020/ohouck/data/processed/era5_india_2019.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.7M Jul  4 13:41 /anvil/projects/x-atm170020/ohouck/data/processed/era5_amazon_2022.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.8M Jul  4 13:28 /anvil/projects/x-atm170020/ohouck/data/processed/era5_usa_south_2019.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 48M Jul  4 13:19 /anvil/projects/x-atm170020/ohouck/data/processed/pangu_pakistan_2022.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.8M Jul  4 13:12 /anvil/projects/x-atm170020/ohouck/data/processed/era5_india_2021.nc
+-rw-rw-r-- 1 x-ohouck x-atm170020 5.9M Jul  4 13:20 /anvil/projects/x-atm170020/ohouck/data/processed/era5_pakistan_2020.nc
+
+Temporary files:
+0
+---
