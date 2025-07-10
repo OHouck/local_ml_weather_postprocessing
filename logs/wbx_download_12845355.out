@@ -1,0 +1,132 @@
+==================================
+Job started at: Thu Jul 10 12:40:54 EDT 2025
+[Thu Jul 10 12:40:54 EDT 2025] Disk usage in data directory:
+Node: g004.anvil.rcac.purdue.edu
+Job ID: 12845355
+CPUs allocated: 8
+Memory allocated: 131072 MB
+Working directory: /anvil/projects/x-atm170020/ohouck/ai_weather_ag
+Filesystem      Size  Used Avail Use% Mounted on
+anvil           5.0T  3.2T  1.9T  63% /anvil
+[Thu Jul 10 12:40:54 EDT 2025] Number of files downloaded:
+Python version: Python 3.11.7
+592
+---
+NumPy version: 1.26.4
+No checkpoint found - starting fresh download
+==================================
+2025-07-10 12:40:57,374 - __main__ - INFO - Setting up anonymous access...
+2025-07-10 12:40:57,539 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-07-10 12:40:57,539 - __main__ - INFO - 
+==================================================
+2025-07-10 12:40:57,539 - __main__ - INFO - Running diagnostic tests...
+2025-07-10 12:40:57,539 - __main__ - INFO - ==================================================
+2025-07-10 12:40:57,539 - __main__ - INFO - Running target loading diagnostic test...
+2025-07-10 12:40:57,539 - __main__ - INFO - Creating target data loader...
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-07-10 12:40:59,645 - __main__ - INFO - Attempting to load target data for time: 2018-01-02T12:00:00.000000000
+2025-07-10 12:41:00,291 - __main__ - INFO - Success! Target data shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 1}
+2025-07-10 12:41:00,291 - __main__ - INFO - Target variables: ['2m_temperature']
+2025-07-10 12:41:00,293 - __main__ - INFO - Starting fresh from 2018-01
+2025-07-10 12:41:02,073 - __main__ - INFO - 
+==================================================
+2025-07-10 12:41:02,073 - __main__ - INFO - Processing 2018-01
+2025-07-10 12:41:02,073 - __main__ - INFO - ==================================================
+2025-07-10 12:41:02,073 - __main__ - INFO - Created 5 chunks for 2018-01
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-07-10 12:41:02,416 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting control server on port 40417
+2025-07-10 12:41:02,416 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting data server on port 37009
+2025-07-10 12:41:02,416 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting state server on port 44317
+2025-07-10 12:41:02,416 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting logging server on port 37751
+2025-07-10 12:41:02,421 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-07-10 12:41:02,421 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:40417.
+2025-07-10 12:41:02,424 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-07-10 12:41:02,424 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-07-10 12:41:02,428 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:44317.
+2025-07-10 12:41:02,428 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-07-10 12:41:02,430 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:37009
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-07-10 12:41:02,600 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-07-10 12:41:02,604 - __main__ - INFO - Loading predictions for chunk 2018-01-01_2018-01-07
+2025-07-10 12:41:08,260 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-07-10 12:41:25,219 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-01-01_2018-01-07.nc
+2025-07-10 12:41:25,220 - __main__ - INFO - Calculated 13 valid times for targets
+2025-07-10 12:41:25,220 - __main__ - INFO - Loading targets for chunk 2018-01-01_2018-01-07 (valid times: 2018-01-02T12:00:00.000000000 to 2018-01-14T12:00:00.000000000)
+2025-07-10 12:41:26,514 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+2025-07-10 12:41:30,478 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-01-01_2018-01-07.nc
+2025-07-10 12:41:30,729 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-01-01_2018-01-07
+Successfully saved chunk 2018-01-01_2018-01-07
+2025-07-10 12:41:30,732 - __main__ - INFO - Loading predictions for chunk 2018-01-08_2018-01-14
+2025-07-10 12:41:35,699 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-07-10 12:41:52,484 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-01-08_2018-01-14.nc
+2025-07-10 12:41:52,485 - __main__ - INFO - Calculated 13 valid times for targets
+2025-07-10 12:41:52,485 - __main__ - INFO - Loading targets for chunk 2018-01-08_2018-01-14 (valid times: 2018-01-09T12:00:00.000000000 to 2018-01-21T12:00:00.000000000)
+2025-07-10 12:41:53,895 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+2025-07-10 12:41:57,913 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-01-08_2018-01-14.nc
+2025-07-10 12:41:57,913 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-01-08_2018-01-14
+Successfully saved chunk 2018-01-08_2018-01-14
+2025-07-10 12:41:57,916 - __main__ - INFO - Loading predictions for chunk 2018-01-15_2018-01-21
+2025-07-10 12:42:03,108 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-07-10 12:42:20,672 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-01-15_2018-01-21.nc
+2025-07-10 12:42:20,673 - __main__ - INFO - Calculated 13 valid times for targets
+2025-07-10 12:42:20,673 - __main__ - INFO - Loading targets for chunk 2018-01-15_2018-01-21 (valid times: 2018-01-16T12:00:00.000000000 to 2018-01-28T12:00:00.000000000)
+2025-07-10 12:42:21,942 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+2025-07-10 12:42:25,915 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-01-15_2018-01-21.nc
+2025-07-10 12:42:25,915 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-01-15_2018-01-21
+Successfully saved chunk 2018-01-15_2018-01-21
+2025-07-10 12:42:25,918 - __main__ - INFO - Loading predictions for chunk 2018-01-22_2018-01-28
+2025-07-10 12:42:31,122 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-07-10 12:42:47,959 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-01-22_2018-01-28.nc
+2025-07-10 12:42:47,960 - __main__ - INFO - Calculated 13 valid times for targets
+2025-07-10 12:42:47,960 - __main__ - INFO - Loading targets for chunk 2018-01-22_2018-01-28 (valid times: 2018-01-23T12:00:00.000000000 to 2018-02-04T12:00:00.000000000)
+2025-07-10 12:42:49,414 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+2025-07-10 12:42:53,383 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-01-22_2018-01-28.nc
+2025-07-10 12:42:53,384 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-01-22_2018-01-28
+Successfully saved chunk 2018-01-22_2018-01-28
+2025-07-10 12:42:53,389 - __main__ - INFO - Loading predictions for chunk 2018-01-29_2018-01-31
+2025-07-10 12:42:57,564 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 3}
+2025-07-10 12:43:04,090 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-01-29_2018-01-31.nc
+2025-07-10 12:43:04,091 - __main__ - INFO - Calculated 9 valid times for targets
+2025-07-10 12:43:04,091 - __main__ - INFO - Loading targets for chunk 2018-01-29_2018-01-31 (valid times: 2018-01-30T12:00:00.000000000 to 2018-02-07T12:00:00.000000000)
+2025-07-10 12:43:05,493 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 9}
+2025-07-10 12:43:08,284 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-01-29_2018-01-31.nc
+2025-07-10 12:43:08,285 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-01-29_2018-01-31
+Successfully saved chunk 2018-01-29_2018-01-31
+2025-07-10 12:43:08,385 - apache_beam.runners.worker.sdk_worker - INFO - No more requests from control plane
+2025-07-10 12:43:08,385 - apache_beam.runners.worker.sdk_worker - INFO - SDK Harness waiting for in-flight requests to complete
+2025-07-10 12:43:08,385 - apache_beam.runners.worker.data_plane - INFO - Closing all cached grpc data channels.
+2025-07-10 12:43:08,385 - apache_beam.runners.worker.sdk_worker - INFO - Closing all cached gRPC state handlers.
+2025-07-10 12:43:08,388 - apache_beam.runners.worker.sdk_worker - INFO - Done consuming work.
+2025-07-10 12:43:08,394 - __main__ - INFO - Completed processing 2018-01
+2025-07-10 12:43:08,394 - __main__ - INFO - 
+==================================================
+2025-07-10 12:43:08,394 - __main__ - INFO - Processing 2018-02
+2025-07-10 12:43:08,394 - __main__ - INFO - ==================================================
+2025-07-10 12:43:08,394 - __main__ - INFO - Created 4 chunks for 2018-02
+2025-07-10 12:43:08,684 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting control server on port 32919
+2025-07-10 12:43:08,684 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting data server on port 43743
+2025-07-10 12:43:08,684 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting state server on port 44161
+2025-07-10 12:43:08,684 - apache_beam.runners.portability.fn_api_runner.worker_handlers - INFO - starting logging server on port 39417
+2025-07-10 12:43:08,688 - apache_beam.runners.worker.statecache - INFO - Creating state cache with size 104857600
+2025-07-10 12:43:08,688 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure control channel for localhost:32919.
+2025-07-10 12:43:08,689 - apache_beam.runners.worker.sdk_worker - INFO - Control channel established.
+2025-07-10 12:43:08,690 - apache_beam.runners.worker.sdk_worker - INFO - Initializing SDKHarness with unbounded number of workers.
+2025-07-10 12:43:08,693 - apache_beam.runners.worker.sdk_worker - INFO - Creating insecure state channel for localhost:44161.
+2025-07-10 12:43:08,693 - apache_beam.runners.worker.sdk_worker - INFO - State channel established.
+2025-07-10 12:43:08,695 - apache_beam.runners.worker.data_plane - INFO - Creating client data channel for localhost:43743
+/home/x-ohouck/aiw_env/lib/python3.11/site-packages/gcsfs/core.py:317: UserWarning: GCS project not set - cannot list or create buckets
+  warnings.warn("GCS project not set - cannot list or create buckets")
+2025-07-10 12:43:08,868 - __main__ - INFO - Successfully patched gcsfs for anonymous access
+2025-07-10 12:43:08,873 - __main__ - INFO - Loading predictions for chunk 2018-02-01_2018-02-07
+2025-07-10 12:43:15,099 - __main__ - INFO - Loaded prediction data with shape: {'latitude': 721, 'longitude': 1440, 'lead_time': 7, 'init_time': 7}
+2025-07-10 12:43:31,910 - __main__ - INFO - Saved predictions to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/predictions_2018-02-01_2018-02-07.nc
+2025-07-10 12:43:31,911 - __main__ - INFO - Calculated 13 valid times for targets
+2025-07-10 12:43:31,911 - __main__ - INFO - Loading targets for chunk 2018-02-01_2018-02-07 (valid times: 2018-02-02T12:00:00.000000000 to 2018-02-14T12:00:00.000000000)
+2025-07-10 12:43:33,324 - __main__ - INFO - Loaded target data with shape: {'latitude': 721, 'longitude': 1440, 'valid_time': 13}
+2025-07-10 12:43:37,315 - __main__ - INFO - Saved targets to: /anvil/projects/x-atm170020/ohouck/data/raw/ifs_raw_data/targets_2018-02-01_2018-02-07.nc
+2025-07-10 12:43:37,316 - __main__ - INFO - Successfully saved both predictions and targets for chunk 2018-02-01_2018-02-07
+Successfully saved chunk 2018-02-01_2018-02-07
+2025-07-10 12:43:37,320 - __main__ - INFO - Loading predictions for chunk 2018-02-08_2018-02-14

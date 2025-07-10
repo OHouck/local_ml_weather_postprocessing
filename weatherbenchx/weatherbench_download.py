@@ -54,6 +54,7 @@ except ImportError as e:
     print("pip install --force-reinstall apache-beam==2.52.0")
     sys.exit(1)
 
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -452,8 +453,13 @@ def main():
         return
     
     # Configuration
-    prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
-    target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
+    # for pangu
+    # prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
+    # target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
+
+    # for ifs
+    prediction_path= "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
+    target_path= "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" 
     
     # Variables to download
     variables = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"]
@@ -469,7 +475,7 @@ def main():
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], 'pangu_raw_data')
+    output_path = os.path.join(dirs['raw'], 'ifs_raw_data')
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])
@@ -485,7 +491,7 @@ def main():
             variables=variables,
             output_path=output_path,
             start_year=2018,
-            end_year=2018,
+            end_year=2022,
             checkpoint_manager=checkpoint_manager
         )
         
