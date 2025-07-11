@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  10 JUL 2025 17:11
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  11 JUL 2025 10:20
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -761,174 +761,222 @@ File: ot1mathkerncmss.fd 2020/01/31 Fontinst v1.933 font definitions for OT1/mat
 ] [4
 
 ]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic.png, id=121, 1001.4213pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic.png  used on input line 100.
-(pdftex.def)             Requested size: 191.20082pt x 109.04709pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic.png, id=123, 1001.4213pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic.png  used on input line 100.
-(pdftex.def)             Requested size: 191.20082pt x 109.04709pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png, id=121, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png  used on input line 99.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png, id=123, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png  used on input line 99.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
+ [5
 
-Overfull \vbox (1.0416pt too high) detected at line 100
- []
-
-[5
-
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png, id=153, 693.792pt x 433.62pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png  used on input line 117.
-(pdftex.def)             Requested size: 191.20082pt x 119.5006pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png, id=154, 693.792pt x 433.62pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png  used on input line 117.
-(pdftex.def)             Requested size: 191.20082pt x 119.5006pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png, id=153, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png  used on input line 120.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png, id=154, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png  used on input line 120.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
  [6
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_2m_temperature_2m_temperature_mlp512x5.png, id=182, 714.5094pt x 424.9476pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_2m_temperature_2m_temperature_mlp512x5.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_2m_temperature_2m_temperature_mlp512x5.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_2m_temperature_2m_temperature_mlp512x5.png  used on input line 134.
-(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_10m_wind_speed_10m_wind_speed_mlp512x5.png, id=183, 714.5094pt x 424.9476pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_10m_wind_speed_10m_wind_speed_mlp512x5.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_10m_wind_speed_10m_wind_speed_mlp512x5.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_10m_wind_speed_10m_wind_speed_mlp512x5.png  used on input line 134.
-(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png, id=182, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png  used on input line 141.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png, id=183, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png  used on input line 141.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
  [7
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_2m_temperature_2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_combined_10m_wind_speed_10m_wind_speed_mlp512x5.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png, id=212, 867.24pt x 433.62pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png  used on input line 146.
-(pdftex.def)             Requested size: 278.83578pt x 139.41626pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png, id=212, 693.792pt x 433.62pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png  used on input line 158.
+(pdftex.def)             Requested size: 191.20082pt x 119.5006pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png, id=213, 693.792pt x 433.62pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png  used on input line 158.
+(pdftex.def)             Requested size: 191.20082pt x 119.5006pt.
  [8
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_bootstrap.png, id=239, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_bootstrap.png  used on input line 163.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_bootstrap.png, id=240, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_bootstrap.png  used on input line 163.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png, id=241, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png  used on input line 175.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png, id=242, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png  used on input line 175.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
  [9
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_bootstrap.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_bootstrap.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=269, 889.4028pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 178.
-(pdftex.def)             Requested size: 398.34117pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=270, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 178.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_2m_temperature_2m_temperature_mlp512x5.png, id=271, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_2m_temperature_2m_temperature_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_2m_temperature_2m_temperature_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_2m_temperature_2m_temperature_mlp512x5.png  used on input line 192.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_10m_wind_speed_10m_wind_speed_mlp512x5.png, id=272, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_10m_wind_speed_10m_wind_speed_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_10m_wind_speed_10m_wind_speed_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_10m_wind_speed_10m_wind_speed_mlp512x5.png  used on input line 192.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
  [10
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=298, 889.4028pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 193.
-(pdftex.def)             Requested size: 398.34117pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=299, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 193.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_2m_temperature_2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_10m_wind_speed_10m_wind_speed_mlp512x5.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_2m_temperature_2m_temperature_mlp512x5.png, id=300, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_2m_temperature_2m_temperature_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_2m_temperature_2m_temperature_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_2m_temperature_2m_temperature_mlp512x5.png  used on input line 209.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_10m_wind_speed_10m_wind_speed_mlp512x5.png, id=301, 714.5094pt x 424.9476pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_10m_wind_speed_10m_wind_speed_mlp512x5.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_10m_wind_speed_10m_wind_speed_mlp512x5.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_10m_wind_speed_10m_wind_speed_mlp512x5.png  used on input line 209.
+(pdftex.def)             Requested size: 191.20082pt x 113.71288pt.
  [11
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=327, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 208.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=328, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 208.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_2m_temperature_2m_temperature_mlp512x5.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_72_168_10m_wind_speed_10m_wind_speed_mlp512x5.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png, id=329, 867.24pt x 433.62pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png  used on input line 221.
+(pdftex.def)             Requested size: 278.83578pt x 139.41626pt.
  [12
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=356, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 223.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=357, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 223.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png, id=356, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png  used on input line 238.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png, id=357, 1004.7939pt x 571.1739pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png  used on input line 238.
+(pdftex.def)             Requested size: 191.20082pt x 108.68105pt.
  [13
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=387, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 238.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=388, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 238.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=387, 763.8939pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 253.
+(pdftex.def)             Requested size: 398.3461pt x 88.56198pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=388, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 253.
+(pdftex.def)             Requested size: 398.3381pt x 88.5624pt.
  [14
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=416, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 253.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=417, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 253.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=416, 763.8939pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 268.
+(pdftex.def)             Requested size: 398.3461pt x 88.56198pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=417, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 268.
+(pdftex.def)             Requested size: 398.3381pt x 88.5624pt.
  [15
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=445, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 268.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=446, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 268.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=445, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 283.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=446, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 283.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
  [16
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=474, 896.148pt x 422.5386pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 283.
-(pdftex.def)             Requested size: 398.3402pt x 77.49144pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=475, 859.5312pt x 425.9112pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 283.
-(pdftex.def)             Requested size: 398.3401pt x 77.49255pt.
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=474, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 298.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=475, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 298.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
  [17
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>] [18
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=504, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 313.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=505, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 313.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
+ [18
+
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=533, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 328.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=534, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 328.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
+ [19
+
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png, id=563, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 343.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png, id=564, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png  used on input line 343.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
+ [20
+
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png>]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=592, 770.6391pt x 317.5062pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 358.
+(pdftex.def)             Requested size: 398.3358pt x 77.49173pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png, id=593, 1004.7939pt x 318.7107pt>
+File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png Graphic file (type png)
+<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>
+Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png  used on input line 358.
+(pdftex.def)             Requested size: 398.3381pt x 77.49393pt.
+ [21
+
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png>] [22
 
 ]
 \tf@nav=\write6
@@ -945,18 +993,18 @@ Package rerunfilecheck Info: File `slides.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  ) 
 Here is how much of TeX's memory you used:
- 23668 strings out of 476025
- 495903 string characters out of 5790016
+ 23756 strings out of 476025
+ 508359 string characters out of 5790016
  1861388 words of memory out of 5000000
- 43579 multiletter control sequences out of 15000+600000
+ 43651 multiletter control sequences out of 15000+600000
  523431 words of font info for 72 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 128i,15n,122p,419b,670s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 128i,15n,122p,419b,672s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb>
-Output written on slides.pdf (18 pages, 7628884 bytes).
+Output written on slides.pdf (22 pages, 8476005 bytes).
 PDF statistics:
- 565 PDF objects out of 1000 (max. 8388607)
- 472 compressed objects within 5 object streams
- 37 named destinations out of 1000 (max. 500000)
- 168 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 684 PDF objects out of 1000 (max. 8388607)
+ 570 compressed objects within 6 object streams
+ 45 named destinations out of 1000 (max. 500000)
+ 208 words of extra memory for PDF output out of 10000 (max. 10000000)
 
