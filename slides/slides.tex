@@ -101,7 +101,7 @@
 \begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Forecasts}
 \begin{itemize}
     \item Simple MLP method works across variety of regions and climates
-    \item Training a correction model for a 10x10 degree region takes about 2.5 minutes on an M3 max MacBook Pro
+    \item IFS HRES forecasts and be improved a similar amount using the same method
 \end{itemize}
 \begin{figure}[ht]
     \centering
@@ -122,7 +122,7 @@
 \begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Forecasts}
 \begin{itemize}
     \item Simple MLP method works across variety of regions and climates
-    \item Training a correction model for a 10x10 degree region takes about 2.5 minutes on an M3 max MacBook Pro
+    \item MLP greatly outperforms just subtracting mean forecast error for each pixel
 \end{itemize}
 \begin{figure}[ht]
     \centering
@@ -140,24 +140,10 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Can also see rmse bars XX}
-\begin{figure}[ht]
-    \centering
-    \begin{subfigure}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png}
-        \caption{2m Temperature: 10x10 degree}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png}
-        \caption{Wind Speed: 10x10 degree}
-    \end{subfigure}
-\end{figure}
-\end{frame}
-
-\begin{frame}{Results are Invlexible to Training Region Size}
+\begin{frame}{Results are Inflexible to Training Region Size}
+    \begin{itemize}
+        \item RMSE of central 2x2 region depending on how much of the surrounding area is included in training
+    \end{itemize}
     \begin{figure}[ht]
         \centering
         \begin{subfigure}[t]{0.48\textwidth}
@@ -174,7 +160,10 @@
     \end{figure}
 \end{frame}
 
-\begin{frame}{Results are Invlexible to Training Region Size}
+\begin{frame}{Results are Inflexible to Training Region Size}
+    \begin{itemize}
+        \item RMSE of central 2x2 region depending on how much of the surrounding area is included in training
+    \end{itemize}
     \begin{figure}[ht]
         \centering
         \begin{subfigure}[t]{0.48\textwidth}
@@ -192,6 +181,9 @@
 \end{frame}
 
 \begin{frame}{Results are Invlexible to Training Region Size}
+    \begin{itemize}
+        \item RMSE of central 2x2 region depending on how much of the surrounding area is included in training
+    \end{itemize}
     \begin{figure}[ht]
         \centering
         \begin{subfigure}[t]{0.48\textwidth}

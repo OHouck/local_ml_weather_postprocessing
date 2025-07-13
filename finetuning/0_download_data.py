@@ -114,7 +114,7 @@ def get_year_ranges(start_date_str, end_date_str):
 def main():
     # possible regions
     # regions = ["india", "usa_south", "amazon", "british_columbia"]
-    region = "global"
+    region = "ethiopia"
     # model_names = ["pangu", "ifs"]
     model_name = "pangu"
 
@@ -128,30 +128,11 @@ def main():
         raise ValueError(f"Unknown model '{model_name}'. Please specify a valid model.")
 
 
-    # data_dir = os.path.expanduser("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads")
-    data_dir = os.path.expanduser("/Volumes/wd_external_hd/weatherbench") # external drive
+    data_dir = os.path.expanduser("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads")
+    # data_dir = os.path.expanduser("/Volumes/wd_external_hd/weatherbench") # external drive for global
 
     os.makedirs(data_dir, exist_ok=True)
 
-    # # Prepare region and time slices
-    # if region == "full_india":
-    #     lat_min, lat_max = 8.75, 27.25
-    #     lon_min, lon_max = 70.75, 87.25
-    # elif region == "north_india":
-    #     lat_min, lat_max = 21.25, 27.25
-    #     lon_min, lon_max = 70.75, 87.25
-    # elif region == "uttar_pradesh":
-    #     lat_min, lat_max = 24.25, 26
-    #     lon_min, lon_max = 78, 87.25
-    # elif region =="pixel":
-    #     lat_min, lat_max = 24.25, 24.5
-    #     lon_min, lon_max = 78, 78.25
-    # elif region == "pakistan":
-    #     lat_min, lat_max = 25, 34
-    #     lon_min, lon_max = 60, 70
-    # elif region == "south_pakistan":
-    #     lat_min, lat_max = 24, 27.25
-    #     lon_min, lon_max = 62, 70
 
     full_surface_var_list = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"] 
     full_atm_var_list = ["geopotential", "v_component_of_wind", "u_component_of_wind", "specific_humidity", "temperature"]
@@ -176,8 +157,12 @@ def main():
         full_lat_values = np.arange(-10.25, 0.25, 0.25)
         full_lon_values = np.arange(-70.25 + 360, -59.75 + 360, 0.25)
     elif region == "british_columbia":
-        full_lat_values = np.arange(47.75, 58.25, 0.25) # if rerun should start at 47.75
+        full_lat_values = np.arange(47.75, 58.25, 0.25) 
         full_lon_values = np.arange(-130.25 + 360, -119.75 + 360, 0.25)
+    elif region == "ethiopia":
+        full_lat_values = np.arange(3.75, 14.25, 0.25)
+        full_lon_values = np.arange(33.75, 44.25, 0.25)
+
 
     # =========================================================================
     # 0) Download and save the data locally (if needed)
@@ -238,6 +223,7 @@ def main():
             end_time = time.time()
             print("Training Obs data saved successfully for:", date_str, "in region:", region)
             print("Time taken to save obs data:", (end_time - start_time) / 3600, "hours")
+        exit()
     
     # ---- Test data ----
     test_months = get_month_ranges(full_test_start, full_test_end)

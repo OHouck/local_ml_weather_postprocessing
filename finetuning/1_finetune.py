@@ -307,11 +307,14 @@ def get_region_grid(args):
         lat0, lat1 = -10, 0
         lon0, lon1 = -70 + 360, -60 + 360
     elif args.region == "british_columbia":
-        lat0, lat1 = 48.25, 58
+        lat0, lat1 = 48, 58 # if break change to 48.25
         lon0, lon1 = -130 + 360, -120 + 360
     elif args.region == "pakistan":
         lat0, lat1 = 25, 34
         lon0, lon1 = 60, 70
+    elif args.region == "ethiopia":
+        lat0, lat1 = 4, 14
+        lon0, lon1 = 34, 44
     elif args.region == "global" or args.region in CLIMATE_ZONE_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
@@ -402,10 +405,10 @@ def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
         return xr.open_mfdataset(
             file_paths,
             combine="by_coords",
-            preprocess=lambda ds: ds.sortby('latitude'),
+            preprocess=lambda ds: ds.sortby('latitude'), # don't need to select lat/lon for climate patches
             decode_timedelta=True
         )
-    else:
+    else:   
         return xr.open_mfdataset(
             file_paths,
             combine="by_coords",
@@ -458,7 +461,7 @@ def get_bounds(args):
     lon_values = np.arange(lon_min, lon_max, 0.25)
     return lat_values, lon_values
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num = None): 
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None): 
     """
     loads forecast data, forecast output data and observation data for training or testing.
     """
@@ -469,9 +472,11 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         ver_str = "test"
 
     # set up time range for training or testing
+    time_start = getattr(args, f"{ver_str}_start")
+    time_end = getattr(args, f"{ver_str}_end")
     time_values = np.arange(
-        np.datetime64(getattr(args, f"{ver_str}_start")),
-        np.datetime64(getattr(args, f"{ver_str}_end")),
+        np.datetime64(time_start),
+        np.datetime64(time_end),
         np.timedelta64(24, 'h')
     )
 
@@ -480,16 +485,79 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     n_output_vars = len(args.output_vars)
 
     fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
+    
     if args.region in CLIMATE_ZONE_MAP:
         # if in climate map, then we have already cleaned and combined the patches ahead of time
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
+
+    elif args.region == "ethiopia":
+        # For Ethiopia, we need to filter files based on date ranges and don't call load_combined_forecast function
+        fc_dir = os.path.join("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_raw_data", args.region)
+        
+        # Get all prediction and observation files
+        all_pred_files = glob.glob(os.path.join(fc_dir, "predictions_ethiopia_*.nc"))
+        all_obs_files = glob.glob(os.path.join(fc_dir, "targets_ethiopia_*.nc"))
+        
+        # Filter files based on date ranges
+        def filter_files_by_date(file_list, start_date, end_date):
+            """Filter files whose date ranges fall within the specified period."""
+            filtered_files = []
+            start_dt = np.datetime64(start_date)
+            end_dt = np.datetime64(end_date)
+            
+            for file_path in file_list:
+                # Extract dates from filename
+                # Example: predictions_ethiopia_2022-12-29_2022-12-31.nc
+                basename = os.path.basename(file_path)
+                parts = basename.split('_')
+                if len(parts) >= 4:
+                    try:
+                        file_start = np.datetime64(parts[2])
+                        file_end = np.datetime64(parts[3].replace('.nc', ''))
+                        
+                        # Include file if it overlaps with our desired range
+                        if file_start <= end_dt and file_end >= start_dt:
+                            filtered_files.append(file_path)
+                    except:
+                        print(f"Warning: Could not parse dates from filename: {basename}")
+            
+            return sorted(filtered_files)
+        
+        pred_files = filter_files_by_date(all_pred_files, time_start, time_end)
+        obs_files = filter_files_by_date(all_obs_files, time_start, time_end)
+        
+        if len(pred_files) == 0:
+            raise ValueError(f"No prediction files found for Ethiopia in date range {time_start} to {time_end}")
+        if len(obs_files) == 0:
+            raise ValueError(f"No observation files found for Ethiopia in date range {time_start} to {time_end}")
+
+        test_path = os.path.join("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_raw_data/ethiopia/predictions_ethiopia_2021-12-01_2021-12-07.nc")
+        forecast_ds= xr.open_dataset(test_path, decode_times=False, decode_timedelta=False)
+        print(forecast_ds)
+        print("max and min lat and lon")
+        print(forecast_ds.longitude.max().values, forecast_ds.longitude.min().values)
+        print(forecast_ds.latitude.max().values, forecast_ds.latitude.min().values)
+        exit()
+        
+        # Load the filtered files directly
+        forecast_ds = xr.open_mfdataset(
+            pred_files,
+            combine="by_coords",
+            preprocess=lambda ds: ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude'),
+            decode_timedelta=True
+        )
+        train_obs_ds = xr.open_mfdataset(
+            obs_files,
+            combine="by_coords",
+            preprocess=lambda ds: ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude'),
+            decode_timedelta=True
+        )
     else:
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
-
-    forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
-    train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+        forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
+        train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
 
     # create 10m wind speed from u and v components of wind if needed
     if "10m_wind_speed" in args.training_vars:
@@ -524,7 +592,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             longitude=lon_values,
         )[args.output_vars].compute()
 
-    return fc_ds, fc_ds_output , obs_ds, time_values, n_time, n_training_vars, n_output_vars
+    return fc_ds, fc_ds_output, obs_ds, time_values, n_time, n_training_vars, n_output_vars
 
 def create_dataloader(forecast_data, obs_data, batch_size):
     """

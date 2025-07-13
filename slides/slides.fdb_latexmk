@@ -1,8 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1752247244 "/Users/ohouck/vc/ai_weather_ag/slides/slides.tex" "slides.pdf" "slides" 1752247254 0
+["pdflatex"] 1752248238 "/Users/ohouck/vc/ai_weather_ag/slides/slides.tex" "slides.pdf" "slides" 1752248247 0
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png" 1751583138 188368 95f045c698abbaa34ae4e01620c89f66 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_10m_wind_speed_output10m_wind_speed_mlp512x5.png" 1752247158 60443 dca1ddacb772a5ee8ec46f2fd258a4e6 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/comparison/rmse_comparison_pangu_trained_with_2m_temperature_output2m_temperature_mlp512x5.png" 1752247225 60029 ffb47f5919dfb676e74299ae14936fa3 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png" 1752247161 504543 a469c34f79f6cebc564d1991996b9c29 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png" 1752247160 370804 768ff8d15769b2a81d0f03b1d69c3274 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png" 1752247159 305024 59d9f4bbddae54c41ade13bed6d98e11 ""
@@ -33,7 +31,7 @@
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png" 1752247247 176887 d8e4b6aa86ff141985e1523deeac6e78 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png" 1752247179 184250 597641d164fcc1b8512c596ccb190a31 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png" 1752247245 179491 61c643d9ad243f2c1fd0c307d9a76120 ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/slides.tex" 1752246739 15718 30c98d494bfd795773a02936d73a41c7 ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/slides.tex" 1752248238 15435 476ed28b0ca6f2fdff8fe9c0205cbae5 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -237,10 +235,10 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "slides.aux" 1752247254 3662 d224933dce9be6740bd527d8d5bc202e "pdflatex"
-  "slides.nav" 1752247254 2225 c1c5afbecb67aec0ba53ac1043f451e4 "pdflatex"
-  "slides.out" 1752247245 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "slides.tex" 1752246739 15718 30c98d494bfd795773a02936d73a41c7 ""
+  "slides.aux" 1752248247 3533 93861f27799d0c8cc8134d9147db2e5e "pdflatex"
+  "slides.nav" 1752248247 2132 9ecbcfc9f7de68c052dc9846a033acac "pdflatex"
+  "slides.out" 1752248238 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "slides.tex" 1752248238 15435 476ed28b0ca6f2fdff8fe9c0205cbae5 ""
   (generated)
   "slides.aux"
   "slides.log"

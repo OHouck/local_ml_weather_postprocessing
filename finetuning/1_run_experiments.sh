@@ -6,103 +6,103 @@ source .venv/bin/activate
     # --data_dir="/Volumes/wd_external_hd/weatherbench" \
     # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 
-# 10 m wind speed
-# echo "Running fine-tuning for 10m_wind_speed pangu"
-# python3 finetuning/1_finetune.py \
-#     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-#     --training_vars 10m_wind_speed \
-#     --output_vars 10m_wind_speed \
-#     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-#     --train_start="2018-01-01" --train_end="2021-12-31" \
-#     --test_start="2022-01-01" --test_end="2022-12-31" \
-#     --model_name="pangu" \
-#     --region="tropical" \
-#     --subregion="2x2" \
-#     --lead_time_hours="24"
+10 m wind speed
+echo "Running fine-tuning for 10m_wind_speed pangu"
+python3 finetuning/1_finetune.py \
+    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+    --training_vars 10m_wind_speed \
+    --output_vars 10m_wind_speed \
+    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --model_name="pangu" \
+    --region="ethiopia" \
+    --subregion="10x10" \
+    --lead_time_hours="24"
 
-regions=("amazon" "usa_south" "british_columbia")
-# regions=("tropical" "temperate" "arid")
-# subregions=(2x2 4x4 6x6 8x8 10x10)
-subregions=(2x2 4x4 6x6 8x8)
-# lead_times=(24 48 72 96 120 144 168) # currently only have full lead times for india and climate zones
-lead_times=(24 72 168)
+# regions=("amazon" "usa_south" "british_columbia")
+# # regions=("tropical" "temperate" "arid")
+# # subregions=(2x2 4x4 6x6 8x8 10x10)
+# subregions=(2x2 4x4 6x6 8x8)
+# # lead_times=(24 48 72 96 120 144 168) # currently only have full lead times for india and climate zones
+# lead_times=(24 72 168)
 
-for region in "${regions[@]}"; do
-    for subregion in "${subregions[@]}"; do
-        for lead_time in "${lead_times[@]}"; do
+# for region in "${regions[@]}"; do
+#     for subregion in "${subregions[@]}"; do
+#         for lead_time in "${lead_times[@]}"; do
 
-            # 2 m temperature
-            echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours"
-            echo "Running fine-tuning for 2m_temperature pangu"
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="pangu" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
+#             # 2 m temperature
+#             echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours"
+#             echo "Running fine-tuning for 2m_temperature pangu"
+#             python3 finetuning/1_finetune.py \
+#                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+#                 --training_vars 2m_temperature \
+#                 --output_vars 2m_temperature \
+#                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+#                 --train_start="2018-01-01" --train_end="2021-12-31" \
+#                 --test_start="2022-01-01" --test_end="2022-12-31" \
+#                 --model_name="pangu" \
+#                 --region="$region" \
+#                 --subregion="$subregion" \
+#                 --lead_time_hours="$lead_time"
 
-            echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours"
-            echo "Running fine-tuning for 2m_temperature pangu"
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
+#             echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours"
+#             echo "Running fine-tuning for 2m_temperature pangu"
+#             python3 finetuning/1_finetune.py \
+#                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+#                 --training_vars 2m_temperature \
+#                 --output_vars 2m_temperature \
+#                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+#                 --train_start="2018-01-01" --train_end="2021-12-31" \
+#                 --test_start="2022-01-01" --test_end="2022-12-31" \
+#                 --model_name="ifs" \
+#                 --region="$region" \
+#                 --subregion="$subregion" \
+#                 --lead_time_hours="$lead_time"
 
-            # 10 m wind speed
-            echo "Running fine-tuning for 10m_wind_speed pangu"
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 10m_wind_speed \
-                --output_vars 10m_wind_speed \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="pangu" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
+#             # 10 m wind speed
+#             echo "Running fine-tuning for 10m_wind_speed pangu"
+#             python3 finetuning/1_finetune.py \
+#                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+#                 --training_vars 10m_wind_speed \
+#                 --output_vars 10m_wind_speed \
+#                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+#                 --train_start="2018-01-01" --train_end="2021-12-31" \
+#                 --test_start="2022-01-01" --test_end="2022-12-31" \
+#                 --model_name="pangu" \
+#                 --region="$region" \
+#                 --subregion="$subregion" \
+#                 --lead_time_hours="$lead_time"
 
-            python3 finetuning/1_finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-                --training_vars 10m_wind_speed \
-                --output_vars 10m_wind_speed \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours="$lead_time"
-        done
-    done
-done
+#             python3 finetuning/1_finetune.py \
+#                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+#                 --training_vars 10m_wind_speed \
+#                 --output_vars 10m_wind_speed \
+#                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+#                 --train_start="2018-01-01" --train_end="2021-12-31" \
+#                 --test_start="2022-01-01" --test_end="2022-12-31" \
+#                 --model_name="ifs" \
+#                 --region="$region" \
+#                 --subregion="$subregion" \
+#                 --lead_time_hours="$lead_time"
+#         done
+#     done
+# done
 
-# holding forecast paths for different forecasts
-# graphcast 
-    # --forecast_path="gs://weatherbench2/datasets/graphcast/2020/date_range_2019-11-16_2021-02-01_12_hours_derived.zarr" \ 
-# pangu low-res
-    # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
-# pangu high-res
-    # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
-# ERA5 low-res
-    # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
-# ERA5 high-res
-    # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
+# # holding forecast paths for different forecasts
+# # graphcast 
+#     # --forecast_path="gs://weatherbench2/datasets/graphcast/2020/date_range_2019-11-16_2021-02-01_12_hours_derived.zarr" \ 
+# # pangu low-res
+#     # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
+# # pangu high-res
+#     # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
+# # ERA5 low-res
+#     # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
+# # ERA5 high-res
+#     # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
 
-# IFS ground truth
-    # --obs_path="gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" \
+# # IFS ground truth
+#     # --obs_path="gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" \
 
-# IFS forecast
-    # --forecast_path="gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr" \
+# # IFS forecast
+#     # --forecast_path="gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr" \

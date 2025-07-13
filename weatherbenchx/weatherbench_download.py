@@ -156,9 +156,10 @@ class CheckpointManager:
 
 class LoadAndSaveChunk(beam.DoFn):
     """Custom DoFn to load data chunks and save them to disk with checkpointing"""
-    def __init__(self, prediction_loader, target_loader, output_path, checkpoint_manager):
+    def __init__(self, prediction_loader, target_loader, region, output_path, checkpoint_manager):
         self.prediction_loader = prediction_loader
         self.target_loader = target_loader
+        self.region = region
         self.output_path = output_path
         self.checkpoint_manager = checkpoint_manager
         if self.output_path.endswith('.nc'):
@@ -187,15 +188,47 @@ class LoadAndSaveChunk(beam.DoFn):
         
         prediction_saved = False
         target_saved = False
+
+        # region to download for india
+        if self.region == "india":
+            full_lat_values = np.arange(16.75, 27.25, 0.25)
+            full_lon_values = np.arange(71.75, 82.25, 0.25)
+        elif self.region == "pakistan":
+            # full lat values are by 0.25 degrees
+            full_lat_values = np.arange(23.75, 34.25, 0.25) # pakistan/afganistan
+            full_lon_values = np.arange(59.75, 70.25, 0.25) 
+        elif self.region == "usa_south":
+            full_lat_values = np.arange(29.75, 40.25, 0.25)
+            full_lon_values = np.arange(-105.25 + 360, -94.75 + 360, 0.25)
+        elif self.region == "amazon":
+            full_lat_values = np.arange(-10.25, 0.25, 0.25)
+            full_lon_values = np.arange(-70.25 + 360, -59.75 + 360, 0.25)
+        elif self.region == "british_columbia":
+            full_lat_values = np.arange(47.75, 58.25, 0.25) 
+            full_lon_values = np.arange(-130.25 + 360, -119.75 + 360, 0.25)
+        elif self.region == "ethiopia":
+            full_lat_values = np.arange(3.75, 14.25, 0.25)
+            full_lon_values = np.arange(33.75, 44.25, 0.25)
         
         try:
             # Load prediction data
             logger.info(f"Loading predictions for chunk {chunk_id}")
             prediction_chunk = self.prediction_loader.load_chunk(init_times, lead_times)
+            
+            if self.region == "global":
+                pred_filename = f"predictions_{chunk_id}.nc"
+            else :
+                # Filter for specific region
+                logger.info(f"Filtering predictions for region: {self.region}")
+                prediction_chunk = prediction_chunk.sel(
+                    latitude=slice(full_lat_values.min(), full_lat_values.max()),
+                    longitude=slice(full_lon_values.min(), full_lon_values.max())
+                    )
+                pred_filename = f"predictions_{self.region}_{chunk_id}.nc"
+
             logger.info(f"Loaded prediction data with shape: {dict(prediction_chunk.sizes)}")
             
             # Save prediction data immediately after loading
-            pred_filename = f"predictions_{chunk_id}.nc"
             pred_output_path = os.path.join(self.output_path, pred_filename)
             
             encoding = {var: {'zlib': True, 'complevel': 4} for var in prediction_chunk.data_vars}
@@ -215,9 +248,21 @@ class LoadAndSaveChunk(beam.DoFn):
             try:
                 logger.info(f"Loading targets for chunk {chunk_id} (valid times: {valid_times[0]} to {valid_times[-1]})")
                 target_chunk = self.target_loader.load_chunk(valid_times)
+
+                if self.region == "global":
+                    target_filename = f"targets_{chunk_id}.nc"
+                else: 
+                    # Filter for specific region
+                    logger.info(f"Filtering targets for region: {self.region}")
+                    target_chunk = target_chunk.sel(
+                        latitude=slice(full_lat_values.min(), full_lat_values.max()),
+                        longitude=slice(full_lon_values.min(), full_lon_values.max())
+                        )
+                    target_filename = f"targets_{self.region}_{chunk_id}.nc"
                 logger.info(f"Loaded target data with shape: {dict(target_chunk.sizes)}")
+
                 
-                target_filename = f"targets_{chunk_id}.nc"
+                target_filename = f"targets_{self.region}_{chunk_id}.nc"
                 target_output_path = os.path.join(self.output_path, target_filename)
                 
                 encoding = {var: {'zlib': True, 'complevel': 4} for var in target_chunk.data_vars}
@@ -278,6 +323,7 @@ def run_download_by_month(
     prediction_path: str,
     target_path: str,
     variables: List[str],
+    region: str,
     output_path: str,
     start_year: int,
     end_year: int,
@@ -367,6 +413,7 @@ def run_download_by_month(
                     LoadAndSaveChunk(
                         prediction_loader,
                         target_loader,
+                        region,
                         output_path,
                         checkpoint_manager
                     )
@@ -451,18 +498,21 @@ def main():
     if not patch_gcsfs_for_anonymous():
         logger.error("Failed to setup anonymous access. Exiting.")
         return
+    model = "pangu"
     
     # Configuration
     # for pangu
-    # prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
-    # target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
-
-    # for ifs
-    prediction_path= "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
-    target_path= "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" 
+    if model == "pangu":
+        prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
+        target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
+    elif model == "ifs":
+        # for ifs
+        prediction_path= "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
+        target_path= "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" 
     
     # Variables to download
     variables = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"]
+    region = "ethiopia"
     
     # Run diagnostic test first
     logger.info("\n" + "="*50)
@@ -475,7 +525,7 @@ def main():
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], 'ifs_raw_data')
+    output_path = os.path.join(dirs['raw'], f'{model}_raw_data')
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])
@@ -489,6 +539,7 @@ def main():
             prediction_path=prediction_path,
             target_path=target_path,
             variables=variables,
+            region = region,
             output_path=output_path,
             start_year=2018,
             end_year=2022,
