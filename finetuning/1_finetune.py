@@ -307,7 +307,7 @@ def get_region_grid(args):
         lat0, lat1 = -10, 0
         lon0, lon1 = -70 + 360, -60 + 360
     elif args.region == "british_columbia":
-        lat0, lat1 = 48, 58 # if break change to 48.25
+        lat0, lat1 = 48.25, 58 # needs to be 48.25 until data is redownloaded
         lon0, lon1 = -130 + 360, -120 + 360
     elif args.region == "pakistan":
         lat0, lat1 = 25, 34
@@ -475,8 +475,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     time_start = getattr(args, f"{ver_str}_start")
     time_end = getattr(args, f"{ver_str}_end")
     time_values = np.arange(
-        np.datetime64(time_start),
-        np.datetime64(time_end),
+        np.datetime64(time_start) + np.timedelta64(args.lead_time_hours, 'h'),  # Start at lead time hours after start date
+        np.datetime64(time_end) + np.timedelta64(1, 'D'),  # Add 1 day to include end date,
         np.timedelta64(24, 'h')
     )
 
@@ -491,73 +491,23 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
 
-    elif args.region == "ethiopia":
-        # For Ethiopia, we need to filter files based on date ranges and don't call load_combined_forecast function
-        fc_dir = os.path.join("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_raw_data", args.region)
-        
-        # Get all prediction and observation files
-        all_pred_files = glob.glob(os.path.join(fc_dir, "predictions_ethiopia_*.nc"))
-        all_obs_files = glob.glob(os.path.join(fc_dir, "targets_ethiopia_*.nc"))
-        
-        # Filter files based on date ranges
-        def filter_files_by_date(file_list, start_date, end_date):
-            """Filter files whose date ranges fall within the specified period."""
-            filtered_files = []
-            start_dt = np.datetime64(start_date)
-            end_dt = np.datetime64(end_date)
-            
-            for file_path in file_list:
-                # Extract dates from filename
-                # Example: predictions_ethiopia_2022-12-29_2022-12-31.nc
-                basename = os.path.basename(file_path)
-                parts = basename.split('_')
-                if len(parts) >= 4:
-                    try:
-                        file_start = np.datetime64(parts[2])
-                        file_end = np.datetime64(parts[3].replace('.nc', ''))
-                        
-                        # Include file if it overlaps with our desired range
-                        if file_start <= end_dt and file_end >= start_dt:
-                            filtered_files.append(file_path)
-                    except:
-                        print(f"Warning: Could not parse dates from filename: {basename}")
-            
-            return sorted(filtered_files)
-        
-        pred_files = filter_files_by_date(all_pred_files, time_start, time_end)
-        obs_files = filter_files_by_date(all_obs_files, time_start, time_end)
-        
-        if len(pred_files) == 0:
-            raise ValueError(f"No prediction files found for Ethiopia in date range {time_start} to {time_end}")
-        if len(obs_files) == 0:
-            raise ValueError(f"No observation files found for Ethiopia in date range {time_start} to {time_end}")
+        forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
+        train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
 
-        test_path = os.path.join("/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_raw_data/ethiopia/predictions_ethiopia_2021-12-01_2021-12-07.nc")
-        forecast_ds= xr.open_dataset(test_path, decode_times=False, decode_timedelta=False)
-        print(forecast_ds)
-        print("max and min lat and lon")
-        print(forecast_ds.longitude.max().values, forecast_ds.longitude.min().values)
-        print(forecast_ds.latitude.max().values, forecast_ds.latitude.min().values)
-        exit()
-        
-        # Load the filtered files directly
-        forecast_ds = xr.open_mfdataset(
-            pred_files,
-            combine="by_coords",
-            preprocess=lambda ds: ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude'),
-            decode_timedelta=True
-        )
-        train_obs_ds = xr.open_mfdataset(
-            obs_files,
-            combine="by_coords",
-            preprocess=lambda ds: ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude'),
-            decode_timedelta=True
-        )
+
     else:
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
         forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
         train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+    
+    # rename time init_time in forecast_ds and create a new time variable
+    # consistent with the target dataset
+    # create new time variable in forecast_ds that is valid time = init_time + lead_time_hours
+    forecast_ds = forecast_ds.assign_coords(
+        init_time=forecast_ds.time,
+        time=forecast_ds.time + np.timedelta64(args.lead_time_hours, 'h')
+    ).drop_vars('init_time')
 
     # create 10m wind speed from u and v components of wind if needed
     if "10m_wind_speed" in args.training_vars:
@@ -583,7 +533,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Handle spatial selection for obs_ds - skip if lat/lon are None (climate zone patches)
     if lat_values is None or lon_values is None:
         obs_ds = train_obs_ds.sel(
-            time=time_values
+            time=time_values,
         )[args.output_vars].compute()
     else:
         obs_ds = train_obs_ds.sel(
@@ -868,17 +818,19 @@ def main():
 
     dirs = setup_directories()
 
-    # Check for NaNs in 2m_temperature variable across all files, this can happen if download gets interrupted
+    # Get all prediction and observation files
+    file_list = sorted(glob.glob(os.path.join(dirs["raw"], "ethiopia", "predictions_ethiopia_*.nc")))
     # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/test_global/**/*pangu*.nc", recursive=True))
-    # summary = check_2m_temperature(file_list)
-    # # Print a quick report
-    # for path, info in summary.items():
-    #     if "error" in info:
-    #         print(f"[ERROR] {path}: {info['error']}")
-    #     else:
-    #         status = "contains NaNs" if info["has_nans"] else "no NaNs"
-    #         if status == "contains NaNs":
-    #             print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
+    summary = check_2m_temperature(file_list)
+    # Print a quick report
+    for path, info in summary.items():
+        if "error" in info:
+            print(f"[ERROR] {path}: {info['error']}")
+        else:
+            status = "contains NaNs" if info["has_nans"] else "no NaNs"
+            if status == "contains NaNs":
+                print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
+    
 
     # parse command line arguments
     args = parse_args()

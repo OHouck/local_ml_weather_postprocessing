@@ -220,6 +220,8 @@ class LoadAndSaveChunk(beam.DoFn):
             else :
                 # Filter for specific region
                 logger.info(f"Filtering predictions for region: {self.region}")
+
+                prediction_chunk = prediction_chunk.sortby('latitude')
                 prediction_chunk = prediction_chunk.sel(
                     latitude=slice(full_lat_values.min(), full_lat_values.max()),
                     longitude=slice(full_lon_values.min(), full_lon_values.max())
@@ -254,6 +256,7 @@ class LoadAndSaveChunk(beam.DoFn):
                 else: 
                     # Filter for specific region
                     logger.info(f"Filtering targets for region: {self.region}")
+                    target_chunk = target_chunk.sortby('latitude')
                     target_chunk = target_chunk.sel(
                         latitude=slice(full_lat_values.min(), full_lat_values.max()),
                         longitude=slice(full_lon_values.min(), full_lon_values.max())
@@ -525,7 +528,7 @@ def main():
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], f'{model}_raw_data')
+    output_path = os.path.join(dirs['raw'], f'{model}_data')
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])

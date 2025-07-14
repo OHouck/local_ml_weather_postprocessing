@@ -365,7 +365,7 @@ def generate_lead_time_plots(
                        zorder=3)
     
     # Set consistent axes limits for all plot types
-    ax.set_ylim(-5, 35)  # Adjust these values based on your typical data range
+    ax.set_ylim(-25, 25)  # Adjust these values based on your typical data range
     
     # Set x-axis to show all lead times but only label those with data
     ax.set_xticks(range(len(lead_times)))
@@ -1408,7 +1408,7 @@ def main():
     # output_vars = ["10m_wind_speed"]
     # prediction_var = "10m_wind_speed"
 
-    # Compare multiple runs across lead times and regions in a single plot.
+    # # Compare multiple runs across lead times and regions in a single plot.
     generate_rmse_comparison_plot(
         dirs=dirs,
         model="pangu",
@@ -1417,40 +1417,40 @@ def main():
         mlp_params=(512, 5)
     )
 
-    regions = ["india", "amazon", "british_columbia", "usa_south"]
-    plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
-    for plot_type in plot_types:
-        generate_lead_time_plots(
-            dirs = dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            mlp_params=(512, 5), 
-            regions = regions,
-            subregion="10x10",
-            bootstrap=False,
-            plot_type=plot_type
-        )
-    climate_regions = ["tropical", "arid", "temperate"]
-    generate_lead_time_plots(
-        dirs = dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5), 
-        regions = climate_regions,
-        subregion="2x2",
-        bootstrap=True,
-        plot_type = "all"
-    )
+    # regions = ["india", "amazon", "british_columbia", "usa_south"]
+    # plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
+    # for plot_type in plot_types:
+    #     generate_lead_time_plots(
+    #         dirs = dirs,
+    #         train_start="2018-01-01",
+    #         train_end="2021-12-31",
+    #         test_start="2022-01-01",
+    #         test_end="2022-12-31",
+    #         model="pangu",
+    #         training_output_vars=(training_vars, output_vars),
+    #         prediction_var=prediction_var,
+    #         mlp_params=(512, 5), 
+    #         regions = regions,
+    #         subregion="4x4",
+    #         bootstrap=False,
+    #         plot_type=plot_type
+    #     )
+    # climate_regions = ["tropical", "arid", "temperate"]
+    # generate_lead_time_plots(
+    #     dirs = dirs,
+    #     train_start="2018-01-01",
+    #     train_end="2021-12-31",
+    #     test_start="2022-01-01",
+    #     test_end="2022-12-31",
+    #     model="pangu",
+    #     training_output_vars=(training_vars, output_vars),
+    #     prediction_var=prediction_var,
+    #     mlp_params=(512, 5), 
+    #     regions = climate_regions,
+    #     subregion="2x2",
+    #     bootstrap=True,
+    #     plot_type = "all"
+    # )
 
     lead_time_groups = [[24], [24, 72], [24, 72, 168]]
     for lead_times in lead_time_groups:
@@ -1461,6 +1461,18 @@ def main():
             test_start="2022-01-01",
             test_end="2022-12-31",
             model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            mlp_params=(512, 5),
+            lead_times=lead_times
+        )
+        generate_subregion_comparison_plots(
+            dirs = dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="ifs",
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
             mlp_params=(512, 5),
@@ -1480,7 +1492,7 @@ def main():
             prediction_var=prediction_var,
             mlp_params=(512, 5),
             region=region,
-            subregion="10x10",
+            subregion="2x2",
             lead_time=24
         )
 
@@ -1496,7 +1508,7 @@ def main():
             prediction_var=prediction_var,
             mlp_params=(512, 5),
             region=region,
-            subregion="10x10",
+            subregion="2x2",
             lead_time=24
         )
 
