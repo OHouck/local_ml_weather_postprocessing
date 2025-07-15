@@ -293,6 +293,20 @@ def main():
     temperate_patches = np.load(temperate_patch_path, allow_pickle=True)
     arid_patches = np.load(arid_patch_path, allow_pickle=True)
 
+    # Define bounding boxes to create rectangles to plot
+    india_bounds = {"lat0": 17, "lat1": 27, "lon0": 72 + 180, "lon1": 82 + 180}
+    usa_south_bounds = {"lat0": 30, "lat1": 40, "lon0": -105 + 180, "lon1": -95 + 180}
+    amazon_bounds = {"lat0": -10, "lat1": 0, "lon0": -70 + 180, "lon1": -60 + 180}
+    british_columbia_bounds = {"lat0": 48.25, "lat1": 58, "lon0": -130 + 180, "lon1": -120 + 180}
+
+    manual_regions = [
+        {"name": "India", "bounds": india_bounds},
+        {"name": "USA South", "bounds": usa_south_bounds}, 
+        {"name": "Amazon", "bounds": amazon_bounds},
+        {"name": "British Columbia", "bounds": british_columbia_bounds}
+    ]
+        
+
     # Plot
     plt.figure(figsize=(12, 6))
     im = climate_zones_simplified.plot(cmap=cmap, norm=norm, add_colorbar=False)
@@ -319,15 +333,52 @@ def main():
                             facecolor=color, alpha=alpha, edgecolor='black', linewidth=0.5)
             plt.gca().add_patch(rect)
 
+    # Function to add manual region rectangles
+    def add_manual_rectangles(manual_regions, color='red', alpha=0.2, label="Manual Regions"):
+        for i, region in enumerate(manual_regions):
+            bounds = region["bounds"]
+            min_lat, max_lat = bounds["lat0"], bounds["lat1"]
+            min_lon, max_lon = bounds["lon0"], bounds["lon1"]
+            
+            # Calculate width and height for 10x10 rectangle
+            width = max_lon - min_lon
+            height = max_lat - min_lat
+            
+            # Add large 10x10 rectangle (more transparent)
+            rect = Rectangle((min_lon, min_lat), width, height, 
+                            facecolor=color, alpha=alpha, edgecolor='black', linewidth=1.0,
+                            label=label if i == 0 else "")
+            plt.gca().add_patch(rect)
+            
+            # Calculate center 2x2 rectangle
+            center_lat = (min_lat + max_lat) / 2
+            center_lon = (min_lon + max_lon) / 2
+            
+            # 2x2 degree rectangle centered on the region center
+            small_width = 2.0
+            small_height = 2.0
+            small_min_lon = center_lon - small_width / 2
+            small_min_lat = center_lat - small_height / 2
+            
+            # Add small 2x2 rectangle (almost opaque)
+            small_rect = Rectangle((small_min_lon, small_min_lat), small_width, small_height,
+                                 facecolor=color, alpha=0.9, edgecolor='black', linewidth=1.5,
+                                 label="2x2 Center Regions" if i == 0 else "")
+            plt.gca().add_patch(small_rect)
+
     # Add patches for each climate zone
     add_patch_rectangles(tropical_patches, colors[0])  # Green
     add_patch_rectangles(arid_patches, colors[1])      # Gold
     add_patch_rectangles(temperate_patches, colors[2]) # Blue
+    add_manual_rectangles(manual_regions, color='red', alpha=0.5, label="Manual Regions")
+
 
     # Add custom colorbar with proper labels
     cbar = plt.colorbar(im, ticks=[1, 2, 3, 4, 5], shrink=0.8)
     cbar.ax.set_yticklabels(['Tropical', 'Arid', 'Temperate', 'Cold', 'Polar'])
     cbar.set_label('Climate Zone')
+
+    plt.legend(loc='upper left', bbox_to_anchor=(0.02, 0.98))
 
     plt.title("Climate Zones (0.25°) with Sampling Patches")
     plt.tight_layout()

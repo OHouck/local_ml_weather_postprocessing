@@ -20,6 +20,9 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{caption}
+\usepackage[style=authoryear]{biblatex}
+\addbibresource{regional_forecasting.bib}
+
 
 % Set the path for figures
 \graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
@@ -34,31 +37,61 @@
 
 \maketitle
 
+\section{Background}
 
-\begin{frame}{Research Goal and Overview}
+\begin{frame}{Running ML Weather Models is Cheap but Training them is Expensive}
+    \begin{itemize}
+        \item Instead of spending compute power predicting upper atmosphere circulation patterns, why not focus on the weather variables most relevant to people
+        \item Retraining and in some cases fully finetuning these models be out of reach for those poor in compute.
+
+    \end{itemize}
+    \pause 
+    \vspace{0.5em}
+    \textbf{Goal:} % Delays the appearance of the content below this line
+    Demonstrate that is is possible to meaningfully improve the accuracy of relevant weather variables using a small amount of compute power and data.
+\end{frame}
+
+
+\begin{frame}{Research Questions and Early Results}
 \begin{itemize}
-    \item Show the feasibility of finetuning weather forecasts for specific outcomes using minimal compute power
-    \item Use a simple MLP model to correct both a data driven ML forecast (Pangu) and a traditional NWP forecast (IFS HRES)
-    \item Demonstrate the method using 2 meter temperature and 10 meter wind speed across a variety of regions and lead times
-        \item 2m Temp Imrovements range from  XX-XX
-        \item 10m Wind Speed Improvements range from XX-XX
+    \item Is it possible to improve forecast accuracy using easily available off the shelf tools?
+    \item Can NWP and ML weather models can be corrected in the same way? 
+    \item We train a simple neural network to correct both a data driven ML forecast (Pangu) and a traditional NWP forecast (IFS HRES) we find success predicting 10m wind speed but not so much 2m temperature. 
+    \begin{itemize}
+        \item 10m Wind Speed Improvements range from 5\%-20\% for lead times 1 to 7 days
+        \item 2m Temp Improvements range from  -20\% - 20\%
+    \end{itemize}
 \end{itemize}
 
 \vspace{0.5em}
-\textbf{Key Contribution:} Demonstrating a simple method to significantly improve forecast accuracy using limited computational power.
+\textbf{Key Contribution:} Apply neural network post-processing to both NWP and ML weather models, showing that it is possible to improve the accuracy of both with perhaps some caveats.
 \end{frame}
 
-\begin{frame}{Previous that Post-Processing NWP Forecasts with Neural Networks is Effective}
+\begin{frame}{Previous Papers have found Success Post-Processing NWP Forecasts with Neural Networks}
 \begin{itemize}
-    \item cite{hanDeepLearningMethod2021} trained a U-Net to correct IFS Forecasts in Northern China 
+    \item \cite{hanDeepLearningMethod2021} trained a U-Net to correct IFS Forecasts in Northern China 
     \begin{itemize}
         \item Improvements in 2m Temp RMSE go range from 30\% to 12\% for lead times 1 to 7 days
         \item Improvements in 10m Wind Speed RMSE Range from 25\% to 20\% for lead times 1 to 7 days 
     \end{itemize}
-    \item cite{araujoPostProcessingAirTemperature2022} test using both a CNN and MLP to further improve post processing model GRIDPP over Norway
-    \item Uses RMSE error instead of MSE but I find a larger percent improvement for both 2m temperature and 10m wind speed
+    \item \cite{araujoPostProcessingAirTemperature2022} try to improve post-processing model GRIDPP over Norway
+    \begin{itemize}
+        \item Improve RMSE of GRIDPP by about 1\%. Suggests ML post-processing is most useful when there is not an existing and mature post-processing model.
+    \end{itemize}
 \end{itemize}
 \end{frame}
+
+\begin{frame}{Start by Manually Looking at Four Regions of Interest}
+\begin{itemize}
+    \item Choose a handful of regions with a variety of climates and land types. 
+\end{itemize}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\linewidth]{finetuning/climate_zones_with_patches.png}
+\end{figure}
+\end{frame}
+
 
 \begin{frame}{Method}
 \begin{itemize}
@@ -66,15 +99,17 @@
     \begin{itemize}
         \item Target Pangu predictions using ERA5 and IFS HRES predictions using its t=0 initialization
     \end{itemize}
-    \item Filter to a single variable and lead time, in a particular region
-    \item Train 128x5 MLP network that takes in Pangu/IFS forecast outputs and targets MSE compared to target ERA5/IFS HRES data
+    \item Each model tries to predict a single variable for a single lead time in a particular region. 
+    \item Train neural network that takes in Pangu/IFS forecast outputs and targets MSE compared to target ERA5/IFS HRES data
     \begin{itemize}
         \item Train using a single forecast per day for years 2018-2021
         \item Test using daily forecasts in 2022
+        \item Test MLP architecture with 5 hidden layers, each with 512 neurons and a UNet architecture with 128 base channels
     \end{itemize}
 \end{itemize}
 \end{frame}
 
+\section{Primary Results}
 
 \begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Wind Speed but not Temperature} 
 \begin{itemize}
@@ -89,14 +124,14 @@
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn.png}
-        \caption{2m Temperature}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png}
+        \caption{2m Temperature: Pangu}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn.png}
-        \caption{Wind Speed}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png}
+        \caption{Wind Speed: Pangu}
     \end{subfigure}
 \end{figure}
 \end{frame}
@@ -104,20 +139,20 @@
 \begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Wind Speed but not Temperature} 
 \begin{itemize}
     \item Simple MLP method works across variety of regions and climates
-    \item IFS HRES forecasts and be improved a similar amount using the same method
+    \item The 2m temperature IFS predictions can be improved better than the Pangu predictions
 \end{itemize}
 \begin{figure}[ht]
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn.png}
-        \caption{2m Temperature}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png}
+        \caption{2m Temperature: IFS vs Pangu}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn.png}
-        \caption{Wind Speed}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png}
+        \caption{Wind Speed: IFS vs Pangu}
     \end{subfigure}
 \end{figure}
 \end{frame}
@@ -125,25 +160,25 @@
 \begin{frame}{Headline Result: Simple MLP Seems Effective at Correcting Wind Speed but not Temperature} 
 \begin{itemize}
     \item Simple MLP method works across variety of regions and climates
-    \item MLP greatly outperforms just subtracting mean forecast error for each pixel
+    \item When it works, Neural net outperforms just subtracting the mean forecast error for each pixel
 \end{itemize}
 \begin{figure}[ht]
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all.png}
-        \caption{2m Temperature}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png}
+        \caption{2m Temperature: Add Mean Error Correction}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all.png}
-        \caption{Wind Speed}
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png}
+        \caption{Wind Speed: Add Mean Error Correction}
     \end{subfigure}
 \end{figure}
 \end{frame}
 
-\begin{frame}{Results are Inflexible to Training Region Size}
+\begin{frame}{Slightly Better Performance with Small Training Regions}
     \begin{itemize}
         \item RMSE of central 2x2 region depending on how much of the surrounding area is included in training
     \end{itemize}
@@ -151,40 +186,57 @@
         \centering
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png}
-            \caption{2m Temperature}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png}
+            \caption{2m Temperature 24h: Pangu vs IFS}
         \end{subfigure}
         \hfill
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png}
-            \caption{Wind Speed}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png}
+            \caption{Wind Speed 24h: Pangu vs IFS}
         \end{subfigure}
     \end{figure}
 \end{frame}
-
-\begin{frame}{Results are Inflexible to Training Region Size}
+\begin{frame}{Effect Seems to mute with Longer Lead Times}
     \begin{itemize}
-        \item RMSE of central 2x2 region depending on how much of the surrounding area is included in training
     \end{itemize}
     \begin{figure}[ht]
         \centering
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/ifs/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp512x5.png}
-            \caption{2m Temperature}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png}
+            \caption{2m Temperature 72h: Pangu vs IFS}
         \end{subfigure}
         \hfill
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/ifs/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp512x5.png}
-            \caption{Wind Speed}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png}
+            \caption{Wind Speed 72h: Pangu vs IFS}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Effect Seems to mute with Longer Lead Times}
+    \begin{itemize}
+    \end{itemize}
+    \begin{figure}[ht]
+        \centering
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png}
+            \caption{2m Temperature 168h: Pangu vs IFS}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png}
+            \caption{Wind Speed 168h: Pangu vs IFS}
         \end{subfigure}
     \end{figure}
 \end{frame}
 
 
-\begin{frame}{How to Explore Heterogeneity by Climate Region}
+\begin{frame}{Exploreing Heterogeneity by Climate Region}
 \begin{itemize}
     \item Define tropical, temperate, and arid pixels on an 0.25 degree grid using broad Koppen-Geiger classes
     \item Train fine-tuning model on randomly sampled 2x2 degree patches
@@ -196,34 +248,36 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Heterogeneity by Climate Region: 2m Temperature}
+\begin{frame}{Heterogeneity by Climate Region}
     \begin{figure}[ht]
     \centering
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_bootstrap.png}
-            \caption{2m Temperature}
+            \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png}
+            \caption{2m Temperature: Pangu}
         \end{subfigure}
     \hfill
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_bootstrap.png}
-            \caption{Wind Speed}
+            \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png}
+            \caption{Wind Speed: Pangu}
         \end{subfigure}
     \end{figure}
 \end{frame}
+
+\section{Detailed Regional Results}
 
 \begin{frame}{Amazon Temperature}
     \begin{figure}
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -233,12 +287,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -248,12 +302,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -263,12 +317,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -278,12 +332,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -293,12 +347,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -308,12 +362,12 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
@@ -323,28 +377,176 @@
         \centering
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \vspace{0.3cm}
         \begin{subfigure}[t]{\textwidth}
             \centering
-            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h.png}
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
         \end{subfigure}
     \end{figure}
 \end{frame}
 
 
+\section{What's next?}
 
-\begin{frame}{What I'm Actively Working on XX rewrite}
+
+\begin{frame}{What's next?}
 
 \begin{itemize}
-    \item Rewriting the databuild to be able to take advantage of the new WeatherbenchX package and also be able to run on a server and be more flexible
-    \item Implementing a U-Net model for fine-tuning
+    \item Besdies Pangu, what would be the most interesting ML weather model to try this on?
     \begin{itemize}
-        \item Early results suggest it significantly ups compute time without much improved performance
+        \item Interested in Gen/Graphcast and AIFS  
     \end{itemize}
-    \item Implement ANO Correction (subtracting mean error) method to compare to MLP correction
+    \item Use gridded observational data as training targets.
+    \item Repeat same analysis using a daytime initialization time. 
 \end{itemize}
 \end{frame}
 
+\section{References}
+\begin{frame}[allowframebreaks]{References}
+    \printbibliography[heading=none]
+\end{frame}
+
+\section{Appendix}
+
+\begin{frame}{Forecast Improvement on 10x10 Degree Regions}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png}
+        \caption{2m Temperature: IFS vs Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png}
+        \caption{Wind Speed: IFS vs Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Amazon Temperature 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Amazon Wind Speed 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.4\textheight]{finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{British Columbia Temperature 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{British Columbia Wind Speed 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{India Temperature 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{India Wind Speed 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{USA South West Temperature 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{USA South West Wind Speed 10x10}
+    \begin{figure}
+        \centering
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \vspace{0.3cm}
+        \begin{subfigure}[t]{\textwidth}
+            \centering
+            \includegraphics[width=\linewidth, height=0.35\textheight]{finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+
 \end{document}
+

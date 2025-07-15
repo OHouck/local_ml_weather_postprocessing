@@ -22,9 +22,9 @@ source .venv/bin/activate
 
 # regions=("india" "amazon" "usa_south" "british_columbia")
 # # regions=("tropical" "temperate" "arid")
-regions=("india")
+regions=("amazon" "british_columbia" "usa_south")
 # subregions=(2x2 4x4 6x6 8x8 10x10)
-subregions=(6x6 10x10)
+subregions=(2x2 6x6 10x10)
 # lead_times=(24 48 72 96 120 144 168) # currently only have full lead times for india and climate zones
 lead_times=(24 72 168)
 
@@ -46,7 +46,7 @@ for region in "${regions[@]}"; do
                 --region="$region" \
                 --subregion="$subregion" \
                 --lead_time_hours="$lead_time" \
-                --model_type="UNet"
+                --model_type="UNet" 
 
             # echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours" # echo "Running fine-tuning for 2m_temperature pangu"
             # python3 finetuning/1_finetune.py \

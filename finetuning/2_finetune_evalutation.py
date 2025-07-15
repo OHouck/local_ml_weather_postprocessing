@@ -19,19 +19,6 @@ from scipy import stats
 #######################
 # Utility Functions
 #######################
-
-def generate_output_path(args):
-    region_str = f"{args.region}"
-    subregion_str = f"{args.subregion}"
-    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
-    training_vars_str = "_".join(args.training_vars)
-    output_vars_str = "_".join(args.output_vars)
-    mlp_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
-    lead_time = f"leadtime_{args.lead_time_hours}"
-
-    output_path = f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{mlp_str}.zarr"
-    return output_path 
-
 def setup_directories():
     # Determine root directory based on environment.
     nodename = socket.gethostname()
@@ -53,9 +40,31 @@ def setup_directories():
         os.makedirs(path, exist_ok=True)
     return dirs
 
-#######################
-# Plotting Functions
-#######################
+def generate_output_path(args):
+    region_str = f"{args.region}"
+    subregion_str = f"{args.subregion}"
+    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
+    training_vars_str = "_".join(args.training_vars)
+    output_vars_str = "_".join(args.output_vars)
+    
+    # Handle different nn architectures
+    if hasattr(args, 'nn_architecture'):
+        if args.nn_architecture == 'mlp':
+            nn_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+        elif args.nn_architecture == 'unet':
+            nn_str = "unet"
+        else:
+            raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
+    else:
+        # Fallback for backward compatibility
+        nn_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+    
+    lead_time = f"leadtime_{args.lead_time_hours}"
+
+    output_path = f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{nn_str}.zarr"
+    return output_path
+
+
 def generate_lead_time_plots(
         dirs,
         train_start, train_end,
@@ -63,11 +72,12 @@ def generate_lead_time_plots(
         model,
         training_output_vars,
         prediction_var,
-        mlp_params,
-        regions,
-        subregion,
+        nn_architecture=["mlp"],  # Changed from mlp_params
+        mlp_params=(512, 5),  # Keep for backward compatibility
+        regions=None,
+        subregion="4x4",
         bootstrap=None,
-        plot_type="all",  # New parameter: "pangu_nn", "pangu_ifs_nn", or "all"
+        plot_type="all",
 ):
     """
     Generates a single plot showing percent improvement in RMSE by lead time for neural network
@@ -75,31 +85,10 @@ def generate_lead_time_plots(
     
     Parameters
     ----------
-    dirs : dict
-        Dictionary containing paths for input and figure directories
-    train_start, train_end : str
-        Training period boundaries
-    test_start, test_end : str
-        Testing period boundaries
-    model : str
-        Model name (e.g., 'pangu', 'ifs')
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict
+    nn_architecture : list
+        List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
     mlp_params : tuple
-        MLP architecture parameters
-    regions : list
-        List of regions to process
-    subregion : str
-        Subregion identifier
-    bootstrap : bool, optional
-        Whether to use bootstrap samples for confidence intervals
-    plot_type : str, optional
-        Type of plot to generate:
-        - "pangu_nn": Only Pangu NN corrections
-        - "pangu_ifs_nn": Pangu and IFS NN corrections
-        - "all": All corrections (NN and mean debiased)
+        MLP architecture parameters (only used when nn_architecture includes "mlp")
     """
     
     # Parse training and output variables
@@ -112,7 +101,6 @@ def generate_lead_time_plots(
     # Create string representations for file naming
     training_vars_str = "_".join(training_vars)
     output_vars_str = "_".join(output_vars)
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
     lead_times = [24, 48, 72, 96, 120, 144, 168]  # Possible lead times in hours
@@ -131,10 +119,16 @@ def generate_lead_time_plots(
         'temperate': '#90EE90' # Light Green
     }
 
-    # Define markers for different models and line styles for correction types
+    # Define markers for different models
     model_markers = {
         'pangu': 'o',  # Circle
         'ifs': '^'     # Triangle
+    }
+    
+    # Define fill styles for different architectures
+    architecture_fillstyles = {
+        'mlp': 'full',   # Filled markers
+        'unet': 'none'   # Hollow markers
     }
     
     correction_styles = {
@@ -148,80 +142,52 @@ def generate_lead_time_plots(
     # Process each region
     for region_idx, region in enumerate(regions):
         # Initialize storage for improvement percentages for this region
-        improvements = {
-            'pangu_nn': {},
-            'pangu_ano': {},
-            'ifs_nn': {},
-            'ifs_ano': {}
-        }
+        improvements = {}
+        for arch in nn_architecture:
+            improvements[f'pangu_{arch}_nn'] = {}
+            improvements[f'pangu_{arch}_ano'] = {}
+            improvements[f'ifs_{arch}_nn'] = {}
+            improvements[f'ifs_{arch}_ano'] = {}
         
         # Process each lead time
         for lt in lead_times:
-            # Construct file paths
-            if bootstrap:
-                pangu_pattern = os.path.join(
-                    dirs['input'], 
-                    f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr"
+            # Process each architecture
+            for arch in nn_architecture:
+                # Set up args for generate_output_path
+                args = SimpleNamespace(
+                    model_name=model,
+                    region=region,
+                    subregion=subregion,
+                    train_start=train_start,
+                    train_end=train_end,
+                    test_start=test_start,
+                    test_end=test_end,
+                    training_vars=training_vars,
+                    output_vars=output_vars,
+                    lead_time_hours=lt,
+                    nn_architecture=arch
                 )
-                ifs_pattern = os.path.join(
-                    dirs['input'],
-                    f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}*bs*.zarr"
-                )
-            else:
-                pangu_pattern = os.path.join(
-                    dirs['input'],
-                    f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr"
-                )
-                ifs_pattern = os.path.join(
-                    dirs['input'],
-                    f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-                    f"dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr"
-                )
+                
+                if arch == 'mlp':
+                    args.mlp_hidden_dim = mlp_params[0]
+                    args.mlp_layers = mlp_params[1]
+                
+                # Construct file paths
+                if bootstrap:
+                    pangu_pattern = os.path.join(dirs['input'], generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                    args.model_name = 'ifs'
+                    ifs_pattern = os.path.join(dirs['input'], generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                else:
+                    pangu_pattern = os.path.join(dirs['input'], generate_output_path(args))
+                    args.model_name = 'ifs'
+                    ifs_pattern = os.path.join(dirs['input'], generate_output_path(args))
 
-            # Process Pangu model files
-            pangu_files = glob.glob(pangu_pattern)
-            if not bootstrap and len(pangu_files) > 1:
-                raise ValueError(f"Multiple files found for lead time {lt}h: {pangu_files}")
+                # Process Pangu model files
+                pangu_files = glob.glob(pangu_pattern)
+                if not bootstrap and len(pangu_files) > 1:
+                    raise ValueError(f"Multiple files found for lead time {lt}h: {pangu_files}")
 
-            for idx, file_path in enumerate(pangu_files):
-                try:
-                    ds = xr.open_zarr(file_path)
-                    
-                    # Extract data
-                    ground_truth = ds[f"{prediction_var}_ground_truth"]
-                    original = ds[f"{prediction_var}_original"]
-                    nn_corrected = ds[f"{prediction_var}_corrected"]
-                    ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
-
-                    # Calculate RMSE
-                    rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
-                    rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
-                    
-                    # Calculate percent improvements
-                    pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
-                                          if rmse_original != 0 else 0)
-                    improvements['pangu_nn'][(lt, idx)] = pct_improvement_nn
-                    
-                    if ano_corrected is not None and plot_type == "all":
-                        rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
-                        pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
-                                               if rmse_original != 0 else 0)
-                        improvements['pangu_ano'][(lt, idx)] = pct_improvement_ano
-
-                except Exception as e:
-                    print(f"Error processing {file_path}: {e}")
-                    continue
-
-            # Process IFS model files only if needed
-            if plot_type in ["pangu_ifs_nn", "all"]:
-                ifs_files = glob.glob(ifs_pattern)
-                if ifs_files:  # Evaluates to True if the list is not empty
-                    assert len(ifs_files) == len(pangu_files)
-                    
-                for idx, file_path in enumerate(ifs_files):  
+                for idx, file_path in enumerate(pangu_files):
                     try:
                         ds = xr.open_zarr(file_path)
                         
@@ -238,17 +204,52 @@ def generate_lead_time_plots(
                         # Calculate percent improvements
                         pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
                                               if rmse_original != 0 else 0)
-                        improvements['ifs_nn'][(lt, idx)] = pct_improvement_nn
+                        improvements[f'pangu_{arch}_nn'][(lt, idx)] = pct_improvement_nn
                         
                         if ano_corrected is not None and plot_type == "all":
                             rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
                             pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
                                                    if rmse_original != 0 else 0)
-                            improvements['ifs_ano'][(lt, idx)] = pct_improvement_ano
+                            improvements[f'pangu_{arch}_ano'][(lt, idx)] = pct_improvement_ano
 
                     except Exception as e:
-                        print(f"Error processing IFS file {file_path}: {e}")
+                        print(f"Error processing {file_path}: {e}")
                         continue
+
+                # Process IFS model files only if needed
+                if plot_type in ["pangu_ifs_nn", "all"]:
+                    ifs_files = glob.glob(ifs_pattern)
+                    if ifs_files:  # Evaluates to True if the list is not empty
+                        assert len(ifs_files) == len(pangu_files)
+                        
+                    for idx, file_path in enumerate(ifs_files):  
+                        try:
+                            ds = xr.open_zarr(file_path)
+                            
+                            # Extract data
+                            ground_truth = ds[f"{prediction_var}_ground_truth"]
+                            original = ds[f"{prediction_var}_original"]
+                            nn_corrected = ds[f"{prediction_var}_corrected"]
+                            ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
+
+                            # Calculate RMSE
+                            rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
+                            rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
+                            
+                            # Calculate percent improvements
+                            pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
+                                                  if rmse_original != 0 else 0)
+                            improvements[f'ifs_{arch}_nn'][(lt, idx)] = pct_improvement_nn
+                            
+                            if ano_corrected is not None and plot_type == "all":
+                                rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
+                                pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
+                                                       if rmse_original != 0 else 0)
+                                improvements[f'ifs_{arch}_ano'][(lt, idx)] = pct_improvement_ano
+
+                        except Exception as e:
+                            print(f"Error processing IFS file {file_path}: {e}")
+                            continue
         
         # Store improvements for this region
         all_improvements[region] = improvements
@@ -269,12 +270,14 @@ def generate_lead_time_plots(
 
         # Determine which improvement types to plot based on plot_type
         improvement_types_to_plot = []
-        if plot_type == "pangu_nn":
-            improvement_types_to_plot = ['pangu_nn']
-        elif plot_type == "pangu_ifs_nn":
-            improvement_types_to_plot = ['pangu_nn', 'ifs_nn']
-        elif plot_type == "all":
-            improvement_types_to_plot = ['pangu_nn', 'pangu_ano', 'ifs_nn', 'ifs_ano']
+        for arch in nn_architecture:
+            if plot_type == "pangu_nn":
+                improvement_types_to_plot.append(f'pangu_{arch}_nn')
+            elif plot_type == "pangu_ifs_nn":
+                improvement_types_to_plot.extend([f'pangu_{arch}_nn', f'ifs_{arch}_nn'])
+            elif plot_type == "all":
+                improvement_types_to_plot.extend([f'pangu_{arch}_nn', f'pangu_{arch}_ano', 
+                                                  f'ifs_{arch}_nn', f'ifs_{arch}_ano'])
         
         # Process each improvement type for this region
         for imp_type in improvement_types_to_plot:
@@ -282,13 +285,15 @@ def generate_lead_time_plots(
             if not imp_data:
                 continue
             
-            # Determine model, correction type, and get appropriate styles
+            # Determine model, architecture, correction type, and get appropriate styles
             model_name = 'ifs' if 'ifs' in imp_type else 'pangu'
+            architecture = 'unet' if 'unet' in imp_type else 'mlp'
             correction_type = 'nn' if 'nn' in imp_type else 'ano'
             
             marker = model_markers[model_name]
+            fillstyle = architecture_fillstyles[architecture]
             linestyle = correction_styles[correction_type]
-            line_alpha = 0.8  # Consistent alpha for all lines
+            line_alpha = 0.75  # Consistent alpha for all lines
             
             if bootstrap:
                 # Aggregate bootstrap results
@@ -330,10 +335,11 @@ def generate_lead_time_plots(
                 x_pos = [lead_times.index(lt) for lt in valid_lead_times]
                 ax.plot(x_pos, means, 
                        marker=marker, 
+                       fillstyle=fillstyle,
                        linestyle=linestyle, 
                        color=color, 
                        linewidth=2.5, 
-                       markersize=8,
+                       markersize=15,
                        alpha=line_alpha,
                        zorder=3)
                 
@@ -357,10 +363,11 @@ def generate_lead_time_plots(
                 x_pos = [lead_times.index(lt) for lt in valid_lead_times]
                 ax.plot(x_pos, values, 
                        marker=marker, 
+                       fillstyle=fillstyle,
                        linestyle=linestyle,
                        color=color, 
                        linewidth=2.5, 
-                       markersize=8,
+                       markersize=15,
                        alpha=line_alpha,
                        zorder=3)
     
@@ -373,15 +380,16 @@ def generate_lead_time_plots(
                        for lt in lead_times])
     
     # Customize plot appearance
-    ax.set_xlabel("Forecast Lead Time", fontsize=13)
-    ax.set_ylabel("RMSE Improvement (%)", fontsize=13)
+    ax.set_xlabel("Forecast Lead Time", fontsize=15)
+    ax.set_ylabel("RMSE Improvement (%)", fontsize=15)
     
     # Add horizontal line at y=0 for reference
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     
     # Title
     regions_str = ", ".join(regions)
-    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()}"]
+    arch_str = "/".join([a.upper() for a in nn_architecture])
+    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"]
     title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
     if bootstrap:
         title_parts[0] += " (with 95% CI)"
@@ -391,7 +399,7 @@ def generate_lead_time_plots(
     ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax.set_axisbelow(True)
     
-    # Create custom legend with three groups
+    # Create custom legend with four groups
     from matplotlib.lines import Line2D
     
     # Region legend entries
@@ -408,10 +416,17 @@ def generate_lead_time_plots(
     model_handles = []
     if plot_type in ["pangu_nn", "all"]:
         model_handles.append(Line2D([0], [0], color='black', marker='o', linestyle='none',
-                                   markersize=8, label='Pangu'))
+                                   markersize=15, label='Pangu'))
     if plot_type in ["pangu_ifs_nn", "all"]:
         model_handles.append(Line2D([0], [0], color='black', marker='^', linestyle='none',
-                                   markersize=8, label='IFS'))
+                                   markersize=15, label='IFS'))
+    
+    # Architecture legend entries
+    arch_handles = []
+    for arch in nn_architecture:
+        fillstyle = architecture_fillstyles[arch]
+        arch_handles.append(Line2D([0], [0], color='black', marker='o', fillstyle=fillstyle,
+                                  markersize=15, linestyle='none', label=arch.upper()))
     
     # Correction type legend entries
     correction_handles = []
@@ -421,20 +436,23 @@ def generate_lead_time_plots(
         correction_handles.append(Line2D([0], [0], color='black', linestyle='--', linewidth=2,
                                         label='Mean Debiased'))
     
-    # For more regions, position legends more compactly
+    # Position legends
     legend1 = ax.legend(handles=region_handles, title="Region", 
-                        loc='lower right', bbox_to_anchor=(1, 0))
+                        loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
     legend2 = ax.legend(handles=model_handles, title="Model", 
-                        loc='lower right', bbox_to_anchor=(1, 0.35))
-    legend3 = ax.legend(handles=correction_handles, title="Correction", 
-                        loc='lower right', bbox_to_anchor=(1, 0.2))
+                        loc='lower right', bbox_to_anchor=(1, 0.45), fontsize=12)
+    legend3 = ax.legend(handles=arch_handles, title="Architecture", 
+                        loc='lower right', bbox_to_anchor=(1, 0.3), fontsize=12)
+    legend4 = ax.legend(handles=correction_handles, title="Correction", 
+                        loc='lower right', bbox_to_anchor=(1, 0.2), fontsize=12)
     
     # Add all legends to the plot
     ax.add_artist(legend1)
     ax.add_artist(legend2)
+    ax.add_artist(legend3)
     
     # Style all legends consistently
-    for legend in [legend1, legend2, legend3]:
+    for legend in [legend1, legend2, legend3, legend4]:
         legend.get_frame().set_facecolor('white')
         legend.get_frame().set_alpha(0.95)
         legend.get_frame().set_edgecolor('gray')
@@ -451,63 +469,39 @@ def generate_lead_time_plots(
     os.makedirs(out_folder, exist_ok=True)
     
     bootstrap_suffix = "_bootstrap" if bootstrap else ""
+    arch_suffix = "_".join(nn_architecture)
     if "arid" in regions or "tropical" in regions or "temperate" in regions:
         region_type = "climate_zones"
     else:
         region_type = "geographic"
     fname = (f"leadtime_improvement_{prediction_var}_trainedwith_{training_vars_str}_"
-            f"{region_type}_{plot_type}{bootstrap_suffix}.png")
+            f"{region_type}_{plot_type}_{arch_suffix}{bootstrap_suffix}.png")
     save_path = os.path.join(out_folder, fname)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     print(f"Multi-region lead-time improvement plot ({plot_type}) saved to: {save_path}")
-    
-    if bootstrap:
-        # Print summary statistics for each region
-        for region in regions:
-            print(f"\nRegion {region}:")
-            for imp_type in ['pangu_nn', 'pangu_ano', 'ifs_nn', 'ifs_ano']:
-                if all_improvements[region][imp_type]:
-                    # Get sample count from first lead time
-                    first_lt = next(iter([lt for (lt, idx) in all_improvements[region][imp_type].keys()]))
-                    n_samples = len([v for (lt, idx), v in all_improvements[region][imp_type].items() 
-                                   if lt == first_lt])
-                    if n_samples > 0:
-                        print(f"  {imp_type}: {n_samples} bootstrap samples")
 
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
-                                        prediction_var, mlp_params, lead_times=None):
+                                        prediction_var, nn_architecture=["mlp"],
+                                        mlp_params=(512, 5), lead_times=None):
     """
     Generates a plot showing RMSE improvement by patch size across regions and lead times.
+    Now supports plotting both Pangu and IFS results, and both MLP and UNet architectures.
     
     Parameters
     ----------
-    dirs : dict
-        Dictionary containing paths for input and figure directories
-    train_start, train_end : str
-        Training period boundaries
-    test_start, test_end : str
-        Testing period boundaries
-    model : str
-        Model name (e.g., 'pangu', 'ifs')
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict
+    nn_architecture : list
+        List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
     mlp_params : tuple
-        MLP architecture parameters
-    lead_times : list, optional
-        List of lead times to plot (e.g., [24], [72], [24, 72], [24, 72, 168])
-        If None, defaults to [24, 72, 168]
+        MLP architecture parameters (only used when nn_architecture includes "mlp")
     """
     input_folder = dirs['input']
     training_vars, output_vars = training_output_vars
     training_vars = training_vars if isinstance(training_vars, (list,tuple)) else [training_vars]
     output_vars   = output_vars   if isinstance(output_vars,   (list,tuple)) else [output_vars]
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
 
     # Use provided lead_times or default to all three
     if lead_times is None:
@@ -527,465 +521,202 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     subregions = ["2x2","4x4","6x6","8x8","10x10"]
     degrees    = [int(s.split('x')[0]) for s in subregions]
 
-    improvement = {r:{lt:[] for lt in lead_times} for r in regions}
+    # Store improvements for both models and architectures
+    improvements = {}
+    for arch in nn_architecture:
+        improvements[arch] = {
+            'pangu': {r:{lt:[] for lt in lead_times} for r in regions},
+            'ifs': {r:{lt:[] for lt in lead_times} for r in regions}
+        }
 
-    for region in regions:
-        # ---- extract central 2×2 bounds and normalization once ----
-        central_path = os.path.join(
-            input_folder,
-            generate_output_path(SimpleNamespace(
-                model_name=model, region=region, subregion="2x2",
-                train_start=train_start, train_end=train_end,
-                test_start=test_start,  test_end=test_end,
-                training_vars=training_vars, output_vars=output_vars,
-                mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
-                lead_time_hours=lead_times[0]  # dummy
-            ))
-        )
-        with xr.open_zarr(central_path) as ds2:
-            lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
-            lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
-
-            gt2 = ds2[f"{prediction_var}_ground_truth"]
-            mu, sigma = float(gt2.mean()), float(gt2.std())
-
-        # ---- now loop subregions + lead times, always slicing that 2×2 box ----
-        for sub in subregions:
-            for lt in lead_times:
-                path = os.path.join(
-                    input_folder,
-                    generate_output_path(SimpleNamespace(
-                        model_name=model, region=region, subregion=sub,
-                        train_start=train_start, train_end=train_end,
-                        test_start=test_start,  test_end=test_end,
-                        training_vars=training_vars, output_vars=output_vars,
-                        mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
-                        lead_time_hours=lt
-                    ))
-                )
-                # open and slice to 2x2 grid in the center of the region
-                with xr.open_zarr(path) as ds:
-                    ds = ds.sel(latitude=slice(lat_min,lat_max),
-                                longitude=slice(lon_min,lon_max))
-                    
-                    # normalize using mu, sigma
-                    gt_n   = ds[f"{prediction_var}_ground_truth"] 
-                    orig_n = ds[f"{prediction_var}_original"]     
-                    corr_n = ds[f"{prediction_var}_corrected"]    
-
-                    rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
-                    rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
-                    pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
-                    size = int(sub.split('x')[0])
-                    improvement[region][lt].append((size, pct_improvement))
-
-    # ---- plotting ----
-    # Create color map for regions and line style map for lead times
-    region_colors = plt.get_cmap('Set1')
-    region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
-    ls_map = {24: 'solid', 72: '--', 168: ':'}
-    
-    # Create single figure
-    plt.figure(figsize=(10, 6))
-    
-    # Plot all combinations of region and lead time
-    for region in regions:
-        for lt in lead_times:
-            data = sorted(improvement[region][lt], key=lambda x: x[0])
-            sizes, imps = zip(*data)
-            
-            # Format region name for legend
-            region_label = region.replace('_', ' ').title()
-            
-            plt.plot(sizes, imps, marker='o',
-                     color=region_color_map[region], 
-                     linestyle=ls_map[lt],
-                     label=f"{region_label} ({lt}h)",
-                     linewidth=2, markersize=6)
-    
-    # Configure plot
-    plt.xticks(degrees, subregions)
-    plt.xlabel("Patch size (degrees)", fontsize=12)
-    plt.ylabel("RMSE % improvement\n(original − corrected)", fontsize=12)
-    
-    # Customize title based on which lead times are being plotted
-    if len(lead_times) == 1:
-        title = f"RMSE % Improvement by Patch Size - {lead_times[0]}h Lead Time"
-    else:
-        lead_times_str = ", ".join([f"{lt}h" for lt in sorted(lead_times)])
-        title = f"RMSE % Improvement by Patch Size - Lead Times: {lead_times_str}"
-    
-    plt.title(title, fontsize=14)
-    plt.grid(True, alpha=0.3)
-    
-    # Create custom legend
-    from matplotlib.lines import Line2D
-    
-    # Region legend entries
-    region_handles = [Line2D([0], [0], color=region_color_map[region], linewidth=3, 
-                            label=region.replace('_', ' ').title()) for region in regions]
-    
-    # Lead time legend entries  
-    lt_handles = [Line2D([0], [0], color='black', linestyle=ls_map[lt], linewidth=2,
-                        label=f"{lt}h lead") for lt in lead_times]
-    
-    # Create two-part legend
-    legend1 = plt.legend(handles=region_handles, title="Region", 
-                        loc='lower right', bbox_to_anchor=(1, 0))
-    legend2 = plt.legend(handles=lt_handles, title="Lead Time", 
-                        loc='lower right', bbox_to_anchor=(1, 0.25))
-    plt.gca().add_artist(legend1)  # Keep both legends
-    
-    plt.tight_layout()
-
-    # Save figure
-    out_folder = os.path.join(dirs["fig"], model, "subregion")
-    os.makedirs(out_folder, exist_ok=True)
-    
-    # Create filename based on which lead times are included
-    lead_times_suffix = "_".join([str(lt) for lt in sorted(lead_times)])
-    fname = f"subregion_rmse_improvement_lt{lead_times_suffix}_{'_'.join(training_vars)}_{prediction_var}_{mlp_str}.png"
-    plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Subregion comparison plot saved for lead times {lead_times}")
-
-def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
-                                        test_end, model, training_output_vars,
-                                        prediction_var, mlp_params, lead_times=None):
-    """
-    Generates a plot showing RMSE improvement by patch size across regions and lead times.
-    
-    Parameters
-    ----------
-    dirs : dict
-        Dictionary containing paths for input and figure directories
-    train_start, train_end : str
-        Training period boundaries
-    test_start, test_end : str
-        Testing period boundaries
-    model : str
-        Model name (e.g., 'pangu', 'ifs')
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict
-    mlp_params : tuple
-        MLP architecture parameters
-    lead_times : list, optional
-        List of lead times to plot (e.g., [24], [72], [24, 72], [24, 72, 168])
-        If None, defaults to [24, 72, 168]
-    """
-    input_folder = dirs['input']
-    training_vars, output_vars = training_output_vars
-    training_vars = training_vars if isinstance(training_vars, (list,tuple)) else [training_vars]
-    output_vars   = output_vars   if isinstance(output_vars,   (list,tuple)) else [output_vars]
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
-
-    # Use provided lead_times or default to all three
-    if lead_times is None:
-        lead_times = [24, 72, 168]
-    
-    # Ensure lead_times is a list
-    if not isinstance(lead_times, list):
-        lead_times = [lead_times]
-    
-    # Validate lead times
-    valid_lead_times = [24, 72, 168]
-    for lt in lead_times:
-        if lt not in valid_lead_times:
-            raise ValueError(f"Invalid lead time: {lt}. Must be one of {valid_lead_times}")
-
-    regions   = ["amazon", "india", "usa_south", "british_columbia"]
-    subregions = ["2x2","4x4","6x6","8x8","10x10"]
-    degrees    = [int(s.split('x')[0]) for s in subregions]
-
-    improvement = {r:{lt:[] for lt in lead_times} for r in regions}
-
-    for region in regions:
-        # ---- extract central 2×2 bounds and normalization once ----
-        central_path = os.path.join(
-            input_folder,
-            generate_output_path(SimpleNamespace(
-                model_name=model, region=region, subregion="2x2",
-                train_start=train_start, train_end=train_end,
-                test_start=test_start,  test_end=test_end,
-                training_vars=training_vars, output_vars=output_vars,
-                mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
-                lead_time_hours=lead_times[0]  # dummy
-            ))
-        )
-        with xr.open_zarr(central_path) as ds2:
-            lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
-            lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
-
-            gt2 = ds2[f"{prediction_var}_ground_truth"]
-            mu, sigma = float(gt2.mean()), float(gt2.std())
-
-        # ---- now loop subregions + lead times, always slicing that 2×2 box ----
-        for sub in subregions:
-            for lt in lead_times:
-                path = os.path.join(
-                    input_folder,
-                    generate_output_path(SimpleNamespace(
-                        model_name=model, region=region, subregion=sub,
-                        train_start=train_start, train_end=train_end,
-                        test_start=test_start,  test_end=test_end,
-                        training_vars=training_vars, output_vars=output_vars,
-                        mlp_hidden_dim=mlp_params[0], mlp_layers=mlp_params[1],
-                        lead_time_hours=lt
-                    ))
-                )
-                # open and slice to 2x2 grid in the center of the region
-                with xr.open_zarr(path) as ds:
-                    ds = ds.sel(latitude=slice(lat_min,lat_max),
-                                longitude=slice(lon_min,lon_max))
-                    
-                    # normalize using mu, sigma
-                    gt_n   = ds[f"{prediction_var}_ground_truth"] 
-                    orig_n = ds[f"{prediction_var}_original"]     
-                    corr_n = ds[f"{prediction_var}_corrected"]    
-
-                    rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
-                    rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
-                    pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
-                    size = int(sub.split('x')[0])
-                    improvement[region][lt].append((size, pct_improvement))
-
-    # ---- plotting ----
-    # Create color map for regions and line style map for lead times
-    region_colors = plt.get_cmap('Set1')
-    region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
-    ls_map = {24: 'solid', 72: '--', 168: ':'}
-    
-    # Create single figure
-    plt.figure(figsize=(10, 6))
-    
-    # Plot all combinations of region and lead time
-    for region in regions:
-        for lt in lead_times:
-            data = sorted(improvement[region][lt], key=lambda x: x[0])
-            sizes, imps = zip(*data)
-            
-            # Format region name for legend
-            region_label = region.replace('_', ' ').title()
-            
-            plt.plot(sizes, imps, marker='o',
-                     color=region_color_map[region], 
-                     linestyle=ls_map[lt],
-                     label=f"{region_label} ({lt}h)",
-                     linewidth=2, markersize=6)
-    
-    # Configure plot
-    plt.xticks(degrees, subregions)
-    plt.xlabel("Patch size (degrees)", fontsize=12)
-    plt.ylabel("RMSE % improvement\n(original − corrected)", fontsize=12)
-    
-    # Customize title based on which lead times are being plotted
-    if len(lead_times) == 1:
-        title = f"RMSE % Improvement by Patch Size - {lead_times[0]}h Lead Time"
-    else:
-        lead_times_str = ", ".join([f"{lt}h" for lt in sorted(lead_times)])
-        title = f"RMSE % Improvement by Patch Size - Lead Times: {lead_times_str}"
-    
-    plt.title(title, fontsize=14)
-    plt.grid(True, alpha=0.3)
-    
-    # Create custom legend
-    from matplotlib.lines import Line2D
-    
-    # Region legend entries
-    region_handles = [Line2D([0], [0], color=region_color_map[region], linewidth=3, 
-                            label=region.replace('_', ' ').title()) for region in regions]
-    
-    # Lead time legend entries  
-    lt_handles = [Line2D([0], [0], color='black', linestyle=ls_map[lt], linewidth=2,
-                        label=f"{lt}h lead") for lt in lead_times]
-    
-    # Create two-part legend
-    legend1 = plt.legend(handles=region_handles, title="Region", 
-                        loc='lower right', bbox_to_anchor=(1, 0))
-    legend2 = plt.legend(handles=lt_handles, title="Lead Time", 
-                        loc='lower right', bbox_to_anchor=(1, 0.25))
-    plt.gca().add_artist(legend1)  # Keep both legends
-    
-    plt.tight_layout()
-
-    # Save figure
-    out_folder = os.path.join(dirs["fig"], model, "subregion")
-    os.makedirs(out_folder, exist_ok=True)
-    
-    # Create filename based on which lead times are included
-    lead_times_suffix = "_".join([str(lt) for lt in sorted(lead_times)])
-    fname = f"subregion_rmse_improvement_lt{lead_times_suffix}_{'_'.join(training_vars)}_{prediction_var}_{mlp_str}.png"
-    plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Subregion comparison plot saved for lead times {lead_times}")
-
-
-def generate_rmse_comparison_plot(dirs, model, training_output_vars, prediction_var, mlp_params):
-    """
-    Scans the input folder for forecast files matching the given model,
-    training/output variables, and MLP parameters, and creates a single bar plot
-    that organizes the overall (scalar) RMSE by lead time (first level) and region (second level).
-    
-    For each (lead time, region) combination, the original and corrected RMSE are plotted
-    as overlapping bars with transparency. The x-axis tick labels are generated dynamically
-    (with two lines: lead time on the first line and region on the second) so that the plot
-    remains legible regardless of whether there are 3 or 5 regions.
-    
-    Parameters:
-      model: Model name.
-      training_output_vars: Tuple/list of (training_vars, output_vars) [each as list or str].
-      mlp_params: Tuple (num_units, num_layers).
-    """
-    dirs = setup_directories()
-    input_folder = dirs['input']
-    training_vars, output_vars = training_output_vars
-    if not isinstance(training_vars, (list, tuple)):
-        training_vars = [training_vars]
-    if not isinstance(output_vars, (list, tuple)):
-        output_vars = [output_vars]
-    training_vars_str = "_".join(training_vars)
-    output_vars_str = "_".join(output_vars)
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
-    time_str = "train2018-01-01-2021-12-31_test2022-01-01-2022-12-31"
-
-    # Define the lead times and regions to consider.
-    lead_times = [24, 72, 168] # possible lead times 
-    regions = ["amazon", "usa_south", "india", "british_columbia"]  # adjust or extend as needed
-    subregion ="10x10"
-
-    # Dictionary to store results keyed by (lead_time, region)
-    # Each value is a tuple: (avg_rmse_orig, avg_rmse_corr)
-    results = {}
-    ifs_results = {}
-
-    # Loop over each combination to get original and forecast
-    for lt in lead_times:
+    for arch in nn_architecture:
         for region in regions:
-
-            file_path = os.path.join(input_folder, f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
-            ifs_file_path = os.path.join(input_folder, f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion}_leadtime_{lt}h_{time_str}_{mlp_str}.zarr")
-
-            try:
-                ds = xr.open_zarr(file_path)
-            except Exception as e:
-                print(f"Error opening {file_path}: {e}")
-                continue
-
-            ground_truth = ds[f"{prediction_var}_ground_truth"]
-            orig = ds[f"{prediction_var}_original"]
-            corr = ds[f"{prediction_var}_corrected"]
-
-            # normalize by test‐set truth
-            mean = ground_truth.mean().values
-            std  = ground_truth.std().values
-            gt_n   = (ground_truth - mean) / std
-            orig_n = (orig            - mean) / std
-            corr_n = (corr           - mean) / std
-
-            rmse_total_orig = float(np.sqrt(((orig_n - gt_n) ** 2).mean().values))
-            rmse_total_corr = float(np.sqrt(((corr_n - gt_n) ** 2).mean().values))
-            results[(lt, region)] = (rmse_total_orig, rmse_total_corr)
-
-            # repeat for ifs
-            try:
-                ifs_ds = xr.open_zarr(ifs_file_path)
-            except Exception as e:
-                print(f"Error opening {ifs_file_path}: {e}")
-                continue
+            # ---- extract central 2×2 bounds and normalization once ----
+            args = SimpleNamespace(
+                model_name=model, region=region, subregion="2x2",
+                train_start=train_start, train_end=train_end,
+                test_start=test_start,  test_end=test_end,
+                training_vars=training_vars, output_vars=output_vars,
+                lead_time_hours=lead_times[0],  # dummy
+                nn_architecture=arch
+            )
+            if arch == 'mlp':
+                args.mlp_hidden_dim = mlp_params[0]
+                args.mlp_layers = mlp_params[1]
+                
+            central_path = os.path.join(input_folder, generate_output_path(args))
             
-            ifs_ground_truth = ifs_ds[f"{prediction_var}_ground_truth"]
-            ifs_fc_original = ifs_ds[f"{prediction_var}_original"]
-            ifs_fc_corrected = ifs_ds[f"{prediction_var}_corrected"]
+            try:
+                with xr.open_zarr(central_path) as ds2:
+                    lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
+                    lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
 
-            # Normalize by ifs groundtruth
-            ifs_mean = ifs_ground_truth.mean().values
-            ifs_std  = ifs_ground_truth.std().values
-            ifs_gt_n   = (ifs_ground_truth - ifs_mean) / ifs_std
-            ifs_orig_n = (ifs_fc_original - ifs_mean) / ifs_std
-            ifs_corr_n = (ifs_fc_corrected - ifs_mean) / ifs_std
-
-
-            ifs_rmse_total_orig = float(np.sqrt(((ifs_orig_n - ifs_gt_n) ** 2).mean().values))
-            ifs_rmse_total_corr = float(np.sqrt(((ifs_corr_n - ifs_gt_n) ** 2).mean().values))
-            ifs_results[(lt, region)] = (ifs_rmse_total_orig, ifs_rmse_total_corr)
-
-    # Prepare data for the single grouped bar plot.
-    x_positions = []
-    x_labels = []
-    rmse_orig_vals = []
-    rmse_corr_vals = []
-    ifs_rmse_orig_vals = []
-    ifs_rmse_corr_vals = []
-    pos = 0
-    group_gap = 1  # extra gap between different lead time groups
-    for region in regions:
-        # Collect regions that have results for this lead time.
-        for lt in sorted(lead_times):
-            regions_with_data = [r for r in regions if (lt, r) in results]
-            regions_with_ifs_data = [r for r in regions if (lt, r) in ifs_results]
-
-            # check if region is available in both results and ifs_results
-            if region not in regions_with_data or region not in regions_with_ifs_data:
-                print(f"Skipping region {region} for lead time {lt} as no data is available")
+                    gt2 = ds2[f"{prediction_var}_ground_truth"]
+                    mu, sigma = float(gt2.mean()), float(gt2.std())
+            except Exception as e:
+                print(f"Error loading central path for {region}, {arch}: {e}")
                 continue
 
-            x_positions.append(pos)
-            # Create a two-line label: first line is lead time, second line is region.
-            label = f"{lt}h\n{region.replace('_', ' ').title()}"
-            x_labels.append(label)
-            rmse_orig, rmse_corr = results[(lt, region)]
-            ifs_rmse_orig, ifs_rmse_corr = ifs_results[(lt, region)]
+            # ---- now loop subregions + lead times, always slicing that 2×2 box ----
+            for sub in subregions:
+                for lt in lead_times:
+                    # Process Pangu
+                    args.subregion = sub
+                    args.lead_time_hours = lt
+                    args.model_name = model
+                    path = os.path.join(input_folder, generate_output_path(args))
+                    
+                    try:
+                        with xr.open_zarr(path) as ds:
+                            ds = ds.sel(latitude=slice(lat_min,lat_max),
+                                        longitude=slice(lon_min,lon_max))
+                            
+                            gt_n   = ds[f"{prediction_var}_ground_truth"] 
+                            orig_n = ds[f"{prediction_var}_original"]     
+                            corr_n = ds[f"{prediction_var}_corrected"]    
 
-            rmse_orig_vals.append(rmse_orig)
-            rmse_corr_vals.append(rmse_corr)
-            ifs_rmse_orig_vals.append(ifs_rmse_orig)
-            ifs_rmse_corr_vals.append(ifs_rmse_corr)
-            pos += 1
-        pos += group_gap  # add gap between groups
+                            rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
+                            rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
+                            pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                            size = int(sub.split('x')[0])
+                            improvements[arch]['pangu'][region][lt].append((size, pct_improvement))
+                    except Exception as e:
+                        print(f"Pangu data not found for {region}, {sub}, {lt}h, {arch}: {e}")
+                    
+                    # Process IFS if available
+                    args.model_name = 'ifs'
+                    ifs_path = os.path.join(input_folder, generate_output_path(args))
+                    
+                    try:
+                        with xr.open_zarr(ifs_path) as ds:
+                            ds = ds.sel(latitude=slice(lat_min,lat_max),
+                                        longitude=slice(lon_min,lon_max))
+                            
+                            gt_n   = ds[f"{prediction_var}_ground_truth"] 
+                            orig_n = ds[f"{prediction_var}_original"]     
+                            corr_n = ds[f"{prediction_var}_corrected"]    
 
-    x_positions_offset = np.array(x_positions) + 0.3  # Offset for IFS bars
+                            rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
+                            rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
+                            pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                            size = int(sub.split('x')[0])
+                            improvements[arch]['ifs'][region][lt].append((size, pct_improvement))
+                    except Exception as e:
+                        print(f"IFS data not found for {region}, {sub}, {lt}h, {arch}: {e}")
 
-    # # Create the grouped bar plot.
-    fig, ax = plt.subplots(figsize=(max(8, len(x_positions)*0.8), 6))
-    # Overlap the two bars at the same positions with transparency.
-    ax.bar(x_positions, rmse_orig_vals, color='blue', width=0.8, alpha=0.5, label='Original RMSE')
-    ax.bar(x_positions, rmse_corr_vals, color='red', width=0.8, alpha=0.5, label='Corrected RMSE')
-
-    ifs_bar_width = 0.18
-    # first IFS bar (baseline)
-    ax.bar(
-        x_positions_offset,
-        ifs_rmse_orig_vals,
-        width=ifs_bar_width,
-        alpha=0.75,
-        label='IFS Baseline RMSE'
-    )
-    # second IFS bar (corrected), shifted over by one bar‐width
-    ax.bar(
-        x_positions_offset + ifs_bar_width,
-        ifs_rmse_corr_vals,
-        width=ifs_bar_width,
-        alpha=0.75,
-        color='#ADD8E6',        # light‐blue
-        label='IFS Corrected RMSE'
-    )
-
-    # rest stays the same
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels(x_labels, rotation=45, ha='right')
-    ax.set_ylabel("Normalized RMSE")
-    ax.set_title(f"RMSE Comparison for {model}\nPredicting {prediction_var}")
-    ax.legend()
+    # ---- plotting ----
+    # Create color map for regions and line style map for lead times
+    region_colors = plt.get_cmap('Set1')
+    region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
+    ls_map = {24: 'solid', 72: '--', 168: ':'}
+    
+    # Marker styles for models and fill styles for architectures
+    model_markers = {'pangu': 'o', 'ifs': '^'}
+    arch_fillstyles = {'mlp': 'full', 'unet': 'none'}
+    
+    # Create single figure
+    plt.figure(figsize=(12, 7))
+    
+    # Plot all combinations
+    for arch in nn_architecture:
+        for model_name in ['pangu', 'ifs']:
+            for region in regions:
+                for lt in lead_times:
+                    data = sorted(improvements[arch][model_name][region][lt], key=lambda x: x[0])
+                    if not data:
+                        continue
+                        
+                    sizes, imps = zip(*data)
+                    
+                    # Format label
+                    region_label = region.replace('_', ' ').title()
+                    if len(nn_architecture) > 1:
+                        label = f"{region_label} {model_name.upper()} {arch.upper()} ({lt}h)"
+                    else:
+                        label = f"{region_label} {model_name.upper()} ({lt}h)"
+                    
+                    plt.ylim(-25, 30)  # fix this
+                    plt.plot(sizes, imps, 
+                             marker=model_markers[model_name],
+                             fillstyle=arch_fillstyles[arch],
+                             color=region_color_map[region], 
+                             linestyle=ls_map[lt],
+                             label=label,
+                             linewidth=2, markersize=15)
+    
+    # Configure plot
+    plt.xticks(degrees, subregions)
+    plt.xlabel("Patch size (degrees)", fontsize=15)
+    plt.ylabel("RMSE % improvement\n(original − corrected)", fontsize=15)
+    
+    # Customize title based on architectures and lead times
+    arch_str = "/".join([a.upper() for a in nn_architecture])
+    if len(lead_times) == 1:
+        title = f"RMSE % Improvement by Patch Size ({arch_str}) - {lead_times[0]}h Lead Time"
+    else:
+        lead_times_str = ", ".join([f"{lt}h" for lt in sorted(lead_times)])
+        title = f"RMSE % Improvement by Patch Size ({arch_str}) - Lead Times: {lead_times_str}"
+    
+    plt.title(title, fontsize=15)
+    plt.grid(True, alpha=0.3)
+    
+    # Create custom legend
+    from matplotlib.lines import Line2D
+    
+    # Region legend entries
+    region_handles = [Line2D([0], [0], color=region_color_map[region], linewidth=3, 
+                            label=region.replace('_', ' ').title()) for region in regions]
+    
+    # Model legend entries
+    model_handles = [
+        Line2D([0], [0], color='black', marker='o', linestyle='none', markersize=12, label='Pangu'),
+        Line2D([0], [0], color='black', marker='^', linestyle='none', markersize=12, label='IFS')
+    ]
+    
+    # Architecture legend entries (if multiple)
+    if len(nn_architecture) > 1:
+        arch_handles = [Line2D([0], [0], color='black', marker='o', fillstyle=arch_fillstyles[arch],
+                              markersize=12, linestyle='none', label=arch.upper()) 
+                       for arch in nn_architecture]
+    
+    # Lead time legend entries  
+    lt_handles = [Line2D([0], [0], color='black', linestyle=ls_map[lt], linewidth=2,
+                        label=f"{lt}h lead") for lt in lead_times]
+    
+    # Create multi-part legend
+    legend1 = plt.legend(handles=region_handles, title="Region", 
+                        loc='lower right', bbox_to_anchor=(1, 0))
+    legend2 = plt.legend(handles=model_handles, title="Model", 
+                        loc='lower right', bbox_to_anchor=(1, 0.35))
+    
+    if len(nn_architecture) > 1:
+        legend3 = plt.legend(handles=arch_handles, title="Architecture", 
+                            loc='lower right', bbox_to_anchor=(1, 0.55))
+        legend4 = plt.legend(handles=lt_handles, title="Lead Time", 
+                            loc='lower right', bbox_to_anchor=(1, 0.7))
+        plt.gca().add_artist(legend3)
+    else:
+        legend4 = plt.legend(handles=lt_handles, title="Lead Time", 
+                            loc='lower right', bbox_to_anchor=(1, 0.55))
+    
+    plt.gca().add_artist(legend1)
+    plt.gca().add_artist(legend2)
+    
     plt.tight_layout()
 
-    save_path = os.path.join(dirs["fig"], model, "comparison", f"rmse_comparison_{model}_trained_with_{training_vars_str}_output{prediction_var}_{mlp_str}.png")
-    plt.savefig(save_path, dpi=150)
-    print(f"RMSE comparison bar chart saved to {save_path}")
+    # Save figure
+    out_folder = os.path.join(dirs["fig"], model, "subregion")
+    os.makedirs(out_folder, exist_ok=True)
+    
+    # Create filename based on which lead times and architectures are included
+    lead_times_suffix = "_".join([str(lt) for lt in sorted(lead_times)])
+    arch_suffix = "_".join(nn_architecture)
+    fname = f"subregion_rmse_improvement_lt{lead_times_suffix}_{'_'.join(training_vars)}_{prediction_var}_{arch_suffix}.png"
+    plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
     plt.close()
+    
+    print(f"Subregion comparison plot saved for lead times {lead_times} and architectures {nn_architecture}")
+
 
 def generate_map_plots(
         dirs,
@@ -994,36 +725,22 @@ def generate_map_plots(
         model,
         training_output_vars,
         prediction_var,
-        mlp_params,
-        region,
-        subregion,
-        lead_time,
+        nn_architecture="mlp",  # Changed from mlp_params
+        mlp_params=(512, 5),  # Keep for backward compatibility
+        region="usa_south",
+        subregion="2x2",
+        lead_time=24,
 ):
     """
     Generates a figure with 2 maps: original forecast RMSE and percent improvement in RMSE.
+    Map extent is always 10x10 degrees, with the subregion determining how much is filled.
     
     Parameters
     ----------
-    dirs : dict
-        Dictionary containing paths for input and figure directories
-    train_start, train_end : str
-        Training period boundaries
-    test_start, test_end : str
-        Testing period boundaries
-    model : str
-        Model name (e.g., 'pangu', 'ifs')
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict
+    nn_architecture : str
+        Architecture to use: "mlp" or "unet"
     mlp_params : tuple
-        MLP architecture parameters (hidden_dim, layers)
-    region : str
-        Region identifier
-    subregion : str
-        Subregion identifier
-    lead_time : int
-        Forecast lead time in hours
+        MLP architecture parameters (only used when nn_architecture is "mlp")
     """
     
     # Parse training and output variables
@@ -1036,15 +753,29 @@ def generate_map_plots(
     # Create string representations for file naming
     training_vars_str = "_".join(training_vars)
     output_vars_str = "_".join(output_vars)
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    # Construct file path
-    file_path = os.path.join(
-        dirs['input'],
-        f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-        f"dim{subregion}_leadtime_{lead_time}h_{time_str}_{mlp_str}.zarr"
+    # Set up args for generate_output_path
+    args = SimpleNamespace(
+        model_name=model,
+        region=region,
+        subregion=subregion,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        training_vars=training_vars,
+        output_vars=output_vars,
+        lead_time_hours=lead_time,
+        nn_architecture=nn_architecture
     )
+    
+    if nn_architecture == 'mlp':
+        args.mlp_hidden_dim = mlp_params[0]
+        args.mlp_layers = mlp_params[1]
+
+    # Construct file path
+    file_path = os.path.join(dirs['input'], generate_output_path(args))
 
     # Skip if region is "pixel" (no maps for pixel)
     if region == "pixel":
@@ -1054,6 +785,25 @@ def generate_map_plots(
     try:
         # Load the forecast data
         ds = xr.open_zarr(file_path)
+        
+        # First, get the 10x10 degree extent for this region
+        # We need to load the 10x10 file to get the full extent
+        args_10x10 = SimpleNamespace(**vars(args))
+        args_10x10.subregion = "10x10"
+        path_10x10 = os.path.join(dirs['input'], generate_output_path(args_10x10))
+        
+        try:
+            with xr.open_zarr(path_10x10) as ds_10x10:
+                lat_min_10x10 = float(ds_10x10.latitude.min())
+                lat_max_10x10 = float(ds_10x10.latitude.max())
+                lon_min_10x10 = float(ds_10x10.longitude.min())
+                lon_max_10x10 = float(ds_10x10.longitude.max())
+        except Exception as e:
+            print(f"Warning: Could not load 10x10 extent, using current extent: {e}")
+            lat_min_10x10 = float(ds.latitude.min())
+            lat_max_10x10 = float(ds.latitude.max())
+            lon_min_10x10 = float(ds.longitude.min())
+            lon_max_10x10 = float(ds.longitude.max())
         
         # Extract data arrays
         ground_truth = ds[f"{prediction_var}_ground_truth"]
@@ -1072,7 +822,6 @@ def generate_map_plots(
         pct_improvement = ((rmse_spatial_orig - rmse_spatial_corr) / rmse_spatial_orig * 100)
         
         # Create figure with 2 subplots - optimized for 16:9 slides
-        # For stacking vertically on slides, make wider and shorter
         fig = plt.figure(figsize=(14, 4.5))
         
         # Use GridSpec for better control over subplot spacing
@@ -1080,6 +829,11 @@ def generate_map_plots(
         
         # First subplot: Original forecast RMSE
         ax1 = fig.add_subplot(gs[0], projection=ccrs.PlateCarree())
+        
+        # Set the 10x10 degree extent
+        ax1.set_extent([lon_min_10x10, lon_max_10x10, lat_min_10x10, lat_max_10x10], 
+                       crs=ccrs.PlateCarree())
+        
         vmin_orig = float(rmse_spatial_orig.min().values)
         vmax_orig = float(rmse_spatial_orig.max().values)
         
@@ -1099,32 +853,33 @@ def generate_map_plots(
         cbar1.ax.tick_params(labelsize=9)
         
         ax1.set_title(f"Original {model.upper()} Forecast RMSE\n{prediction_var.replace('_', ' ').title()}", 
-                      fontsize=12, pad=5)
+                      fontsize=13, pad=2)
         ax1.coastlines(resolution='50m', linewidth=0.5)
         ax1.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.5)
         ax1.add_feature(cfeature.BORDERS, linestyle='-', linewidth=0.8, edgecolor='black')
         
         # Add state/province borders based on region
         if region in ['usa_south', 'british_columbia']:
-            # Add states/provinces for North America
             ax1.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         elif region == 'india':
-            # For India, the STATES feature includes Indian states
             ax1.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         elif region == 'amazon':
-            # For Brazil, states are also included in the STATES feature
             ax1.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         
         # Customize gridlines to prevent overlap
         gl1 = ax1.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False, 
                            linewidth=0.5, alpha=0.5)
-        gl1.right_labels = False  # Turn off right labels to prevent overlap with colorbar
+        gl1.right_labels = False
         gl1.top_labels = False
         gl1.xlabel_style = {'size': 9}
         gl1.ylabel_style = {'size': 9}
         
         # Second subplot: Percent improvement
         ax2 = fig.add_subplot(gs[1], projection=ccrs.PlateCarree())
+        
+        # Set the same 10x10 degree extent
+        ax2.set_extent([lon_min_10x10, lon_max_10x10, lat_min_10x10, lat_max_10x10], 
+                       crs=ccrs.PlateCarree())
         
         # Use diverging colormap centered at 0
         vmin_pct = float(pct_improvement.min().values)
@@ -1148,29 +903,26 @@ def generate_map_plots(
         cbar2.set_label('Improvement (%)', fontsize=10)
         cbar2.ax.tick_params(labelsize=9)
         
-        ax2.set_title(f"RMSE Percent Improvement (MLP Corrected)\n{prediction_var.replace('_', ' ').title()}", 
-                      fontsize=12, pad=5)
+        ax2.set_title(f"RMSE Percent Improvement ({nn_architecture.upper()} Corrected)\n{prediction_var.replace('_', ' ').title()}", 
+                      fontsize=13, pad=2)
         ax2.coastlines(resolution='50m', linewidth=0.5)
         ax2.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.5)
         ax2.add_feature(cfeature.BORDERS, linestyle='-', linewidth=0.8, edgecolor='black')
         
         # Add state/province borders based on region
         if region in ['usa_south', 'british_columbia']:
-            # Add states/provinces for North America
             ax2.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         elif region == 'india':
-            # For India, the STATES feature includes Indian states
             ax2.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         elif region == 'amazon':
-            # For Brazil, states are also included in the STATES feature
             ax2.add_feature(cfeature.STATES, linestyle=':', linewidth=0.5, edgecolor='gray')
         
         # Customize gridlines to prevent overlap
         gl2 = ax2.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False,
                            linewidth=0.5, alpha=0.5)
-        gl2.right_labels = False  # Turn off right labels to prevent overlap with colorbar
+        gl2.right_labels = False
         gl2.top_labels = False
-        gl2.left_labels = False  # Turn off left labels on second plot since they're close to first plot
+        gl2.left_labels = False
         gl2.xlabel_style = {'size': 9}
         gl2.ylabel_style = {'size': 9}
         
@@ -1185,7 +937,7 @@ def generate_map_plots(
         out_folder = os.path.join(dirs["fig"], model, "maps", region, subregion)
         os.makedirs(out_folder, exist_ok=True)
         
-        fname = f"rmse_maps_{prediction_var}_trainedwith_{training_vars_str}_{lead_time}h.png"
+        fname = f"rmse_maps_{prediction_var}_trainedwith_{training_vars_str}_{lead_time}h_{nn_architecture}.png"
         save_path = os.path.join(out_folder, fname)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
@@ -1203,10 +955,11 @@ def generate_time_series_plots(
         model,
         training_output_vars,
         prediction_var,
-        mlp_params,
-        region,
-        subregion,
-        lead_time,
+        nn_architecture="mlp",  # Changed from mlp_params
+        mlp_params=(512, 5),  # Keep for backward compatibility
+        region="usa_south",
+        subregion="2x2",
+        lead_time=24,
 ):
     """
     Generates a single bar plot showing monthly RMSE for original and corrected forecasts
@@ -1214,26 +967,10 @@ def generate_time_series_plots(
     
     Parameters
     ----------
-    dirs : dict
-        Dictionary containing paths for input and figure directories
-    train_start, train_end : str
-        Training period boundaries
-    test_start, test_end : str
-        Testing period boundaries
-    model : str
-        Model name (e.g., 'pangu', 'ifs')
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict
+    nn_architecture : str
+        Architecture to use: "mlp" or "unet"
     mlp_params : tuple
-        MLP architecture parameters (hidden_dim, layers)
-    region : str
-        Region identifier
-    subregion : str
-        Subregion identifier
-    lead_time : int
-        Forecast lead time in hours
+        MLP architecture parameters (only used when nn_architecture is "mlp")
     """
     
     # Parse training and output variables
@@ -1246,21 +983,32 @@ def generate_time_series_plots(
     # Create string representations for file naming
     training_vars_str = "_".join(training_vars)
     output_vars_str = "_".join(output_vars)
-    mlp_str = f"mlp{mlp_params[0]}x{mlp_params[1]}"
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    # Construct file paths for main model and IFS
-    model_file_path = os.path.join(
-        dirs['input'],
-        f"{model}/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-        f"dim{subregion}_leadtime_{lead_time}h_{time_str}_{mlp_str}.zarr"
+    # Set up args for generate_output_path
+    args = SimpleNamespace(
+        model_name=model,
+        region=region,
+        subregion=subregion,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        training_vars=training_vars,
+        output_vars=output_vars,
+        lead_time_hours=lead_time,
+        nn_architecture=nn_architecture
     )
     
-    ifs_file_path = os.path.join(
-        dirs['input'],
-        f"ifs/{region}/train_{training_vars_str}_test_{output_vars_str}_"
-        f"dim{subregion}_leadtime_{lead_time}h_{time_str}_{mlp_str}.zarr"
-    )
+    if nn_architecture == 'mlp':
+        args.mlp_hidden_dim = mlp_params[0]
+        args.mlp_layers = mlp_params[1]
+
+    # Construct file paths for main model and IFS
+    model_file_path = os.path.join(dirs['input'], generate_output_path(args))
+    
+    args.model_name = 'ifs'
+    ifs_file_path = os.path.join(dirs['input'], generate_output_path(args))
 
     # Initialize storage for monthly RMSE values
     months = []
@@ -1356,7 +1104,7 @@ def generate_time_series_plots(
     ax.bar(x - bar_width/2, model_rmse_orig, bar_width, 
            color='blue', alpha=0.5, label=f'{model.upper()} Original')
     ax.bar(x - bar_width/2, model_rmse_corr, bar_width, 
-           color='red', alpha=0.5, label=f'{model.upper()} Corrected')
+           color='red', alpha=0.5, label=f'{model.upper()} Corrected ({nn_architecture.upper()})')
     
     # Plot IFS bars if available (offset to the right)
     if has_ifs_data:
@@ -1366,11 +1114,11 @@ def generate_time_series_plots(
         ax.bar(x + offset, ifs_rmse_orig, ifs_bar_width, 
                color='darkblue', alpha=0.75, label='IFS Baseline')
         ax.bar(x + offset + ifs_bar_width, ifs_rmse_corr, ifs_bar_width, 
-               color='#ADD8E6', alpha=0.75, label='IFS Corrected')
+               color='#ADD8E6', alpha=0.75, label=f'IFS Corrected ({nn_architecture.upper()})')
     
     # Customize plot
-    ax.set_xlabel('Month', fontsize=11)
-    ax.set_ylabel('RMSE', fontsize=11)
+    ax.set_xlabel('Month', fontsize=15)
+    ax.set_ylabel('RMSE', fontsize=15)
     ax.set_title(f'Monthly RMSE Comparison - {region.replace("_", " ").title()}\n'
                  f'{prediction_var.replace("_", " ").title()} - {lead_time}h Lead Time - Patch Size: {subregion}',
                  fontsize=13)
@@ -1386,56 +1134,26 @@ def generate_time_series_plots(
     out_folder = os.path.join(dirs["fig"], model, "time_series", region, subregion)
     os.makedirs(out_folder, exist_ok=True)
     
-    fname = f"rmse_monthly_{prediction_var}_trainedwith_{training_vars_str}_{lead_time}h.png"
+    fname = f"rmse_monthly_{prediction_var}_trainedwith_{training_vars_str}_{lead_time}h_{nn_architecture}.png"
     save_path = os.path.join(out_folder, fname)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     print(f"Time series plot saved to: {save_path}")
 
-
 def main():
-
     dirs = setup_directories()
 
-    # three options for training and output variable combinations, uncomment the one you want to use
-
+    # Two options for training and output variable combinations, uncomment the one you want to use
     training_vars = ["2m_temperature"]
     output_vars = ["2m_temperature"]
     prediction_var = "2m_temperature"
 
-    # training_vars = ["10m_wind_speed"]
-    # output_vars = ["10m_wind_speed"]
-    # prediction_var = "10m_wind_speed"
+    training_vars = ["10m_wind_speed"]
+    output_vars = ["10m_wind_speed"]
+    prediction_var = "10m_wind_speed"
 
-    # # Compare multiple runs across lead times and regions in a single plot.
-    generate_rmse_comparison_plot(
-        dirs=dirs,
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        mlp_params=(512, 5)
-    )
-
-    # regions = ["india", "amazon", "british_columbia", "usa_south"]
-    # plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
-    # for plot_type in plot_types:
-    #     generate_lead_time_plots(
-    #         dirs = dirs,
-    #         train_start="2018-01-01",
-    #         train_end="2021-12-31",
-    #         test_start="2022-01-01",
-    #         test_end="2022-12-31",
-    #         model="pangu",
-    #         training_output_vars=(training_vars, output_vars),
-    #         prediction_var=prediction_var,
-    #         mlp_params=(512, 5), 
-    #         regions = regions,
-    #         subregion="4x4",
-    #         bootstrap=False,
-    #         plot_type=plot_type
-    #     )
-    # climate_regions = ["tropical", "arid", "temperate"]
+    # Climate zone plots
     # generate_lead_time_plots(
     #     dirs = dirs,
     #     train_start="2018-01-01",
@@ -1445,14 +1163,57 @@ def main():
     #     model="pangu",
     #     training_output_vars=(training_vars, output_vars),
     #     prediction_var=prediction_var,
+    #     nn_architecture=["mlp"],  # mlp and unet
     #     mlp_params=(512, 5), 
-    #     regions = climate_regions,
+    #     regions = ["tropical", "arid", "temperate"],
     #     subregion="2x2",
     #     bootstrap=True,
-    #     plot_type = "all"
+    #     plot_type="all"
     # )
 
-    lead_time_groups = [[24], [24, 72], [24, 72, 168]]
+    # Example 1: Generate lead time plots for MLP only
+    regions = ["india", "amazon", "british_columbia", "usa_south"]
+    plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
+    generate_lead_time_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture=["unet", "mlp"],  # mlp and unet
+        mlp_params=(512, 5), 
+        regions = regions,
+        subregion="10x10",
+        bootstrap=False,
+        plot_type="pangu_ifs_nn"
+    )
+    exit()
+        # generate_lead_time_plots(
+        #     dirs = dirs,
+        #     train_start="2018-01-01",
+        #     train_end="2021-12-31",
+        #     test_start="2022-01-01",
+        #     test_end="2022-12-31",
+        #     model="pangu",
+        #     training_output_vars=(training_vars, output_vars),
+        #     prediction_var=prediction_var,
+        #     nn_architecture=["mlp"],  # just mlp
+        #     mlp_params=(512, 5), 
+        #     regions = regions,
+        #     subregion="2x2",
+        #     bootstrap=False,
+        #     plot_type=plot_type
+        # )
+
+    
+    
+    # # Example 3: Generate subregion comparison plots for different architectures
+    lead_time_groups = [[24], [72], [168]]
+    
+    # MLP only
     for lead_times in lead_time_groups:
         generate_subregion_comparison_plots(
             dirs = dirs,
@@ -1463,24 +1224,45 @@ def main():
             model="pangu",
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
+            nn_architecture=["mlp"],
             mlp_params=(512, 5),
             lead_times=lead_times
         )
-        generate_subregion_comparison_plots(
-            dirs = dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="ifs",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            mlp_params=(512, 5),
-            lead_times=lead_times
-        )
+    
+    # # UNet only
+    # for lead_times in lead_time_groups:
+    #     generate_subregion_comparison_plots(
+    #         dirs = dirs,
+    #         train_start="2018-01-01",
+    #         train_end="2021-12-31",
+    #         test_start="2022-01-01",
+    #         test_end="2022-12-31",
+    #         model="pangu",
+    #         training_output_vars=(training_vars, output_vars),
+    #         prediction_var=prediction_var,
+    #         nn_architecture=["unet"],
+    #         lead_times=lead_times
+    #     )
+    
+    # # Both MLP and UNet
+    # generate_subregion_comparison_plots(
+    #     dirs = dirs,
+    #     train_start="2018-01-01",
+    #     train_end="2021-12-31",
+    #     test_start="2022-01-01",
+    #     test_end="2022-12-31",
+    #     model="pangu",
+    #     training_output_vars=(training_vars, output_vars),
+    #     prediction_var=prediction_var,
+    #     nn_architecture=["mlp", "unet"],
+    #     mlp_params=(512, 5),
+    #     lead_times=[24, 72, 168]
+    # )
 
+    # Example 4: Generate map plots for different architectures
     regions = ["usa_south", "amazon", "india", "british_columbia"]
     for region in regions:
+        # MLP maps
         generate_map_plots(
             dirs=dirs,
             train_start="2018-01-01",
@@ -1490,13 +1272,30 @@ def main():
             model="pangu",
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
+            nn_architecture="mlp",
             mlp_params=(512, 5),
             region=region,
-            subregion="2x2",
+            subregion="10x10",
             lead_time=24
         )
+        
+        # # UNet maps
+        # generate_map_plots(
+        #     dirs=dirs,
+        #     train_start="2018-01-01",
+        #     train_end="2021-12-31",
+        #     test_start="2022-01-01",
+        #     test_end="2022-12-31",
+        #     model="pangu",
+        #     training_output_vars=(training_vars, output_vars),
+        #     prediction_var=prediction_var,
+        #     nn_architecture="unet",
+        #     region=region,
+        #     subregion="2x2",
+        #     lead_time=24
+        # )
 
-        # Generate time series plots
+        # Generate time series plots for both architectures
         generate_time_series_plots(
             dirs=dirs,
             train_start="2018-01-01",
@@ -1506,11 +1305,27 @@ def main():
             model="pangu",
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
+            nn_architecture="mlp",
             mlp_params=(512, 5),
             region=region,
-            subregion="2x2",
+            subregion="10x10",
             lead_time=24
         )
+        
+    #     generate_time_series_plots(
+    #         dirs=dirs,
+    #         train_start="2018-01-01",
+    #         train_end="2021-12-31",
+    #         test_start="2022-01-01",
+    #         test_end="2022-12-31",
+    #         model="pangu",
+    #         training_output_vars=(training_vars, output_vars),
+    #         prediction_var=prediction_var,
+    #         nn_architecture="unet",
+    #         region=region,
+    #         subregion="2x2",
+    #         lead_time=24
+    #     )
 
 if __name__ == "__main__":
     main()
