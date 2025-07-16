@@ -6,6 +6,8 @@ Author: Ozma Houck
 specific regions and variables. Call this script from command line or with 
 1_run_experiments.sh script. 
 
+# Modified to support multiple lead times training
+
 # example call
 python3 finetuning/1_finetune.py \
     --data_dir="/Volumes/wd_external_hd/weatherbench" \
@@ -17,7 +19,7 @@ python3 finetuning/1_finetune.py \
     --model_name="pangu" \
     --region="global" \
     --subregion="2x2" \
-    --lead_time_hours="24" --bootstrap="2"
+    --lead_time_hours 24 48 72 --bootstrap="2"
 """
 import argparse
 import os
@@ -30,6 +32,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import xarray as xr
 from xarray.coding.times import CFDatetimeCoder
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -68,72 +71,103 @@ def setup_directories():
         os.makedirs(path, exist_ok=True)
     return dirs
 # ------------------------------
-# Simple MLP definition
+# Simple MLP definition with lead time and month encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3):
+    def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3, 
+                 n_lead_times=1, lead_time_embedding_dim=16,
+                 month_embedding_dim=16):
         super(SimpleMLP, self).__init__()
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        
+        # Lead time embedding
+        self.n_lead_times = n_lead_times
+        self.lead_time_embedding = None
+        
+        # Month embedding (12 months)
+        self.month_embedding = nn.Embedding(12, month_embedding_dim)
+        
+        # Calculate actual input dimension
+        actual_input_dim = input_dim + month_embedding_dim
+        
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            actual_input_dim += lead_time_embedding_dim
+            
+        layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
         for _ in range(num_hidden_layers - 1):
             layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
-    def forward(self, x):
+        
+    def forward(self, x, lead_time_idx=None, month_idx=None):
+        # Always add month embedding
+        if month_idx is not None:
+            month_emb = self.month_embedding(month_idx)
+            x = torch.cat([x, month_emb], dim=-1)
+            
+        # Add lead time embedding if available
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            lead_time_emb = self.lead_time_embedding(lead_time_idx)
+            x = torch.cat([x, lead_time_emb], dim=-1)
+            
         return self.net(x)
 
 # ------------------------------
-# U-Net definition 
+# U-Net definition with lead time and month encoding
 # ------------------------------
 class UNet(nn.Module):
     """
-    U-Net architecture for weather forecast bias correction.
-    Designed as a drop-in replacement for SimpleMLP.
-    
-    Based on the CU-net architecture from:
-    "A Deep Learning Method for Bias Correction of ECMWF 24-240 h Forecasts"
+    U-Net architecture for weather forecast bias correction with lead time and month support.
     """
     
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
-                 n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None):
+                 n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
+                 n_lead_times=1, lead_time_embedding_dim=16, month_embedding_dim=16):
         """
-        Initialize U-Net with spatial dimension information.
-        
-        Args:
-            input_dim: Flattened input dimension (n_input_vars * n_lat * n_lon)
-            hidden_dim: Base number of channels (default: 128)
-            output_dim: Flattened output dimension (n_output_vars * n_lat * n_lon)
-            n_lat: Number of latitude points
-            n_lon: Number of longitude points
-            n_input_vars: Number of input variables/channels
-            n_output_vars: Number of output variables/channels
+        Initialize U-Net with spatial dimension information, lead time and month support.
         """
         super(UNet, self).__init__()
         
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
+        self.n_lead_times = n_lead_times
+        
+        # Lead time embedding
+        self.lead_time_embedding = None
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            
+        # Month embedding (12 months)
+        self.month_embedding = nn.Embedding(12, month_embedding_dim)
+        
+        # Calculate number of additional channels
+        # We'll add 1 channel for month and 1 for lead time (if multi-lead time)
+        additional_channels = 1  # month channel
+        if n_lead_times > 1:
+            additional_channels += 1  # lead time channel
+            
+        actual_in_channels = n_input_vars + additional_channels
 
         # Use provided spatial dimensions if available
         if n_lat is not None and n_lon is not None and n_input_vars is not None:
             self.height = n_lat
             self.width = n_lon
-            self.in_channels = n_input_vars
+            self.in_channels = actual_in_channels
             self.out_channels = n_output_vars if n_output_vars is not None else 1
             
-            # Verify dimensions match
-            expected_input = self.in_channels * self.height * self.width
+            # Verify dimensions match (approximately, since we might have embeddings)
+            expected_input_base = n_input_vars * self.height * self.width
+            if abs(expected_input_base - input_dim) > max(lead_time_embedding_dim, month_embedding_dim):
+                print(f"Warning: Dimension mismatch. Base input: {expected_input_base}, provided: {input_dim}")
+                
             expected_output = self.out_channels * self.height * self.width
-            
-            if expected_input != input_dim:
-                print(f"Warning: Expected input dim {expected_input} but got {input_dim}")
             if expected_output != output_dim:
                 print(f"Warning: Expected output dim {expected_output} but got {output_dim}")
         else:
             raise ValueError("Dimensions not provided")
         
         # Calculate maximum number of levels based on spatial dimensions
-        # Each pooling operation halves the spatial dimensions
-        # We need at least 2x2 spatial dims before the last pooling
         min_spatial_dim = min(self.height, self.width)
         max_pools = 0
         current_dim = min_spatial_dim
@@ -160,44 +194,30 @@ class UNet(nn.Module):
             in_ch = out_ch
             out_ch = out_ch * 2
         
-        print(f"Encoder channels: {self.encoder_channels}")
-        
         # Build decoder (upsampling path)
         self.decoders = nn.ModuleList()
         self.upconvs = nn.ModuleList()
 
         for i in range(self.num_levels - 1):
-            # Current level index in decoder (starting from deepest)
             decoder_level = self.num_levels - 1 - i
-            # Corresponding encoder level for skip connection
             skip_level = self.num_levels - 2 - i
             
-            # Input channels (from bottleneck or previous decoder layer)
-            # Note: decoder_level = skip_level + 1, so this is always the same
             in_ch = self.encoder_channels[decoder_level]
-            
-            # Skip connection channels
             skip_ch = self.encoder_channels[skip_level]
-            
-            # Output channels (matching the skip connection level)
             out_ch = skip_ch
             
-            print(f"Decoder {i}: in_ch={in_ch}, skip_ch={skip_ch}, out_ch={out_ch}")
-            
-            # Upsampling layer
             self.upconvs.append(self._make_upconv(in_ch, out_ch))
-            
-            # Decoder conv block (input = upsampled + skip connection)
             combined_ch = out_ch + skip_ch
             self.decoders.append(self._make_conv_block(combined_ch, out_ch))
 
         # Final output layer
         if self.decoders:
-            final_in_ch = self.encoder_channels[0]  # Same as first encoder level
+            final_in_ch = self.encoder_channels[0]
         else:
-            final_in_ch = self.encoder_channels[-1]  # If no decoders, use last encoder
+            final_in_ch = self.encoder_channels[-1]
             
         self.final_conv = nn.Conv2d(final_in_ch, self.out_channels, kernel_size=1)
+        self.original_n_input_vars = n_input_vars
     
     def _make_conv_block(self, in_channels, out_channels):
         """Create a convolutional block with two conv layers."""
@@ -214,51 +234,64 @@ class UNet(nn.Module):
         """Create upsampling layer using transposed convolution."""
         return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
     
-    def forward(self, x):
+    def forward(self, x, lead_time_idx=None, month_idx=None):
         """
-        Forward pass through U-Net.
-        
-        Args:
-            x: Input tensor of shape (batch_size, input_dim)
-            
-        Returns:
-            Output tensor of shape (batch_size, output_dim)
+        Forward pass through U-Net with lead time and month support.
         """
         batch_size = x.shape[0]
         
-        # Reshape flat input to spatial format: (batch, channels, lat, lon)
-        x = x.view(batch_size, self.in_channels, self.height, self.width)
+        # Reshape flat input to spatial format
+        x = x.view(batch_size, self.original_n_input_vars, self.height, self.width)
+        
+        channels_to_concat = []
+        
+        # Add month channel
+        if month_idx is not None:
+            month_emb = self.month_embedding(month_idx)
+            # Create spatial month channel by taking mean of embedding dims
+            month_channel = month_emb.view(batch_size, -1, 1, 1)
+            month_channel = month_channel.mean(dim=1, keepdim=True)
+            month_channel = month_channel.expand(batch_size, 1, self.height, self.width)
+            channels_to_concat.append(month_channel)
+        
+        # Add lead time channel if multi-lead time
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            lead_time_emb = self.lead_time_embedding(lead_time_idx)
+            # Create spatial lead time channel
+            lead_time_channel = lead_time_emb.view(batch_size, -1, 1, 1)
+            lead_time_channel = lead_time_channel.mean(dim=1, keepdim=True)
+            lead_time_channel = lead_time_channel.expand(batch_size, 1, self.height, self.width)
+            channels_to_concat.append(lead_time_channel)
+        
+        # Concatenate all channels
+        if channels_to_concat:
+            x = torch.cat([x] + channels_to_concat, dim=1)
         
         # Encoder path with skip connections
         encoder_outputs = []
         
         for i in range(len(self.encoders)):
             x = self.encoders[i](x)
-            if i < len(self.encoders) - 1:  # Don't store the bottleneck as skip connection
+            if i < len(self.encoders) - 1:
                 encoder_outputs.append(x)
             if i < len(self.pools):
                 x = self.pools[i](x)
         
         # Decoder path with skip connections
         for i, (upconv, decoder) in enumerate(zip(self.upconvs, self.decoders)):
-            # Upsample
             x = upconv(x)
-            
-            # Get skip connection (in reverse order)
             skip_connection = encoder_outputs[-(i+1)]
             
-            # Handle size mismatches due to odd dimensions
             if x.shape[2:] != skip_connection.shape[2:]:
                 x = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
             
-            # Concatenate along channel dimension
             x = torch.cat([x, skip_connection], dim=1)
             x = decoder(x)
         
         # Final convolution
         x = self.final_conv(x)
         
-        # Reshape back to flat output: (batch, n_output_vars * n_lat * n_lon)
+        # Reshape back to flat output
         x = x.view(batch_size, -1)
         
         return x
@@ -275,7 +308,8 @@ def parse_args():
     parser.add_argument('--model_name',   type=str, required=True)
     parser.add_argument('--region',       type=str, default="india")
     parser.add_argument('--subregion',    type=str, default="2x2")
-    parser.add_argument('--lead_time_hours', type=int, default=24)
+    parser.add_argument('--lead_time_hours', type=int, nargs='+', default=[24],
+                        help='List of lead times in hours (e.g., 24 48 72)')
     parser.add_argument('--training_vars', type=str, nargs='+', default=["2m_temperature"])
     parser.add_argument('--output_vars',   type=str, nargs='+', default=["2m_temperature"])
     parser.add_argument('--train_start',   type=str, default='2018-01-01')
@@ -344,12 +378,13 @@ def generate_output_path(args):
 
     if args.model_type == "UNet":
         model_str = "unet"
-
     else: 
         model_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
-    lead_time = f"leadtime_{args.lead_time_hours}"
+    
+    # Format lead times
+    lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
 
-    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{model_str}.zarr"
+    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}_{dates_str}_{model_str}.zarr"
     return output_path 
 
 def sample_climate_zone_patches(
@@ -415,101 +450,31 @@ def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
             preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
             decode_timedelta=True
         )
-    
-def get_bounds(args):
-
-    # set up lat and lon bounds for each region.
-    if args.region == "india":
-        lat_min, lat_max = 17, 27
-        lon_min, lon_max = 72, 82
-    elif args.region == "usa_south":
-        lat_min, lat_max = 30, 40
-        lon_min, lon_max = (-105 + 360), (-95 + 360)
-    elif args.region == "amazon":
-        lat_min, lat_max  = -10, 0 
-        lon_min, lon_max = (-70 + 360), (-60 + 360)
-    elif args.region == "british_columbia":
-        lat_min, lat_max = 48.25, 58  # XX note can update this if I fix the inital download
-        lon_min, lon_max = (-130 + 360), (-120 + 360)
-    elif args.region == "pakistan":
-        lat_min, lat_max = 25, 34
-        lon_min, lon_max = 60, 70
-    else:
-        raise ValueError(f"Unknown region '{args.region}'. Please specify a valid region.")
-    
-    # For each region of 10x10 degrees, there are sub-regions that are
-    # add 0.25 degrees to end to properly set the bounds
-    # 2x2, 4x4, 6x6, 8x8, and 10x10 degrees.
-    if args.subregion == "2x2":
-        lat_min, lat_max = lat_min + 4, lat_max - 4 + 0.25
-        lon_min, lon_max = lon_min + 4, lon_max - 4 + 0.25
-    elif args.subregion == "4x4":
-        lat_min, lat_max = lat_min + 3, lat_max - 3 + 0.25
-        lon_min, lon_max = lon_min + 3, lon_max - 3 + 0.25
-    elif args.subregion == "6x6":
-        lat_min, lat_max = lat_min + 2, lat_max - 2 + 0.25
-        lon_min, lon_max = lon_min + 2, lon_max - 2 + 0.25
-    elif args.subregion == "8x8":
-        lat_min, lat_max = lat_min + 1, lat_max - 1 + 0.25
-        lon_min, lon_max = lon_min + 1, lon_max - 1 + 0.25
-    elif args.subregion == "10x10":
-        lat_min, lat_max = lat_min, lat_max + 0.25
-        lon_min, lon_max = lon_min, lon_max + 0.25
-    else:
-        raise ValueError(f"Unknown subregion '{args.subregion}'. Please specify a valid subregion.")
-    lat_values = np.arange(lat_min, lat_max, 0.25)
-    lon_values = np.arange(lon_min, lon_max, 0.25)
-    return lat_values, lon_values
 
 def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None): 
     """
-    loads forecast data, forecast output data and observation data for training or testing.
+    Loads forecast data for multiple lead times with month information.
     """
-
     if train:
         ver_str = "train"
     else:
         ver_str = "test"
 
-    # set up time range for training or testing
-    time_start = getattr(args, f"{ver_str}_start")
-    time_end = getattr(args, f"{ver_str}_end")
-    time_values = np.arange(
-        np.datetime64(time_start) + np.timedelta64(args.lead_time_hours, 'h'),  # Start at lead time hours after start date
-        np.datetime64(time_end) + np.timedelta64(1, 'D'),  # Add 1 day to include end date,
-        np.timedelta64(24, 'h')
-    )
-
-    n_time = len(time_values)
-    n_training_vars = len(args.training_vars)
-    n_output_vars = len(args.output_vars)
-
+    # Load data files
     fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
     
     if args.region in CLIMATE_ZONE_MAP:
-        # if in climate map, then we have already cleaned and combined the patches ahead of time
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
-
         forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
         train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
-
-
     else:
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
         forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
         train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
     
-    # rename time init_time in forecast_ds and create a new time variable
-    # consistent with the target dataset
-    # create new time variable in forecast_ds that is valid time = init_time + lead_time_hours
-    forecast_ds = forecast_ds.assign_coords(
-        init_time=forecast_ds.time,
-        time=forecast_ds.time + np.timedelta64(args.lead_time_hours, 'h')
-    ).drop_vars('init_time')
-
-    # create 10m wind speed from u and v components of wind if needed
+    # Create wind speed if needed
     if "10m_wind_speed" in args.training_vars:
         fc_u_component = forecast_ds["10m_u_component_of_wind"]
         fc_v_component = forecast_ds["10m_v_component_of_wind"]
@@ -519,38 +484,118 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         obs_v_component = train_obs_ds["10m_v_component_of_wind"]
         train_obs_ds["10m_wind_speed"] = np.sqrt(obs_u_component**2 + obs_v_component**2)
 
-    # Now select the desired time, spatial, and (if applicable) prediction_timedelta slices.
-    fc_ds = forecast_ds.sel(
-        time=time_values,
-        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
-    )[args.training_vars].drop_vars('prediction_timedelta').compute()
+    # Prepare data for all lead times
+    all_fc_data = []
+    all_fc_output_data = []
+    all_obs_data = []
+    all_lead_time_indices = []
+    all_month_indices = []
+    all_times = []
     
-    fc_ds_output = forecast_ds.sel(
-        time=time_values,
-        prediction_timedelta=np.timedelta64(args.lead_time_hours, 'h')
-    )[args.output_vars].drop_vars('prediction_timedelta').compute()
+    # Create a mapping from lead time hours to indices
+    lead_time_to_idx = {lt: idx for idx, lt in enumerate(args.lead_time_hours)}
     
-    # Handle spatial selection for obs_ds - skip if lat/lon are None (climate zone patches)
-    if lat_values is None or lon_values is None:
-        obs_ds = train_obs_ds.sel(
+    for lead_time_idx, lead_time_hours in enumerate(args.lead_time_hours):
+        # Get time values for this lead time
+        time_start = getattr(args, f"{ver_str}_start")
+        time_end = getattr(args, f"{ver_str}_end")
+        time_values = np.arange(
+            np.datetime64(time_start) + np.timedelta64(lead_time_hours, 'h'),
+            np.datetime64(time_end) + np.timedelta64(1, 'D'),
+            np.timedelta64(24, 'h')
+        )
+        
+        # Extract month indices (0-11) from time values
+        month_indices = np.array([pd.Timestamp(t).month - 1 for t in time_values])
+        
+        # Create new time coordinate for forecast valid time
+        forecast_ds_lt = forecast_ds.assign_coords(
+            init_time=forecast_ds.time,
+            time=forecast_ds.time + np.timedelta64(lead_time_hours, 'h')
+        ).drop_vars('init_time')
+        
+        # Select data for this lead time
+        fc_lt = forecast_ds_lt.sel(
             time=time_values,
-        )[args.output_vars].compute()
-    else:
-        obs_ds = train_obs_ds.sel(
+            prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
+        )[args.training_vars].drop_vars('prediction_timedelta')
+        
+        fc_output_lt = forecast_ds_lt.sel(
             time=time_values,
-            latitude=lat_values,
-            longitude=lon_values,
-        )[args.output_vars].compute()
+            prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
+        )[args.output_vars].drop_vars('prediction_timedelta')
+        
+        # Select observations
+        if lat_values is None or lon_values is None:
+            obs_lt = train_obs_ds.sel(time=time_values)[args.output_vars]
+        else:
+            obs_lt = train_obs_ds.sel(
+                time=time_values,
+                latitude=lat_values,
+                longitude=lon_values,
+            )[args.output_vars]
+        
+        # Convert to arrays and flatten
+        n_time = len(time_values)
+        n_vars = len(args.training_vars)
+        n_output_vars = len(args.output_vars)
+        lat_u = np.unique(fc_lt.latitude.values)
+        lon_u = np.unique(fc_lt.longitude.values)
+        n_lat, n_lon = len(lat_u), len(lon_u)
+        
+        fc_array = fc_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
+        fc_output_array = fc_output_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
+        obs_array = obs_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
+        
+        # Create lead time indices
+        lead_time_indices = np.full(n_time, lead_time_idx, dtype=np.int64)
+        
+        all_fc_data.append(fc_array)
+        all_fc_output_data.append(fc_output_array)
+        all_obs_data.append(obs_array)
+        all_lead_time_indices.append(lead_time_indices)
+        all_month_indices.append(month_indices)
+        all_times.extend(time_values)
+    
+    # Concatenate all data
+    fc_combined = np.concatenate(all_fc_data, axis=0)
+    fc_output_combined = np.concatenate(all_fc_output_data, axis=0)
+    obs_combined = np.concatenate(all_obs_data, axis=0)
+    lead_time_indices_combined = np.concatenate(all_lead_time_indices, axis=0)
+    month_indices_combined = np.concatenate(all_month_indices, axis=0)
+    
+    # Calculate mean forecast error per lead time for mean debiasing
+    training_mean_forecast_error = {}
+    for lead_time_idx, lead_time_hours in enumerate(args.lead_time_hours):
+        mask = lead_time_indices_combined == lead_time_idx
+        fc_output_lt = fc_output_combined[mask]
+        obs_lt = obs_combined[mask]
+        
+        # Reshape back to get per-variable errors
+        n_time_lt = mask.sum()
+        fc_output_reshaped = fc_output_lt.reshape(n_time_lt, n_output_vars, n_lat, n_lon)
+        obs_reshaped = obs_lt.reshape(n_time_lt, n_output_vars, n_lat, n_lon)
+        
+        mean_error = fc_output_reshaped.mean(axis=0) - obs_reshaped.mean(axis=0)
+        
+        # Store per variable
+        for var_idx, var_name in enumerate(args.output_vars):
+            key = f"{var_name}_lt{lead_time_hours}h"
+            training_mean_forecast_error[key] = mean_error[var_idx]
+    
+    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined, 
+            month_indices_combined, all_times, lat_u, lon_u, n_lat, n_lon, 
+            len(args.training_vars), len(args.output_vars), training_mean_forecast_error)
 
-    return fc_ds, fc_ds_output, obs_ds, time_values, n_time, n_training_vars, n_output_vars
-
-def create_dataloader(forecast_data, obs_data, batch_size):
+def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices, batch_size):
     """
-    Create a PyTorch DataLoader from forecast and observation data.
+    Create a PyTorch DataLoader from forecast, observation data, lead time indices, and month indices.
     """
     dataset = torch.utils.data.TensorDataset(
         torch.from_numpy(forecast_data).float(),
-        torch.from_numpy(obs_data).float()
+        torch.from_numpy(obs_data).float(),
+        torch.from_numpy(lead_time_indices).long(),
+        torch.from_numpy(month_indices).long()
     )
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
@@ -560,7 +605,7 @@ def create_dataloader(forecast_data, obs_data, batch_size):
 
 def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=50, min_delta=0.0):
     """
-    Train the model over multiple epochs. with early stopping
+    Train the model over multiple epochs with early stopping.
     """
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -568,16 +613,22 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=
     best_val_loss = float('inf')
     epochs_without_improvement = 0
     best_model_wts = copy.deepcopy(model.state_dict())
+    
+    # Track training time
+    train_start_time = time.time()
 
     for epoch in range(1, epochs + 1):
-
-    # --- training step ---
+        # --- training step ---
         model.train()
         train_loss = 0.0
-        for x_batch, y_batch in train_loader:
+        for x_batch, y_batch, lead_time_batch, month_batch in train_loader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+            lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
+            
             optimizer.zero_grad()
-            preds = model(x_batch)
+            
+            # Pass lead time and month indices to model
+            preds = model(x_batch, lead_time_batch, month_batch)
             loss = criterion(preds, y_batch)
             loss.backward()
             optimizer.step()
@@ -588,9 +639,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_batch, y_batch in valid_loader:
+            for x_batch, y_batch, lead_time_batch, month_batch in valid_loader:
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-                preds = model(x_batch)
+                lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
+                
+                preds = model(x_batch, lead_time_batch, month_batch)
                 loss = criterion(preds, y_batch)
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
@@ -607,199 +660,207 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=
                       f"No improvement in {patience} epochs.")
                 break
 
-    # load best weights
+    # Calculate training time in minutes
+    train_end_time = time.time()
+    training_time_minutes = (train_end_time - train_start_time) / 60.0
+    
+    # Load best weights
     model.load_state_dict(best_model_wts)
-    return model
+    return model, training_time_minutes
 
 
-
-def apply_correction(model, forecast_data, device):
+def apply_correction(model, forecast_data, lead_time_indices, month_indices, device):
     """
-    Apply the MLP-based correction to forecast data.
+    Apply the MLP-based correction to forecast data with lead times and months.
     """
     model.eval()
+    corrected_all = []
+    
+    # Process in batches to handle memory efficiently
+    batch_size = 1024
+    n_samples = forecast_data.shape[0]
+    
     with torch.no_grad():
-        x_tensor = torch.from_numpy(forecast_data).float().to(device)
-        corrected = model(x_tensor).cpu().numpy()
-    return corrected
+        for i in range(0, n_samples, batch_size):
+            end_idx = min(i + batch_size, n_samples)
+            x_batch = torch.from_numpy(forecast_data[i:end_idx]).float().to(device)
+            lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
+            month_batch = torch.from_numpy(month_indices[i:end_idx]).long().to(device)
+            corrected_batch = model(x_batch, lt_batch, month_batch).cpu().numpy()
+            corrected_all.append(corrected_batch)
+    
+    return np.concatenate(corrected_all, axis=0)
 
 
 def save_output(output_path, model_name, output_vars, lon_values, lat_values,
-                time_values, original_fc, corrected_fc, ground_truth_data=None, training_mean_forecast_error=None):
+                time_values, lead_times, original_fc, corrected_fc, lead_time_indices,
+                ground_truth_data=None, training_mean_forecast_error=None, training_time_minutes=None):
     """
-    Save original and corrected forecasts (and optionally ground truth) in Zarr format.
-    Supports both single and multiple variables.
+    Save original and corrected forecasts organized by lead time.
     """
-    n_vars = len(output_vars)
-    n_time = len(time_values)
-    n_lon = len(lon_values)
-    n_lat = len(lat_values)
-
-    # reshape to be (variable, time, lat, lon)
-    original_fc = original_fc.reshape(n_time, n_vars, n_lat, n_lon)
-    original_fc = original_fc.transpose(1, 0, 2, 3)
-    
-    corrected_fc = corrected_fc.reshape(n_time, n_vars, n_lat, n_lon)
-    corrected_fc = corrected_fc.transpose(1, 0, 2, 3)
-
-    # convert to xarray DataArray
-    original_fc_da = xr.DataArray(
-        data=original_fc,
-        dims=['variable', 'time', 'latitude', 'longitude'],
-        coords={"variable": output_vars,
-                "time": time_values, 
-                "latitude": lat_values,
-                "longitude": lon_values}
-        )
-    corrected_fc_da = xr.DataArray(
-        data=corrected_fc,
-        dims=['variable', 'time', 'latitude', 'longitude'],
-        coords={"variable": output_vars,
-                "time": time_values, 
-                "latitude": lat_values,
-                "longitude": lon_values}
-        )
-    
-
-    if ground_truth_data is not None:
-        ground_truth_data = ground_truth_data.reshape(n_time, n_vars, n_lat, n_lon)
-        ground_truth_data = ground_truth_data.transpose(1, 0, 2, 3)
-        ground_truth_da = xr.DataArray(
-            data=ground_truth_data,
-            dims=['variable', 'time', 'latitude', 'longitude'],
-            coords={"variable": output_vars,
-                    "time": time_values, 
-                    "latitude": lat_values,
-                    "longitude": lon_values}
-            )
-    
-    
-    # combine 3 DataArrays into a single Dataset. will have time, latitude, and longitude as coords
-    # data variables will be of form: {variable}_original, {variable}_corrected, {variable}_ground_truth
-    # Create a dictionary to hold each data variable in the final dataset
+    # Create separate datasets for each lead time
     data_vars = {}
-    for var in output_vars:
-        # Select the slice for this variable (dims will then be time, latitude, longitude)
-        data_vars[f"{var}_original"] = original_fc_da.sel(variable=var).drop_vars("variable")
-        data_vars[f"{var}_corrected"] = corrected_fc_da.sel(variable=var).drop_vars("variable")
-        # Simple ANO style correction
-        if training_mean_forecast_error is not None:
-            data_vars[f"{var}_mean_corrected"]= data_vars[f"{var}_original"] - training_mean_forecast_error[var]
-        if ground_truth_data is not None:
-            data_vars[f"{var}_ground_truth"] = ground_truth_da.sel(variable=var).drop_vars("variable")
-
-    # Combine data variables into a single dataset
-    # print variable names for data_vars
+    
+    for lt_idx, lead_time in enumerate(lead_times):
+        # Get mask for this lead time
+        mask = lead_time_indices == lt_idx
+        n_time_lt = mask.sum()
+        
+        if n_time_lt == 0:
+            continue
+            
+        # Extract data for this lead time
+        times_lt = [t for i, t in enumerate(time_values) if mask[i]]
+        original_lt = original_fc[mask]
+        corrected_lt = corrected_fc[mask]
+        
+        # Reshape data
+        n_vars = len(output_vars)
+        n_lat = len(lat_values)
+        n_lon = len(lon_values)
+        
+        original_lt = original_lt.reshape(n_time_lt, n_vars, n_lat, n_lon).transpose(1, 0, 2, 3)
+        corrected_lt = corrected_lt.reshape(n_time_lt, n_vars, n_lat, n_lon).transpose(1, 0, 2, 3)
+        
+        # Create data arrays for each variable
+        for var_idx, var in enumerate(output_vars):
+            # Original forecast
+            data_vars[f"{var}_original_lt{lead_time}h"] = xr.DataArray(
+                original_lt[var_idx],
+                dims=['time', 'latitude', 'longitude'],
+                coords={'time': times_lt, 'latitude': lat_values, 'longitude': lon_values}
+            )
+            
+            # Corrected forecast
+            data_vars[f"{var}_corrected_lt{lead_time}h"] = xr.DataArray(
+                corrected_lt[var_idx],
+                dims=['time', 'latitude', 'longitude'],
+                coords={'time': times_lt, 'latitude': lat_values, 'longitude': lon_values}
+            )
+            
+            # Mean corrected (if available)
+            if training_mean_forecast_error is not None:
+                key = f"{var}_lt{lead_time}h"
+                if key in training_mean_forecast_error:
+                    mean_corrected = original_lt[var_idx] - training_mean_forecast_error[key]
+                    data_vars[f"{var}_mean_corrected_lt{lead_time}h"] = xr.DataArray(
+                        mean_corrected,
+                        dims=['time', 'latitude', 'longitude'],
+                        coords={'time': times_lt, 'latitude': lat_values, 'longitude': lon_values}
+                    )
+            
+            # Ground truth (if available)
+            if ground_truth_data is not None:
+                ground_truth_lt = ground_truth_data[mask]
+                ground_truth_lt = ground_truth_lt.reshape(n_time_lt, n_vars, n_lat, n_lon).transpose(1, 0, 2, 3)
+                data_vars[f"{var}_ground_truth_lt{lead_time}h"] = xr.DataArray(
+                    ground_truth_lt[var_idx],
+                    dims=['time', 'latitude', 'longitude'],
+                    coords={'time': times_lt, 'latitude': lat_values, 'longitude': lon_values}
+                )
+    
+    # Create dataset
     ds_out = xr.Dataset(data_vars)
-
-    ds_out.attrs['description'] = (f'Original and corrected forecasts from {model_name} '
-                                   f'using MLP fine-tuning)')
+    
+    # Add metadata
+    ds_out.attrs['description'] = f'Original and corrected forecasts from {model_name} using MLP fine-tuning'
+    ds_out.attrs['lead_times_hours'] = lead_times
+    ds_out.attrs['training_time_minutes'] = training_time_minutes if training_time_minutes is not None else -1
+    
+    # Save to zarr
     output_path = os.path.expanduser(output_path)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
 
-def check_2m_temperature(files):
+
+def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None):
     """
-    For each NetCDF file in `files`, attempt to open it without CF time decoding,
-    then check whether '2m_temperature' exists and whether it contains any NaNs.
-    Returns a dict mapping file path -> info dict.
+    Run experiment with multiple lead times and month encoding.
     """
-    results = {}
-    for fn in files:
-        try:
-            ds = xr.open_dataset(fn,
-                                 decode_times=False,
-                                 decode_timedelta=False)
-        except Exception as e:
-            # Could not open file at all
-            results[fn] = {"error": f"open_dataset failed: {e}"}
-            continue
+    start_time = time.time()
 
-        if "2m_temperature" not in ds:
-            results[fn] = {"error": "'2m_temperature' variable not found"}
-        else:
-            arr = ds["2m_temperature"]
-            # Boolean flag for any NaNs
-            has_nans = bool(arr.isnull().any().item())
-            # Count of NaNs (if you want the exact count)
-            n_nans = int(arr.isnull().sum().values) if has_nans else 0
-            results[fn] = {
-                "has_nans": has_nans,
-                "n_nans": n_nans,
-                "shape": arr.shape
-            }
+    # Load training data
+    (fc, fc_output, obs, lead_time_indices, month_indices, train_times, lat_u, lon_u, 
+     n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num=patch_num)
 
-        ds.close()
-    return results
-
-def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num = None):
-
-    # 1) Load train
-    fc_ds, fc_ds_output, obs_ds, train_time_values, n_train_time, n_training_vars, n_output_vars = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num = patch_num)
-
-    # save mean forecast error in the training data for mean debiasing correction
-    training_mean_forecast_error = fc_ds_output.mean(dim='time') - obs_ds.mean(dim='time')
-
-    # save unique lat/lon
-    lat_u = np.unique(fc_ds.latitude.values)
-    lon_u = np.unique(fc_ds.longitude.values)
-    n_lat, n_lon = len(lat_u), len(lon_u)
-
-    # flatten data and arrange variables in consistent order 
-    fc   = fc_ds.to_array().values.transpose(1,0,2,3).reshape(n_train_time, n_training_vars * n_lat * n_lon)
-    fc_o = fc_ds_output.to_array().values.transpose(1,0,2,3).reshape(n_train_time, n_output_vars * n_lat * n_lon)
-    obs  = obs_ds.to_array().values.transpose(1,0,2,3).reshape(n_train_time, n_output_vars * n_lat * n_lon)
-
-    # normalize
+    # Normalize data
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
-    stats_out   = {'mean': fc_o.mean(0), 'std': fc_o.std(0) + 1e-8}
-    fc_norm  = (fc  - stats_train['mean']) / stats_train['std']
-    obs_norm = (obs - stats_out['mean'])   / stats_out['std']
+    stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+    fc_norm = (fc - stats_train['mean']) / stats_train['std']
+    obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-    # split train/val
-    idx = np.arange(n_train_time); np.random.shuffle(idx)
-    split = int(0.8 * n_train_time)
+    # Split train/validation
+    n_train = len(fc)
+    idx = np.arange(n_train)
+    np.random.shuffle(idx)
+    split = int(0.8 * n_train)
     t_idx, v_idx = idx[:split], idx[split:]
-    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx], batch_size=32)
-    val_loader   = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], batch_size=32)
-
-    # init & train
-    input_dim  = n_training_vars * n_lat * n_lon
-    output_dim = n_output_vars    * n_lat * n_lon
-
-    # Choose model type based on args
-    if hasattr(args, 'model_type') and args.model_type == 'UNet':
-        print(f"Using UNet with spatial dims: {n_lat}x{n_lon}, {n_training_vars} input vars, {n_output_vars} output vars")
-        unet_hidden_dim = 32 
-        model = UNet(input_dim, unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon, 
-                     n_input_vars=n_training_vars, n_output_vars=n_output_vars).to(device)
-    else:
-        print("Using SimpleMLP")
-        model = SimpleMLP(input_dim, args.mlp_hidden_dim, output_dim, args.mlp_layers).to(device)
     
-    model = train_model(model, train_loader, val_loader,
-                         epochs=1000, lr=1e-5, device=device,
-                         patience=50, min_delta=0.0)
-    print("Training complete.")
+    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx], 
+                                    lead_time_indices[t_idx], month_indices[t_idx], 
+                                    batch_size=32)
+    val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], 
+                                  lead_time_indices[v_idx], month_indices[v_idx], 
+                                  batch_size=32)
 
-    # load test
-    test_fc_ds, test_fc_o_ds, test_obs_ds, test_times, n_test_time, _, _ = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num = patch_num)
-    tfc   = test_fc_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
-    tfco  = test_fc_o_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
-    tobs  = test_obs_ds.to_array().values.transpose(1,0,2,3).reshape(n_test_time, -1)
+    # Initialize model
+    input_dim = n_training_vars * n_lat * n_lon
+    output_dim = n_output_vars * n_lat * n_lon
+    n_lead_times = len(args.lead_time_hours)
 
-    # apply correction
-    tfc_norm    = (tfc - stats_train['mean']) / stats_train['std']
-    corrected   = apply_correction(model, tfc_norm, device)
-    corrected   = (corrected * stats_out['std']) + stats_out['mean']
+    if hasattr(args, 'model_type') and args.model_type == 'UNet':
+        print(f"Using UNet with {n_lead_times} lead times and month encoding")
+        model = UNet(input_dim, 32, output_dim, n_lat=n_lat, n_lon=n_lon,
+                     n_input_vars=n_training_vars, n_output_vars=n_output_vars,
+                     n_lead_times=n_lead_times).to(device)
+    else:
+        print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
+        model = SimpleMLP(input_dim, args.mlp_hidden_dim, output_dim, args.mlp_layers,
+                          n_lead_times=n_lead_times).to(device)
 
+    # Train model
+    model, training_time_minutes = train_model(model, train_loader, val_loader,
+                                                epochs=1000, lr=1e-5, device=device,
+                                                patience=50, min_delta=0.0)
+    print(f"Training complete in {training_time_minutes:.2f} minutes")
 
-    print(f"MSE original: {np.mean((tfco - tobs)**2):.6f}")
-    print(f"MSE corrected: {np.mean((corrected - tobs)**2):.6f}")
+    # Load test data
+    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_month_indices,
+     test_times, _, _, _, _, _, _, _) = \
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
 
-    # save
+    # Apply correction
+    test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
+    corrected = apply_correction(model, test_fc_norm, test_lead_time_indices, 
+                                test_month_indices, device)
+    corrected = (corrected * stats_out['std']) + stats_out['mean']
+
+    # Calculate MSE per lead time and month
+    for lt_idx, lead_time in enumerate(args.lead_time_hours):
+        mask = test_lead_time_indices == lt_idx
+        if mask.sum() > 0:
+            mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
+            mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
+            print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
+            
+            # Also report MSE by season (optional)
+            months_lt = test_month_indices[mask]
+            # Winter: 11, 0, 1
+            winter_mask = np.isin(months_lt, [11, 0, 1])
+            if winter_mask.sum() > 0:
+                winter_mse_orig = np.mean((test_fc_output[mask][winter_mask] - test_obs[mask][winter_mask])**2)
+                winter_mse_corr = np.mean((corrected[mask][winter_mask] - test_obs[mask][winter_mask])**2)
+                print(f"  Winter (DJF) - MSE original: {winter_mse_orig:.6f}, MSE corrected: {winter_mse_corr:.6f}")
+            
+            # Summer: 5, 6, 7
+            summer_mask = np.isin(months_lt, [5, 6, 7])
+            if summer_mask.sum() > 0:
+                summer_mse_orig = np.mean((test_fc_output[mask][summer_mask] - test_obs[mask][summer_mask])**2)
+                summer_mse_corr = np.mean((corrected[mask][summer_mask] - test_obs[mask][summer_mask])**2)
+                print(f"  Summer (JJA) - MSE original: {summer_mse_orig:.6f}, MSE corrected: {summer_mse_corr:.6f}")
+
+    # Save results
     save_output(
         output_path=output_path,
         model_name=args.model_name,
@@ -807,94 +868,72 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         lon_values=lon_u,
         lat_values=lat_u,
         time_values=test_times,
-        original_fc=tfco,
+        lead_times=args.lead_time_hours,
+        original_fc=test_fc_output,
         corrected_fc=corrected,
-        ground_truth_data=tobs,
-        training_mean_forecast_error=training_mean_forecast_error
+        lead_time_indices=test_lead_time_indices,
+        ground_truth_data=test_obs,
+        training_mean_forecast_error=training_mean_forecast_error,
+        training_time_minutes=training_time_minutes
     )
+
+    end_time = time.time()
+    total_time_minutes = (end_time - start_time) / 60
+    print(f"Total experiment time: {total_time_minutes:.2f} minutes")
 
 
 def main():
-
     dirs = setup_directories()
 
-    # Get all prediction and observation files
-    file_list = sorted(glob.glob(os.path.join(dirs["raw"], "ethiopia", "predictions_ethiopia_*.nc")))
-    # file_list = sorted(glob.glob("/Volumes/wd_external_hd/weatherbench/test_global/**/*pangu*.nc", recursive=True))
-    summary = check_2m_temperature(file_list)
-    # Print a quick report
-    for path, info in summary.items():
-        if "error" in info:
-            print(f"[ERROR] {path}: {info['error']}")
-        else:
-            status = "contains NaNs" if info["has_nans"] else "no NaNs"
-            if status == "contains NaNs":
-                print(f"[WARNING] {path}: {status} (n_nans={info['n_nans']})")
-    
-
-    # parse command line arguments
+    # Parse command line arguments
     args = parse_args()
-    # prepare output dir and base path
+    
+    # Prepare output dir and base path
     args.output_dir = os.path.expanduser(args.output_dir)
     args.data_dir = os.path.expanduser(args.data_dir)
     os.makedirs(args.output_dir, exist_ok=True)
     base_path = generate_output_path(args)
 
-    # setup device & seeds
+    # Setup device & seeds
     device = torch.device('cuda' if torch.cuda.is_available() else
-                          'mps'    if torch.backends.mps.is_available() else
+                          'mps' if torch.backends.mps.is_available() else
                           'cpu')
-    torch.manual_seed(58); random.seed(58)
+    torch.manual_seed(58)
+    random.seed(58)
 
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # ---- decide if we're in a climate‐zone region or a geographic one ----
+    # Decide if we're in a climate‐zone region or a geographic one
     if args.region in CLIMATE_ZONE_MAP:
-
         def find_available_patches(region, model_name, train_or_test):
-            """
-            Find available patches for a given region and model name.
-            Returns a list of patch numbers that have data downloaded.
-            """
+            """Find available patches for a given region and model name."""
             test_path = os.path.join(args.data_dir, f"{train_or_test}_{region}", model_name)
             patch_files = glob.glob(os.path.join(test_path, "*.nc"))
             patch_nums = [int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in patch_files]
             return sorted(patch_nums)
         
         train_patch_nums = find_available_patches(args.region, args.model_name, 'train')
-        test_patch_nums  = find_available_patches(args.region, args.model_name, 'test')
-
-        # save patch numbers that are in both train and test patches
+        test_patch_nums = find_available_patches(args.region, args.model_name, 'test')
         common_patch_nums = set(train_patch_nums) & set(test_patch_nums)
 
-        # since climate zone patches are precomputed don't need to pass in lon/lat
-        # instead just pass in None
         lat_vals = None
         lon_vals = None
         
         for idx in common_patch_nums:
-            out_path = base_path.replace(
-                '.zarr', f'_{args.region}_bs{idx}.zarr'
-            )
+            out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 
-            # check if output file already exists XX will have to comment out to redo
             if os.path.exists(out_path):
                 print(f"Skipping already existing output: {out_path}")
                 continue
 
-            start_time = time.time()
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,
-                args, os.path.expanduser(args.data_dir), device, patch_num = idx
+                args, os.path.expanduser(args.data_dir), device, patch_num=idx
             )
-            end_time = time.time()
-            elapsed_minutes = (end_time - start_time) / 60
-            print(f"Saved [{args.region} zone] sample {idx}/{len(common_patch_nums)} in {elapsed_minutes} minutes")
-            
 
     elif args.bootstrap:
-        # bootstrap sampling for uniform-grid regions
+        # Bootstrap sampling for uniform-grid regions
         for i in range(args.bootstrap):
             si = random.randint(0, len(region_lat) - nlat_patch)
             sj = random.randint(0, len(region_lon) - nlon_patch)
@@ -905,13 +944,14 @@ def main():
             run_subregion_experiment(lat_vals, lon_vals, out_path, args,
                                      os.path.expanduser(args.data_dir), device)
     else:
-        # central patch
+        # Central patch
         ci = (len(region_lat) - nlat_patch) // 2
         cj = (len(region_lon) - nlon_patch) // 2
         lat_vals = region_lat[ci:ci+nlat_patch]
         lon_vals = region_lon[cj:cj+nlon_patch]
         run_subregion_experiment(lat_vals, lon_vals, base_path, args,
                                  os.path.expanduser(args.data_dir), device)
+
 
 if __name__ == "__main__":
     main()
