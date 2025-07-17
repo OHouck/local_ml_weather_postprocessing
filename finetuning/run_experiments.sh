@@ -5,7 +5,7 @@ source .venv/bin/activate
     # --data_dir="/Users/ohouck/test_wb_finetune_data" \
     # --data_dir="/Volumes/wd_external_hd/weatherbench" \
     # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
-python3 finetuning/1_finetune.py \
+python3 finetuning/finetune.py \
     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
     --training_vars 2m_temperature \
@@ -15,7 +15,7 @@ python3 finetuning/1_finetune.py \
     --model_name="pangu" \
     --region="india" \
     --subregion="2x2" \
-    --lead_time_hours 168
+    --lead_time_hours 144 168
 
 # regions=("india" "amazon" "usa_south" "british_columbia")
 # # regions=("tropical" "temperate" "arid")
@@ -32,7 +32,7 @@ python3 finetuning/1_finetune.py \
 #             # 2 m temperature
 #             echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours"
 #             echo "Running fine-tuning for 2m_temperature pangu"
-#             python3 finetuning/1_finetune.py \
+#             python3 finetuning/finetune.py \
 #                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 #                 --training_vars 2m_temperature \
 #                 --output_vars 2m_temperature \
@@ -46,7 +46,7 @@ python3 finetuning/1_finetune.py \
 #                 --model_type="UNet" 
 
 #             # echo "Running fine-tuning for region: $region, subregion: $subregion, lead time: $lead_time hours" # echo "Running fine-tuning for 2m_temperature pangu"
-#             # python3 finetuning/1_finetune.py \
+#             # python3 finetuning/finetune.py \
 #             #     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 #             #     --training_vars 2m_temperature \
 #             #     --output_vars 2m_temperature \
@@ -61,7 +61,7 @@ python3 finetuning/1_finetune.py \
 
 #             # 10 m wind speed
 #             echo "Running fine-tuning for 10m_wind_speed pangu"
-#             python3 finetuning/1_finetune.py \
+#             python3 finetuning/finetune.py \
 #                 --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 #                 --training_vars 10m_wind_speed \
 #                 --output_vars 10m_wind_speed \
@@ -74,7 +74,7 @@ python3 finetuning/1_finetune.py \
 #                 --lead_time_hours="$lead_time" \
 #                 --model_type="UNet"
 
-#             # python3 finetuning/1_finetune.py \
+#             # python3 finetuning/finetune.py \
 #             #     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
 #             #     --training_vars 10m_wind_speed \
 #             #     --output_vars 10m_wind_speed \

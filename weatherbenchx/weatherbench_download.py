@@ -156,10 +156,10 @@ class CheckpointManager:
 
 class LoadAndSaveChunk(beam.DoFn):
     """Custom DoFn to load data chunks and save them to disk with checkpointing"""
-    def __init__(self, prediction_loader, target_loader, region, output_path, checkpoint_manager):
-        self.prediction_loader = prediction_loader
-        self.target_loader = target_loader
+    def __init__(self, loader, region, model, output_path, checkpoint_manager):
+        self.loader = loader 
         self.region = region
+        self.model = model 
         self.output_path = output_path
         self.checkpoint_manager = checkpoint_manager
         if self.output_path.endswith('.nc'):
@@ -186,8 +186,7 @@ class LoadAndSaveChunk(beam.DoFn):
         init_times = np.array(init_times, dtype='datetime64[ns]')
         lead_times = np.array(lead_times, dtype='timedelta64[ns]')
         
-        prediction_saved = False
-        target_saved = False
+        data_saved = False
 
         # region to download for india
         if self.region == "india":
@@ -212,87 +211,44 @@ class LoadAndSaveChunk(beam.DoFn):
         
         try:
             # Load prediction data
-            logger.info(f"Loading predictions for chunk {chunk_id}")
-            prediction_chunk = self.prediction_loader.load_chunk(init_times, lead_times)
+            logger.info(f"Loading data for chunk {chunk_id}")
+            chunk = self.loader.load_chunk(init_times, lead_times)
             
             if self.region == "global":
-                pred_filename = f"predictions_{chunk_id}.nc"
+                filename = f"{self.model}_{chunk_id}.nc"
             else :
                 # Filter for specific region
                 logger.info(f"Filtering predictions for region: {self.region}")
 
-                prediction_chunk = prediction_chunk.sortby('latitude')
-                prediction_chunk = prediction_chunk.sel(
+                chunk = chunk.sortby('latitude')
+                chunk = chunk.sel(
                     latitude=slice(full_lat_values.min(), full_lat_values.max()),
                     longitude=slice(full_lon_values.min(), full_lon_values.max())
                     )
-                pred_filename = f"predictions_{self.region}_{chunk_id}.nc"
+                filename = f"{self.model}_{self.region}_{chunk_id}.nc"
 
-            logger.info(f"Loaded prediction data with shape: {dict(prediction_chunk.sizes)}")
+            logger.info(f"Loaded data with shape: {dict(chunk.sizes)}")
             
             # Save prediction data immediately after loading
-            pred_output_path = os.path.join(self.output_path, pred_filename)
+            output_path = os.path.join(self.output_path, filename)
             
-            encoding = {var: {'zlib': True, 'complevel': 4} for var in prediction_chunk.data_vars}
-            prediction_chunk.to_netcdf(pred_output_path, encoding=encoding)
-            logger.info(f"Saved predictions to: {pred_output_path}")
-            prediction_saved = True
-            
-            # Calculate valid times for targets
-            valid_times = []
-            for init_time in init_times:
-                for lead_time in lead_times:
-                    valid_times.append(init_time + lead_time)
-            valid_times = np.unique(np.array(valid_times, dtype='datetime64[ns]'))
-            logger.info(f"Calculated {len(valid_times)} valid times for targets")
-            
-            # Try to load and save target data
-            try:
-                logger.info(f"Loading targets for chunk {chunk_id} (valid times: {valid_times[0]} to {valid_times[-1]})")
-                target_chunk = self.target_loader.load_chunk(valid_times)
-
-                if self.region == "global":
-                    target_filename = f"targets_{chunk_id}.nc"
-                else: 
-                    # Filter for specific region
-                    logger.info(f"Filtering targets for region: {self.region}")
-                    target_chunk = target_chunk.sortby('latitude')
-                    target_chunk = target_chunk.sel(
-                        latitude=slice(full_lat_values.min(), full_lat_values.max()),
-                        longitude=slice(full_lon_values.min(), full_lon_values.max())
-                        )
-                    target_filename = f"targets_{self.region}_{chunk_id}.nc"
-                logger.info(f"Loaded target data with shape: {dict(target_chunk.sizes)}")
-
-                
-                target_filename = f"targets_{self.region}_{chunk_id}.nc"
-                target_output_path = os.path.join(self.output_path, target_filename)
-                
-                encoding = {var: {'zlib': True, 'complevel': 4} for var in target_chunk.data_vars}
-                target_chunk.to_netcdf(target_output_path, encoding=encoding)
-                logger.info(f"Saved targets to: {target_output_path}")
-                target_saved = True
-                
-            except Exception as target_error:
-                logger.error(f"Failed to load/save targets for chunk {chunk_id}: {str(target_error)}")
-                # Continue even if targets fail - at least we have predictions
+            encoding = {var: {'zlib': True, 'complevel': 4} for var in chunk.data_vars}
+            chunk.to_netcdf(output_path, encoding=encoding)
+            logger.info(f"Saved data to: {output_path}")
+            data_saved = True
             
             # Only mark as completed if both were saved successfully
-            if prediction_saved and target_saved:
+            if data_saved:
                 self.checkpoint_manager.mark_chunk_completed(chunk_id)
-                logger.info(f"Successfully saved both predictions and targets for chunk {chunk_id}")
+                logger.info(f"Successfully saved data for chunk {chunk_id}")
                 yield f"Successfully saved chunk {chunk_id}"
-            elif prediction_saved:
-                self.checkpoint_manager.mark_chunk_partial(chunk_id)
-                logger.warning(f"Only predictions saved for chunk {chunk_id} - targets failed")
-                yield f"Partially saved chunk {chunk_id} (predictions only)"
             else:
                 yield f"Failed to save chunk {chunk_id}"
             
         except Exception as e:
             error_msg = f"Error processing chunk {chunk_id}: {str(e)}"
             logger.error(error_msg)
-            if prediction_saved:
+            if data_saved:
                 yield f"Partial success for chunk {chunk_id} - predictions saved, error: {str(e)}"
             else:
                 yield error_msg
@@ -323,10 +279,10 @@ def create_monthly_chunks(year: int, month: int, lead_times: np.ndarray) -> List
     return chunks
 
 def run_download_by_month(
-    prediction_path: str,
-    target_path: str,
+    path: str,
     variables: List[str],
     region: str,
+    model: str,
     output_path: str,
     start_year: int,
     end_year: int,
@@ -363,13 +319,8 @@ def run_download_by_month(
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=FutureWarning)
         
-        target_loader = xarray_loaders.TargetsFromXarray(
-            path=target_path,
-            variables=variables,
-        )
-        
-        prediction_loader = xarray_loaders.PredictionsFromXarray(
-            path=prediction_path,
+        loader = xarray_loaders.TargetsFromXarray(
+            path=path,
             variables=variables,
         )
     
@@ -414,9 +365,9 @@ def run_download_by_month(
                 
                 results = chunks | f'LoadAndSave_{year}_{month}' >> beam.ParDo(
                     LoadAndSaveChunk(
-                        prediction_loader,
-                        target_loader,
+                        loader,
                         region,
+                        model, 
                         output_path,
                         checkpoint_manager
                     )
@@ -506,12 +457,13 @@ def main():
     # Configuration
     # for pangu
     if model == "pangu":
-        prediction_path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
-        target_path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
+        path = 'gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr'
+    elif model == "era5":
+        path = 'gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr'
     elif model == "ifs":
-        # for ifs
-        prediction_path= "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
-        target_path= "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" 
+        path= "gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr"
+    elif model == "hres_t0":
+        path= "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" 
     
     # Variables to download
     variables = ["2m_temperature", "10m_u_component_of_wind", "10m_v_component_of_wind"]
@@ -522,13 +474,15 @@ def main():
     logger.info("Running diagnostic tests...")
     logger.info("="*50)
     
-    if not test_target_loading(target_path, variables):
-        logger.error("Target loading test failed - please check the logs above")
+    if not test_target_loading(path, variables):
+        logger.error("loading test failed - please check the logs above")
         logger.info("Continuing anyway - predictions will still be downloaded")
     
     # Setup directories
     dirs = setup_directories()
-    output_path = os.path.join(dirs['raw'], f'{model}_data')
+    output_path = os.path.join(dirs['raw'], f'{model}_data', region, "temp")
+    # create output directory if it doesn't exist
+    os.makedirs(output_path, exist_ok=True)
     
     # Initialize checkpoint manager
     checkpoint_manager = CheckpointManager(dirs['checkpoint'])
@@ -539,10 +493,10 @@ def main():
     try:
         # Run the download process
         run_download_by_month(
-            prediction_path=prediction_path,
-            target_path=target_path,
+            path=path,
             variables=variables,
             region = region,
+            model = model, 
             output_path=output_path,
             start_year=2018,
             end_year=2022,

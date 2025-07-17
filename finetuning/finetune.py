@@ -10,16 +10,16 @@ specific regions and variables. Call this script from command line or with
 
 # example call
 python3 finetuning/1_finetune.py \
-    --data_dir="/Volumes/wd_external_hd/weatherbench" \
+    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
     --train_start="2018-01-01" --train_end="2021-12-31" \
     --test_start="2022-01-01" --test_end="2022-12-31" \
     --model_name="pangu" \
-    --region="global" \
+    --region="india" \
     --subregion="2x2" \
-    --lead_time_hours 24 48 72 --bootstrap="2"
+    --lead_time_hours 144 168
 """
 import argparse
 import os
@@ -468,6 +468,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
         forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
         train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+
     else:
         fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
         obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
