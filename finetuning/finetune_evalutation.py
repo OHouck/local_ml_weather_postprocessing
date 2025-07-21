@@ -50,7 +50,7 @@ def generate_output_path(args):
     # Handle different nn architectures
     if hasattr(args, 'nn_architecture'):
         if args.nn_architecture == 'mlp':
-            nn_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+            nn_str = "mlp"
         elif args.nn_architecture == 'unet':
             nn_str = "unet"
         else:
@@ -72,8 +72,7 @@ def generate_lead_time_plots(
         model,
         training_output_vars,
         prediction_var,
-        nn_architecture=["mlp"],  # Changed from mlp_params
-        mlp_params=(512, 5),  # Keep for backward compatibility
+        nn_architecture=["mlp"],  
         regions=None,
         subregion="4x4",
         bootstrap=None,
@@ -87,8 +86,6 @@ def generate_lead_time_plots(
     ----------
     nn_architecture : list
         List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
-    mlp_params : tuple
-        MLP architecture parameters (only used when nn_architecture includes "mlp")
     """
     
     # Parse training and output variables
@@ -168,9 +165,6 @@ def generate_lead_time_plots(
                     nn_architecture=arch
                 )
                 
-                if arch == 'mlp':
-                    args.mlp_hidden_dim = mlp_params[0]
-                    args.mlp_layers = mlp_params[1]
                 
                 # Construct file paths
                 if bootstrap:
@@ -192,10 +186,10 @@ def generate_lead_time_plots(
                         ds = xr.open_zarr(file_path)
                         
                         # Extract data
-                        ground_truth = ds[f"{prediction_var}_ground_truth"]
-                        original = ds[f"{prediction_var}_original"]
-                        nn_corrected = ds[f"{prediction_var}_corrected"]
-                        ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
+                        ground_truth = ds[f"{prediction_var}_ground_truth_lt{lt}h"]
+                        original = ds[f"{prediction_var}_original_lt{lt}h"]
+                        nn_corrected = ds[f"{prediction_var}_corrected_lt{lt}h"]
+                        ano_corrected = ds.get(f"{prediction_var}_mean_corrected_lt{lt}h", None)
 
                         # Calculate RMSE
                         rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
@@ -227,10 +221,10 @@ def generate_lead_time_plots(
                             ds = xr.open_zarr(file_path)
                             
                             # Extract data
-                            ground_truth = ds[f"{prediction_var}_ground_truth"]
-                            original = ds[f"{prediction_var}_original"]
-                            nn_corrected = ds[f"{prediction_var}_corrected"]
-                            ano_corrected = ds.get(f"{prediction_var}_mean_corrected", None)
+                            ground_truth = ds[f"{prediction_var}_ground_truth_lt{lt}h"]
+                            original = ds[f"{prediction_var}_original_lt{lt}h"]
+                            nn_corrected = ds[f"{prediction_var}_corrected_lt{lt}h"]
+                            ano_corrected = ds.get(f"{prediction_var}_mean_corrected_lt{lt}h", None)
 
                             # Calculate RMSE
                             rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
@@ -486,7 +480,7 @@ def generate_lead_time_plots(
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
                                         prediction_var, nn_architecture=["mlp"],
-                                        mlp_params=(512, 5), lead_times=None):
+                                        lead_times=None):
     """
     Generates a plot showing RMSE improvement by patch size across regions and lead times.
     Now supports plotting both Pangu and IFS results, and both MLP and UNet architectures.
@@ -495,8 +489,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     ----------
     nn_architecture : list
         List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
-    mlp_params : tuple
-        MLP architecture parameters (only used when nn_architecture includes "mlp")
     """
     input_folder = dirs['input']
     training_vars, output_vars = training_output_vars
@@ -540,9 +532,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 lead_time_hours=lead_times[0],  # dummy
                 nn_architecture=arch
             )
-            if arch == 'mlp':
-                args.mlp_hidden_dim = mlp_params[0]
-                args.mlp_layers = mlp_params[1]
                 
             central_path = os.path.join(input_folder, generate_output_path(args))
             
@@ -725,8 +714,7 @@ def generate_map_plots(
         model,
         training_output_vars,
         prediction_var,
-        nn_architecture="mlp",  # Changed from mlp_params
-        mlp_params=(512, 5),  # Keep for backward compatibility
+        nn_architecture="mlp",  
         region="usa_south",
         subregion="2x2",
         lead_time=24,
@@ -739,8 +727,6 @@ def generate_map_plots(
     ----------
     nn_architecture : str
         Architecture to use: "mlp" or "unet"
-    mlp_params : tuple
-        MLP architecture parameters (only used when nn_architecture is "mlp")
     """
     
     # Parse training and output variables
@@ -770,9 +756,6 @@ def generate_map_plots(
         nn_architecture=nn_architecture
     )
     
-    if nn_architecture == 'mlp':
-        args.mlp_hidden_dim = mlp_params[0]
-        args.mlp_layers = mlp_params[1]
 
     # Construct file path
     file_path = os.path.join(dirs['input'], generate_output_path(args))
@@ -955,8 +938,7 @@ def generate_time_series_plots(
         model,
         training_output_vars,
         prediction_var,
-        nn_architecture="mlp",  # Changed from mlp_params
-        mlp_params=(512, 5),  # Keep for backward compatibility
+        nn_architecture="mlp",  
         region="usa_south",
         subregion="2x2",
         lead_time=24,
@@ -969,8 +951,6 @@ def generate_time_series_plots(
     ----------
     nn_architecture : str
         Architecture to use: "mlp" or "unet"
-    mlp_params : tuple
-        MLP architecture parameters (only used when nn_architecture is "mlp")
     """
     
     # Parse training and output variables
@@ -999,10 +979,6 @@ def generate_time_series_plots(
         lead_time_hours=lead_time,
         nn_architecture=nn_architecture
     )
-    
-    if nn_architecture == 'mlp':
-        args.mlp_hidden_dim = mlp_params[0]
-        args.mlp_layers = mlp_params[1]
 
     # Construct file paths for main model and IFS
     model_file_path = os.path.join(dirs['input'], generate_output_path(args))
@@ -1149,9 +1125,9 @@ def main():
     output_vars = ["2m_temperature"]
     prediction_var = "2m_temperature"
 
-    training_vars = ["10m_wind_speed"]
-    output_vars = ["10m_wind_speed"]
-    prediction_var = "10m_wind_speed"
+    # training_vars = ["10m_wind_speed"]
+    # output_vars = ["10m_wind_speed"]
+    # prediction_var = "10m_wind_speed"
 
     # Climate zone plots
     # generate_lead_time_plots(
@@ -1164,14 +1140,13 @@ def main():
     #     training_output_vars=(training_vars, output_vars),
     #     prediction_var=prediction_var,
     #     nn_architecture=["mlp"],  # mlp and unet
-    #     mlp_params=(512, 5), 
     #     regions = ["tropical", "arid", "temperate"],
     #     subregion="2x2",
     #     bootstrap=True,
     #     plot_type="all"
     # )
 
-    # Example 1: Generate lead time plots for MLP only
+    # Example 1: Generate lead time plots for MLP and UNet architectures 
     regions = ["india", "amazon", "british_columbia", "usa_south"]
     plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
     generate_lead_time_plots(
@@ -1184,7 +1159,6 @@ def main():
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
         nn_architecture=["unet", "mlp"],  # mlp and unet
-        mlp_params=(512, 5), 
         regions = regions,
         subregion="10x10",
         bootstrap=False,
@@ -1201,7 +1175,6 @@ def main():
         #     training_output_vars=(training_vars, output_vars),
         #     prediction_var=prediction_var,
         #     nn_architecture=["mlp"],  # just mlp
-        #     mlp_params=(512, 5), 
         #     regions = regions,
         #     subregion="2x2",
         #     bootstrap=False,
@@ -1225,7 +1198,6 @@ def main():
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
             nn_architecture=["mlp"],
-            mlp_params=(512, 5),
             lead_times=lead_times
         )
     
@@ -1255,7 +1227,6 @@ def main():
     #     training_output_vars=(training_vars, output_vars),
     #     prediction_var=prediction_var,
     #     nn_architecture=["mlp", "unet"],
-    #     mlp_params=(512, 5),
     #     lead_times=[24, 72, 168]
     # )
 
@@ -1273,7 +1244,6 @@ def main():
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
             nn_architecture="mlp",
-            mlp_params=(512, 5),
             region=region,
             subregion="10x10",
             lead_time=24
@@ -1306,7 +1276,6 @@ def main():
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
             nn_architecture="mlp",
-            mlp_params=(512, 5),
             region=region,
             subregion="10x10",
             lead_time=24

@@ -685,7 +685,7 @@ def apply_correction(model, forecast_data, lead_time_indices, month_indices, dev
     corrected_all = []
     
     # Process in batches to handle memory efficiently
-    batch_size = 128
+    batch_size = 32
     n_samples = forecast_data.shape[0]
     
     with torch.no_grad():
@@ -825,20 +825,20 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 512,
+                          hidden_dim = 1024,
                           output_dim = output_dim, 
-                          num_hidden_layers= 5,
+                          num_hidden_layers= 4,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=16,
-                          month_embedding_dim=16,
-                          dropout_rate = 0
+                          lead_time_embedding_dim=8,
+                          month_embedding_dim=4,
+                          dropout_rate =  0.00990912608625218 
                           ).to(device)
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr=0.0001968, device=device,
-                                                weight_decay=0,
-                                                patience=50, min_delta=9.871224e-05)
+                                                epochs=1000, lr = 0.0001095918173, device=device,
+                                                weight_decay=3.5504069992894295e-06,
+                                                patience=50, min_delta=3.595912584673927e-06)
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     # Load test data
