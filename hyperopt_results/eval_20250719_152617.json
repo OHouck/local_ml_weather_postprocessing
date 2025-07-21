@@ -1,0 +1,18 @@
+{
+  "hyperparams": {
+    "batch_size": 32,
+    "dropout_rate": 0.00912933649954626,
+    "lead_time_embedding_dim": 8,
+    "learning_rate": 0.00015719731638893448,
+    "min_delta": 3.2740422619393843e-06,
+    "mlp_hidden_dim": 256,
+    "mlp_layers": 4,
+    "month_embedding_dim": 8,
+    "patience": 70,
+    "weight_decay": 3.08608923306236e-05
+  },
+  "loss": 0.04682409288607034,
+  "region_losses": {
+    "india_4x4_120_144_168h": 0.04682409288607034
+  }
+}

@@ -14,7 +14,7 @@ python3 finetuning/finetune.py \
     --test_start="2022-01-01" --test_end="2022-12-31" \
     --model_name="pangu" \
     --region="india" \
-    --subregion="2x2" \
+    --subregion="4x4" \
     --lead_time_hours 144 168
 
 # regions=("india" "amazon" "usa_south" "british_columbia")

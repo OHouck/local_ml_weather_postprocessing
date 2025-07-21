@@ -499,7 +499,7 @@ if __name__ == "__main__":
     # Run optimization with fewer evaluations for testing
     results = optimize_hyperparameters(
         regions_config=regions_config,
-        max_evals=100,  # Reduced for testing
+        max_evals=500,  # Reduced for testing
         output_dir="hyperopt_results",
         device = device,
         random_seed=42

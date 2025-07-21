@@ -75,8 +75,8 @@ def setup_directories():
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3, 
-                 n_lead_times=1, lead_time_embedding_dim=16,
-                 month_embedding_dim=16):
+                n_lead_times=1, lead_time_embedding_dim=8, month_embedding_dim=16,
+                dropout_rate=0.0):
         super(SimpleMLP, self).__init__()
         
         # Lead time embedding
@@ -94,8 +94,15 @@ class SimpleMLP(nn.Module):
             actual_input_dim += lead_time_embedding_dim
             
         layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
+
+        if dropout_rate > 0:
+            layers.append(nn.Dropout(dropout_rate))
+
         for _ in range(num_hidden_layers - 1):
             layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
+
+            if dropout_rate > 0:
+                layers.append(nn.Dropout(dropout_rate))
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
         
@@ -317,8 +324,6 @@ def parse_args():
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
     parser.add_argument('--model_type',   type=str, default='MLP', choices=['MLP', 'UNet'])
-    parser.add_argument('--mlp_hidden_dim', type=int, default=512)
-    parser.add_argument('--mlp_layers',     type=int, default=5)
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     return parser.parse_args()
@@ -379,7 +384,7 @@ def generate_output_path(args):
     if args.model_type == "UNet":
         model_str = "unet"
     else: 
-        model_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+        model_str = "mlp"
     
     # Format lead times
     lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
@@ -604,12 +609,14 @@ def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices,
     return dataloader
 
 
-def train_model(model, train_loader, valid_loader, epochs, lr, device, patience=50, min_delta=0.0):
+def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_decay=0, patience=50, min_delta=9.8e-05):
     """
     Train the model over multiple epochs with early stopping.
     """
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), 
+                           lr=lr,
+                           weight_decay =weight_decay) 
 
     best_val_loss = float('inf')
     epochs_without_improvement = 0
@@ -678,7 +685,7 @@ def apply_correction(model, forecast_data, lead_time_indices, month_indices, dev
     corrected_all = []
     
     # Process in batches to handle memory efficiently
-    batch_size = 1024
+    batch_size = 128
     n_samples = forecast_data.shape[0]
     
     with torch.no_grad():
@@ -800,10 +807,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     
     train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx], 
                                     lead_time_indices[t_idx], month_indices[t_idx], 
-                                    batch_size=32)
+                                    batch_size=16)
     val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], 
                                   lead_time_indices[v_idx], month_indices[v_idx], 
-                                  batch_size=32)
+                                  batch_size=16)
 
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon
@@ -817,13 +824,21 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      n_lead_times=n_lead_times).to(device)
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
-        model = SimpleMLP(input_dim, args.mlp_hidden_dim, output_dim, args.mlp_layers,
-                          n_lead_times=n_lead_times).to(device)
+        model = SimpleMLP(input_dim = input_dim, 
+                          hidden_dim = 512,
+                          output_dim = output_dim, 
+                          num_hidden_layers= 5,
+                          n_lead_times=n_lead_times,
+                          lead_time_embedding_dim=16,
+                          month_embedding_dim=16,
+                          dropout_rate = 0
+                          ).to(device)
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr=1e-5, device=device,
-                                                patience=50, min_delta=0.0)
+                                                epochs=1000, lr=0.0001968, device=device,
+                                                weight_decay=0,
+                                                patience=50, min_delta=9.871224e-05)
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     # Load test data
