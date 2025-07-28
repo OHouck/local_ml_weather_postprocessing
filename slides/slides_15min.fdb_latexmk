@@ -1,15 +1,15 @@
 # Fdb version 4
-["biber slides_15min"] 1752866698 "slides_15min.bcf" "slides_15min.bbl" "slides_15min" 1752866736 0
+["biber slides_15min"] 1752866698 "slides_15min.bcf" "slides_15min.bbl" "slides_15min" 1753196527 0
   "./regional_forecasting.bib" 1752532095 29317 fa9bb3983d925b602f7f8546f7b05e4d ""
-  "slides_15min.bcf" 1752866736 107938 5290d3dfa21168f35c688bb57c4c2e65 "pdflatex"
+  "slides_15min.bcf" 1753196527 107938 5290d3dfa21168f35c688bb57c4c2e65 "pdflatex"
   (generated)
   "slides_15min.bbl"
   "slides_15min.blg"
   (rewritten before read)
-["pdflatex"] 1752866719 "/Users/ohouck/vc/ai_weather_ag/slides/slides_15min.tex" "slides_15min.pdf" "slides_15min" 1752866736 2
+["pdflatex"] 1753196510 "/Users/ohouck/vc/ai_weather_ag/slides/slides_15min.tex" "slides_15min.pdf" "slides_15min" 1753196527 2
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png" 1752548503 210351 5a7ae43f7fa97de471e8e8ea542da539 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png" 1752591552 548175 d3ad459eacd68bca90a0b6f29e030f63 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png" 1752591536 631690 75cbc84ad38a65b7ae5a33d6e3daa9c4 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png" 1753192583 548276 be374b0c930dfc212f99d9b0adc4ba2f ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png" 1752582617 461170 6ca04888ff6abf08d9b937bd8e838ded ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png" 1752587037 613212 671d3f70f0525d7c8a44b803b0d7b43e ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 1752581478 438974 d5c6de6c19c1264235774a98fcf06669 ""
@@ -56,7 +56,7 @@
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png" 1752587192 184781 e2b6d2a0dfd09fc5a311ece9ce61249a ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png" 1752581484 184396 1ddde1f49e7c90919ee734c61e4a36e6 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png" 1752581540 184673 b4a86118f0eaacbf8a53ffc16444b8ad ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/slides_15min.tex" 1752866698 23409 249f6eb59e14208d29608709e43b997c ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/slides_15min.tex" 1753196492 23466 148fda7fb81341a430729976647c06fa ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -281,12 +281,12 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "slides_15min.aux" 1752866736 7678 aeceea91940acd6633909a3bd0483907 "pdflatex"
+  "slides_15min.aux" 1753196527 7678 aeceea91940acd6633909a3bd0483907 "pdflatex"
   "slides_15min.bbl" 1752866701 10301 62b6dd15dbc56eb0a0734b75f4ba7289 "biber slides_15min"
-  "slides_15min.nav" 1752866736 4397 2a303764bbaf6e9a4284687c3bad064e "pdflatex"
-  "slides_15min.out" 1752866736 875 2f39a5f7fb8b0878d5dccf62ee6b6ee4 "pdflatex"
-  "slides_15min.run.xml" 1752866736 2377 078f4203d3b3c5df8b0e83ab5741d041 "pdflatex"
-  "slides_15min.tex" 1752866698 23409 249f6eb59e14208d29608709e43b997c ""
+  "slides_15min.nav" 1753196527 4397 2a303764bbaf6e9a4284687c3bad064e "pdflatex"
+  "slides_15min.out" 1753196527 875 2f39a5f7fb8b0878d5dccf62ee6b6ee4 "pdflatex"
+  "slides_15min.run.xml" 1753196527 2377 078f4203d3b3c5df8b0e83ab5741d041 "pdflatex"
+  "slides_15min.tex" 1753196492 23466 148fda7fb81341a430729976647c06fa ""
   (generated)
   "slides_15min.aux"
   "slides_15min.bcf"

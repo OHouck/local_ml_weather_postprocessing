@@ -7,9 +7,11 @@ source .venv/bin/activate
 
 # simulataneous to run all lead times in a single model
 # separate to run each lead time in a separate model
-TRAIN_MODE="simultaneous"  
+# TRAIN_MODE=simultaneous
+TRAIN_MODE=separate
 
 echo "Training mode: $TRAIN_MODE"
+
     # --data_dir="/Users/ohouck/test_wb_finetune_data" \
     # --data_dir="/Volumes/wd_external_hd/weatherbench" \
     # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
@@ -25,11 +27,13 @@ echo "Training mode: $TRAIN_MODE"
 #     --subregion="4x4" \
 #     --lead_time_hours 144 168
 
-# regions=("india" "amazon" "usa_south" "british_columbia")
-regions=("tropical" "temperate" "arid")
-# subregions=(2x2 4x4 6x6 8x8 10x10)
-subregions=(2x2)
-all_lead_times=(24 48 72 96 120 144 168)
+regions=("india" "amazon" "usa_south" "british_columbia")
+# regions=("tropical" "temperate" "arid")
+# regions=("india") 
+subregions=(2x2 4x4 6x6 8x8 10x10)
+# subregions=(2x2)
+# all_lead_times=(24 48 72 96 120 144 168)
+all_lead_times=(24 48 168)
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -38,6 +42,7 @@ for region in "${regions[@]}"; do
             # Train all lead times simultaneously (single model for all lead times)
             all_lead_times_str="${all_lead_times[*]}"  # Convert array to space-separated string
             echo "Running simultaneous fine-tuning for region: $region, subregion: $subregion, lead times: $all_lead_times_str hours"
+
             
             # 2m temperature - pangu
             echo "Running fine-tuning for 2m_temperature pangu (simultaneous)"

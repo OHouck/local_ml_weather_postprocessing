@@ -94,18 +94,19 @@
 \end{frame}
 
 
-\begin{frame}{Method}
+\begin{frame}{Neural Network Archetecutre}
 \begin{itemize}
     \item Uses Pangu and IFS HRES forecasts with lead times from 1 to 7 days
     \begin{itemize}
         \item Target Pangu predictions using ERA5 and IFS HRES predictions using its t=0 initialization
     \end{itemize}
-    \item Each model tries to predict a single variable for a single lead time in a particular region. 
+    \item Each takes in forecast output of a region and lead time and tries to predict the model error
     \item Train neural network that takes in Pangu/IFS forecast outputs and targets MSE compared to target ERA5/IFS HRES data
     \begin{itemize}
         \item Train using a single forecast per day for years 2018-2021
         \item Test using daily forecasts in 2022
-        \item Test MLP architecture with 5 hidden layers, each with 512 neurons and a UNet architecture with 128 base channels
+        \item Use month embeddings to capture seasonal variation in forecast error
+        \item Hyperparameters chosen using hyper-parameter bayesian optimization
     \end{itemize}
 \end{itemize}
 \end{frame}

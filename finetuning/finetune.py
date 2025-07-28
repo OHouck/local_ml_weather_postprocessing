@@ -525,7 +525,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             time=time_values,
             prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
         )[args.training_vars].drop_vars('prediction_timedelta')
-        
+
         fc_output_lt = forecast_ds_lt.sel(
             time=time_values,
             prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
@@ -569,6 +569,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     obs_combined = np.concatenate(all_obs_data, axis=0)
     lead_time_indices_combined = np.concatenate(all_lead_time_indices, axis=0)
     month_indices_combined = np.concatenate(all_month_indices, axis=0)
+
     
     # Calculate mean forecast error per lead time for mean debiasing
     training_mean_forecast_error = {}
@@ -685,7 +686,7 @@ def apply_correction(model, forecast_data, lead_time_indices, month_indices, dev
     corrected_all = []
     
     # Process in batches to handle memory efficiently
-    batch_size = 32
+    batch_size = 128
     n_samples = forecast_data.shape[0]
     
     with torch.no_grad():
@@ -825,20 +826,20 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 1024,
+                          hidden_dim = 512,
                           output_dim = output_dim, 
-                          num_hidden_layers= 4,
+                          num_hidden_layers= 5,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=8,
-                          month_embedding_dim=4,
-                          dropout_rate =  0.00990912608625218 
+                          lead_time_embedding_dim=16,
+                          month_embedding_dim=16,
+                          dropout_rate = 0
                           ).to(device)
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr = 0.0001095918173, device=device,
-                                                weight_decay=3.5504069992894295e-06,
-                                                patience=50, min_delta=3.595912584673927e-06)
+                                                epochs=1000, lr=0.0001968, device=device,
+                                                weight_decay=0,
+                                                patience=50, min_delta=9.871224e-05)
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     # Load test data
@@ -860,22 +861,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
             mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
             print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
             
-            # Also report MSE by season (optional)
-            months_lt = test_month_indices[mask]
-            # Winter: 11, 0, 1
-            winter_mask = np.isin(months_lt, [11, 0, 1])
-            if winter_mask.sum() > 0:
-                winter_mse_orig = np.mean((test_fc_output[mask][winter_mask] - test_obs[mask][winter_mask])**2)
-                winter_mse_corr = np.mean((corrected[mask][winter_mask] - test_obs[mask][winter_mask])**2)
-                print(f"  Winter (DJF) - MSE original: {winter_mse_orig:.6f}, MSE corrected: {winter_mse_corr:.6f}")
-            
-            # Summer: 5, 6, 7
-            summer_mask = np.isin(months_lt, [5, 6, 7])
-            if summer_mask.sum() > 0:
-                summer_mse_orig = np.mean((test_fc_output[mask][summer_mask] - test_obs[mask][summer_mask])**2)
-                summer_mse_corr = np.mean((corrected[mask][summer_mask] - test_obs[mask][summer_mask])**2)
-                print(f"  Summer (JJA) - MSE original: {summer_mse_orig:.6f}, MSE corrected: {summer_mse_corr:.6f}")
-
     # Save results
     save_output(
         output_path=output_path,
@@ -953,8 +938,8 @@ def main():
         for i in range(args.bootstrap):
             si = random.randint(0, len(region_lat) - nlat_patch)
             sj = random.randint(0, len(region_lon) - nlon_patch)
-            lat_vals = region_lat[si:si+nlat_patch]
-            lon_vals = region_lon[sj:sj+nlon_patch]
+            lat_vals = region_lat[si:si+nlat_patch + 1]
+            lon_vals = region_lon[sj:sj+nlon_patch + 1]
             out_path = base_path.replace('.zarr', f'_bs{i+1}.zarr')
             print(f"Running bootstrap sample {i+1}/{args.bootstrap}")
             run_subregion_experiment(lat_vals, lon_vals, out_path, args,
@@ -963,8 +948,9 @@ def main():
         # Central patch
         ci = (len(region_lat) - nlat_patch) // 2
         cj = (len(region_lon) - nlon_patch) // 2
-        lat_vals = region_lat[ci:ci+nlat_patch]
-        lon_vals = region_lon[cj:cj+nlon_patch]
+        lat_vals = region_lat[ci:ci+nlat_patch + 1]
+        lon_vals = region_lon[cj:cj+nlon_patch + 1]
+
         run_subregion_experiment(lat_vals, lon_vals, base_path, args,
                                  os.path.expanduser(args.data_dir), device)
 
