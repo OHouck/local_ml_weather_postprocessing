@@ -10,7 +10,7 @@ specific regions and variables. Call this script from command line or with
 
 # example call
 python3 finetuning/1_finetune.py \
-    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/ \
     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
@@ -328,6 +328,77 @@ def parse_args():
                         help='If set, run N bootstrap samples of subregions')
     return parser.parse_args()
 
+def convert_init_to_valid_time(ds):
+    """
+    Convert a dataset from init_time dimension to valid_time dimension.
+    
+    Parameters:
+    -----------
+    ds : xarray.Dataset
+        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
+        
+    Returns:
+    --------
+    xarray.Dataset
+        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
+        where valid_time = init_time + prediction_timedelta
+    """
+    # Create valid_time coordinate
+    # This will be a 2D array of shape (init_time, prediction_timedelta)
+    valid_time_2d = ds.init_time + ds.prediction_timedelta
+    
+    # Stack init_time and prediction_timedelta into a single dimension
+    ds_stacked = ds.stack(stacked=['init_time', 'prediction_timedelta'])
+    
+    # Assign the flattened valid_time as a coordinate
+    valid_time_flat = valid_time_2d.stack(stacked=['init_time', 'prediction_timedelta'])
+    ds_stacked = ds_stacked.assign_coords(valid_time=valid_time_flat)
+    
+    # Get unique valid times and lead times
+    unique_valid_times = np.unique(valid_time_flat.values)
+    lead_times = ds.prediction_timedelta.values
+    
+    # Create output dataset structure
+    output_vars = {}
+    
+    for var in ds.data_vars:
+        # Create empty array for this variable
+        output_shape = (len(unique_valid_times), len(lead_times), 
+                       len(ds.latitude), len(ds.longitude))
+        output_data = np.full(output_shape, np.nan, dtype=np.float32)
+        
+        # Fill the array
+        for i, vt in enumerate(unique_valid_times):
+            for j, lt in enumerate(lead_times):
+                # Find where valid_time equals vt and prediction_timedelta equals lt
+                mask = (valid_time_flat == vt) & (ds_stacked.prediction_timedelta == lt)
+                
+                if mask.any():
+                    # Get the data for this combination
+                    data = ds_stacked[var].where(mask, drop=True)
+                    if len(data) > 0:
+                        output_data[i, j, :, :] = data.isel(stacked=0).values
+        
+        # Create DataArray
+        output_vars[var] = xr.DataArray(
+            output_data,
+            dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
+            coords={
+                'valid_time': unique_valid_times,
+                'prediction_timedelta': lead_times,
+                'latitude': ds.latitude,
+                'longitude': ds.longitude
+            }
+        )
+    
+    # Create output dataset
+    result = xr.Dataset(output_vars, attrs=ds.attrs)
+    
+    # Drop any valid_times where all data is NaN
+    result = result.dropna(dim='valid_time', how='all')
+    
+    return result
+
 # ------------------------------
 # Region grid and patch helpers
 # ------------------------------
@@ -359,9 +430,8 @@ def get_region_grid(args):
         lon0, lon1 = 0, 360
     else:
         raise ValueError(f"Unknown region '{args.region}'")
-    # include the upper bound +0.25 so arange includes endpoint
-    lat_values = np.arange(lat0, lat1 + 0.25, 0.25)
-    lon_values = np.arange(lon0, lon1 + 0.25, 0.25)
+    lat_values = np.arange(lat0, lat1, 0.25)
+    lon_values = np.arange(lon0, lon1, 0.25)
 
     return lat_values, lon_values
 
@@ -430,13 +500,20 @@ def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
 
-def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
+def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     """
-    file_paths = glob.glob(os.path.join(root_dir, "*", file_pattern))
-    file_paths.sort()
 
+    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
+
+    file_paths = []
+    for year in range(min_year, max_year + 1):
+
+        file_pattern = f"{data_source}_{year}.zarr" 
+        file_paths.append(os.path.join(root_dir, file_pattern))
+    
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     
@@ -456,143 +533,133 @@ def load_combined_dataset(lat_values, lon_values, root_dir, file_pattern):
             decode_timedelta=True
         )
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None): 
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None):
     """
-    Loads forecast data for multiple lead times with month information.
+    Vectorized version that processes all data at once without loops.
+    More memory intensive but faster for reasonable data sizes.
     """
     if train:
         ver_str = "train"
     else:
         ver_str = "test"
 
-    # Load data files
-    fc_dir = os.path.join(data_dir, f"{ver_str}_{args.region}")
+    time_start = getattr(args, f"{ver_str}_start")
+    time_end = getattr(args, f"{ver_str}_end")
     
-    if args.region in CLIMATE_ZONE_MAP:
-        fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
-        obs_pattern = f"{args.model_name}_{ver_str}_obs_data_{args.region}_{args.subregion}_patch_{patch_num}.nc"
-        forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
-        train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+    # Create time range
+    time_values = pd.date_range(start=time_start, end=time_end, freq='1D')
+    time_values_np = time_values.to_numpy()
 
-    else:
-        fc_pattern = f"{args.model_name}_{ver_str}_forecast_data_*.nc"
-        obs_pattern = f"{args.model_name}_{ver_str}_obs_data_*.nc"
-        forecast_ds = load_combined_dataset(lat_values, lon_values, fc_dir, fc_pattern)
-        train_obs_ds = load_combined_dataset(lat_values, lon_values, fc_dir, obs_pattern)
+    # Define target dataset name
+    if args.model_name == "pangu":
+        target = "era5"
+    
+    # Load datasets
+    forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
+    
+    # Convert to valid_time if needed
+    if 'init_time' in forecast_ds.dims:
+        forecast_ds = convert_init_to_valid_time(forecast_ds)
+        forecast_ds = forecast_ds.rename({'valid_time': 'time'})
+    
+    obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
     
     # Create wind speed if needed
     if "10m_wind_speed" in args.training_vars:
-        fc_u_component = forecast_ds["10m_u_component_of_wind"]
-        fc_v_component = forecast_ds["10m_v_component_of_wind"]
-        forecast_ds["10m_wind_speed"] = np.sqrt(fc_u_component**2 + fc_v_component**2)
-    if "10m_wind_speed" in args.output_vars:
-        obs_u_component = train_obs_ds["10m_u_component_of_wind"]
-        obs_v_component = train_obs_ds["10m_v_component_of_wind"]
-        train_obs_ds["10m_wind_speed"] = np.sqrt(obs_u_component**2 + obs_v_component**2)
-
-    # Prepare data for all lead times
-    all_fc_data = []
-    all_fc_output_data = []
-    all_obs_data = []
-    all_lead_time_indices = []
-    all_month_indices = []
-    all_times = []
-    
-    # Create a mapping from lead time hours to indices
-    lead_time_to_idx = {lt: idx for idx, lt in enumerate(args.lead_time_hours)}
-    
-    for lead_time_idx, lead_time_hours in enumerate(args.lead_time_hours):
-        # Get time values for this lead time
-        time_start = getattr(args, f"{ver_str}_start")
-        time_end = getattr(args, f"{ver_str}_end")
-        time_values = np.arange(
-            np.datetime64(time_start) + np.timedelta64(lead_time_hours, 'h'),
-            np.datetime64(time_end) + np.timedelta64(1, 'D'),
-            np.timedelta64(24, 'h')
+        forecast_ds["10m_wind_speed"] = np.sqrt(
+            forecast_ds["10m_u_component_of_wind"]**2 + 
+            forecast_ds["10m_v_component_of_wind"]**2
         )
-        
-        # Extract month indices (0-11) from time values
-        month_indices = np.array([pd.Timestamp(t).month - 1 for t in time_values])
-        
-        # Create new time coordinate for forecast valid time
-        forecast_ds_lt = forecast_ds.assign_coords(
-            init_time=forecast_ds.time,
-            time=forecast_ds.time + np.timedelta64(lead_time_hours, 'h')
-        ).drop_vars('init_time')
-        
-        # Select data for this lead time
-        fc_lt = forecast_ds_lt.sel(
-            time=time_values,
-            prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
-        )[args.training_vars].drop_vars('prediction_timedelta')
-
-        fc_output_lt = forecast_ds_lt.sel(
-            time=time_values,
-            prediction_timedelta=np.timedelta64(lead_time_hours, 'h')
-        )[args.output_vars].drop_vars('prediction_timedelta')
-        
-        # Select observations
-        if lat_values is None or lon_values is None:
-            obs_lt = train_obs_ds.sel(time=time_values)[args.output_vars]
-        else:
-            obs_lt = train_obs_ds.sel(
-                time=time_values,
-                latitude=lat_values,
-                longitude=lon_values,
-            )[args.output_vars]
-        
-        # Convert to arrays and flatten
-        n_time = len(time_values)
-        n_vars = len(args.training_vars)
-        n_output_vars = len(args.output_vars)
-        lat_u = np.unique(fc_lt.latitude.values)
-        lon_u = np.unique(fc_lt.longitude.values)
-        n_lat, n_lon = len(lat_u), len(lon_u)
-        
-        fc_array = fc_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
-        fc_output_array = fc_output_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
-        obs_array = obs_lt.to_array().values.transpose(1,0,2,3).reshape(n_time, -1)
-        
-        # Create lead time indices
-        lead_time_indices = np.full(n_time, lead_time_idx, dtype=np.int64)
-        
-        all_fc_data.append(fc_array)
-        all_fc_output_data.append(fc_output_array)
-        all_obs_data.append(obs_array)
-        all_lead_time_indices.append(lead_time_indices)
-        all_month_indices.append(month_indices)
-        all_times.extend(time_values)
     
-    # Concatenate all data
-    fc_combined = np.concatenate(all_fc_data, axis=0)
-    fc_output_combined = np.concatenate(all_fc_output_data, axis=0)
-    obs_combined = np.concatenate(all_obs_data, axis=0)
-    lead_time_indices_combined = np.concatenate(all_lead_time_indices, axis=0)
-    month_indices_combined = np.concatenate(all_month_indices, axis=0)
-
+    if "10m_wind_speed" in args.output_vars:
+        obs_ds["10m_wind_speed"] = np.sqrt(
+            obs_ds["10m_u_component_of_wind"]**2 + 
+            obs_ds["10m_v_component_of_wind"]**2
+        )
     
-    # Calculate mean forecast error per lead time for mean debiasing
+    # Convert lead times to timedelta
+    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    
+    # Select lead times and common time range
+    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
+    common_times = np.intersect1d(common_times, time_values_np)
+    
+    forecast_ds = forecast_ds.sel(time=common_times)
+    obs_ds = obs_ds.sel(time=common_times)
+    
+    # Get dimensions
+    n_time = len(common_times)
+    n_lead_times = len(lead_times_td)
+    n_lat = len(forecast_ds.latitude)
+    n_lon = len(forecast_ds.longitude)
+    n_training_vars = len(args.training_vars)
+    n_output_vars = len(args.output_vars)
+    
+    # Stack all dimensions except variables
+    forecast_stacked = forecast_ds[args.training_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+    
+    forecast_output_stacked = forecast_ds[args.output_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+    
+    # For observations, we need to repeat for each lead time
+    obs_repeated = obs_ds[args.output_vars].expand_dims(
+        prediction_timedelta=lead_times_td
+    ).stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+    
+    # Transpose and reshape to (n_samples, n_features)
+    fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
+    fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+    obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+    
+    # Create lead time indices
+    lead_time_indices = np.tile(
+        np.arange(n_lead_times), n_time
+    )
+    
+    # Create month indices
+    month_values = pd.DatetimeIndex(common_times).month.to_numpy() - 1  
+    month_indices = np.repeat(month_values, n_lead_times)
+    
+    # Create time array
+    all_times = np.repeat(common_times, n_lead_times)
+    
+    # Remove any samples with NaN
+    valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
+    fc_combined = fc_combined[valid_mask]
+    fc_output_combined = fc_output_combined[valid_mask]
+    obs_combined = obs_combined[valid_mask]
+    lead_time_indices_combined = lead_time_indices[valid_mask]
+    month_indices_combined = month_indices[valid_mask]
+    all_times = all_times[valid_mask]
+    
+    # Calculate mean forecast error
     training_mean_forecast_error = {}
-    for lead_time_idx, lead_time_hours in enumerate(args.lead_time_hours):
-        mask = lead_time_indices_combined == lead_time_idx
-        fc_output_lt = fc_output_combined[mask]
-        obs_lt = obs_combined[mask]
+    
+    for lt_idx, lead_time_hours in enumerate(args.lead_time_hours):
+        mask = lead_time_indices_combined == lt_idx
+        if not np.any(mask):
+            continue
+            
+        fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+        obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
         
-        # Reshape back to get per-variable errors
-        n_time_lt = mask.sum()
-        fc_output_reshaped = fc_output_lt.reshape(n_time_lt, n_output_vars, n_lat, n_lon)
-        obs_reshaped = obs_lt.reshape(n_time_lt, n_output_vars, n_lat, n_lon)
+        mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
         
-        mean_error = fc_output_reshaped.mean(axis=0) - obs_reshaped.mean(axis=0)
-        
-        # Store per variable
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
     
     return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined, 
-            month_indices_combined, all_times, lat_u, lon_u, n_lat, n_lon, 
-            len(args.training_vars), len(args.output_vars), training_mean_forecast_error)
+            month_indices_combined, all_times, forecast_ds.latitude.values, 
+            forecast_ds.longitude.values, n_lat, n_lon, 
+            n_training_vars, n_output_vars, training_mean_forecast_error)
+
 
 def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices, batch_size):
     """
@@ -792,6 +859,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     (fc, fc_output, obs, lead_time_indices, month_indices, train_times, lat_u, lon_u, 
      n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num=patch_num)
+    
+    loading_time = time.time()
+    print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
 
     # Normalize data
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
@@ -948,8 +1018,8 @@ def main():
         # Central patch
         ci = (len(region_lat) - nlat_patch) // 2
         cj = (len(region_lon) - nlon_patch) // 2
-        lat_vals = region_lat[ci:ci+nlat_patch + 1]
-        lon_vals = region_lon[cj:cj+nlon_patch + 1]
+        lat_vals = region_lat[ci:ci+nlat_patch]
+        lon_vals = region_lon[cj:cj+nlon_patch]
 
         run_subregion_experiment(lat_vals, lon_vals, base_path, args,
                                  os.path.expanduser(args.data_dir), device)

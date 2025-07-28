@@ -15,25 +15,24 @@ echo "Training mode: $TRAIN_MODE"
     # --data_dir="/Users/ohouck/test_wb_finetune_data" \
     # --data_dir="/Volumes/wd_external_hd/weatherbench" \
     # --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+
 # python3 finetuning/finetune.py \
-#     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+#     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
 #     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
 #     --training_vars 2m_temperature \
 #     --output_vars 2m_temperature \
-#     --train_start="2018-01-01" --train_end="2021-12-31" \
+#     --train_start="2018-01-01" --train_end="2018-12-31" \
 #     --test_start="2022-01-01" --test_end="2022-12-31" \
 #     --model_name="pangu" \
 #     --region="india" \
 #     --subregion="4x4" \
-#     --lead_time_hours 144 168
+#     --lead_time_hours 120
 
-regions=("india" "amazon" "usa_south" "british_columbia")
+regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
 # regions=("tropical" "temperate" "arid")
-# regions=("india") 
-subregions=(2x2 4x4 6x6 8x8 10x10)
-# subregions=(2x2)
+subregions=(2x2 6x6 10x10)
 # all_lead_times=(24 48 72 96 120 144 168)
-all_lead_times=(24 48 168)
+all_lead_times=(24 120 240)
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -47,7 +46,7 @@ for region in "${regions[@]}"; do
             # 2m temperature - pangu
             echo "Running fine-tuning for 2m_temperature pangu (simultaneous)"
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                 --training_vars 2m_temperature \
                 --output_vars 2m_temperature \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -62,7 +61,7 @@ for region in "${regions[@]}"; do
             # 2m temperature - ifs
             echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                 --training_vars 2m_temperature \
                 --output_vars 2m_temperature \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -77,7 +76,7 @@ for region in "${regions[@]}"; do
             # 10m wind speed - pangu
             echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                 --training_vars 10m_wind_speed \
                 --output_vars 10m_wind_speed \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -92,7 +91,7 @@ for region in "${regions[@]}"; do
             # 10m wind speed - ifs
             echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
             python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                 --training_vars 10m_wind_speed \
                 --output_vars 10m_wind_speed \
                 --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -111,7 +110,7 @@ for region in "${regions[@]}"; do
                 # 2m temperature - pangu
                 echo "Running fine-tuning for 2m_temperature pangu (lead time: $lead_time)"
                 python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                     --training_vars 2m_temperature \
                     --output_vars 2m_temperature \
                     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -126,7 +125,7 @@ for region in "${regions[@]}"; do
                 # 2m temperature - ifs
                 echo "Running fine-tuning for 2m_temperature ifs (lead time: $lead_time)"
                 python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                     --training_vars 2m_temperature \
                     --output_vars 2m_temperature \
                     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -141,7 +140,7 @@ for region in "${regions[@]}"; do
                 # 10m wind speed - pangu
                 echo "Running fine-tuning for 10m_wind_speed pangu (lead time: $lead_time)"
                 python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                     --training_vars 10m_wind_speed \
                     --output_vars 10m_wind_speed \
                     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -156,7 +155,7 @@ for region in "${regions[@]}"; do
                 # 10m wind speed - ifs
                 echo "Running fine-tuning for 10m_wind_speed ifs (lead time: $lead_time)"
                 python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/cleaned_weatherbench_downloads" \
+                    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
                     --training_vars 10m_wind_speed \
                     --output_vars 10m_wind_speed \
                     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
@@ -170,21 +169,3 @@ for region in "${regions[@]}"; do
         fi
     done
 done
-
-# # # # holding forecast paths for different forecasts
-# # # # graphcast 
-# # #     # --forecast_path="gs://weatherbench2/datasets/graphcast/2020/date_range_2019-11-16_2021-02-01_12_hours_derived.zarr" \ 
-# # # # pangu low-res
-# # #     # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_64x32_equiangular_conservative.zarr" \
-# # # # pangu high-res
-# # #     # --forecast_path="gs://weatherbench2/datasets/pangu/2018-2022_0012_0p25.zarr" \
-# # # # ERA5 low-res
-# # #     # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr" \
-# # # # ERA5 high-res
-# # #     # --obs_path="gs://weatherbench2/datasets/era5/1959-2023_01_10-full_37-1h-0p25deg-chunk-1.zarr" \
-
-# # # # IFS ground truth
-# # #     # --obs_path="gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr" \
-
-# # # # IFS forecast
-# # #     # --forecast_path="gs://weatherbench2/datasets/hres/2016-2022-0012-1440x721.zarr" \

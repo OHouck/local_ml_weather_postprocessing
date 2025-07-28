@@ -17,13 +17,13 @@ def print_time_and_memory(step_name, start_time):
     print(f"\n✓ {step_name}: {elapsed:.2f} seconds | Memory: {memory:.2f} GB")
     return time.time()
 
-def download_era5_data(year):
+def download_data(data_name, year):
     """Main download function"""
     # Start timing
     script_start = time.time()
     start_time = time.time()
     
-    print("=== ERA5 Download Script Started ===")
+    print("=== Download Script Started ===")
     print(f"Start time: {datetime.now()}")
     
     # 1. Set up Dask client with 16GB RAM
@@ -45,34 +45,41 @@ def download_era5_data(year):
     # 2. Define variables and parameters
     print("\n2. Defining download parameters...")
     
-    # Variable mapping for ARCO-ERA5
     variables_to_try = [
         '2m_temperature',
         '10m_u_component_of_wind',
         '10m_v_component_of_wind',
         'total_precipitation',
-        '2m_specific_humidity',
-        '2m_dewpoint_temperature',  # Alternative for humidity
-        'relative_humidity',  # Another alternative
+        '2m_specific_humidity'
     ]
     
     # Define your domain
-    lat_bounds = [27, 17]  
-    lon_bounds = [72, 82]  
     time_range = [f'{year}-01-01', f'{year}-12-31']
     
     # Output path
-    output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/era5_{year}.zarr")
+    output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{data_name}_{year}.zarr")
     
     start_time = print_time_and_memory("Parameter setup", start_time)
     
-    # 3. Open the ARCO-ERA5 dataset
-    print("\n3. Opening ARCO-ERA5 dataset...")
+    # 3. Open the dataset
+    print("\n3. Opening dataset...")
     try:
-        ds = xr.open_zarr(
-            'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3',
-            consolidated=True
-        )
+
+        if data_name == 'era5':
+            print("  Using ARCO-ERA5 dataset")
+            ds = xr.open_zarr(
+                'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3',
+                consolidated=True
+            )
+        if data_name == 'hres_t0':
+            print("  Using Weatherbenchy-HRES-T0 dataset")
+            ds = xr.open_zarr(
+                "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr",
+                consolidated=True
+            )
+        else:
+            raise ValueError(f"Unknown dataset name: {data_name}")
+
         print(f"Dataset opened successfully")
         print(f"Dataset dimensions: {ds.dims}")
         
@@ -105,18 +112,12 @@ def download_era5_data(year):
     # 4. Select subset
     print("\n4. Selecting data subset...")
     print(f"  Time range: {time_range[0]} to {time_range[1]}")
-    # print(f"  Latitude: {lat_bounds[0]}°N to {lat_bounds[1]}°N")
-    # print(f"  Longitude: {lon_bounds[0]}°E to {lon_bounds[1]}°E")
     print(f"  Variables: {available_vars}")
+
     subset = ds[available_vars].sel(
         time=slice(time_range[0], time_range[1])
     )
     
-    # subset = ds[available_vars].sel(
-    #     time=slice(time_range[0], time_range[1]),
-    #     latitude=slice(lat_bounds[0], lat_bounds[1]),
-    #     longitude=slice(lon_bounds[0], lon_bounds[1])
-    # )
     # filter for only hours 0 and 12
     subset = subset.sel(time=subset.time.dt.hour.isin([0, 12]))
     
@@ -169,7 +170,8 @@ def download_era5_data(year):
             subset_rechunked.to_zarr(
                 output_path,
                 mode='w',
-                consolidated=True
+                consolidated=True,
+                zarr_version=2  # Use zarr v2 format
             )
             save_time = time.time() - save_start
             print(f"\n  Save completed in {save_time:.2f} seconds")
@@ -182,7 +184,7 @@ def download_era5_data(year):
         # Method 2: Save to NetCDF first, then convert
         try:
             print("\n  Trying NetCDF intermediate save...")
-            temp_nc = 'temp_era5.nc'
+            temp_nc = 'temp.nc'
             
             # Compute and save to NetCDF
             with ProgressBar():
@@ -311,9 +313,10 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     years = [2018, 2019]
+    data_source = 'hres_t0'  # or 'hres_t0'
     
     # Try the download
     for year in years:
-        output = download_era5_data(year)
+        output = download_data(data_source, year)
         print(f"\nSuccess! Data saved to: {output}")
         
