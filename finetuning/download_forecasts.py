@@ -11,148 +11,77 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-def restructure_to_valid_time(ds, time_range, lead_times_hours):
+def convert_init_to_valid_time(ds):
     """
-    Restructure dataset from (init_time, lead_time, lat, lon) 
-    to (valid_time, lead_time, lat, lon)
-    """
-    # Convert lead times to timedelta
-    lead_times = [np.timedelta64(h, 'h') for h in lead_times_hours]
-    ds = ds.sel(prediction_timedelta=lead_times)
+    Convert a dataset from init_time dimension to valid_time dimension.
     
+    Parameters:
+    -----------
+    ds : xarray.Dataset
+        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
+        
+    Returns:
+    --------
+    xarray.Dataset
+        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
+        where valid_time = init_time + prediction_timedelta
+    """
     # Create valid_time coordinate
-    valid_time = ds['init_time'] + ds['prediction_timedelta']
-    ds = ds.assign_coords(valid_time=valid_time)
-    
-    # Filter for time range and hours
-    time_mask = (valid_time >= np.datetime64(time_range[0])) & \
-                (valid_time <= np.datetime64(time_range[1]))
-    hour_mask = valid_time.dt.hour.isin([0, 12])
-    ds_filtered = ds.where(time_mask & hour_mask, drop=True)
-    
-    # Stack dimensions for reshaping
-    ds_stacked = ds_filtered.stack(
-        stacked=['init_time', 'prediction_timedelta']
-    )
-    
-    # Set valid_time as a dimension coordinate
-    ds_stacked = ds_stacked.swap_dims({'stacked': 'valid_time'})
-    
-    # Unstack to get (valid_time, prediction_timedelta, lat, lon)
-    # First, we need to ensure unique valid_time values
-    ds_stacked = ds_stacked.sortby('valid_time')
-    
-    # Group by valid_time and prediction_timedelta
-    unique_valid_times = np.unique(ds_stacked.valid_time.values)
-    unique_lead_times = np.unique(ds_stacked.prediction_timedelta.values)
-    
-    # Create output dataset
-    restructured_vars = {}
-    
-    for var in ds_stacked.data_vars:
-        # Create empty array with new dimensions
-        output_array = xr.DataArray(
-            np.full((len(unique_valid_times), len(unique_lead_times), 
-                    len(ds.latitude), len(ds.longitude)), np.nan),
-            dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
-            coords={
-                'valid_time': unique_valid_times,
-                'prediction_timedelta': unique_lead_times,
-                'latitude': ds.latitude,
-                'longitude': ds.longitude
-            }
-        )
-        
-        # Fill values using advanced indexing
-        for i, vt in enumerate(unique_valid_times):
-            for j, lt in enumerate(unique_lead_times):
-                # Find data for this valid_time and lead_time combination
-                mask = (ds_stacked.valid_time == vt) & \
-                       (ds_stacked.prediction_timedelta == lt)
-                if mask.any():
-                    data = ds_stacked[var].where(mask, drop=True)
-                    if len(data) > 0:
-                        output_array[i, j, :, :] = data.isel(stacked=0).values
-        
-        restructured_vars[var] = output_array
-    
-    return xr.Dataset(restructured_vars, attrs=ds.attrs)
+    # This will be a 2D array of shape (init_time, prediction_timedelta)
+    valid_time_2d = ds.init_time + ds.prediction_timedelta
 
-def restructure_to_valid_time_efficient(ds, time_range, lead_times_hours, available_vars):
-    """
-    More efficient restructuring using xarray's native operations
-    """
-    # Select lead times
-    lead_times = [np.timedelta64(h, 'h') for h in lead_times_hours]
-    ds = ds.sel(prediction_timedelta=lead_times)
+    # Stack init_time and prediction_timedelta into a single dimension
+    ds_stacked = ds.stack(stacked=['init_time', 'prediction_timedelta'])
     
-    # Select variables first to reduce memory
-    ds = ds[available_vars]
+    # Assign the flattened valid_time as a coordinate
+    valid_time_flat = valid_time_2d.stack(stacked=['init_time', 'prediction_timedelta'])
+    ds_stacked = ds_stacked.assign_coords(valid_time=valid_time_flat)
     
-    # Create valid_time
-    ds = ds.assign_coords(
-        valid_time=ds['init_time'] + ds['prediction_timedelta']
-    )
-    
-    # Get all spatial coordinates before filtering
-    lat_coords = ds.latitude.values
-    lon_coords = ds.longitude.values
-    
-    # Filter time range and hours - but only along time dimensions
-    time_mask = (ds.valid_time >= np.datetime64(time_range[0])) & \
-                (ds.valid_time <= np.datetime64(time_range[1]))
-    hour_mask = ds.valid_time.dt.hour.isin([0, 12])
-    combined_mask = time_mask & hour_mask
-    
-    # Get unique valid times that meet our criteria
-    valid_time_values = ds.valid_time.where(combined_mask, drop=True).values
-    unique_valid_times = np.unique(valid_time_values)
+    # Get unique valid times and lead times
+    unique_valid_times = np.unique(valid_time_flat.values)
+    lead_times = ds.prediction_timedelta.values
+
     
     # Create output dataset structure
-    result_vars = {}
+    output_vars = {}
     
-    for var in available_vars:
-        print(f"  Processing {var}...")
-        
-        # Create output array
+    for var in ds.data_vars:
+        # Create empty array for this variable
         output_shape = (len(unique_valid_times), len(lead_times), 
-                       len(lat_coords), len(lon_coords))
+                       len(ds.latitude), len(ds.longitude))
         output_data = np.full(output_shape, np.nan, dtype=np.float32)
         
-        # Process each valid_time and lead_time combination
+        # Fill the array
         for i, vt in enumerate(unique_valid_times):
             for j, lt in enumerate(lead_times):
-                # Calculate required init_time
-                init_time_needed = vt - lt
+                # Find where valid_time equals vt and prediction_timedelta equals lt
+                mask = (valid_time_flat == vt) & (ds_stacked.prediction_timedelta == lt)
                 
-                # Check if this init_time exists in our data
-                if init_time_needed in ds.init_time.values:
-                    try:
-                        # Select the data for this specific combination
-                        data_slice = ds[var].sel(
-                            init_time=init_time_needed,
-                            prediction_timedelta=lt
-                        )
-                        
-                        # Store in output array
-                        output_data[i, j, :, :] = data_slice.values
-                    except Exception as e:
-                        # Skip if selection fails
-                        continue
+                if mask.any():
+                    # Get the data for this combination
+                    data = ds_stacked[var].where(mask, drop=True)
+                    if len(data) > 0:
+                        output_data[i, j, :, :] = data.isel(stacked=0).values
         
-        # Create DataArray with proper coordinates
-        result_vars[var] = xr.DataArray(
+        # Create DataArray
+        output_vars[var] = xr.DataArray(
             output_data,
             dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
             coords={
                 'valid_time': unique_valid_times,
                 'prediction_timedelta': lead_times,
-                'latitude': lat_coords,
-                'longitude': lon_coords
+                'latitude': ds.latitude,
+                'longitude': ds.longitude
             }
         )
     
-    return xr.Dataset(result_vars, attrs=ds.attrs)
+    # Create output dataset
+    result = xr.Dataset(output_vars, attrs=ds.attrs)
+    
+    # Drop any valid_times where all data is NaN
+    result = result.dropna(dim='valid_time', how='all')
+    
+    return result
 
 def print_time_and_memory(step_name, start_time):
     """Print elapsed time and current memory usage"""
@@ -243,6 +172,8 @@ def download_pangu_data(year):
         raise
     
     start_time = print_time_and_memory("Dataset opened", start_time)
+
+
     
     # 4. Select subset
     print("\n4. Selecting data subset...")
@@ -260,10 +191,6 @@ def download_pangu_data(year):
     # filter for only hours 0 and 12
     subset = subset.sel(init_time=subset.init_time.dt.hour.isin([0, 12]))
 
-    print(subset)
-    # print first five init_time values
-    print(f"  First five init_time values: {subset.init_time.values[:5]}")
-
     # Print subset info
     print(f"\nSubset shape:")
     for var in available_vars:
@@ -279,16 +206,21 @@ def download_pangu_data(year):
     print(f"  {subset[available_vars[0]].chunks}")
     
     start_time = print_time_and_memory("Subset selected", start_time)
+
+    # convert init_time to valid_time
+    print("\nConverting init_time to valid_time...")
+    subset = convert_init_to_valid_time(subset)
+    start_time = print_time_and_memory("Converted init_time to valid_time", start_time)
     
     # 5. Rechunk for optimal performance
     print("\n5. Rechunking data for optimal download...")
     
     # Adaptive chunking based on data size
-    n_times = len(subset.init_time)
+    n_times = len(subset.valid_time)
     time_chunk = min(240, n_times // 10)  # ~10 chunks or 240 timesteps
     
     chunk_dict = {
-        'init_time': time_chunk,
+        'valid_time': time_chunk,
         'prediction_timedelta': len(subset.prediction_timedelta),
         'latitude': len(subset.latitude),
         'longitude': len(subset.longitude)
@@ -440,6 +372,7 @@ def download_pangu_data(year):
 
 if __name__ == '__main__':
 
+
     # Check package versions
     import zarr
     import numcodecs
@@ -449,7 +382,7 @@ if __name__ == '__main__':
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2018, 2019, 2020, 2021, 2022]
+    years = [2018]
     
     # Try the download
     for year in years:

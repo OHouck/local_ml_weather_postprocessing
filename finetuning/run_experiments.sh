@@ -58,20 +58,20 @@ for region in "${regions[@]}"; do
                 --lead_time_hours $all_lead_times_str \
                 --model_type="MLP"
 
-            # 2m temperature - ifs
-            echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
-            python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
-                --training_vars 2m_temperature \
-                --output_vars 2m_temperature \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours $all_lead_times_str \
-                --model_type="MLP"
+            # # 2m temperature - ifs
+            # echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
+            # python3 finetuning/finetune.py \
+            #     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
+            #     --training_vars 2m_temperature \
+            #     --output_vars 2m_temperature \
+            #     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+            #     --train_start="2018-01-01" --train_end="2021-12-31" \
+            #     --test_start="2022-01-01" --test_end="2022-12-31" \
+            #     --model_name="ifs" \
+            #     --region="$region" \
+            #     --subregion="$subregion" \
+            #     --lead_time_hours $all_lead_times_str \
+            #     --model_type="MLP"
 
             # 10m wind speed - pangu
             echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
@@ -88,19 +88,19 @@ for region in "${regions[@]}"; do
                 --lead_time_hours $all_lead_times_str \
                 --model_type="MLP"
 
-            # 10m wind speed - ifs
-            echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
-            python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
-                --training_vars 10m_wind_speed \
-                --output_vars 10m_wind_speed \
-                --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-                --train_start="2018-01-01" --train_end="2021-12-31" \
-                --test_start="2022-01-01" --test_end="2022-12-31" \
-                --model_name="ifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours $all_lead_times_str
+            # # 10m wind speed - ifs
+            # echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
+            # python3 finetuning/finetune.py \
+            #     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
+            #     --training_vars 10m_wind_speed \
+            #     --output_vars 10m_wind_speed \
+            #     --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+            #     --train_start="2018-01-01" --train_end="2021-12-31" \
+            #     --test_start="2022-01-01" --test_end="2022-12-31" \
+            #     --model_name="ifs" \
+            #     --region="$region" \
+            #     --subregion="$subregion" \
+            #     --lead_time_hours $all_lead_times_str
         else
             # Train each lead time separately (separate model for each lead time)
             echo "Running separate fine-tuning for region: $region, subregion: $subregion"

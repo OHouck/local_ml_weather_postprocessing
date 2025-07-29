@@ -48,16 +48,12 @@ def generate_output_path(args):
     output_vars_str = "_".join(args.output_vars)
     
     # Handle different nn architectures
-    if hasattr(args, 'nn_architecture'):
-        if args.nn_architecture == 'mlp':
-            nn_str = "mlp"
-        elif args.nn_architecture == 'unet':
-            nn_str = "unet"
-        else:
-            raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
+    if args.nn_architecture == 'mlp':
+        nn_str = "mlp"
+    elif args.nn_architecture == 'unet':
+        nn_str = "unet"
     else:
-        # Fallback for backward compatibility
-        nn_str = f"mlp{args.mlp_hidden_dim}x{args.mlp_layers}"
+        raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     
     lead_time = f"leadtime_{args.lead_time_hours}"
 
@@ -100,14 +96,16 @@ def generate_lead_time_plots(
     output_vars_str = "_".join(output_vars)
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    lead_times = [24, 48, 72, 96, 120, 144, 168]  # Possible lead times in hours
+    # lead_times = [24, 48, 72, 96, 120, 144, 168]  # lead times for previous databuild 
+    lead_times = [24, 120, 240]
 
     # Define colors for different regions
     region_colors = {
-        'india': '#E69F00',          # Orange (Color Universal Design)
+        'india': '#E69F00',          # Orange 
         'usa_south': '#56B4E9',      # Sky Blue
         'british_columbia': '#009E73',  # Teal Green
         'amazon': '#CC79A7',         # Pink/Magenta
+        'ethiopia': '#D55E00',       # Reddish-Orange
     }
 
     climate_region_colors = {
@@ -366,7 +364,7 @@ def generate_lead_time_plots(
                        zorder=3)
     
     # Set consistent axes limits for all plot types
-    ax.set_ylim(-25, 25)  # Adjust these values based on your typical data range
+    ax.set_ylim(-15, 45)  # Adjust these values based on your typical data range
     
     # Set x-axis to show all lead times but only label those with data
     ax.set_xticks(range(len(lead_times)))
@@ -1147,23 +1145,25 @@ def main():
     # )
 
     # Example 1: Generate lead time plots for MLP and UNet architectures 
-    regions = ["india", "amazon", "british_columbia", "usa_south"]
+    regions = ["ethiopia", "india", "amazon", "british_columbia", "usa_south"]
     plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
-    generate_lead_time_plots(
-        dirs = dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture=["unet", "mlp"],  # mlp and unet
-        regions = regions,
-        subregion="10x10",
-        bootstrap=False,
-        plot_type="pangu_ifs_nn"
-    )
+    subregions = ["2x2", "6x6", "10x10"]
+    for subregion in subregions:
+        generate_lead_time_plots(
+            dirs = dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture=["mlp"],  # mlp and unet
+            regions = regions,
+            subregion=subregion,
+            bootstrap=False,
+            plot_type="pangu_nn"
+        )
     exit()
         # generate_lead_time_plots(
         #     dirs = dirs,

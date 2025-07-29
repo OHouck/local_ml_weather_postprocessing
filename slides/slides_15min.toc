@@ -1,7 +1,0 @@
-\beamer@sectionintoc {1}{Background}{2}{0}{1}
-\beamer@sectionintoc {2}{Primary Results}{8}{0}{2}
-\beamer@sectionintoc {3}{Effect of Training Region Size}{13}{0}{3}
-\beamer@sectionintoc {4}{Detailed Regional Results}{16}{0}{4}
-\beamer@sectionintoc {5}{What's next?}{24}{0}{5}
-\beamer@sectionintoc {6}{References}{25}{0}{6}
-\beamer@sectionintoc {7}{Appendix}{26}{0}{7}

@@ -1,0 +1,115 @@
+\documentclass[aspectratio=169, xcolor=dvipsnames]{beamer}
+
+\useoutertheme{miniframes}
+\useinnertheme{circles}
+\usepackage{appendixnumberbeamer}
+\setbeamertemplate{footline}[frame number]
+
+\definecolor{main_color}{HTML}{7D9D33}
+\definecolor{secondary_color}{HTML}{CED38C}
+
+\setbeamercolor{palette primary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette secondary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette tertiary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette quaternary}{bg=secondary_color,fg=white}
+\setbeamercolor{structure}{fg=main_color}
+\setbeamercolor{section in toc}{fg=secondary_color}
+\setbeamercolor{subsection in head/foot}{bg=main_color,fg=white}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{caption}
+\usepackage[style=authoryear]{biblatex}
+\addbibresource{regional_forecasting.bib}
+
+
+% Set the path for figures
+\graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
+
+\title{Scratch Work: Tailoring Machine Learning Weather Predictions for Local Impacts}
+\author{\textbf{Ozma Houck, James Franke}}
+\date{}
+
+\usepackage{bbm}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{What's new?}
+\begin{itemize}
+    \item Rewrote databuild to be much faster and allow for using more regions. Early results for Ethiopia 
+    \item Added month embeddings to unet and mlp architectures.
+    \item Capable to train on multiple lead times ast once using learned lead time embedding.
+    \item Implemented Baysian hyperparameter optimization and optmized parameters for 2m temperatures 1 week lead time in India.
+\end{itemize}
+\end{frame}
+
+\section{New Results}
+
+\begin{frame}{Do Better with Temperature: 2x2}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{6x6 Region Size}
+
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{10x10 Region Size}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Next Steps}
+    \begin{itemize}
+        \item Finish script that downloads graph/gencast from GEE
+        \item Get AIFS and IMD from Pedram's group
+        \item More thorough hyperparameter optimization
+        \item A few things I can do to speed up training and databuild
+    \end{itemize}
+
+\end{frame}
+
+
+\end{document}
+
