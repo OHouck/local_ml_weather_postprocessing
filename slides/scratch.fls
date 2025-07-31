@@ -1154,6 +1154,17 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/booktabs/booktabs.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/booktabs/booktabs.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/booktabs/booktabs.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/booktabs/booktabs.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/graphics/graphicx.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
@@ -1449,6 +1460,11 @@ INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png
 INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmssi10.tfm
 OUTPUT scratch.nav
 OUTPUT scratch.toc
 OUTPUT scratch.snm
@@ -1462,4 +1478,5 @@ INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.p
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb

@@ -517,21 +517,12 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     
-    # If lat_values or lon_values are None, skip spatial selection (for pre-filtered climate zone patches)
-    if lat_values is None or lon_values is None:
-        return xr.open_mfdataset(
-            file_paths,
-            combine="by_coords",
-            preprocess=lambda ds: ds.sortby('latitude'), # don't need to select lat/lon for climate patches
-            decode_timedelta=True
-        )
-    else:   
-        return xr.open_mfdataset(
-            file_paths,
-            combine="by_coords",
-            preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
-            decode_timedelta=True
-        )
+    return xr.open_mfdataset(
+        file_paths,
+        combine="by_coords",
+        preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
+        decode_timedelta=True
+    )
 
 def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None):
     """
@@ -577,14 +568,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             obs_ds["10m_v_component_of_wind"]**2
         )
     
-    # Convert lead times to timedelta
+    # Convert lead times to timedelta and select
     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
     
     # Select lead times and common time range
-    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
     common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
     common_times = np.intersect1d(common_times, time_values_np)
-    
     forecast_ds = forecast_ds.sel(time=common_times)
     obs_ds = obs_ds.sel(time=common_times)
     
@@ -624,12 +614,14 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     
     # Create month indices
     month_values = pd.DatetimeIndex(common_times).month.to_numpy() - 1  
+    print("Unique month values in dataset:")
+    print(np.unique(month_values))  # Should be 0-11 for Jan-Dec
     month_indices = np.repeat(month_values, n_lead_times)
     
     # Create time array
     all_times = np.repeat(common_times, n_lead_times)
     
-    # Remove any samples with NaN
+    # Remove any samples with NaN (XX with updated version of databuild that converts from init to valid time this might not be needed)
     valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
     fc_combined = fc_combined[valid_mask]
     fc_output_combined = fc_output_combined[valid_mask]
@@ -637,6 +629,102 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     lead_time_indices_combined = lead_time_indices[valid_mask]
     month_indices_combined = month_indices[valid_mask]
     all_times = all_times[valid_mask]
+
+    VALIDATE_DIMENSIONS = True  # Set to False to disable validation
+
+    if VALIDATE_DIMENSIONS:
+        print("\n" + "="*60)
+        print("DIMENSION VALIDATION")
+        print("="*60)
+        
+        # Basic dimension checks
+        print(f"Original data dimensions:")
+        print(f"  n_time: {n_time}")
+        print(f"  n_lead_times: {n_lead_times}")
+        print(f"  n_lat x n_lon: {n_lat} x {n_lon}")
+        print(f"  n_training_vars: {n_training_vars}")
+        print(f"  n_output_vars: {n_output_vars}")
+        print(f"  Expected samples: {n_time * n_lead_times}")
+        print(f"  Actual samples after NaN removal: {len(fc_combined)}")
+        
+        # Check array shapes match
+        shapes_match = (
+            fc_combined.shape[0] == obs_combined.shape[0] == 
+            len(lead_time_indices_combined) == len(month_indices_combined) == 
+            len(all_times)
+        )
+        print(f"\n✓ All arrays have same length: {shapes_match}")
+        assert shapes_match, "Array length mismatch!"
+        
+        # Check lead time indices
+        unique_lt_indices = np.unique(lead_time_indices_combined)
+        print(f"\n✓ Lead time indices range: {unique_lt_indices}")
+        print(f"  Expected range: 0 to {n_lead_times-1}")
+        assert len(unique_lt_indices) == n_lead_times, f"Expected {n_lead_times} unique lead times"
+        assert unique_lt_indices.min() == 0 and unique_lt_indices.max() == n_lead_times-1
+        
+        # Check month indices  
+        unique_months = np.unique(month_indices_combined)
+        print(f"✓ Month indices range: {unique_months}")
+        print(f"  Should be 0-11 (Jan-Dec)")
+        assert unique_months.min() >= 0 and unique_months.max() <= 11
+        
+        # Check lead time cycling pattern (first 10 samples)
+        print(f"\n✓ Lead time pattern (first 10 samples): {lead_time_indices_combined[:10]}")
+        if n_lead_times == 2:
+            expected_pattern = [0, 1] * 5
+            pattern_correct = np.array_equal(lead_time_indices_combined[:10], expected_pattern)
+            print(f"  Expected [0,1,0,1,...]: {pattern_correct}")
+        
+        # Check month repetition pattern  
+        print(f"✓ Month pattern (first 10 samples): {month_indices_combined[:10]}")
+        
+        # Verify time-month consistency
+        sample_times = all_times[:min(10, len(all_times))]
+        sample_months = month_indices_combined[:min(10, len(all_times))]
+        print(f"\n✓ Time-month consistency check (first few samples):")
+        for i in range(min(5, len(sample_times))):
+            time_obj = pd.Timestamp(sample_times[i])
+            expected_month_idx = time_obj.month - 1
+            actual_month_idx = sample_months[i]
+            consistent = expected_month_idx == actual_month_idx
+            print(f"  Sample {i}: {time_obj.strftime('%Y-%m-%d')} -> month_idx={actual_month_idx} (expected {expected_month_idx}) ✓{consistent}")
+            if not consistent:
+                print(f"    WARNING: Month index mismatch!")
+        
+        # Check data value ranges (sanity check)
+        print(f"\n✓ Data value ranges:")
+        print(f"  Forecast input: [{fc_combined.min():.3f}, {fc_combined.max():.3f}]")
+        print(f"  Forecast output: [{fc_output_combined.min():.3f}, {fc_output_combined.max():.3f}]")
+        print(f"  Observations: [{obs_combined.min():.3f}, {obs_combined.max():.3f}]")
+        
+        # Check for remaining NaNs
+        fc_nans = np.isnan(fc_combined).sum()
+        obs_nans = np.isnan(obs_combined).sum()
+        print(f"\n✓ Remaining NaNs after filtering:")
+        print(f"  Forecast: {fc_nans}")
+        print(f"  Observations: {obs_nans}")
+        assert fc_nans == 0 and obs_nans == 0, "NaNs should be filtered out!"
+        
+        # Check lead time distribution
+        print(f"\n✓ Lead time distribution:")
+        for lt_idx in range(n_lead_times):
+            count = (lead_time_indices_combined == lt_idx).sum()
+            lt_hours = args.lead_time_hours[lt_idx]
+            print(f"  Lead time {lt_hours}h (idx={lt_idx}): {count} samples")
+        
+        # Check month distribution
+        print(f"\n✓ Month distribution:")
+        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        for month_idx in range(12):
+            count = (month_indices_combined == month_idx).sum()
+            if count > 0:
+                print(f"  {month_names[month_idx]} (idx={month_idx}): {count} samples")
+        
+        print("="*60)
+        print("VALIDATION COMPLETE")
+        print("="*60 + "\n")
     
     # Calculate mean forecast error
     training_mean_forecast_error = {}
@@ -654,7 +742,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
-    
+    # each sample represents one forecast for one specific lead time and time combination 
     return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined, 
             month_indices_combined, all_times, forecast_ds.latitude.values, 
             forecast_ds.longitude.values, n_lat, n_lon, 
@@ -977,21 +1065,20 @@ def main():
 
     # Decide if we're in a climate‐zone region or a geographic one
     if args.region in CLIMATE_ZONE_MAP:
-        def find_available_patches(region, model_name, train_or_test):
-            """Find available patches for a given region and model name."""
-            test_path = os.path.join(args.data_dir, f"{train_or_test}_{region}", model_name)
-            patch_files = glob.glob(os.path.join(test_path, "*.nc"))
-            patch_nums = [int(os.path.basename(f).split('_')[-1].split('.')[0]) for f in patch_files]
-            return sorted(patch_nums)
         
-        train_patch_nums = find_available_patches(args.region, args.model_name, 'train')
-        test_patch_nums = find_available_patches(args.region, args.model_name, 'test')
-        common_patch_nums = set(train_patch_nums) & set(test_patch_nums)
+        patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
+        patches = np.load(patches_path, allow_pickle=True)
+        patch_ids = np.arange(1, len(patches) + 1)
+        assert len(patches) == 50
 
-        lat_vals = None
-        lon_vals = None
-        
-        for idx in common_patch_nums:
+        for patch, idx in zip(patches, patch_ids):
+            lat_min = patch[0,].min()
+            lat_max = patch[0,].max()
+            lon_min = patch[1,].min()
+            lon_max = patch[1,].max()
+            lat_vals = region_lat[(region_lat >= lat_min) & (region_lat <= lat_max)]
+            lon_vals = region_lat[(region_lon >= lon_min) & (region_lon <= lon_max)]
+
             out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 
             if os.path.exists(out_path):

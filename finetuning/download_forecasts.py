@@ -11,6 +11,77 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+def convert_init_to_valid_time_optimized(ds):
+    """
+    Optimized conversion from init_time to valid_time dimension.
+    
+    This version uses xarray's advanced indexing and groupby operations
+    to avoid explicit loops and maintain lazy evaluation with Dask.
+    
+    Parameters:
+    -----------
+    ds : xarray.Dataset
+        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
+        
+    Returns:
+    --------
+    xarray.Dataset
+        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
+    """
+    # Calculate valid_time as init_time + prediction_timedelta
+    # This creates a 2D array (init_time, prediction_timedelta)
+    valid_time_2d = ds.init_time + ds.prediction_timedelta
+    
+    # Stack init_time and prediction_timedelta into a single dimension
+    ds_stacked = ds.stack(time_combo=['init_time', 'prediction_timedelta'])
+    
+    # Calculate valid_time for the stacked dimension
+    valid_time_stacked = valid_time_2d.stack(time_combo=['init_time', 'prediction_timedelta'])
+    
+    # Add valid_time as a new data variable (not just a coordinate)
+    # This is necessary because groupby needs a data variable
+    ds_stacked['valid_time'] = valid_time_stacked
+    
+    # Also need to expand prediction_timedelta to match the stacked dimension
+    # Create a 2D array where prediction_timedelta is repeated for each init_time
+    pred_td_expanded = ds.prediction_timedelta.expand_dims(init_time=ds.init_time)
+    pred_td_stacked = pred_td_expanded.stack(time_combo=['init_time', 'prediction_timedelta'])
+    ds_stacked['prediction_timedelta_expanded'] = pred_td_stacked
+    
+    # Now group by both valid_time and prediction_timedelta
+    # Use the data variables we just created
+    grouped = ds_stacked.groupby(['valid_time', 'prediction_timedelta_expanded'])
+    
+    # Take the first occurrence (you could also use .mean() if you want to average)
+    ds_grouped = grouped.first()
+    
+    # The groupby operation creates dimensions with the grouped variable names
+    # Rename them to our desired dimension names
+    ds_grouped = ds_grouped.rename({
+        'prediction_timedelta_expanded': 'prediction_timedelta'
+    })
+    
+    # Drop the temporary variables we created for grouping
+    if 'valid_time' in ds_grouped.data_vars:
+        ds_grouped = ds_grouped.drop_vars('valid_time')
+    if 'prediction_timedelta_expanded' in ds_grouped.data_vars:
+        ds_grouped = ds_grouped.drop_vars('prediction_timedelta_expanded')
+    
+    # Ensure dimensions are in the correct order
+    expected_dims = ['valid_time', 'prediction_timedelta', 'latitude', 'longitude']
+    actual_dims = list(ds_grouped.dims)
+    
+    # Only transpose if all expected dimensions exist
+    if all(dim in actual_dims for dim in expected_dims):
+        ds_final = ds_grouped.transpose(*expected_dims)
+    else:
+        ds_final = ds_grouped
+    
+    # Drop any fully NaN time steps
+    ds_final = ds_final.dropna(dim='valid_time', how='all')
+    
+    return ds_final
+
 def convert_init_to_valid_time(ds):
     """
     Convert a dataset from init_time dimension to valid_time dimension.
@@ -209,7 +280,7 @@ def download_pangu_data(year):
 
     # convert init_time to valid_time
     print("\nConverting init_time to valid_time...")
-    subset = convert_init_to_valid_time(subset)
+    subset = convert_init_to_valid_time_optimized(subset)
     start_time = print_time_and_memory("Converted init_time to valid_time", start_time)
     
     # 5. Rechunk for optimal performance
@@ -382,7 +453,7 @@ if __name__ == '__main__':
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2018]
+    years = [2019, 2020, 2021, 2022]
     
     # Try the download
     for year in years:

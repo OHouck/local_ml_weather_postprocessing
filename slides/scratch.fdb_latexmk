@@ -1,19 +1,20 @@
 # Fdb version 4
-["biber scratch"] 1753798179 "scratch.bcf" "scratch.bbl" "scratch" 1753800616 0
+["biber scratch"] 1753898671 "scratch.bcf" "scratch.bbl" "scratch" 1753914274 0
   "./regional_forecasting.bib" 1752532095 29317 fa9bb3983d925b602f7f8546f7b05e4d ""
-  "scratch.bcf" 1753800615 107415 ad725a6164bc0207c440f4a1ca57865f "pdflatex"
+  "scratch.bcf" 1753914273 107415 ad725a6164bc0207c440f4a1ca57865f "pdflatex"
   (generated)
   "scratch.bbl"
   "scratch.blg"
   (rewritten before read)
-["pdflatex"] 1753800612 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1753800616 0
+["pdflatex"] 1753914270 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1753914274 0
+  "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex" 1753914270 858 0ab67883b05fdae403a1de5dd602cf57 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800586 327522 e5f8cf65354b506bffe537a4f09a2824 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800592 354215 bbbe3cae62d25cd12093f308b8cafb36 ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800585 344894 002e9ce2b65074848b332b2adda03a3e ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800591 332299 5464b51e5badba4b9cfa5ee569d903bd ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800585 335040 ecda273ab524d9940b34e69fde4549ae ""
   "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800592 356299 1c248864fd23c290c47b84de32169dd9 ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1753800612 4104 0ffaa83ff1ba80c89dcd2820521c7b0b ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1753910031 4606 88fe88dbb14e54f09f5df0b127f092ce ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -31,6 +32,7 @@
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss8.tfm" 1136768653 1296 d77f431d10d47c8ea2cc18cf45346274 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss9.tfm" 1136768653 1320 49357c421c0d469f88b867dd0c3d10e8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmssbx10.tfm" 1136768653 1272 e2d13f0df30bf3ad990bb9d028e37f34 ""
+  "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmssi10.tfm" 1136768653 1520 ca2bb4b78ac9800bd686e30c6d19ef95 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmsy10.tfm" 1136768653 1124 6c73e740cf17375f03eec0ee63599741 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmsy6.tfm" 1136768653 1116 933a60c408fc0a863a92debe84b2d294 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmsy8.tfm" 1136768653 1120 8b7d695260f3cff42e636090a8002094 ""
@@ -41,6 +43,7 @@
   "/usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb" 1248133631 24420 52dbb8e8aa0069a1b987309557f8d303 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb" 1248133631 24373 a91d375736817a75026663adcb2190c1 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb" 1248133631 28902 2f5c04fd2884d1878057baa5aad22765 ""
+  "/usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb" 1248133631 25150 e0d09798d232ab9d00c5c0a8df6cc22d ""
   "/usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb" 1248133631 32569 5e5ddc8df908dea60932f3c484a54c0d ""
   "/usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1461363279 71627 94eb9990bed73c364d7f53f960cc8c5b ""
   "/usr/local/texlive/2023/texmf-dist/tex/generic/atbegshi/atbegshi.sty" 1575674566 24708 5584a51a7101caf7e6bbf1fc27d8f7b1 ""
@@ -206,6 +209,7 @@
   "/usr/local/texlive/2023/texmf-dist/tex/latex/letltxmacro/letltxmacro.sty" 1575499565 5766 13a9e8766c47f30327caf893ece86ac8 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.def" 1284153563 1620 fb1c32b818f2058eca187e5c41dfae77 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty" 1284153563 6187 b27afc771af565d3a9ff1ca7d16d0d46 ""
+  "/usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty" 1615845910 6149 2398eec4faa1ee24ff761581e580ecf1 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/basiclayer/pgfcore.sty" 1673816307 373 00b204b1d7d095b892ad31a7494b0373 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/math/pgfmath.sty" 1601326656 306 c56a323ca5bf9242f54474ced10fca71 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/systemlayer/pgfsys.sty" 1601326656 443 8c872229db56122037e86bcda49e14f3 ""
@@ -230,12 +234,12 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "scratch.aux" 1753800615 1989 7581779a92def9fb4057e20bc79a260f "pdflatex"
-  "scratch.bbl" 1753798181 466 ee04f40f768daeed26442158e95aba61 "biber scratch"
-  "scratch.nav" 1753800615 901 ad98d8ec264d663a0f868ece8a4cf582 "pdflatex"
-  "scratch.out" 1753800615 101 cdd443a8bf1bcc30c0df11710200c0bb "pdflatex"
-  "scratch.run.xml" 1753800615 2342 c26933d42c707bf891c44f6dadea68f3 "pdflatex"
-  "scratch.tex" 1753800612 4104 0ffaa83ff1ba80c89dcd2820521c7b0b ""
+  "scratch.aux" 1753914273 2113 6286f4061ad49b69243af1126815c455 "pdflatex"
+  "scratch.bbl" 1753898673 466 ee04f40f768daeed26442158e95aba61 "biber scratch"
+  "scratch.nav" 1753914273 989 cfdfccab7ca7481eacb03f6399af2e2c "pdflatex"
+  "scratch.out" 1753914273 101 cdd443a8bf1bcc30c0df11710200c0bb "pdflatex"
+  "scratch.run.xml" 1753914273 2342 c26933d42c707bf891c44f6dadea68f3 "pdflatex"
+  "scratch.tex" 1753910031 4606 88fe88dbb14e54f09f5df0b127f092ce ""
   (generated)
   "scratch.aux"
   "scratch.bcf"

@@ -11,90 +11,6 @@ from dask.distributed import Client, as_completed
 from dask.diagnostics import ProgressBar
 warnings.filterwarnings('ignore')
 
-def convert_init_to_valid_time(ds):
-    """
-    Convert a dataset from init_time dimension to valid_time dimension.
-    
-    Parameters:
-    -----------
-    ds : xarray.Dataset
-        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
-        
-    Returns:
-    --------
-    xarray.Dataset
-        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
-        where valid_time = init_time + prediction_timedelta
-    """
-    # Create valid_time coordinate
-    # This will be a 2D array of shape (init_time, prediction_timedelta)
-    valid_time_2d = ds.init_time + ds.prediction_timedelta
-
-    print(f"valid time 2d")
-    print(valid_time_2d)
-    
-    # Stack init_time and prediction_timedelta into a single dimension
-    ds_stacked = ds.stack(stacked=['init_time', 'prediction_timedelta'])
-    print(f"Stacked dataset dimensions: {ds_stacked.dims}")
-    
-    # Assign the flattened valid_time as a coordinate
-    valid_time_flat = valid_time_2d.stack(stacked=['init_time', 'prediction_timedelta'])
-    print(f"Valid time flattened shape: {valid_time_flat.shape}")
-    ds_stacked = ds_stacked.assign_coords(valid_time=valid_time_flat)
-    print(f"Dataset after assigning valid_time coordinate: {ds_stacked.dims}")
-    
-    # Get unique valid times and lead times
-    unique_valid_times = np.unique(valid_time_flat.values)
-    lead_times = ds.prediction_timedelta.values
-
-    # Print unique valid times and init times
-    print(f"Unique valid times: {len(unique_valid_times)}")
-    unique_init_times = np.unique(ds.init_time.values)
-    print(f"max and min valid times: {unique_valid_times.min()} to {unique_valid_times.max()}")
-    print(f"max and min init times: {unique_init_times.min()} to {unique_init_times.max()}")
-    
-
-    
-    # Create output dataset structure
-    output_vars = {}
-    
-    for var in ds.data_vars:
-        # Create empty array for this variable
-        output_shape = (len(unique_valid_times), len(lead_times), 
-                       len(ds.latitude), len(ds.longitude))
-        output_data = np.full(output_shape, np.nan, dtype=np.float32)
-        
-        # Fill the array
-        for i, vt in enumerate(unique_valid_times):
-            for j, lt in enumerate(lead_times):
-                # Find where valid_time equals vt and prediction_timedelta equals lt
-                mask = (valid_time_flat == vt) & (ds_stacked.prediction_timedelta == lt)
-                
-                if mask.any():
-                    # Get the data for this combination
-                    data = ds_stacked[var].where(mask, drop=True)
-                    if len(data) > 0:
-                        output_data[i, j, :, :] = data.isel(stacked=0).values
-        
-        # Create DataArray
-        output_vars[var] = xr.DataArray(
-            output_data,
-            dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
-            coords={
-                'valid_time': unique_valid_times,
-                'prediction_timedelta': lead_times,
-                'latitude': ds.latitude,
-                'longitude': ds.longitude
-            }
-        )
-    
-    # Create output dataset
-    result = xr.Dataset(output_vars, attrs=ds.attrs)
-    
-    # Drop any valid_times where all data is NaN
-    result = result.dropna(dim='valid_time', how='all')
-    
-    return result
 
 def print_time_and_memory(step_name, start_time):
     """Print elapsed time and current memory usage"""
@@ -388,22 +304,6 @@ def download_data(data_name, year):
     return output_path
 
 if __name__ == '__main__':
-
-    path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_2021.zarr"
-    
-    ds = xr.open_zarr(path, consolidated=True)
-    lat0, lat1 = 6, 4
-    lon0, lon1 = 42, 44
-
-    ds = ds.sel(latitude=slice(lat0, lat1), longitude=slice(lon0, lon1))
-    print("Initial")
-    print(ds)
-
-    ds = convert_init_to_valid_time(ds)
-    print("After conversion")
-    print(ds)
-
-    exit()
 
     # Check package versions
     import zarr

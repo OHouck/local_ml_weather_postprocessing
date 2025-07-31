@@ -4,6 +4,7 @@ import glob
 import socket
 import calendar
 import numpy as np
+import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -1115,6 +1116,259 @@ def generate_time_series_plots(
     
     print(f"Time series plot saved to: {save_path}")
 
+import os
+import numpy as np
+import pandas as pd
+import xarray as xr
+from types import SimpleNamespace
+
+
+def generate_summary_stat_table(
+        dirs,
+        train_start, train_end,
+        test_start, test_end,
+        model,
+        training_output_vars,
+        prediction_var,
+        nn_architecture="mlp",
+        regions=None,
+        subregion="2x2",
+        lead_times=None
+):
+    """
+    Generates a single comprehensive summary statistics table for a specific variable.
+    
+    The table includes:
+    - Region and lead time columns
+    - Mean ground truth with standard deviation in parentheses
+    - RMSE of original and corrected forecasts
+    - Percent improvement
+    
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    train_start, train_end, test_start, test_end : str
+        Date strings for train/test periods
+    model : str
+        Model name (e.g., 'pangu')
+    variables_config : tuple
+        Tuple of (training_vars, output_vars, prediction_var)
+    nn_architecture : str
+        Architecture type: "mlp" or "unet"
+    regions : list
+        List of regions to analyze. If None, uses default regions
+    subregion : str
+        Patch size (e.g., "2x2", "10x10")
+    lead_times : list of int
+        Lead times in hours. If None, uses [24, 72, 168]
+    
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing all summary statistics
+    """
+    
+    # Extract variables from config
+    training_vars, output_vars = training_output_vars
+    
+    # Ensure variables are lists
+    if not isinstance(training_vars, (list, tuple)):
+        training_vars = [training_vars]
+    if not isinstance(output_vars, (list, tuple)):
+        output_vars = [output_vars]
+    
+    # Default regions if not specified
+    if regions is None:
+        regions = ["amazon", "india", "usa_south", "british_columbia", "ethiopia"]
+    
+    # Default lead times if not specified
+    if lead_times is None:
+        lead_times = [24, 72, 168]
+    
+    # Storage for all results
+    all_rows = []
+    region_ground_truth_stats = {}
+    
+    # Process each region
+    for region in regions:
+        region_ground_truth_values = []
+        
+        for lead_time in lead_times:
+            # Set up args for generate_output_path
+            args = SimpleNamespace(
+                model_name=model,
+                region=region,
+                subregion=subregion,
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                training_vars=training_vars,
+                output_vars=output_vars,
+                lead_time_hours=lead_time,
+                nn_architecture=nn_architecture
+            )
+            
+            # Construct file path
+            file_path = os.path.join(dirs['input'], generate_output_path(args))
+            
+            try:
+                # Load the data
+                ds = xr.open_zarr(file_path)
+                
+                # Extract data arrays for the specific lead time
+                ground_truth = ds[f"{prediction_var}_ground_truth_lt{lead_time}h"]
+                fc_original = ds[f"{prediction_var}_original_lt{lead_time}h"]
+                fc_corrected = ds[f"{prediction_var}_corrected_lt{lead_time}h"]
+                
+                # Flatten arrays for statistics
+                gt_flat = ground_truth.values.flatten()
+                orig_flat = fc_original.values.flatten()
+                corr_flat = fc_corrected.values.flatten()
+                
+                # Remove NaN values
+                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                gt_flat = gt_flat[mask]
+                orig_flat = orig_flat[mask]
+                corr_flat = corr_flat[mask]
+                
+                # Collect ground truth values for region-wide statistics
+                region_ground_truth_values.extend(gt_flat)
+                
+                # RMSE calculations
+                error_orig = orig_flat - gt_flat
+                error_corr = corr_flat - gt_flat
+                rmse_orig = np.sqrt(np.mean(error_orig**2))
+                rmse_corr = np.sqrt(np.mean(error_corr**2))
+                
+                # Calculate RMSE change (negative means improvement)
+                rmse_change = rmse_corr - rmse_orig
+                
+                # Percent improvement
+                pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                
+                # Create row data
+                row_data = {
+                    'Region': region.replace('_', ' ').title(),
+                    'Lead Time': f"{lead_time}h",
+                    'RMSE (Orig)': rmse_orig,
+                    'RMSE Change': rmse_change,
+                    'RMSE Improvement (%)': pct_improvement
+                }
+                
+                all_rows.append(row_data)
+                print(f"Processed {region} - {lead_time}h: RMSE improvement = {pct_improvement:.1f}%")
+                
+            except Exception as e:
+                print(f"Error processing {region} - {lead_time}h: {e}")
+                continue
+        
+        # Calculate region-wide ground truth statistics
+        if region_ground_truth_values:
+            region_mean = np.mean(region_ground_truth_values)
+            region_std = np.std(region_ground_truth_values)
+            region_ground_truth_stats[region.replace('_', ' ').title()] = f"{region_mean:.2f} ({region_std:.2f})"
+    
+    # Create DataFrame
+    if not all_rows:
+        print("No data processed successfully.")
+        return None
+    
+    df = pd.DataFrame(all_rows)
+    
+    # Create LaTeX table
+    _create_latex_table(df, prediction_var, nn_architecture, subregion, dirs, model, region_ground_truth_stats)
+    
+    return df
+
+
+def _create_latex_table(df, prediction_var, nn_architecture, subregion, dirs, model, region_ground_truth_stats):
+    """
+    Creates a LaTeX table with proper formatting where region names appear only once
+    and ground truth statistics appear in the second row of each region.
+    """
+    # Prepare output folder
+    out_folder = os.path.join(dirs["fig"], model, "summary_stats")
+    os.makedirs(out_folder, exist_ok=True)
+    
+    # Start building the LaTeX table
+    latex_lines = []
+    
+    # Table setup
+    latex_lines.append("\\begin{tabular}{llrr}")
+    latex_lines.append("\\toprule")
+    latex_lines.append("Region & Lead Time & RMSE & Improvement (\\%) \\\\")
+    latex_lines.append("\\midrule")
+    
+    # Group by region to format the table
+    current_region = None
+    region_rows = []
+    
+    for _, row in df.iterrows():
+        region = row['Region']
+        
+        # When we encounter a new region, process the previous region's rows
+        if region != current_region and current_region is not None:
+            # Add the collected rows for the previous region
+            for i, region_row in enumerate(region_rows):
+                if i == 0:
+                    # First row: show region name
+                    latex_lines.append(region_row)
+                elif i == 1:
+                    # Second row: show ground truth stats
+                    gt_stats = region_ground_truth_stats.get(current_region, "N/A")
+                    latex_lines.append(f"\\textit{{Ground Truth: {gt_stats}}} & {region_row}")
+                else:
+                    # Subsequent rows: empty first column
+                    latex_lines.append(f" & {region_row}")
+            region_rows = []
+        
+        # Format RMSE with change in parentheses
+        rmse_display = f"{row['RMSE (Orig)']:.3f} ({row['RMSE Change']:+.3f})"
+        
+        # Build the data portion of the row (without region name)
+        data_portion = f"{row['Lead Time']} & {rmse_display} & {row['RMSE Improvement (%)']:.1f} \\\\"
+        
+        if region != current_region:
+            # First row of new region
+            region_rows.append(f"{region} & {data_portion}")
+            current_region = region
+        else:
+            # Additional rows for same region
+            region_rows.append(data_portion)
+    
+    # Don't forget to process the last region
+    if region_rows:
+        for i, region_row in enumerate(region_rows):
+            if i == 0:
+                latex_lines.append(region_row)
+            elif i == 1:
+                gt_stats = region_ground_truth_stats.get(current_region, "N/A")
+                latex_lines.append(f"\\textit{{Ground Truth: {gt_stats}}} & {region_row}")
+            else:
+                latex_lines.append(f" & {region_row}")
+    
+    # Close the table
+    latex_lines.append("\\bottomrule")
+    latex_lines.append("\\end{tabular}")
+    
+    # Join all lines
+    latex_str = "\n".join(latex_lines)
+    
+    # Save the LaTeX file
+    variable_name = prediction_var.replace('_', ' ').title()
+    filename = f"summary_stats_{prediction_var}_{nn_architecture}_{subregion}.tex"
+    filepath = os.path.join(out_folder, filename)
+    
+    with open(filepath, 'w') as f:
+        f.write(latex_str)
+    
+    print(f"\nSaved LaTeX table to: {filepath}")
+    print(f"Table title: Summary Statistics for {variable_name}")
+
+
+
 def main():
     dirs = setup_directories()
 
@@ -1126,6 +1380,22 @@ def main():
     # training_vars = ["10m_wind_speed"]
     # output_vars = ["10m_wind_speed"]
     # prediction_var = "10m_wind_speed"
+
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["usa_south", "india", "amazon", "british_columbia", "ethiopia"],
+        subregion="10x10",
+        lead_times=[24, 120, 240],  # Multiple lead times
+    )
+    exit()
 
     # Climate zone plots
     # generate_lead_time_plots(
