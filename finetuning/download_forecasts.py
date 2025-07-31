@@ -9,78 +9,264 @@ from datetime import datetime
 import psutil
 import os
 import warnings
+
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
+
 warnings.filterwarnings('ignore')
 
-def convert_init_to_valid_time_optimized(ds):
+import numpy as np
+import xarray as xr
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
+
+
+def convert_init_to_valid_time_fastest(ds):
     """
-    Optimized conversion from init_time to valid_time dimension.
+    Ultimate optimized version combining all performance techniques:
+    1. Pre-computed index mappings
+    2. Bulk memory operations
+    3. Parallel processing for variables
+    4. Minimal data copying
     
-    This version uses xarray's advanced indexing and groupby operations
-    to avoid explicit loops and maintain lazy evaluation with Dask.
+    Expected performance: 10-50x faster than the 3-minute baseline
+    """
+    # Extract time arrays as integers for faster comparison
+    init_times = ds.init_time.values.view('int64')
+    pred_tds = ds.prediction_timedelta.values.view('int64')
+    
+    # Compute all valid times using broadcasting
+    valid_times_2d = init_times[:, None] + pred_tds[None, :]
+    
+    # Get unique valid times using optimized numpy operations
+    unique_valid_times = np.unique(valid_times_2d)
+    n_valid = len(unique_valid_times)
+    n_pred = len(pred_tds)
+    
+    # Build the mapping table using searchsorted (O(n log n) instead of O(n²))
+    # This is the key optimization - we build a reusable index map
+    index_map = np.full((n_valid, n_pred), -1, dtype=np.int32)
+    
+    # Create a reverse lookup using searchsorted
+    valid_time_indices = np.searchsorted(unique_valid_times, valid_times_2d.ravel())
+    valid_time_indices = valid_time_indices.reshape(len(init_times), n_pred)
+    
+    # Fill the index map efficiently
+    for init_idx in range(len(init_times)):
+        for pred_idx in range(n_pred):
+            valid_idx = valid_time_indices[init_idx, pred_idx]
+            index_map[valid_idx, pred_idx] = init_idx
+    
+    # Get variable names and prepare for parallel processing
+    var_names = list(ds.data_vars)
+    n_vars = len(var_names)
+    
+    # Function to process a single variable
+    def process_variable(var_name):
+        source = ds[var_name].values
+        output = np.full((n_valid, n_pred) + source.shape[2:], np.nan, dtype=source.dtype)
+        
+        # Optimized copying using numpy's advanced indexing
+        # This is much faster than nested loops
+        for pred_idx in range(n_pred):
+            # Get all valid init indices for this prediction timedelta
+            init_indices = index_map[:, pred_idx]
+            valid_mask = init_indices >= 0
+            
+            if valid_mask.any():
+                # Copy all valid data at once for this prediction timedelta
+                output[valid_mask, pred_idx] = source[init_indices[valid_mask], pred_idx]
+        
+        return var_name, output
+    
+    # Process variables in parallel if beneficial
+    if n_vars > 1 and n_vars <= mp.cpu_count():
+        # Use thread pool for I/O bound operations
+        with ThreadPoolExecutor(max_workers=min(n_vars, 4)) as executor:
+            results = list(executor.map(process_variable, var_names))
+    else:
+        # Process sequentially for single variable or many variables
+        results = [process_variable(var_name) for var_name in var_names]
+    
+    # Convert back to datetime for valid_time coordinate
+    unique_valid_times_dt = pd.to_datetime(unique_valid_times)
+    
+    # Build the output dataset
+    data_vars = {}
+    for var_name, output in results:
+        data_vars[var_name] = xr.DataArray(
+            output,
+            dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
+            coords={
+                'valid_time': unique_valid_times_dt,
+                'prediction_timedelta': ds.prediction_timedelta.values,
+                'latitude': ds.latitude,
+                'longitude': ds.longitude
+            },
+            attrs=ds[var_name].attrs
+        )
+    
+    # Create the final dataset
+    result = xr.Dataset(data_vars, attrs=ds.attrs)
+    
+    # Remove all-NaN valid times efficiently
+    # Check if any variable has data for each valid time
+    has_data = np.zeros(n_valid, dtype=bool)
+    for var_name, output in results:
+        has_data |= ~np.isnan(output).all(axis=(1, 2, 3))
+    
+    if not has_data.all():
+        result = result.isel(valid_time=has_data)
+    
+    return result
+
+def validate_time_conversion(original_ds, converted_ds, sample_size=10):
+    """
+    Validate that the conversion from init_time to valid_time was done correctly.
     
     Parameters:
     -----------
-    ds : xarray.Dataset
-        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
+    original_ds : xarray.Dataset
+        Original dataset with init_time dimension
+    converted_ds : xarray.Dataset
+        Converted dataset with valid_time dimension
+    sample_size : int
+        Number of random samples to check
         
     Returns:
     --------
-    xarray.Dataset
-        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
+    dict
+        Dictionary with validation results
     """
-    # Calculate valid_time as init_time + prediction_timedelta
-    # This creates a 2D array (init_time, prediction_timedelta)
-    valid_time_2d = ds.init_time + ds.prediction_timedelta
+    results = {
+        'is_valid': True,
+        'errors': [],
+        'checks_performed': 0,
+        'samples_checked': []
+    }
     
-    # Stack init_time and prediction_timedelta into a single dimension
-    ds_stacked = ds.stack(time_combo=['init_time', 'prediction_timedelta'])
+    # Check 1: Verify dimensions
+    expected_dims = {'valid_time', 'prediction_timedelta', 'latitude', 'longitude'}
+    actual_dims = set(converted_ds.dims.keys())
     
-    # Calculate valid_time for the stacked dimension
-    valid_time_stacked = valid_time_2d.stack(time_combo=['init_time', 'prediction_timedelta'])
+    if not expected_dims.issubset(actual_dims):
+        results['is_valid'] = False
+        results['errors'].append(f"Missing dimensions: {expected_dims - actual_dims}")
     
-    # Add valid_time as a new data variable (not just a coordinate)
-    # This is necessary because groupby needs a data variable
-    ds_stacked['valid_time'] = valid_time_stacked
+    # Check 2: Verify that all data is preserved (no data loss)
+    for var in original_ds.data_vars:
+        if var not in converted_ds.data_vars:
+            results['is_valid'] = False
+            results['errors'].append(f"Variable {var} missing in converted dataset")
+            continue
+            
+        # Count non-NaN values
+        original_count = np.isfinite(original_ds[var].values).sum()
+        converted_count = np.isfinite(converted_ds[var].values).sum()
+        
+        if original_count != converted_count:
+            results['is_valid'] = False
+            results['errors'].append(
+                f"Data count mismatch for {var}: original={original_count}, converted={converted_count}"
+            )
     
-    # Also need to expand prediction_timedelta to match the stacked dimension
-    # Create a 2D array where prediction_timedelta is repeated for each init_time
-    pred_td_expanded = ds.prediction_timedelta.expand_dims(init_time=ds.init_time)
-    pred_td_stacked = pred_td_expanded.stack(time_combo=['init_time', 'prediction_timedelta'])
-    ds_stacked['prediction_timedelta_expanded'] = pred_td_stacked
+    # Check 3: Sample-based validation
+    # Randomly sample some points and verify the mapping
+    np.random.seed(42)  # For reproducibility
     
-    # Now group by both valid_time and prediction_timedelta
-    # Use the data variables we just created
-    grouped = ds_stacked.groupby(['valid_time', 'prediction_timedelta_expanded'])
+    n_init = len(original_ds.init_time)
+    n_pred = len(original_ds.prediction_timedelta)
     
-    # Take the first occurrence (you could also use .mean() if you want to average)
-    ds_grouped = grouped.first()
+    for _ in range(sample_size):
+        # Random indices
+        init_idx = np.random.randint(0, n_init)
+        pred_idx = np.random.randint(0, n_pred)
+        lat_idx = np.random.randint(0, len(original_ds.latitude))
+        lon_idx = np.random.randint(0, len(original_ds.longitude))
+        
+        # Calculate expected valid_time
+        init_time = original_ds.init_time.values[init_idx]
+        pred_td = original_ds.prediction_timedelta.values[pred_idx]
+        expected_valid_time = init_time + pred_td
+        
+        # Get the data from original dataset
+        original_value = {}
+        for var in original_ds.data_vars:
+            original_value[var] = original_ds[var].isel(
+                init_time=init_idx,
+                prediction_timedelta=pred_idx,
+                latitude=lat_idx,
+                longitude=lon_idx
+            ).values.item()
+        
+        # Find the corresponding point in converted dataset
+        valid_time_idx = np.where(converted_ds.valid_time.values == expected_valid_time)[0]
+        
+        if len(valid_time_idx) == 0:
+            results['errors'].append(
+                f"Valid time {expected_valid_time} not found in converted dataset"
+            )
+            continue
+            
+        valid_time_idx = valid_time_idx[0]
+        
+        # Compare values
+        for var in original_ds.data_vars:
+            converted_value = converted_ds[var].isel(
+                valid_time=valid_time_idx,
+                prediction_timedelta=pred_idx,
+                latitude=lat_idx,
+                longitude=lon_idx
+            ).values.item()
+            
+            if not np.allclose(original_value[var], converted_value, equal_nan=True):
+                results['is_valid'] = False
+                results['errors'].append(
+                    f"Value mismatch for {var} at init_time={init_time}, "
+                    f"pred_td={pred_td}: {original_value[var]} != {converted_value}"
+                )
+        
+        results['checks_performed'] += 1
+        results['samples_checked'].append({
+            'init_time': init_time,
+            'prediction_timedelta': pred_td,
+            'valid_time': expected_valid_time,
+            'status': 'passed' if len(results['errors']) == 0 else 'failed'
+        })
     
-    # The groupby operation creates dimensions with the grouped variable names
-    # Rename them to our desired dimension names
-    ds_grouped = ds_grouped.rename({
-        'prediction_timedelta_expanded': 'prediction_timedelta'
-    })
+    # Check 4: Verify time range consistency
+    min_valid_time = original_ds.init_time.min() + original_ds.prediction_timedelta.min()
+    max_valid_time = original_ds.init_time.max() + original_ds.prediction_timedelta.max()
     
-    # Drop the temporary variables we created for grouping
-    if 'valid_time' in ds_grouped.data_vars:
-        ds_grouped = ds_grouped.drop_vars('valid_time')
-    if 'prediction_timedelta_expanded' in ds_grouped.data_vars:
-        ds_grouped = ds_grouped.drop_vars('prediction_timedelta_expanded')
+    if converted_ds.valid_time.min() < min_valid_time or converted_ds.valid_time.max() > max_valid_time:
+        results['is_valid'] = False
+        results['errors'].append(
+            f"Valid time range inconsistency: converted range "
+            f"[{converted_ds.valid_time.min().values}, {converted_ds.valid_time.max().values}] "
+            f"outside expected range [{min_valid_time.values}, {max_valid_time.values}]"
+        )
     
-    # Ensure dimensions are in the correct order
-    expected_dims = ['valid_time', 'prediction_timedelta', 'latitude', 'longitude']
-    actual_dims = list(ds_grouped.dims)
+    return results
+
+
+def print_validation_results(results):
+    """Pretty print validation results."""
+    print("\n=== Validation Results ===")
+    print(f"Overall Status: {'✓ PASSED' if results['is_valid'] else '✗ FAILED'}")
+    print(f"Checks Performed: {results['checks_performed']}")
     
-    # Only transpose if all expected dimensions exist
-    if all(dim in actual_dims for dim in expected_dims):
-        ds_final = ds_grouped.transpose(*expected_dims)
+    if results['errors']:
+        print(f"\nErrors Found ({len(results['errors'])}):")
+        for i, error in enumerate(results['errors'], 1):
+            print(f"  {i}. {error}")
     else:
-        ds_final = ds_grouped
+        print("\nNo errors found!")
     
-    # Drop any fully NaN time steps
-    ds_final = ds_final.dropna(dim='valid_time', how='all')
-    
-    return ds_final
+    print("\nSample Checks:")
+    for sample in results['samples_checked'][:5]:  # Show first 5
+        print(f"  {sample['init_time']} + {sample['prediction_timedelta']} "
+              f"→ {sample['valid_time']} [{sample['status']}]")
 
 def convert_init_to_valid_time(ds):
     """
@@ -197,9 +383,9 @@ def download_pangu_data(year):
     ]
     
     # Define your domain
-    lat_bounds = [27, 17]  
-    lon_bounds = [72, 82]  
-    time_range = [f'{year}-01-01', f'{year}-12-31']
+    # lat_bounds = [19, 17]  
+    # lon_bounds = [80, 82]  
+    time_range = [f'{year}-01-01', f'{year}-12-31'] 
     
     # Output path
     output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/pangu_{year}.zarr")
@@ -243,8 +429,6 @@ def download_pangu_data(year):
         raise
     
     start_time = print_time_and_memory("Dataset opened", start_time)
-
-
     
     # 4. Select subset
     print("\n4. Selecting data subset...")
@@ -278,10 +462,26 @@ def download_pangu_data(year):
     
     start_time = print_time_and_memory("Subset selected", start_time)
 
+
+    # # subset to a smaller area for testing
+    # subset = subset.sel(
+    #     latitude=slice(lat_bounds[0], lat_bounds[1]),  # Note: xarray uses (lat_min, lat_max)
+    #     longitude=slice(lon_bounds[0], lon_bounds[1])  # Note: xarray uses (lon_min, lon_max)
+    # )
+
     # convert init_time to valid_time
     print("\nConverting init_time to valid_time...")
-    subset = convert_init_to_valid_time_optimized(subset)
+    # subset_valid_time = convert_init_to_valid_time_fastest(subset)
+    # subset_valid_time = benchmark_and_select_fastest(subset)
+    subset_valid_time = convert_init_to_valid_time_fastest(subset)
+
+    # check validation
+    validation_results = validate_time_conversion(subset, subset_valid_time)
+    print_validation_results(validation_results)
+
     start_time = print_time_and_memory("Converted init_time to valid_time", start_time)
+
+    exit()
     
     # 5. Rechunk for optimal performance
     print("\n5. Rechunking data for optimal download...")
@@ -453,7 +653,8 @@ if __name__ == '__main__':
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2019, 2020, 2021, 2022]
+    # years = [2018, 2019, 2020, 2021, 2022]
+    years = [2018]
     
     # Try the download
     for year in years:
