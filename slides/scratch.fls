@@ -1465,6 +1465,10 @@ INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weat
 INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
 INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmssi10.tfm
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex
+INPUT /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex
 OUTPUT scratch.nav
 OUTPUT scratch.toc
 OUTPUT scratch.snm

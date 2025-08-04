@@ -74,7 +74,7 @@ def setup_directories():
 # Simple MLP definition with lead time and month encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3, 
+    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2, 
                 n_lead_times=1, lead_time_embedding_dim=8, month_embedding_dim=16,
                 dropout_rate=0.0):
         super(SimpleMLP, self).__init__()
@@ -328,77 +328,6 @@ def parse_args():
                         help='If set, run N bootstrap samples of subregions')
     return parser.parse_args()
 
-def convert_init_to_valid_time(ds):
-    """
-    Convert a dataset from init_time dimension to valid_time dimension.
-    
-    Parameters:
-    -----------
-    ds : xarray.Dataset
-        Dataset with dimensions (init_time, prediction_timedelta, latitude, longitude)
-        
-    Returns:
-    --------
-    xarray.Dataset
-        Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
-        where valid_time = init_time + prediction_timedelta
-    """
-    # Create valid_time coordinate
-    # This will be a 2D array of shape (init_time, prediction_timedelta)
-    valid_time_2d = ds.init_time + ds.prediction_timedelta
-    
-    # Stack init_time and prediction_timedelta into a single dimension
-    ds_stacked = ds.stack(stacked=['init_time', 'prediction_timedelta'])
-    
-    # Assign the flattened valid_time as a coordinate
-    valid_time_flat = valid_time_2d.stack(stacked=['init_time', 'prediction_timedelta'])
-    ds_stacked = ds_stacked.assign_coords(valid_time=valid_time_flat)
-    
-    # Get unique valid times and lead times
-    unique_valid_times = np.unique(valid_time_flat.values)
-    lead_times = ds.prediction_timedelta.values
-    
-    # Create output dataset structure
-    output_vars = {}
-    
-    for var in ds.data_vars:
-        # Create empty array for this variable
-        output_shape = (len(unique_valid_times), len(lead_times), 
-                       len(ds.latitude), len(ds.longitude))
-        output_data = np.full(output_shape, np.nan, dtype=np.float32)
-        
-        # Fill the array
-        for i, vt in enumerate(unique_valid_times):
-            for j, lt in enumerate(lead_times):
-                # Find where valid_time equals vt and prediction_timedelta equals lt
-                mask = (valid_time_flat == vt) & (ds_stacked.prediction_timedelta == lt)
-                
-                if mask.any():
-                    # Get the data for this combination
-                    data = ds_stacked[var].where(mask, drop=True)
-                    if len(data) > 0:
-                        output_data[i, j, :, :] = data.isel(stacked=0).values
-        
-        # Create DataArray
-        output_vars[var] = xr.DataArray(
-            output_data,
-            dims=['valid_time', 'prediction_timedelta', 'latitude', 'longitude'],
-            coords={
-                'valid_time': unique_valid_times,
-                'prediction_timedelta': lead_times,
-                'latitude': ds.latitude,
-                'longitude': ds.longitude
-            }
-        )
-    
-    # Create output dataset
-    result = xr.Dataset(output_vars, attrs=ds.attrs)
-    
-    # Drop any valid_times where all data is NaN
-    result = result.dropna(dim='valid_time', how='all')
-    
-    return result
-
 # ------------------------------
 # Region grid and patch helpers
 # ------------------------------
@@ -538,7 +467,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     time_end = getattr(args, f"{ver_str}_end")
     
     # Create time range
-    time_values = pd.date_range(start=time_start, end=time_end, freq='1D')
+    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
     time_values_np = time_values.to_numpy()
 
     # Define target dataset name
@@ -547,12 +476,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     
     # Load datasets
     forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
-    
-    # Convert to valid_time if needed
-    if 'init_time' in forecast_ds.dims:
-        forecast_ds = convert_init_to_valid_time(forecast_ds)
-        forecast_ds = forecast_ds.rename({'valid_time': 'time'})
-    
+    forecast_ds = forecast_ds.rename({'valid_time': 'time'})
+
     obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
     
     # Create wind speed if needed
@@ -614,8 +539,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     
     # Create month indices
     month_values = pd.DatetimeIndex(common_times).month.to_numpy() - 1  
-    print("Unique month values in dataset:")
-    print(np.unique(month_values))  # Should be 0-11 for Jan-Dec
     month_indices = np.repeat(month_values, n_lead_times)
     
     # Create time array
@@ -630,102 +553,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     month_indices_combined = month_indices[valid_mask]
     all_times = all_times[valid_mask]
 
-    VALIDATE_DIMENSIONS = True  # Set to False to disable validation
-
-    if VALIDATE_DIMENSIONS:
-        print("\n" + "="*60)
-        print("DIMENSION VALIDATION")
-        print("="*60)
-        
-        # Basic dimension checks
-        print(f"Original data dimensions:")
-        print(f"  n_time: {n_time}")
-        print(f"  n_lead_times: {n_lead_times}")
-        print(f"  n_lat x n_lon: {n_lat} x {n_lon}")
-        print(f"  n_training_vars: {n_training_vars}")
-        print(f"  n_output_vars: {n_output_vars}")
-        print(f"  Expected samples: {n_time * n_lead_times}")
-        print(f"  Actual samples after NaN removal: {len(fc_combined)}")
-        
-        # Check array shapes match
-        shapes_match = (
-            fc_combined.shape[0] == obs_combined.shape[0] == 
-            len(lead_time_indices_combined) == len(month_indices_combined) == 
-            len(all_times)
-        )
-        print(f"\n✓ All arrays have same length: {shapes_match}")
-        assert shapes_match, "Array length mismatch!"
-        
-        # Check lead time indices
-        unique_lt_indices = np.unique(lead_time_indices_combined)
-        print(f"\n✓ Lead time indices range: {unique_lt_indices}")
-        print(f"  Expected range: 0 to {n_lead_times-1}")
-        assert len(unique_lt_indices) == n_lead_times, f"Expected {n_lead_times} unique lead times"
-        assert unique_lt_indices.min() == 0 and unique_lt_indices.max() == n_lead_times-1
-        
-        # Check month indices  
-        unique_months = np.unique(month_indices_combined)
-        print(f"✓ Month indices range: {unique_months}")
-        print(f"  Should be 0-11 (Jan-Dec)")
-        assert unique_months.min() >= 0 and unique_months.max() <= 11
-        
-        # Check lead time cycling pattern (first 10 samples)
-        print(f"\n✓ Lead time pattern (first 10 samples): {lead_time_indices_combined[:10]}")
-        if n_lead_times == 2:
-            expected_pattern = [0, 1] * 5
-            pattern_correct = np.array_equal(lead_time_indices_combined[:10], expected_pattern)
-            print(f"  Expected [0,1,0,1,...]: {pattern_correct}")
-        
-        # Check month repetition pattern  
-        print(f"✓ Month pattern (first 10 samples): {month_indices_combined[:10]}")
-        
-        # Verify time-month consistency
-        sample_times = all_times[:min(10, len(all_times))]
-        sample_months = month_indices_combined[:min(10, len(all_times))]
-        print(f"\n✓ Time-month consistency check (first few samples):")
-        for i in range(min(5, len(sample_times))):
-            time_obj = pd.Timestamp(sample_times[i])
-            expected_month_idx = time_obj.month - 1
-            actual_month_idx = sample_months[i]
-            consistent = expected_month_idx == actual_month_idx
-            print(f"  Sample {i}: {time_obj.strftime('%Y-%m-%d')} -> month_idx={actual_month_idx} (expected {expected_month_idx}) ✓{consistent}")
-            if not consistent:
-                print(f"    WARNING: Month index mismatch!")
-        
-        # Check data value ranges (sanity check)
-        print(f"\n✓ Data value ranges:")
-        print(f"  Forecast input: [{fc_combined.min():.3f}, {fc_combined.max():.3f}]")
-        print(f"  Forecast output: [{fc_output_combined.min():.3f}, {fc_output_combined.max():.3f}]")
-        print(f"  Observations: [{obs_combined.min():.3f}, {obs_combined.max():.3f}]")
-        
-        # Check for remaining NaNs
-        fc_nans = np.isnan(fc_combined).sum()
-        obs_nans = np.isnan(obs_combined).sum()
-        print(f"\n✓ Remaining NaNs after filtering:")
-        print(f"  Forecast: {fc_nans}")
-        print(f"  Observations: {obs_nans}")
-        assert fc_nans == 0 and obs_nans == 0, "NaNs should be filtered out!"
-        
-        # Check lead time distribution
-        print(f"\n✓ Lead time distribution:")
-        for lt_idx in range(n_lead_times):
-            count = (lead_time_indices_combined == lt_idx).sum()
-            lt_hours = args.lead_time_hours[lt_idx]
-            print(f"  Lead time {lt_hours}h (idx={lt_idx}): {count} samples")
-        
-        # Check month distribution
-        print(f"\n✓ Month distribution:")
-        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        for month_idx in range(12):
-            count = (month_indices_combined == month_idx).sum()
-            if count > 0:
-                print(f"  {month_names[month_idx]} (idx={month_idx}): {count} samples")
-        
-        print("="*60)
-        print("VALIDATION COMPLETE")
-        print("="*60 + "\n")
-    
     # Calculate mean forecast error
     training_mean_forecast_error = {}
     
@@ -966,7 +793,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     
     train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx], 
                                     lead_time_indices[t_idx], month_indices[t_idx], 
-                                    batch_size=16)
+                                    batch_size=128)
     val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], 
                                   lead_time_indices[v_idx], month_indices[v_idx], 
                                   batch_size=16)
@@ -984,20 +811,21 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 512,
+                          hidden_dim = 1024,
                           output_dim = output_dim, 
-                          num_hidden_layers= 5,
+                          num_hidden_layers= 2,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=16,
+                          lead_time_embedding_dim=4,
                           month_embedding_dim=16,
-                          dropout_rate = 0
+                          dropout_rate =0.1097725 
                           ).to(device)
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr=0.0001968, device=device,
-                                                weight_decay=0,
-                                                patience=50, min_delta=9.871224e-05)
+                                                epochs=1000, lr=4.673747105982307e-05, 
+                                                device=device,
+                                                weight_decay=2.8276153644203165e-06,
+                                                patience=70, min_delta=0.000286450816778278)
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     # Load test data
@@ -1076,8 +904,14 @@ def main():
             lat_max = patch[0,].max()
             lon_min = patch[1,].min()
             lon_max = patch[1,].max()
+
+            # print lat min and max
+            print(f"Processing patch {idx} with lat range ({lat_min}, {lat_max}) and lon range ({lon_min}, {lon_max})")
+
+            print(f"Max and min region_lon: {region_lon.max()}, {region_lon.min()}")
+
             lat_vals = region_lat[(region_lat >= lat_min) & (region_lat <= lat_max)]
-            lon_vals = region_lat[(region_lon >= lon_min) & (region_lon <= lon_max)]
+            lon_vals = region_lon[(region_lon >= lon_min) & (region_lon <= lon_max)]
 
             out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 

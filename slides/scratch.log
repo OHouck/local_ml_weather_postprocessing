@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  30 JUL 2025 17:24
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  4 AUG 2025 17:36
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1047,9 +1047,8 @@ Overfull \vbox (35.70627pt too high) detected at line 106
 
 [6
 
-]
-Overfull \hbox (178.22943pt too wide) in paragraph at lines 121--121
-[][]  
+] (/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex)
+Overfull \vbox (35.70627pt too high) detected at line 110
  []
 
 [7
@@ -1072,15 +1071,15 @@ Package logreq Info: Writing requests to 'scratch.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 30426 strings out of 476025
- 611861 string characters out of 5790016
+ 30431 strings out of 476025
+ 612559 string characters out of 5790016
  1869388 words of memory out of 5000000
- 50315 multiletter control sequences out of 15000+600000
+ 50317 multiletter control sequences out of 15000+600000
  520298 words of font info for 60 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  128i,19n,122p,718b,801s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb>
-Output written on scratch.pdf (7 pages, 2012638 bytes).
+Output written on scratch.pdf (7 pages, 1668861 bytes).
 PDF statistics:
  301 PDF objects out of 1000 (max. 8388607)
  251 compressed objects within 3 object streams

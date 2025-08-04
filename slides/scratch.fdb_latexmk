@@ -1,20 +1,21 @@
 # Fdb version 4
-["biber scratch"] 1753898671 "scratch.bcf" "scratch.bbl" "scratch" 1753914274 0
+["biber scratch"] 1753898671 "scratch.bcf" "scratch.bbl" "scratch" 1754346992 0
   "./regional_forecasting.bib" 1752532095 29317 fa9bb3983d925b602f7f8546f7b05e4d ""
-  "scratch.bcf" 1753914273 107415 ad725a6164bc0207c440f4a1ca57865f "pdflatex"
+  "scratch.bcf" 1754346992 107415 ad725a6164bc0207c440f4a1ca57865f "pdflatex"
   (generated)
   "scratch.bbl"
   "scratch.blg"
   (rewritten before read)
-["pdflatex"] 1753914270 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1753914274 0
-  "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex" 1753914270 858 0ab67883b05fdae403a1de5dd602cf57 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800586 327522 e5f8cf65354b506bffe537a4f09a2824 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800592 354215 bbbe3cae62d25cd12093f308b8cafb36 ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800585 344894 002e9ce2b65074848b332b2adda03a3e ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800591 332299 5464b51e5badba4b9cfa5ee569d903bd ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1753800585 335040 ecda273ab524d9940b34e69fde4549ae ""
-  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1753800592 356299 1c248864fd23c290c47b84de32169dd9 ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1753910031 4606 88fe88dbb14e54f09f5df0b127f092ce ""
+["pdflatex"] 1754346988 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1754346992 0
+  "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex" 1754175355 845 dd7e6bd15115b12ca036e331621deda7 ""
+  "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex" 1754346988 854 d667325c7f0217785c818b931b31963f ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1754343709 216472 92f1beec939f882c072d7280535f3657 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1754175331 368098 f926eb1fb5b539a5cd5a28d18949daa0 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1754343709 215693 e26035b0a237746a56c52852cb99ee96 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1754175329 330005 995d89ea2e765d32c3e7fe8d87ec2141 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png" 1754343709 216268 18b8b280704f9155cc8aa21619f0182b ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png" 1754175330 350135 5f71c8ad58be1b7f375cb1e414fe8686 ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1754175434 4269 839638587f9013f1b69d0463f5ba1b55 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -234,12 +235,12 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "scratch.aux" 1753914273 2113 6286f4061ad49b69243af1126815c455 "pdflatex"
+  "scratch.aux" 1754346992 2113 6286f4061ad49b69243af1126815c455 "pdflatex"
   "scratch.bbl" 1753898673 466 ee04f40f768daeed26442158e95aba61 "biber scratch"
-  "scratch.nav" 1753914273 989 cfdfccab7ca7481eacb03f6399af2e2c "pdflatex"
-  "scratch.out" 1753914273 101 cdd443a8bf1bcc30c0df11710200c0bb "pdflatex"
-  "scratch.run.xml" 1753914273 2342 c26933d42c707bf891c44f6dadea68f3 "pdflatex"
-  "scratch.tex" 1753910031 4606 88fe88dbb14e54f09f5df0b127f092ce ""
+  "scratch.nav" 1754346992 989 cfdfccab7ca7481eacb03f6399af2e2c "pdflatex"
+  "scratch.out" 1754346992 101 cdd443a8bf1bcc30c0df11710200c0bb "pdflatex"
+  "scratch.run.xml" 1754346992 2342 c26933d42c707bf891c44f6dadea68f3 "pdflatex"
+  "scratch.tex" 1754175434 4269 839638587f9013f1b69d0463f5ba1b55 ""
   (generated)
   "scratch.aux"
   "scratch.bcf"

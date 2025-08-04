@@ -1,0 +1,20 @@
+{
+  "hyperparams": {
+    "batch_size": 16,
+    "dropout_rate": 0.4690492112723583,
+    "lead_time_embedding_dim": 16,
+    "learning_rate": 0.0003617059868811526,
+    "min_delta": 6.060622217281704e-06,
+    "mlp_hidden_dim": 512,
+    "mlp_layers": 3,
+    "month_embedding_dim": 32,
+    "patience": 30,
+    "weight_decay": 5.393848047554812e-06
+  },
+  "loss": 0.10037428429933337,
+  "region_losses": {
+    "india_4x4_24_120_240h_mlp": 0.11934332189239488,
+    "ethiopia_4x4_24_120_240h_mlp": 0.08140524670627185
+  },
+  "architecture": "mlp"
+}
