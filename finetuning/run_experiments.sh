@@ -7,8 +7,8 @@ source .venv/bin/activate
 
 # simulataneous to run all lead times in a single model
 # separate to run each lead time in a separate model
-TRAIN_MODE=simultaneous
-# TRAIN_MODE=separate
+# TRAIN_MODE=simultaneous
+TRAIN_MODE=separate
 
 echo "Training mode: $TRAIN_MODE"
 
@@ -23,8 +23,8 @@ echo "Training mode: $TRAIN_MODE"
 #     --output_vars 2m_temperature \
 #     --train_start="2018-01-01" --train_end="2019-12-31" \
 #     --test_start="2022-01-01" --test_end="2022-12-31" \
-#     --model_name="pangu" \
-#     --region="arid" \
+#     --model_name="ifs" \
+#     --region="india" \
 #     --subregion="2x2" \
 #     --lead_time_hours 24 
 

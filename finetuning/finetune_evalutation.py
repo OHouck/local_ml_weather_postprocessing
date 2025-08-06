@@ -16,6 +16,8 @@ from matplotlib.colors import TwoSlopeNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
 
+import time
+
 
 #######################
 # Utility Functions
@@ -161,7 +163,7 @@ def generate_lead_time_plots(
                         if lead_time != lead_times[-1]:
                             lead_time_hours += "_"
                 else:
-                    lead_time_hours = lt 
+                    lead_time_hours = lt
 
                 args = SimpleNamespace(
                     model_name=model,
@@ -488,196 +490,251 @@ def generate_lead_time_plots(
     
     print(f"Multi-region lead-time improvement plot ({plot_type}) saved to: {save_path}")
 
+def diagnose_zarr_performance(path, lead_times=[24, 120, 240]):
+    """
+    Diagnostic function to understand why different lead times have different performance.
+    """
+    import time
+    
+    print(f"Diagnosing Zarr performance for: {path}")
+    
+    try:
+        with xr.open_zarr(path) as ds:
+            print(f"Dataset shape: {ds.dims}")
+            print(f"Available variables: {list(ds.data_vars.keys())}")
+            
+            for lead_time in lead_times:
+                var_name = f"2m_temperature_original_lt{lead_time}h"
+                if var_name in ds:
+                    var = ds[var_name]
+                    print(f"\n=== Lead Time {lead_time}h ===")
+                    print(f"Variable shape: {var.shape}")
+                    print(f"Variable chunks: {var.chunks}")
+                    print(f"Chunk sizes: {var.chunksizes}")
+                    
+                    # Get number of chunks correctly
+                    if hasattr(var.data, 'nchunks'):
+                        print(f"Number of chunks: {var.data.nchunks}")
+                    elif hasattr(var.data, 'chunks'):
+                        import numpy as np
+                        nchunks = np.prod([len(c) for c in var.data.chunks])
+                        print(f"Number of chunks: {nchunks}")
+                    
+                    # Test loading speed
+                    start_time = time.time()
+                    _ = var.load()  # Force load into memory
+                    load_time = time.time() - start_time
+                    print(f"Load time: {load_time:.3f} seconds")
+                    
+                    # Memory usage
+                    memory_usage = var.nbytes / (1024**2)  # MB
+                    print(f"Memory usage: {memory_usage:.2f} MB")
+                    
+                    # Dask array info
+                    if hasattr(var.data, 'chunks'):
+                        print(f"Dask chunks: {var.data.chunks}")
+                        print(f"Chunk dtype: {var.data.dtype}")
+                        
+                        # Calculate chunk efficiency
+                        total_elements = var.size
+                        chunks_per_dim = [len(c) for c in var.data.chunks]
+                        total_chunks = np.prod(chunks_per_dim)
+                        avg_elements_per_chunk = total_elements / total_chunks
+                        print(f"Average elements per chunk: {avg_elements_per_chunk:.1f}")
+                        print(f"Chunks per dimension: {chunks_per_dim}")
+                else:
+                    print(f"Variable {var_name} not found")
+                    
+    except Exception as e:
+        print(f"Error diagnosing {path}: {e}")
+        import traceback
+        traceback.print_exc()
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
                                         prediction_var, nn_architecture=["mlp"],
-                                        lead_times=None, simultaneous=False):
+                                        lead_time=None, simultaneous=False):
     """
-    Generates a plot showing RMSE improvement by patch size across regions and lead times.
-    Now supports plotting both Pangu and IFS results, and both MLP and UNet architectures.
-    
-    Parameters
-    ----------
-    nn_architecture : list
-        List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
+    Creates plot showing how RMSE changes when trained on different sizes of subregions.
     """
     input_folder = dirs['input']
     training_vars, output_vars = training_output_vars
     training_vars = training_vars if isinstance(training_vars, (list,tuple)) else [training_vars]
     output_vars   = output_vars   if isinstance(output_vars,   (list,tuple)) else [output_vars]
-    
-    # Ensure lead_times is a list
-    if not isinstance(lead_times, list):
-        lead_times = [lead_times]
 
-    regions   = ["amazon", "india", "usa_south", "british_columbia", "ethiopia"]
-    subregions = ["2x2","4x4","6x6","8x8","10x10"]
+    valid_lead_times = [24, 120, 240]
+    if lead_time not in valid_lead_times:
+        raise ValueError(f"Invalid lead time: {lead_time}. Must be one of {valid_lead_times}.")
+    
+    regions   = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
+    subregions = ["2x2","6x6","10x10"]
     degrees    = [int(s.split('x')[0]) for s in subregions]
 
     # Store improvements for both models and architectures
     improvements = {}
     for arch in nn_architecture:
         improvements[arch] = {
-            'pangu': {r:{lt:[] for lt in lead_times} for r in regions},
-            'ifs': {r:{lt:[] for lt in lead_times} for r in regions}
+            'pangu': {r: [] for r in regions},
+            'ifs': {r: [] for r in regions}
         }
+
+    # Set leadtime arg for file naming
+    if simultaneous:
+        lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
+    else:
+        lead_time_hours = lead_time
 
     for arch in nn_architecture:
         for region in regions:
-            # ---- extract central 2×2 bounds and normalization once ----
-            args = SimpleNamespace(
-                model_name=model, region=region, subregion="2x2",
-                train_start=train_start, train_end=train_end,
-                test_start=test_start,  test_end=test_end,
-                training_vars=training_vars, output_vars=output_vars,
-                lead_time_hours=lead_times[0],  # dummy
-                nn_architecture=arch
-            )
-                
-            central_path = os.path.join(input_folder, generate_output_path(args))
+            print(f"Processing region: {region}, architecture: {arch}")
             
-            try:
-                with xr.open_zarr(central_path) as ds2:
-                    lat_min, lat_max = ds2.latitude.min().item(), ds2.latitude.max().item()
-                    lon_min, lon_max = ds2.longitude.min().item(), ds2.longitude.max().item()
-
-                    gt2 = ds2[f"{prediction_var}_ground_truth"]
-                    mu, sigma = float(gt2.mean()), float(gt2.std())
-            except Exception as e:
-                print(f"Error loading central path for {region}, {arch}: {e}")
-                continue
-
-            # ---- now loop subregions + lead times, always slicing that 2×2 box ----
-            for sub in subregions:
-                for lt in lead_times:
-                    # Process Pangu
-                    args.subregion = sub
-                    if simultaneous:
-                        lt = "".join([str(l) for l in lead_times])
-                    else:
-                        args.lead_time_hours = lt
-                    args.model_name = model
+            # Cache central bounds - compute once per region
+            central_bounds = None
+            
+            for model_name in ['pangu', 'ifs']:
+                print(f"  Loading {model_name} data for {region}...")
+                
+                for sub in subregions:
+                    args = SimpleNamespace(
+                        model_name=model_name, region=region, subregion=sub,
+                        train_start=train_start, train_end=train_end,
+                        test_start=test_start, test_end=test_end,
+                        training_vars=training_vars, output_vars=output_vars,
+                        lead_time_hours=lead_time_hours,
+                        nn_architecture=arch
+                    )
+                    
                     path = os.path.join(input_folder, generate_output_path(args))
                     
                     try:
-                        with xr.open_zarr(path) as ds:
-                            ds = ds.sel(latitude=slice(lat_min,lat_max),
-                                        longitude=slice(lon_min,lon_max))
+                        with xr.open_zarr(path, chunks=None) as ds:
+                            # Extract central bounds on first successful load
+                            if central_bounds is None:
+                                if sub == "2x2":
+                                    central_bounds = {
+                                        'lat_min': float(ds.latitude.min()),
+                                        'lat_max': float(ds.latitude.max()),
+                                        'lon_min': float(ds.longitude.min()),
+                                        'lon_max': float(ds.longitude.max())
+                                    }
+                                else:
+                                    # For larger subregions, extract central 2x2
+                                    lat_center = float((ds.latitude.min() + ds.latitude.max()) / 2)
+                                    lon_center = float((ds.longitude.min() + ds.longitude.max()) / 2)
+                                    central_bounds = {
+                                        'lat_min': lat_center - 1.0,
+                                        'lat_max': lat_center + 1.0,
+                                        'lon_min': lon_center - 1.0,
+                                        'lon_max': lon_center + 1.0
+                                    }
                             
-                            gt_n   = ds[f"{prediction_var}_ground_truth_{lt}h"] 
-                            orig_n = ds[f"{prediction_var}_original_{lt}h"]     
-                            corr_n = ds[f"{prediction_var}_corrected_{lt}h"]    
-
-                            rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
-                            rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
-                            pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
-                            size = int(sub.split('x')[0])
-                            improvements[arch]['pangu'][region][lt].append((size, pct_improvement))
-                    except Exception as e:
-                        print(f"Pangu data not found for {region}, {sub}, {lt}h, {arch}: {e}")
-                    
-                    # Process IFS if available
-                    args.model_name = 'ifs'
-                    ifs_path = os.path.join(input_folder, generate_output_path(args))
-                    
-                    try:
-                        with xr.open_zarr(ifs_path) as ds:
-                            ds = ds.sel(latitude=slice(lat_min,lat_max),
-                                        longitude=slice(lon_min,lon_max))
+                            # OPTIMIZATION 3: Load all required variables at once
+                            required_vars = [
+                                f"{prediction_var}_ground_truth_lt{lead_time}h",
+                                f"{prediction_var}_original_lt{lead_time}h",
+                                f"{prediction_var}_corrected_lt{lead_time}h"
+                            ]
                             
-                            gt_n   = ds[f"{prediction_var}_ground_truth_{lt}h"] 
-                            orig_n = ds[f"{prediction_var}_original_{lt}h"]     
-                            corr_n = ds[f"{prediction_var}_corrected_{lt}h"]    
+                            # Check if all required variables exist
+                            missing_vars = [var for var in required_vars if var not in ds]
+                            if missing_vars:
+                                print(f"    Missing variables for {model_name}, {sub}: {missing_vars}")
+                                continue
+                            
+                            # OPTIMIZATION 4: Single spatial slice operation
+                            ds_subset = ds[required_vars].sel(
+                                latitude=slice(central_bounds['lat_min'], central_bounds['lat_max']),
+                                longitude=slice(central_bounds['lon_min'], central_bounds['lon_max'])
+                            )
+                            
+                            print(f"    Loading {sub} data...")
+                            start_time = time.time()
+                            data_loaded = ds_subset.load()
+                            load_time = time.time() - start_time
+                            print(f"    Load time for {sub}: {load_time:.2f}s")
+                            
+                            try:
+                                gt_n = data_loaded[f"{prediction_var}_ground_truth_lt{lead_time}h"]
+                                orig_n = data_loaded[f"{prediction_var}_original_lt{lead_time}h"]
+                                corr_n = data_loaded[f"{prediction_var}_corrected_lt{lead_time}h"]
 
-                            rmse_orig = float(np.sqrt(((orig_n - gt_n)**2).mean()))
-                            rmse_corr = float(np.sqrt(((corr_n - gt_n)**2).mean()))
-                            pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
-                            size = int(sub.split('x')[0])
-                            improvements[arch]['ifs'][region][lt].append((size, pct_improvement))
+                                # Fast numpy operations on loaded arrays
+                                rmse_orig = float(np.sqrt(((orig_n.values - gt_n.values)**2).mean()))
+                                rmse_corr = float(np.sqrt(((corr_n.values - gt_n.values)**2).mean()))
+                                pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                                
+                                size = int(sub.split('x')[0])
+                                improvements[arch][model_name][region].append((size, pct_improvement))
+                                print(f"    {sub}: {pct_improvement:.2f}% improvement")
+                                
+                            except Exception as e:
+                                print(f"    Error computing metrics for {model_name}, {region}, {sub}: {e}")
+                        
                     except Exception as e:
-                        print(f"IFS data not found for {region}, {sub}, {lt}h, {arch}: {e}")
+                        print(f"    {model_name} data not found for {region}, {sub}: {e}")
 
-    # ---- plotting ----
-    # Create color map for regions and line style map for lead times
+    print("Improvements collected:", improvements)
+    
+    # Plotting code remains the same...
     region_colors = plt.get_cmap('Set1')
     region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
-    ls_map = {24: 'solid', 72: '--', 168: ':'}
+    ls_map = {24: 'solid', 120: 'solid', 240: 'solid'} # change if I want to plot multiple lead times
     
-    # Marker styles for models and fill styles for architectures
     model_markers = {'pangu': 'o', 'ifs': '^'}
     arch_fillstyles = {'mlp': 'full', 'unet': 'none'}
     
-    # Create single figure
     plt.figure(figsize=(12, 7))
     
-    # Plot all combinations
     for arch in nn_architecture:
         for model_name in ['pangu', 'ifs']:
             for region in regions:
-                for lt in lead_times:
-                    data = sorted(improvements[arch][model_name][region][lt], key=lambda x: x[0])
-                    if not data:
-                        continue
-                        
-                    sizes, imps = zip(*data)
+                data = sorted(improvements[arch][model_name][region], key=lambda x: x[0])
+                if not data:
+                    continue
                     
-                    # Format label
-                    region_label = region.replace('_', ' ').title()
-                    if len(nn_architecture) > 1:
-                        label = f"{region_label} {model_name.upper()} {arch.upper()} ({lt}h)"
-                    else:
-                        label = f"{region_label} {model_name.upper()} ({lt}h)"
-                    
-                    plt.ylim(-25, 30)  # fix this
-                    plt.plot(sizes, imps, 
-                             marker=model_markers[model_name],
-                             fillstyle=arch_fillstyles[arch],
-                             color=region_color_map[region], 
-                             linestyle=ls_map[lt],
-                             label=label,
-                             linewidth=2, markersize=15)
+                sizes, imps = zip(*data)
+                
+                region_label = region.replace('_', ' ').title()
+                if len(nn_architecture) > 1:
+                    label = f"{region_label} {model_name.upper()} {arch.upper()} ({lead_time}h)"
+                else:
+                    label = f"{region_label} {model_name.upper()} ({lead_time}h)"
+                
+                plt.ylim(-25, 30)
+                plt.plot(sizes, imps, 
+                        marker=model_markers[model_name],
+                        fillstyle=arch_fillstyles[arch],
+                        color=region_color_map[region], 
+                        linestyle=ls_map[lead_time],
+                        label=label,
+                        linewidth=2, markersize=15)
     
-    # Configure plot
     plt.xticks(degrees, subregions)
     plt.xlabel("Patch size (degrees)", fontsize=15)
     plt.ylabel("RMSE % improvement\n(original − corrected)", fontsize=15)
     
-    # Customize title based on architectures and lead times
     arch_str = "/".join([a.upper() for a in nn_architecture])
-    if len(lead_times) == 1:
-        title = f"RMSE % Improvement by Patch Size ({arch_str}) - {lead_times[0]}h Lead Time"
-    else:
-        lead_times_str = ", ".join([f"{lt}h" for lt in sorted(lead_times)])
-        title = f"RMSE % Improvement by Patch Size ({arch_str}) - Lead Times: {lead_times_str}"
+    title = f"RMSE % Improvement by Patch Size ({arch_str}) - {lead_time}h Lead Time"
     
     plt.title(title, fontsize=15)
     plt.grid(True, alpha=0.3)
     
-    # Create custom legend
+    # Legend creation remains the same...
     from matplotlib.lines import Line2D
     
-    # Region legend entries
     region_handles = [Line2D([0], [0], color=region_color_map[region], linewidth=3, 
                             label=region.replace('_', ' ').title()) for region in regions]
     
-    # Model legend entries
     model_handles = [
         Line2D([0], [0], color='black', marker='o', linestyle='none', markersize=12, label='Pangu'),
         Line2D([0], [0], color='black', marker='^', linestyle='none', markersize=12, label='IFS')
     ]
     
-    # Architecture legend entries (if multiple)
     if len(nn_architecture) > 1:
         arch_handles = [Line2D([0], [0], color='black', marker='o', fillstyle=arch_fillstyles[arch],
                               markersize=12, linestyle='none', label=arch.upper()) 
                        for arch in nn_architecture]
     
-    # Lead time legend entries  
-    lt_handles = [Line2D([0], [0], color='black', linestyle=ls_map[lt], linewidth=2,
-                        label=f"{lt}h lead") for lt in lead_times]
-    
-    # Create multi-part legend
     legend1 = plt.legend(handles=region_handles, title="Region", 
                         loc='lower right', bbox_to_anchor=(1, 0))
     legend2 = plt.legend(handles=model_handles, title="Model", 
@@ -686,12 +743,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     if len(nn_architecture) > 1:
         legend3 = plt.legend(handles=arch_handles, title="Architecture", 
                             loc='lower right', bbox_to_anchor=(1, 0.55))
-        legend4 = plt.legend(handles=lt_handles, title="Lead Time", 
-                            loc='lower right', bbox_to_anchor=(1, 0.7))
         plt.gca().add_artist(legend3)
-    else:
-        legend4 = plt.legend(handles=lt_handles, title="Lead Time", 
-                            loc='lower right', bbox_to_anchor=(1, 0.55))
     
     plt.gca().add_artist(legend1)
     plt.gca().add_artist(legend2)
@@ -702,14 +754,11 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     out_folder = os.path.join(dirs["fig"], model, "subregion")
     os.makedirs(out_folder, exist_ok=True)
     
-    # Create filename based on which lead times and architectures are included
-    lead_times_suffix = "_".join([str(lt) for lt in sorted(lead_times)])
+    lead_times_suffix = f"_{lead_time}h"
     arch_suffix = "_".join(nn_architecture)
     fname = f"subregion_rmse_improvement_lt{lead_times_suffix}_{'_'.join(training_vars)}_{prediction_var}_{arch_suffix}.png"
     plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
     plt.close()
-    
-    print(f"Subregion comparison plot saved for lead times {lead_times} and architectures {nn_architecture}")
 
 
 def generate_map_plots(
@@ -723,6 +772,7 @@ def generate_map_plots(
         region="usa_south",
         subregion="2x2",
         lead_time=24,
+        simultaneous=False
 ):
     """
     Generates a figure with 2 maps: original forecast RMSE and percent improvement in RMSE.
@@ -746,6 +796,13 @@ def generate_map_plots(
     output_vars_str = "_".join(output_vars)
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
+    valid_lead_times = [24, 120, 240]
+    # Set leadtime arg for file naming
+    if simultaneous:
+        lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
+    else:
+        lead_time_hours = lead_time
+
     # Set up args for generate_output_path
     args = SimpleNamespace(
         model_name=model,
@@ -757,7 +814,7 @@ def generate_map_plots(
         test_end=test_end,
         training_vars=training_vars,
         output_vars=output_vars,
-        lead_time_hours=lead_time,
+        lead_time_hours=lead_time_hours,
         nn_architecture=nn_architecture
     )
     
@@ -794,9 +851,9 @@ def generate_map_plots(
             lon_max_10x10 = float(ds.longitude.max())
         
         # Extract data arrays
-        ground_truth = ds[f"{prediction_var}_ground_truth_{lead_time}h"]
-        fc_original = ds[f"{prediction_var}_original_{lead_time}h"]
-        fc_corrected = ds[f"{prediction_var}_corrected_{lead_time}h"]
+        ground_truth = ds[f"{prediction_var}_ground_truth_lt{lead_time}h"]
+        fc_original = ds[f"{prediction_var}_original_lt{lead_time}h"]
+        fc_corrected = ds[f"{prediction_var}_corrected_lt{lead_time}h"]
         
         # Calculate RMSE for original and corrected forecasts
         mse_spatial_orig = ((fc_original - ground_truth) ** 2).mean(dim="time")
@@ -947,6 +1004,7 @@ def generate_time_series_plots(
         region="usa_south",
         subregion="2x2",
         lead_time=24,
+        simultaneous=False
 ):
     """
     Generates a single bar plot showing monthly RMSE for original and corrected forecasts
@@ -970,6 +1028,12 @@ def generate_time_series_plots(
     output_vars_str = "_".join(output_vars)
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
+    valid_lead_times = [24, 120, 240]
+    if simultaneous:
+        lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
+    else:
+        lead_time_hours = lead_time
+
     # Set up args for generate_output_path
     args = SimpleNamespace(
         model_name=model,
@@ -981,7 +1045,7 @@ def generate_time_series_plots(
         test_end=test_end,
         training_vars=training_vars,
         output_vars=output_vars,
-        lead_time_hours=lead_time,
+        lead_time_hours=lead_time_hours,
         nn_architecture=nn_architecture
     )
 
@@ -1003,9 +1067,9 @@ def generate_time_series_plots(
         ds_model = xr.open_zarr(model_file_path)
         
         # Extract data arrays
-        ground_truth = ds_model[f"{prediction_var}_ground_truth_{lead_time}h"]
-        fc_original = ds_model[f"{prediction_var}_original_{lead_time}h"]
-        fc_corrected = ds_model[f"{prediction_var}_corrected_{lead_time}h"]
+        ground_truth = ds_model[f"{prediction_var}_ground_truth_lt{lead_time}h"]
+        fc_original = ds_model[f"{prediction_var}_original_lt{lead_time}h"]
+        fc_corrected = ds_model[f"{prediction_var}_corrected_lt{lead_time}h"]
         
         # Calculate monthly RMSE for main model
         # First compute MSE, then take mean over spatial dimensions, then group by month
@@ -1045,9 +1109,9 @@ def generate_time_series_plots(
         ds_ifs = xr.open_zarr(ifs_file_path)
         
         # Extract IFS data arrays
-        ifs_ground_truth = ds_ifs[f"{prediction_var}_ground_truth_{lead_time}h"]
-        ifs_fc_original = ds_ifs[f"{prediction_var}_original_{lead_time}h"]
-        ifs_fc_corrected = ds_ifs[f"{prediction_var}_corrected_{lead_time}h"]
+        ifs_ground_truth = ds_ifs[f"{prediction_var}_ground_truth_lt{lead_time}h"]
+        ifs_fc_original = ds_ifs[f"{prediction_var}_original_lt{lead_time}h"]
+        ifs_fc_corrected = ds_ifs[f"{prediction_var}_corrected_lt{lead_time}h"]
         
         # Calculate monthly RMSE for IFS
         # First compute MSE, then take mean over spatial dimensions, then group by month
@@ -1196,7 +1260,7 @@ def generate_summary_stat_table(
     
     # Default lead times if not specified
     if lead_times is None:
-        lead_times = [24, 72, 168]
+        lead_times = [24, 120, 240]
     
     # Storage for all results
     all_rows = []
@@ -1417,79 +1481,58 @@ def main():
     dirs = setup_directories()
 
     # Two options for training and output variable combinations, uncomment the one you want to use
-    training_vars = ["2m_temperature"]
-    output_vars = ["2m_temperature"]
-    prediction_var = "2m_temperature"
+    # training_vars = ["2m_temperature"]
+    # output_vars = ["2m_temperature"]
+    # prediction_var = "2m_temperature"
 
-    # training_vars = ["10m_wind_speed"]
-    # output_vars = ["10m_wind_speed"]
-    # prediction_var = "10m_wind_speed"
+    training_vars = ["10m_wind_speed"]
+    output_vars = ["10m_wind_speed"]
+    prediction_var = "10m_wind_speed"
 
     #============================================
     # Summary Stat Tables
     #============================================
 
-    # generate_summary_stat_table(
-    #     dirs=dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture="mlp",
-    #     regions = ["usa_south", "india", "amazon", "british_columbia", "ethiopia"],
-    #     subregion="2x2",
-    #     lead_times=[24, 120, 240],  # Multiple lead times
-    #     simultaneous=False 
-    # )
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["india", "amazon", "ethiopia"],
+        subregion="2x2",
+        lead_times=[24, 120, 240],  # Multiple lead times
+        simultaneous=True
+    )
 
     # climate zones
-    # generate_summary_stat_table(
-    #     dirs=dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture="mlp",
-    #     regions = ["tropical", "arid", "temperate"],
-    #     subregion="2x2",
-    #     bootstrap=True,
-    #     lead_times=[24, 120, 240],  
-    #     simultaneous=True
-    # )
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["tropical", "arid", "temperate"],
+        subregion="2x2",
+        bootstrap=True,
+        lead_times=[24, 120, 240],  
+        simultaneous=True
+    )
 
     #============================================
     # Lead Time Plots
     #============================================
 
-    # Climate zone plots
-    # generate_lead_time_plots(
-    #     dirs = dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture=["mlp"],  # mlp and unet
-    #     regions = ["tropical", "arid", "temperate"],
-    #     subregion="2x2",
-    #     bootstrap=True,
-    #     plot_type="all"
-    # )
-
-    # Example 1: Generate lead time plots for MLP and UNet architectures 
-    # regions = ["ethiopia", "india", "amazon", "british_columbia", "usa_south"]
-    regions = ["arid", "temperate", "tropical"]
-    plot_types = ["pangu_nn", "pangu_ifs_nn", "all"]
-    # subregions = ["2x2", "6x6", "10x10"]
-    subregions = ["2x2"]
+    # plot_types = ["pangu_nn", "pangu_ifs_nn", "all"] # possible plot types
+    subregions = ["2x2", "6x6", "10x10"]
     for subregion in subregions:
         generate_lead_time_plots(
             dirs = dirs,
@@ -1501,44 +1544,13 @@ def main():
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
             nn_architecture=["mlp"],  # mlp 
-            regions = regions,
+            regions = ["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
             subregion=subregion,
-            bootstrap=True,
-            plot_type="pangu_nn",
+            bootstrap=False,
+            plot_type="pangu_ifs_nn",
             simultaneous=True
         )
-
-        # generate_lead_time_plots(
-        #     dirs = dirs,
-        #     train_start="2018-01-01",
-        #     train_end="2021-12-31",
-        #     test_start="2022-01-01",
-        #     test_end="2022-12-31",
-        #     model="pangu",
-        #     training_output_vars=(training_vars, output_vars),
-        #     prediction_var=prediction_var,
-        #     nn_architecture=["mlp"],  # just mlp
-        #     regions = regions,
-        #     subregion="2x2",
-        #     bootstrap=False,
-        #     plot_type=plot_type
-        # )
-
-
-    #=============================================
-    # Subregion Comparison Plots
-    #=============================================
-    
-    
-    # # Example 3: Generate subregion comparison plots for different architectures
-    lead_time_groups = [[24], [120], [240]]
-    
-    # MLP only
-
-    # XX figure this out!!
-    # HOw to properally handle lead times
-    for lead_times in lead_time_groups:
-        generate_subregion_comparison_plots(
+        generate_lead_time_plots(
             dirs = dirs,
             train_start="2018-01-01",
             train_end="2021-12-31",
@@ -1547,14 +1559,42 @@ def main():
             model="pangu",
             training_output_vars=(training_vars, output_vars),
             prediction_var=prediction_var,
-            nn_architecture=["mlp"],
-            lead_times=lead_times
+            nn_architecture=["mlp"],  # mlp 
+            regions = ["arid", "temperate", "tropical"], 
+            subregion=subregion,
+            bootstrap=True,
+            plot_type="pangu_ifs_nn",
+            simultaneous=True
         )
+
+
+    #=============================================
+    # Subregion Comparison Plots
+    #=============================================
     
-    # # UNet only
-    # for lead_times in lead_time_groups:
-    #     generate_subregion_comparison_plots(
-    #         dirs = dirs,
+    generate_subregion_comparison_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture=["mlp"],
+        lead_time=240,
+        simultaneous=True
+    )
+
+    #==============================================
+    # Generate Maps
+    #============================================== 
+
+    # regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
+    # for region in regions:
+    #     # MLP maps
+    #     generate_map_plots(
+    #         dirs=dirs,
     #         train_start="2018-01-01",
     #         train_end="2021-12-31",
     #         test_start="2022-01-01",
@@ -1562,75 +1602,17 @@ def main():
     #         model="pangu",
     #         training_output_vars=(training_vars, output_vars),
     #         prediction_var=prediction_var,
-    #         nn_architecture=["unet"],
-    #         lead_times=lead_times
+    #         nn_architecture="mlp",
+    #         region=region,
+    #         subregion="10x10",
+    #         lead_time=24,
+    #         simultaneous=True
     #     )
-    
-    # # Both MLP and UNet
-    # generate_subregion_comparison_plots(
-    #     dirs = dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture=["mlp", "unet"],
-    #     lead_times=[24, 72, 168]
-    # )
 
-    # Example 4: Generate map plots for different architectures
-    regions = ["usa_south", "amazon", "india", "british_columbia"]
-    for region in regions:
-        # MLP maps
-        generate_map_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="10x10",
-            lead_time=24
-        )
-        
-        # # UNet maps
-        # generate_map_plots(
-        #     dirs=dirs,
-        #     train_start="2018-01-01",
-        #     train_end="2021-12-31",
-        #     test_start="2022-01-01",
-        #     test_end="2022-12-31",
-        #     model="pangu",
-        #     training_output_vars=(training_vars, output_vars),
-        #     prediction_var=prediction_var,
-        #     nn_architecture="unet",
-        #     region=region,
-        #     subregion="2x2",
-        #     lead_time=24
-        # )
+    #     #===========================================
+    #     # Generate time series plots
+    #     #===========================================
 
-        # Generate time series plots for both architectures
-        generate_time_series_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="10x10",
-            lead_time=24
-        )
-        
     #     generate_time_series_plots(
     #         dirs=dirs,
     #         train_start="2018-01-01",
@@ -1640,11 +1622,13 @@ def main():
     #         model="pangu",
     #         training_output_vars=(training_vars, output_vars),
     #         prediction_var=prediction_var,
-    #         nn_architecture="unet",
+    #         nn_architecture="mlp",
     #         region=region,
-    #         subregion="2x2",
-    #         lead_time=24
+    #         subregion="10x10",
+    #         lead_time=24,
+    #         simultaneous=True
     #     )
+        
 
 if __name__ == "__main__":
     main()

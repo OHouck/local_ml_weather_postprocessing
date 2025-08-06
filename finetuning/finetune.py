@@ -473,6 +473,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Define target dataset name
     if args.model_name == "pangu":
         target = "era5"
+    if args.model_name == "ifs":
+        target = "hres_t0"
     
     # Load datasets
     forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)

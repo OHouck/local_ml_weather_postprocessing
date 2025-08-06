@@ -93,16 +93,26 @@ def count_days_without_rainfall(ds, threshold=0.1):
 def main():
     imd_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD/IMD_0p25deg"
     # start with subset of years to test with
-    year_list = np.arange(2020, 2023 + 1)
+    year_list = np.arange(2022, 2022 + 1)
     imd_patterns = [f"{imd_path}/data_{year}*.nc" for year in year_list]
     files = []
     for pattern in imd_patterns:
         files.extend(glob.glob(pattern))
     # merge in all files together
     ds = xr.open_mfdataset(files, combine='by_coords', parallel=True)
-    # rename dimensions to be lowercase
+    # rename dimensions to be lowercase rainfall is in mm
     ds = ds.rename({'LATITUDE': 'latitude', 'LONGITUDE': 'longitude', 'TIME': 'time', 'RAINFALL': 'rainfall'})
-    print(ds)
+
+    ds = ds.sel(time = "2022-07-11")
+    lat0, lat1 = 17, 27
+    lon0, lon1 = 72, 82
+    ds = ds.sel(latitude=slice(lat0, lat1), longitude=slice(lon0, lon1))
+    mean_rainfall = ds['rainfall'].mean(dim=['latitude', 'longitude']).values
+    print(mean_rainfall)
+
+
+
+    exit()
     
     # Count dry spells
     dry_spells = count_days_without_rainfall(ds, threshold=0.1)
