@@ -203,7 +203,7 @@ def generate_lead_time_plots(
                         ground_truth = ds[f"{prediction_var}_ground_truth_lt{lt}h"]
                         original = ds[f"{prediction_var}_original_lt{lt}h"]
                         nn_corrected = ds[f"{prediction_var}_corrected_lt{lt}h"]
-                        ano_corrected = ds.get(f"{prediction_var}_mean_corrected_lt{lt}h", None)
+                        ano_corrected = ds[f"{prediction_var}_mean_corrected_lt{lt}h"]
 
                         # Calculate RMSE
                         rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
@@ -1509,7 +1509,7 @@ def main():
         simultaneous=True
     )
 
-    # climate zones
+    # climate zones (this takes a long time to run)
     generate_summary_stat_table(
         dirs=dirs,
         train_start="2018-01-01",
@@ -1524,8 +1524,10 @@ def main():
         subregion="2x2",
         bootstrap=True,
         lead_times=[24, 120, 240],  
-        simultaneous=True
+        simultaneous=False
     )
+
+    exit()
 
     #============================================
     # Lead Time Plots
@@ -1548,7 +1550,7 @@ def main():
             subregion=subregion,
             bootstrap=False,
             plot_type="pangu_ifs_nn",
-            simultaneous=True
+            simultaneous=False
         )
         generate_lead_time_plots(
             dirs = dirs,
@@ -1564,7 +1566,7 @@ def main():
             subregion=subregion,
             bootstrap=True,
             plot_type="pangu_ifs_nn",
-            simultaneous=True
+            simultaneous=False
         )
 
 
@@ -1583,51 +1585,51 @@ def main():
         prediction_var=prediction_var,
         nn_architecture=["mlp"],
         lead_time=240,
-        simultaneous=True
+        simultaneous=False
     )
 
     #==============================================
     # Generate Maps
     #============================================== 
 
-    # regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
-    # for region in regions:
-    #     # MLP maps
-    #     generate_map_plots(
-    #         dirs=dirs,
-    #         train_start="2018-01-01",
-    #         train_end="2021-12-31",
-    #         test_start="2022-01-01",
-    #         test_end="2022-12-31",
-    #         model="pangu",
-    #         training_output_vars=(training_vars, output_vars),
-    #         prediction_var=prediction_var,
-    #         nn_architecture="mlp",
-    #         region=region,
-    #         subregion="10x10",
-    #         lead_time=24,
-    #         simultaneous=True
-    #     )
+    regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
+    for region in regions:
+        # MLP maps
+        generate_map_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="10x10",
+            lead_time=24,
+            simultaneous=False
+        )
 
-    #     #===========================================
-    #     # Generate time series plots
-    #     #===========================================
+        #===========================================
+        # Generate time series plots
+        #===========================================
 
-    #     generate_time_series_plots(
-    #         dirs=dirs,
-    #         train_start="2018-01-01",
-    #         train_end="2021-12-31",
-    #         test_start="2022-01-01",
-    #         test_end="2022-12-31",
-    #         model="pangu",
-    #         training_output_vars=(training_vars, output_vars),
-    #         prediction_var=prediction_var,
-    #         nn_architecture="mlp",
-    #         region=region,
-    #         subregion="10x10",
-    #         lead_time=24,
-    #         simultaneous=True
-    #     )
+        generate_time_series_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="10x10",
+            lead_time=24,
+            simultaneous=False
+        )
         
 
 if __name__ == "__main__":

@@ -830,6 +830,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                                 patience=70, min_delta=0.000286450816778278)
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
+    load_time = time.time()
     # Load test data
     (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_month_indices,
      test_times, _, _, _, _, _, _, _) = \
@@ -848,7 +849,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
             mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
             mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
             print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
+    print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
             
+    save_start_time = time.time()
     # Save results
     save_output(
         output_path=output_path,
@@ -865,6 +868,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         training_mean_forecast_error=training_mean_forecast_error,
         training_time_minutes=training_time_minutes
     )
+    print(f"time to save output: {(time.time() - save_start_time) / 60:.2f} minutes")
 
     end_time = time.time()
     total_time_minutes = (end_time - start_time) / 60
