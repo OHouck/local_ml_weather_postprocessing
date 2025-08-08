@@ -11,6 +11,7 @@ import matplotlib.gridspec as gridspec
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from types import SimpleNamespace
+from functools import lru_cache
 
 from matplotlib.colors import TwoSlopeNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -23,27 +24,29 @@ import time
 # Utility Functions
 #######################
 def setup_directories():
-    # Determine root directory based on environment.
+    """Set up directory structure based on environment."""
     nodename = socket.gethostname()
     if nodename == "oMac.local":
         root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
     else:
-        raise Exception(f"Unknown environment, Please specify the root directory. \
-                        Nodename found: {nodename}")
+        raise Exception(f"Unknown environment, Please specify the root directory. "
+                        f"Nodename found: {nodename}")
 
     dirs = {
         'root': root,
         'raw': os.path.join(root, "raw"),
         'processed': os.path.join(root, "processed"),
         'fig': os.path.join(root, "../figures/finetuning"),
-        'input': os.path.join(root, "fine_tuning_output")  # adjusted input directory path
+        'input': os.path.join(root, "fine_tuning_output")
     }
 
     for path in dirs.values():
         os.makedirs(path, exist_ok=True)
     return dirs
 
+
 def generate_output_path(args):
+    """Generate standardized output path for forecast files."""
     region_str = f"{args.region}"
     subregion_str = f"{args.subregion}"
     dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
@@ -58,10 +61,98 @@ def generate_output_path(args):
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     
-    lead_time = f"leadtime_{args.lead_time_hours}"
+    lead_time_str = f"leadtime_{args.lead_time_hours}"
 
-    output_path = f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_time}h_{dates_str}_{nn_str}.zarr"
+    output_path = (f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_"
+                   f"dim{subregion_str}_{lead_time_str}h_{dates_str}_{nn_str}.zarr")
     return output_path
+
+
+@lru_cache(maxsize=256)
+def load_zarr_cached(file_path):
+    """Cache zarr dataset loading to avoid redundant file reads."""
+    return xr.open_zarr(file_path)
+
+def extract_forecast_data(ds, prediction_var, lead_time):
+    """Extract forecast data arrays for a specific lead time."""
+    var_suffix = f"_lt{lead_time}h"
+    
+    ground_truth = ds[f"{prediction_var}_ground_truth{var_suffix}"]
+    original = ds[f"{prediction_var}_original{var_suffix}"]
+    corrected = ds[f"{prediction_var}_corrected{var_suffix}"]
+    mean_corrected = ds.get(f"{prediction_var}_mean_corrected{var_suffix}", None)
+    
+    return ground_truth, original, corrected, mean_corrected
+
+
+def calculate_rmse(predictions, ground_truth):
+    """Calculate RMSE between predictions and ground truth."""
+    return float(np.sqrt(((predictions - ground_truth) ** 2).mean().values))
+
+
+def calculate_improvement_percentage(rmse_original, rmse_corrected):
+    """Calculate percentage improvement in RMSE."""
+    if rmse_original == 0:
+        return 0
+    return (rmse_original - rmse_corrected) / rmse_original * 100
+
+
+def diagnose_zarr_performance(path, lead_times=[24, 120, 240]):
+    """
+    Diagnostic function to understand why different lead times have different performance.
+    """
+    print(f"Diagnosing Zarr performance for: {path}")
+    
+    try:
+        with xr.open_zarr(path) as ds:
+            print(f"Dataset shape: {ds.dims}")
+            print(f"Available variables: {list(ds.data_vars.keys())}")
+            
+            for lead_time in lead_times:
+                var_name = f"2m_temperature_original_lt{lead_time}h"
+                if var_name in ds:
+                    var = ds[var_name]
+                    print(f"\n=== Lead Time {lead_time}h ===")
+                    print(f"Variable shape: {var.shape}")
+                    print(f"Variable chunks: {var.chunks}")
+                    print(f"Chunk sizes: {var.chunksizes}")
+                    
+                    # Get number of chunks correctly
+                    if hasattr(var.data, 'nchunks'):
+                        print(f"Number of chunks: {var.data.nchunks}")
+                    elif hasattr(var.data, 'chunks'):
+                        nchunks = np.prod([len(c) for c in var.data.chunks])
+                        print(f"Number of chunks: {nchunks}")
+                    
+                    # Test loading speed
+                    start_time = time.time()
+                    _ = var.load()  # Force load into memory
+                    load_time = time.time() - start_time
+                    print(f"Load time: {load_time:.3f} seconds")
+                    
+                    # Memory usage
+                    memory_usage = var.nbytes / (1024**2)  # MB
+                    print(f"Memory usage: {memory_usage:.2f} MB")
+                    
+                    # Dask array info
+                    if hasattr(var.data, 'chunks'):
+                        print(f"Dask chunks: {var.data.chunks}")
+                        print(f"Chunk dtype: {var.data.dtype}")
+                        
+                        # Calculate chunk efficiency
+                        total_elements = var.size
+                        chunks_per_dim = [len(c) for c in var.data.chunks]
+                        total_chunks = np.prod(chunks_per_dim)
+                        avg_elements_per_chunk = total_elements / total_chunks
+                        print(f"Average elements per chunk: {avg_elements_per_chunk:.1f}")
+                        print(f"Chunks per dimension: {chunks_per_dim}")
+                else:
+                    print(f"Variable {var_name} not found")
+                    
+    except Exception as e:
+        print(f"Error diagnosing {path}: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def generate_lead_time_plots(
@@ -71,7 +162,7 @@ def generate_lead_time_plots(
         model,
         training_output_vars,
         prediction_var,
-        nn_architecture=["mlp"],  
+        nn_architecture=["mlp"],
         regions=None,
         subregion="4x4",
         bootstrap=False,
@@ -114,9 +205,9 @@ def generate_lead_time_plots(
     }
 
     climate_region_colors = {
-        'tropical': '#228b22', # Green
-        'arid': '#FFFF00',  # Yellow
-        'temperate': '#90EE90' # Light Green
+        'tropical': '#228b22',      # Green
+        'arid': '#FFFF00',          # Yellow
+        'temperate': '#90EE90'      # Light Green
     }
 
     # Define markers for different models
@@ -150,20 +241,15 @@ def generate_lead_time_plots(
             improvements[f'ifs_{arch}_ano'] = {}
         
         # Process each lead time
-        for lt in lead_times:
+        for lead_time in lead_times:
             # Process each architecture
             for arch in nn_architecture:
                 # Set up args for generate_output_path
-
-                if simultaneous: # determine whether to pass list or single value
-                    # convert to string for file naming
-                    lead_time_hours = ""
-                    for lead_time in lead_times:
-                        lead_time_hours += f"{lead_time}"
-                        if lead_time != lead_times[-1]:
-                            lead_time_hours += "_"
+                if simultaneous:
+                    # Convert to string for file naming
+                    lead_time_hours = "_".join(str(lt) for lt in lead_times)
                 else:
-                    lead_time_hours = lt
+                    lead_time_hours = lead_time
 
                 args = SimpleNamespace(
                     model_name=model,
@@ -181,9 +267,11 @@ def generate_lead_time_plots(
                 
                 # Construct file paths
                 if bootstrap:
-                    pangu_pattern = os.path.join(dirs['input'], generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                    pangu_pattern = os.path.join(dirs['input'], 
+                                                  generate_output_path(args).replace('.zarr', '*bs*.zarr'))
                     args.model_name = 'ifs'
-                    ifs_pattern = os.path.join(dirs['input'], generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                    ifs_pattern = os.path.join(dirs['input'], 
+                                                generate_output_path(args).replace('.zarr', '*bs*.zarr'))
                 else:
                     pangu_pattern = os.path.join(dirs['input'], generate_output_path(args))
                     args.model_name = 'ifs'
@@ -192,33 +280,29 @@ def generate_lead_time_plots(
                 # Process Pangu model files
                 pangu_files = glob.glob(pangu_pattern)
                 if not bootstrap and len(pangu_files) > 1:
-                    raise ValueError(f"Multiple files found for lead time {lt}h: {pangu_files}")
+                    raise ValueError(f"Multiple files found for lead time {lead_time}h: {pangu_files}")
                 
-
                 for idx, file_path in enumerate(pangu_files):
                     try:
-                        ds = xr.open_zarr(file_path)
+                        ds = load_zarr_cached(file_path)
                         
-                        # Extract data
-                        ground_truth = ds[f"{prediction_var}_ground_truth_lt{lt}h"]
-                        original = ds[f"{prediction_var}_original_lt{lt}h"]
-                        nn_corrected = ds[f"{prediction_var}_corrected_lt{lt}h"]
-                        ano_corrected = ds[f"{prediction_var}_mean_corrected_lt{lt}h"]
-
-                        # Calculate RMSE
-                        rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
-                        rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
+                        # Extract data using helper function
+                        ground_truth, original, corrected, mean_corrected = extract_forecast_data(
+                            ds, prediction_var, lead_time
+                        )
+                        
+                        # Calculate RMSE values
+                        rmse_original = calculate_rmse(original, ground_truth)
+                        rmse_nn = calculate_rmse(corrected, ground_truth)
                         
                         # Calculate percent improvements
-                        pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
-                                              if rmse_original != 0 else 0)
-                        improvements[f'pangu_{arch}_nn'][(lt, idx)] = pct_improvement_nn
+                        pct_improvement_nn = calculate_improvement_percentage(rmse_original, rmse_nn)
+                        improvements[f'pangu_{arch}_nn'][(lead_time, idx)] = pct_improvement_nn
                         
-                        if ano_corrected is not None and plot_type == "all":
-                            rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
-                            pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
-                                                   if rmse_original != 0 else 0)
-                            improvements[f'pangu_{arch}_ano'][(lt, idx)] = pct_improvement_ano
+                        if mean_corrected is not None and plot_type == "all":
+                            rmse_ano = calculate_rmse(mean_corrected, ground_truth)
+                            pct_improvement_ano = calculate_improvement_percentage(rmse_original, rmse_ano)
+                            improvements[f'pangu_{arch}_ano'][(lead_time, idx)] = pct_improvement_ano
 
                     except Exception as e:
                         print(f"Error processing {file_path}: {e}")
@@ -227,33 +311,30 @@ def generate_lead_time_plots(
                 # Process IFS model files only if needed
                 if plot_type in ["pangu_ifs_nn", "all"]:
                     ifs_files = glob.glob(ifs_pattern)
-                    if ifs_files:  # Evaluates to True if the list is not empty
+                    if ifs_files:
                         assert len(ifs_files) == len(pangu_files)
                         
-                    for idx, file_path in enumerate(ifs_files):  
+                    for idx, file_path in enumerate(ifs_files):
                         try:
-                            ds = xr.open_zarr(file_path)
+                            ds = load_zarr_cached(file_path)
                             
-                            # Extract data
-                            ground_truth = ds[f"{prediction_var}_ground_truth_lt{lt}h"]
-                            original = ds[f"{prediction_var}_original_lt{lt}h"]
-                            nn_corrected = ds[f"{prediction_var}_corrected_lt{lt}h"]
-                            ano_corrected = ds.get(f"{prediction_var}_mean_corrected_lt{lt}h", None)
-
-                            # Calculate RMSE
-                            rmse_original = float(np.sqrt(((original - ground_truth) ** 2).mean().values))
-                            rmse_nn = float(np.sqrt(((nn_corrected - ground_truth) ** 2).mean().values))
+                            # Extract data using helper function
+                            ground_truth, original, corrected, mean_corrected = extract_forecast_data(
+                                ds, prediction_var, lead_time
+                            )
+                            
+                            # Calculate RMSE values
+                            rmse_original = calculate_rmse(original, ground_truth)
+                            rmse_nn = calculate_rmse(corrected, ground_truth)
                             
                             # Calculate percent improvements
-                            pct_improvement_nn = ((rmse_original - rmse_nn) / rmse_original * 100 
-                                                  if rmse_original != 0 else 0)
-                            improvements[f'ifs_{arch}_nn'][(lt, idx)] = pct_improvement_nn
+                            pct_improvement_nn = calculate_improvement_percentage(rmse_original, rmse_nn)
+                            improvements[f'ifs_{arch}_nn'][(lead_time, idx)] = pct_improvement_nn
                             
-                            if ano_corrected is not None and plot_type == "all":
-                                rmse_ano = float(np.sqrt(((ano_corrected - ground_truth) ** 2).mean().values))
-                                pct_improvement_ano = ((rmse_original - rmse_ano) / rmse_original * 100 
-                                                       if rmse_original != 0 else 0)
-                                improvements[f'ifs_{arch}_ano'][(lt, idx)] = pct_improvement_ano
+                            if mean_corrected is not None and plot_type == "all":
+                                rmse_ano = calculate_rmse(mean_corrected, ground_truth)
+                                pct_improvement_ano = calculate_improvement_percentage(rmse_original, rmse_ano)
+                                improvements[f'ifs_{arch}_ano'][(lead_time, idx)] = pct_improvement_ano
 
                         except Exception as e:
                             print(f"Error processing IFS file {file_path}: {e}")
@@ -380,7 +461,7 @@ def generate_lead_time_plots(
                        zorder=3)
     
     # Set consistent axes limits for all plot types
-    ax.set_ylim(-15, 45)  # Adjust these values based on your typical data range
+    ax.set_ylim(-15, 45)
     
     # Set x-axis to show all lead times but only label those with data
     ax.set_xticks(range(len(lead_times)))
@@ -490,65 +571,6 @@ def generate_lead_time_plots(
     
     print(f"Multi-region lead-time improvement plot ({plot_type}) saved to: {save_path}")
 
-def diagnose_zarr_performance(path, lead_times=[24, 120, 240]):
-    """
-    Diagnostic function to understand why different lead times have different performance.
-    """
-    import time
-    
-    print(f"Diagnosing Zarr performance for: {path}")
-    
-    try:
-        with xr.open_zarr(path) as ds:
-            print(f"Dataset shape: {ds.dims}")
-            print(f"Available variables: {list(ds.data_vars.keys())}")
-            
-            for lead_time in lead_times:
-                var_name = f"2m_temperature_original_lt{lead_time}h"
-                if var_name in ds:
-                    var = ds[var_name]
-                    print(f"\n=== Lead Time {lead_time}h ===")
-                    print(f"Variable shape: {var.shape}")
-                    print(f"Variable chunks: {var.chunks}")
-                    print(f"Chunk sizes: {var.chunksizes}")
-                    
-                    # Get number of chunks correctly
-                    if hasattr(var.data, 'nchunks'):
-                        print(f"Number of chunks: {var.data.nchunks}")
-                    elif hasattr(var.data, 'chunks'):
-                        import numpy as np
-                        nchunks = np.prod([len(c) for c in var.data.chunks])
-                        print(f"Number of chunks: {nchunks}")
-                    
-                    # Test loading speed
-                    start_time = time.time()
-                    _ = var.load()  # Force load into memory
-                    load_time = time.time() - start_time
-                    print(f"Load time: {load_time:.3f} seconds")
-                    
-                    # Memory usage
-                    memory_usage = var.nbytes / (1024**2)  # MB
-                    print(f"Memory usage: {memory_usage:.2f} MB")
-                    
-                    # Dask array info
-                    if hasattr(var.data, 'chunks'):
-                        print(f"Dask chunks: {var.data.chunks}")
-                        print(f"Chunk dtype: {var.data.dtype}")
-                        
-                        # Calculate chunk efficiency
-                        total_elements = var.size
-                        chunks_per_dim = [len(c) for c in var.data.chunks]
-                        total_chunks = np.prod(chunks_per_dim)
-                        avg_elements_per_chunk = total_elements / total_chunks
-                        print(f"Average elements per chunk: {avg_elements_per_chunk:.1f}")
-                        print(f"Chunks per dimension: {chunks_per_dim}")
-                else:
-                    print(f"Variable {var_name} not found")
-                    
-    except Exception as e:
-        print(f"Error diagnosing {path}: {e}")
-        import traceback
-        traceback.print_exc()
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
@@ -559,16 +581,16 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     """
     input_folder = dirs['input']
     training_vars, output_vars = training_output_vars
-    training_vars = training_vars if isinstance(training_vars, (list,tuple)) else [training_vars]
-    output_vars   = output_vars   if isinstance(output_vars,   (list,tuple)) else [output_vars]
+    training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
+    output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
 
     valid_lead_times = [24, 120, 240]
     if lead_time not in valid_lead_times:
         raise ValueError(f"Invalid lead time: {lead_time}. Must be one of {valid_lead_times}.")
     
-    regions   = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
-    subregions = ["2x2","6x6","10x10"]
-    degrees    = [int(s.split('x')[0]) for s in subregions]
+    regions = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
+    subregions = ["2x2", "6x6", "10x10"]
+    degrees = [int(s.split('x')[0]) for s in subregions]
 
     # Store improvements for both models and architectures
     improvements = {}
@@ -607,7 +629,8 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                     path = os.path.join(input_folder, generate_output_path(args))
                     
                     try:
-                        with xr.open_zarr(path, chunks=None) as ds:
+                        # Use optimized loading with auto chunks
+                        with xr.open_zarr(path, chunks='auto') as ds:
                             # Extract central bounds on first successful load
                             if central_bounds is None:
                                 if sub == "2x2":
@@ -628,21 +651,17 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                         'lon_max': lon_center + 1.0
                                     }
                             
-                            # OPTIMIZATION 3: Load all required variables at once
-                            required_vars = [
-                                f"{prediction_var}_ground_truth_lt{lead_time}h",
-                                f"{prediction_var}_original_lt{lead_time}h",
-                                f"{prediction_var}_corrected_lt{lead_time}h"
-                            ]
+                            # Extract data using helper function
+                            ground_truth, original, corrected, _ = extract_forecast_data(
+                                ds, prediction_var, lead_time
+                            )
                             
-                            # Check if all required variables exist
-                            missing_vars = [var for var in required_vars if var not in ds]
-                            if missing_vars:
-                                print(f"    Missing variables for {model_name}, {sub}: {missing_vars}")
-                                continue
-                            
-                            # OPTIMIZATION 4: Single spatial slice operation
-                            ds_subset = ds[required_vars].sel(
+                            # Single spatial slice operation
+                            ds_subset = xr.Dataset({
+                                'ground_truth': ground_truth,
+                                'original': original,
+                                'corrected': corrected
+                            }).sel(
                                 latitude=slice(central_bounds['lat_min'], central_bounds['lat_max']),
                                 longitude=slice(central_bounds['lon_min'], central_bounds['lon_max'])
                             )
@@ -654,14 +673,14 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                             print(f"    Load time for {sub}: {load_time:.2f}s")
                             
                             try:
-                                gt_n = data_loaded[f"{prediction_var}_ground_truth_lt{lead_time}h"]
-                                orig_n = data_loaded[f"{prediction_var}_original_lt{lead_time}h"]
-                                corr_n = data_loaded[f"{prediction_var}_corrected_lt{lead_time}h"]
+                                gt_n = data_loaded['ground_truth']
+                                orig_n = data_loaded['original']
+                                corr_n = data_loaded['corrected']
 
                                 # Fast numpy operations on loaded arrays
-                                rmse_orig = float(np.sqrt(((orig_n.values - gt_n.values)**2).mean()))
-                                rmse_corr = float(np.sqrt(((corr_n.values - gt_n.values)**2).mean()))
-                                pct_improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                                rmse_orig = calculate_rmse(orig_n, gt_n)
+                                rmse_corr = calculate_rmse(corr_n, gt_n)
+                                pct_improvement = calculate_improvement_percentage(rmse_orig, rmse_corr)
                                 
                                 size = int(sub.split('x')[0])
                                 improvements[arch][model_name][region].append((size, pct_improvement))
@@ -669,7 +688,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                 
                             except Exception as e:
                                 print(f"    Error computing metrics for {model_name}, {region}, {sub}: {e}")
-                        
                     except Exception as e:
                         print(f"    {model_name} data not found for {region}, {sub}: {e}")
 
@@ -760,7 +778,6 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
     plt.close()
 
-
 def generate_map_plots(
         dirs,
         train_start, train_end,
@@ -829,8 +846,8 @@ def generate_map_plots(
 
     try:
         # Load the forecast data
-        ds = xr.open_zarr(file_path)
-        
+        ds = load_zarr_cached(file_path)
+
         # First, get the 10x10 degree extent for this region
         # We need to load the 10x10 file to get the full extent
         args_10x10 = SimpleNamespace(**vars(args))
@@ -838,11 +855,12 @@ def generate_map_plots(
         path_10x10 = os.path.join(dirs['input'], generate_output_path(args_10x10))
         
         try:
-            with xr.open_zarr(path_10x10) as ds_10x10:
+            with load_zarr_cached(path_10x10) as ds_10x10:
                 lat_min_10x10 = float(ds_10x10.latitude.min())
                 lat_max_10x10 = float(ds_10x10.latitude.max())
                 lon_min_10x10 = float(ds_10x10.longitude.min())
                 lon_max_10x10 = float(ds_10x10.longitude.max())
+
         except Exception as e:
             print(f"Warning: Could not load 10x10 extent, using current extent: {e}")
             lat_min_10x10 = float(ds.latitude.min())
@@ -851,18 +869,16 @@ def generate_map_plots(
             lon_max_10x10 = float(ds.longitude.max())
         
         # Extract data arrays
-        ground_truth = ds[f"{prediction_var}_ground_truth_lt{lead_time}h"]
-        fc_original = ds[f"{prediction_var}_original_lt{lead_time}h"]
-        fc_corrected = ds[f"{prediction_var}_corrected_lt{lead_time}h"]
+        ground_truth, original, corrected, _= extract_forecast_data(
+            ds, prediction_var, lead_time
+        )
+
         
         # Calculate RMSE for original and corrected forecasts
-        mse_spatial_orig = ((fc_original - ground_truth) ** 2).mean(dim="time")
-        mse_spatial_corr = ((fc_corrected - ground_truth) ** 2).mean(dim="time")
-        
-        # Convert MSE to RMSE
+        mse_spatial_orig = ((original - ground_truth) ** 2).mean(dim="time")
+        mse_spatial_corr = ((corrected - ground_truth) ** 2).mean(dim="time")
         rmse_spatial_orig = np.sqrt(mse_spatial_orig)
         rmse_spatial_corr = np.sqrt(mse_spatial_corr)
-        
         # Calculate percent improvement
         pct_improvement = ((rmse_spatial_orig - rmse_spatial_corr) / rmse_spatial_orig * 100)
         
@@ -1064,17 +1080,15 @@ def generate_time_series_plots(
     
     try:
         # Load main model data
-        ds_model = xr.open_zarr(model_file_path)
+        ds_model = load_zarr_cached(model_file_path)
+        ground_truth, original, corrected, _ = extract_forecast_data(
+            ds_model, prediction_var, lead_time
+        )
         
-        # Extract data arrays
-        ground_truth = ds_model[f"{prediction_var}_ground_truth_lt{lead_time}h"]
-        fc_original = ds_model[f"{prediction_var}_original_lt{lead_time}h"]
-        fc_corrected = ds_model[f"{prediction_var}_corrected_lt{lead_time}h"]
-        
-        # Calculate monthly RMSE for main model
+        # Calculate monthly RMSE for main model (XX come back and make sure this is correct)
         # First compute MSE, then take mean over spatial dimensions, then group by month
-        mse_orig = ((fc_original - ground_truth) ** 2)
-        mse_corr = ((fc_corrected - ground_truth) ** 2)
+        mse_orig = ((original - ground_truth) ** 2)
+        mse_corr = ((corrected - ground_truth) ** 2)
         
         # Average over spatial dimensions first
         mse_orig_spatial_mean = mse_orig.mean(dim=['latitude', 'longitude'])
@@ -1106,17 +1120,15 @@ def generate_time_series_plots(
     # Try to load IFS data
     has_ifs_data = False
     try:
-        ds_ifs = xr.open_zarr(ifs_file_path)
-        
-        # Extract IFS data arrays
-        ifs_ground_truth = ds_ifs[f"{prediction_var}_ground_truth_lt{lead_time}h"]
-        ifs_fc_original = ds_ifs[f"{prediction_var}_original_lt{lead_time}h"]
-        ifs_fc_corrected = ds_ifs[f"{prediction_var}_corrected_lt{lead_time}h"]
+        ds_ifs = load_zarr_cached(ifs_file_path)
+        ifs_ground_truth, ifs_original, ifs_corrected, _ = extract_forecast_data(
+            ds_ifs, prediction_var, lead_time
+        )
         
         # Calculate monthly RMSE for IFS
         # First compute MSE, then take mean over spatial dimensions, then group by month
-        ifs_mse_orig = ((ifs_fc_original - ifs_ground_truth) ** 2)
-        ifs_mse_corr = ((ifs_fc_corrected - ifs_ground_truth) ** 2)
+        ifs_mse_orig = ((ifs_original - ifs_ground_truth) ** 2)
+        ifs_mse_corr = ((ifs_corrected - ifs_ground_truth) ** 2)
         
         # Average over spatial dimensions first
         ifs_mse_orig_spatial_mean = ifs_mse_orig.mean(dim=['latitude', 'longitude'])
@@ -1273,13 +1285,9 @@ def generate_summary_stat_table(
         for lead_time in lead_times:
             # Set up args for generate_output_path
 
-            if simultaneous: # determine whether to pass list or single value
-                # convert to string for file naming
-                lead_time_hours = ""
-                for lt in lead_times:
-                    lead_time_hours += f"{lt}"
-                    if lt != lead_times[-1]:
-                        lead_time_hours += "_"
+            if simultaneous:
+                # Convert to string for file naming
+                lead_time_hours = "_".join(str(lt) for lt in lead_times)
             else:
                 lead_time_hours = lead_time
 
@@ -1316,17 +1324,16 @@ def generate_summary_stat_table(
 
             for idx, file_path in enumerate(files):
                 # Load the data
-                ds = xr.open_zarr(file_path)
-                
-                # Extract data arrays for the specific lead time
-                ground_truth = ds[f"{prediction_var}_ground_truth_lt{lead_time}h"]
-                fc_original = ds[f"{prediction_var}_original_lt{lead_time}h"]
-                fc_corrected = ds[f"{prediction_var}_corrected_lt{lead_time}h"]
+                ds = load_zarr_cached(file_path)
+
+                ground_truth, original, corrected, _ = extract_forecast_data(
+                    ds, prediction_var, lead_time
+                )
                 
                 # Flatten arrays for statistics
                 gt_flat = ground_truth.values.flatten()
-                orig_flat = fc_original.values.flatten()
-                corr_flat = fc_corrected.values.flatten()
+                orig_flat = original.values.flatten()
+                corr_flat = corrected.values.flatten()
                 
                 # Remove NaN values
                 mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
@@ -1481,13 +1488,13 @@ def main():
     dirs = setup_directories()
 
     # Two options for training and output variable combinations, uncomment the one you want to use
-    # training_vars = ["2m_temperature"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
+    training_vars = ["2m_temperature"]
+    output_vars = ["2m_temperature"]
+    prediction_var = "2m_temperature"
 
-    training_vars = ["10m_wind_speed"]
-    output_vars = ["10m_wind_speed"]
-    prediction_var = "10m_wind_speed"
+    # training_vars = ["10m_wind_speed"]
+    # output_vars = ["10m_wind_speed"]
+    # prediction_var = "10m_wind_speed"
 
     #============================================
     # Summary Stat Tables
@@ -1508,26 +1515,6 @@ def main():
         lead_times=[24, 120, 240],  # Multiple lead times
         simultaneous=True
     )
-
-    # climate zones (this takes a long time to run)
-    generate_summary_stat_table(
-        dirs=dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture="mlp",
-        regions = ["tropical", "arid", "temperate"],
-        subregion="2x2",
-        bootstrap=True,
-        lead_times=[24, 120, 240],  
-        simultaneous=False
-    )
-
-    exit()
 
     #============================================
     # Lead Time Plots
@@ -1550,25 +1537,8 @@ def main():
             subregion=subregion,
             bootstrap=False,
             plot_type="pangu_ifs_nn",
-            simultaneous=False
+            simultaneous=True
         )
-        generate_lead_time_plots(
-            dirs = dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture=["mlp"],  # mlp 
-            regions = ["arid", "temperate", "tropical"], 
-            subregion=subregion,
-            bootstrap=True,
-            plot_type="pangu_ifs_nn",
-            simultaneous=False
-        )
-
 
     #=============================================
     # Subregion Comparison Plots
@@ -1585,7 +1555,7 @@ def main():
         prediction_var=prediction_var,
         nn_architecture=["mlp"],
         lead_time=240,
-        simultaneous=False
+        simultaneous=True
     )
 
     #==============================================
@@ -1608,7 +1578,7 @@ def main():
             region=region,
             subregion="10x10",
             lead_time=24,
-            simultaneous=False
+            simultaneous=True
         )
 
         #===========================================
@@ -1628,8 +1598,48 @@ def main():
             region=region,
             subregion="10x10",
             lead_time=24,
-            simultaneous=False
+            simultaneous=True
         )
+    #============================================
+    # climate zone fig and table
+    #============================================
+    print("Generating climate zone figure and table...")
+    # clear cache
+    load_zarr_cached.cache_clear()
+
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["tropical", "arid", "temperate"],
+        subregion="2x2",
+        bootstrap=True,
+        lead_times=[24, 120, 240],  
+        simultaneous=True
+    )
+
+    generate_lead_time_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture=["mlp"],  # mlp 
+        regions = ["arid", "temperate", "tropical"], 
+        subregion=subregion,
+        bootstrap=True,
+        plot_type="pangu_ifs_nn",
+        simultaneous=True
+    )
         
 
 if __name__ == "__main__":

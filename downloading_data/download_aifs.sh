@@ -18,15 +18,19 @@ process_file() {
     local filename=$1
     local remote_file="${REMOTE_DIR}/${filename}"
     local temp_local_file="${LOCAL_TEMP}/${filename}"
-    # Change extension from .nc to .zarr
     local processed_name="processed_${filename%.nc}.zarr"
     local final_output="${LOCAL_DIR}/${processed_name}"
     
+    # Skip file if already processed
+    if [ -d "${final_output}" ]; then
+        echo "✓ Skipping ${filename}: already processed (${processed_name})"
+        return 2  # 2 means skipped
+    fi
+
     echo "========================================="
     echo "Processing: ${filename}"
     echo "========================================="
-    
-    # Step 1: Download raw file from cluster to temp location
+
     echo "Step 1/3: Downloading ${filename} from cluster..."
     rsync -avz --progress \
           "${CLUSTER_HOST}:${remote_file}" \
@@ -36,46 +40,40 @@ process_file() {
         echo "✗ Failed to download ${filename}"
         return 1
     fi
-    
-    # Get file size for info
+
     local file_size=$(du -h "${temp_local_file}" | cut -f1)
     echo "Downloaded ${filename} (${file_size})"
-    
-    # Step 2: Process locally using existing aifs_cleaning.py
+
     echo "Step 2/3: Processing ${filename} locally..."
     python "${PYTHON_SCRIPT}" \
            "${temp_local_file}" \
            "${final_output}" \
            "${LEAD_DAYS}" 2>&1
-    
+
     if [ $? -eq 0 ]; then
         echo "✓ Successfully processed ${filename}"
-        
-        # Step 3: Delete the temporary raw file (only the local copy!)
         echo "Step 3/3: Cleaning up temporary file..."
         rm -f "${temp_local_file}"
-        
+
         if [ $? -eq 0 ]; then
             echo "✓ Deleted temporary file: ${temp_local_file}"
         else
             echo "⚠ Warning: Could not delete temporary file: ${temp_local_file}"
         fi
-        
-        # Check processed file exists
+
         if [ -d "${final_output}" ]; then
             local processed_size=$(du -sh "${final_output}" | cut -f1)
             echo "✓ Saved processed file: ${processed_name} (${processed_size})"
         fi
-        
-        echo "✓ Completed processing ${filename}"
+
         return 0
     else
         echo "✗ Failed to process ${filename}"
-        # Clean up temp file even if processing failed
         rm -f "${temp_local_file}"
         return 1
     fi
 }
+
 
 # Cleanup function
 cleanup() {
@@ -133,35 +131,44 @@ main() {
         COUNTER=0
         SUCCESS_COUNT=0
         FAIL_COUNT=0
+        SKIPPED_COUNT=0
         
         for filepath in ${FILES}; do
             filename=$(basename "$filepath")
             ((COUNTER++))
-            
+
             echo ""
             echo "File ${COUNTER}/${NUM_FILES}"
-            
+
             if process_file "$filename"; then
                 ((SUCCESS_COUNT++))
             else
-                ((FAIL_COUNT++))
-                echo "⚠ Failed to process ${filename}, continuing with next file..."
+                case $? in
+                    2)
+                        ((SKIPPED_COUNT++))
+                        ;;
+                    *)
+                        ((FAIL_COUNT++))
+                        echo "⚠ Failed to process ${filename}, continuing with next file..."
+                        ;;
+                esac
             fi
-            
-            # Show progress summary
-            echo "Progress: ${SUCCESS_COUNT} succeeded, ${FAIL_COUNT} failed, $((NUM_FILES - COUNTER)) remaining"
+
+            echo "Progress: ${SUCCESS_COUNT} succeeded, ${FAIL_COUNT} failed, ${SKIPPED_COUNT} skipped, $((NUM_FILES - COUNTER)) remaining"
             echo ""
+
+            sleep 0.25
             
-            # Optional: Add a small delay between files to avoid overwhelming the system
-            sleep 1
         done
         
         echo "========================================="
         echo "Processing complete!"
         echo "Total files: ${NUM_FILES}"
         echo "Successful: ${SUCCESS_COUNT}"
+        echo "Skipped (already processed): ${SKIPPED_COUNT}"
         echo "Failed: ${FAIL_COUNT}"
         echo "========================================="
+
     fi
     
     echo "Processed files saved in: ${LOCAL_DIR}"

@@ -762,7 +762,10 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     
     # Save to zarr
     output_path = os.path.expanduser(output_path)
-    ds_out.to_zarr(output_path, mode='w')
+    # ds_out.to_zarr(output_path, mode='w')
+    # save to netcdf as well for easier access
+    netcdf_path = output_path.replace('.zarr', '.nc')
+    ds_out.to_netcdf(netcdf_path)
     print(f"Forecasts saved to {output_path}")
 
 
