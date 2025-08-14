@@ -1421,6 +1421,22 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/sansmathaccent/ot1mathkerncms
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss9.tfm
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png

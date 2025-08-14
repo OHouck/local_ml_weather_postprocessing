@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  16 JUL 2025 10:51
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  14 AUG 2025 09:30
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1002,39 +1002,73 @@ File: ot1mathkerncmss.fd 2020/01/31 Fontinst v1.933 font definitions for OT1/mat
 ] [5
 
 ]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png, id=409, 867.24pt x 433.62pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png  used on input line 93.
-(pdftex.def)             Requested size: 318.67209pt x 159.33855pt.
- [6
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>] [7
+LaTeX Warning: File `finetuning/climate_zones_with_patches.png' not found on input line 93.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:93: Package pdftex.def Error: File `finetuning/climate_zones_with_patches.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.93 \end{frame}
+                
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (149.07565pt too high) detected at line 93
+ []
+
+[6
+
+] [7
 
 ]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png, id=538, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png  used on input line 137.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png, id=539, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png  used on input line 137.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
 
-Overfull \vbox (14.81526pt too high) detected at line 137
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png' not found on input line 137.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:137: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.137 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png' not found on input line 137.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:137: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.137 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (97.39882pt too high) detected at line 137
  []
 
 [8
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_unet_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_unet_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png, id=607, 1003.5894pt x 570.2103pt>
+]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png, id=601, 1003.5894pt x 570.2103pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png  used on input line 158.
 (pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png, id=608, 1003.5894pt x 570.2103pt>
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png, id=603, 1003.5894pt x 570.2103pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png  used on input line 158.
@@ -1046,36 +1080,80 @@ Overfull \vbox (8.14444pt too high) detected at line 158
 [9
 
  </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png, id=673, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png  used on input line 179.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png, id=674, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png  used on input line 179.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
 
-Overfull \vbox (8.14444pt too high) detected at line 179
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png' not found on input line 179.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:179: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.179 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png' not found on input line 179.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:179: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.179 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (90.728pt too high) detected at line 179
  []
 
 [10
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_all_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_all_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png, id=740, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png  used on input line 199.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png, id=741, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png  used on input line 199.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
- [11
+]
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png>]
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png' not found on input line 199.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:199: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt24_2m_temperature_2m_temperature_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.199 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png' not found on input line 199.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:199: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt24_10m_wind_speed_10m_wind_speed_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.199 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (59.12799pt too high) detected at line 199
+ []
+
+[11
+
+]
 
 /Users/ohouck/vc/ai_weather_ag/slides/slides.tex:217: LaTeX Error: Something's wrong--perhaps a missing \item.
 
@@ -1088,19 +1166,43 @@ l.217 \end{frame}
 Try typing  <return>  to proceed.
 If that doesn't work, type  X <return>  to quit.
 
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png, id=806, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png  used on input line 217.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png, id=807, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png  used on input line 217.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
+
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png' not found on input line 217.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:217: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.217 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png' not found on input line 217.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:217: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.217 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (29.29881pt too high) detected at line 217
+ []
+
 [12
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_2m_temperature_2m_temperature_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt72_10m_wind_speed_10m_wind_speed_mlp.png>]
+]
 
 /Users/ohouck/vc/ai_weather_ag/slides/slides.tex:236: LaTeX Error: Something's wrong--perhaps a missing \item.
 
@@ -1113,143 +1215,366 @@ l.236 \end{frame}
 Try typing  <return>  to proceed.
 If that doesn't work, type  X <return>  to quit.
 
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png, id=873, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png  used on input line 236.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png, id=874, 857.1222pt x 495.7722pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png  used on input line 236.
-(pdftex.def)             Requested size: 191.20082pt x 110.59074pt.
+
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png' not found on input line 236.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:236: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.236 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png' not found on input line 236.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:236: Package pdftex.def Error: File `finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.236 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (29.29881pt too high) detected at line 236
+ []
+
 [13
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_2m_temperature_2m_temperature_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/subregion/subregion_rmse_improvement_lt168_10m_wind_speed_10m_wind_speed_mlp.png>]
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png  used on input line 249.
-(pdftex.def)             Requested size: 278.83578pt x 139.41626pt.
- [14
+]
+
+LaTeX Warning: File `finetuning/climate_zones_with_patches.png' not found on input line 249.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:249: Package pdftex.def Error: File `finetuning/climate_zones_with_patches.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.249 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (136.4288pt too high) detected at line 249
+ []
+
+[14
 
 ]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png, id=1003, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png  used on input line 266.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png, id=1004, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png  used on input line 266.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
- [15
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1070, 763.8939pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 283.
-(pdftex.def)             Requested size: 398.3461pt x 87.31204pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1071, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 283.
-(pdftex.def)             Requested size: 398.33531pt x 87.31204pt.
- [16
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png' not found on input line 266.
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1137, 763.8939pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 298.
-(pdftex.def)             Requested size: 398.3461pt x 87.31204pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1138, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 298.
-(pdftex.def)             Requested size: 398.33531pt x 87.31204pt.
- [17
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1204, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 313.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1205, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 313.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [18
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:266: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_all_mlp_bootstrap.png' not found: using draft setting.
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1271, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 328.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1272, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 328.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [19
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.266 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1338, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 343.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1339, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 343.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [20
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1405, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 358.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1406, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 358.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [21
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png' not found on input line 266.
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1472, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 373.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1473, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 373.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [22
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1538, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 388.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1539, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 388.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [23
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:266: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_all_mlp_bootstrap.png' not found: using draft setting.
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>] [24
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.266 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (28.79881pt too high) detected at line 266
+ []
+
+[15
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 283.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:283: Package pdftex.def Error: File `finetuning/pangu/maps/amazon/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.283 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 283.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:283: Package pdftex.def Error: File `finetuning/pangu/time_series/amazon/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.283 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[16
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 298.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:298: Package pdftex.def Error: File `finetuning/pangu/maps/amazon/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.298 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 298.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:298: Package pdftex.def Error: File `finetuning/pangu/time_series/amazon/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.298 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[17
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 313.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:313: Package pdftex.def Error: File `finetuning/pangu/maps/british_columbia/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.313 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 313.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:313: Package pdftex.def Error: File `finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.313 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[18
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 328.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:328: Package pdftex.def Error: File `finetuning/pangu/maps/british_columbia/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.328 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 328.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:328: Package pdftex.def Error: File `finetuning/pangu/time_series/british_columbia/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.328 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[19
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 343.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:343: Package pdftex.def Error: File `finetuning/pangu/maps/india/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.343 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 343.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:343: Package pdftex.def Error: File `finetuning/pangu/time_series/india/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.343 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[20
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 358.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:358: Package pdftex.def Error: File `finetuning/pangu/maps/india/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.358 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 358.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:358: Package pdftex.def Error: File `finetuning/pangu/time_series/india/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.358 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[21
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 373.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:373: Package pdftex.def Error: File `finetuning/pangu/maps/usa_south/2x2/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.373 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 373.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:373: Package pdftex.def Error: File `finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.373 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[22
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 388.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:388: Package pdftex.def Error: File `finetuning/pangu/maps/usa_south/2x2/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.388 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 388.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:388: Package pdftex.def Error: File `finetuning/pangu/time_series/usa_south/2x2/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.388 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[23
+
+] [24
 
 ]
 
@@ -1259,25 +1584,49 @@ LaTeX Font Warning: Font shape `OT1/cmss/m/sc' in size <10.95> not available
 [25
 
  </usr/local/texlive/2023/texmf-dist/tex/latex/beamer/beamericonarticle.pdf>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png, id=1745, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png  used on input line 428.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png, id=1746, 1003.5894pt x 570.2103pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png  used on input line 428.
-(pdftex.def)             Requested size: 191.20082pt x 108.6282pt.
- [26
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1813, 769.6755pt x 317.5062pt>
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png' not found on input line 428.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:428: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_unet_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.428 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png' not found on input line 428.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:428: Package pdftex.def Error: File `finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_unet_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.428 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (28.79881pt too high) detected at line 428
+ []
+
+[26
+
+]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1751, 763.8939pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 443.
-(pdftex.def)             Requested size: 398.34274pt x 87.31204pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1814, 1003.5894pt x 317.5062pt>
+(pdftex.def)             Requested size: 398.3461pt x 87.31204pt.
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1752, 1003.5894pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 443.
@@ -1285,51 +1634,101 @@ Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_w
  [27
 
  </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1879, 763.8939pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 458.
-(pdftex.def)             Requested size: 398.3461pt x 87.31204pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=1880, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 458.
-(pdftex.def)             Requested size: 398.33531pt x 87.31204pt.
- [28
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1946, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 473.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1947, 1003.5894pt x 317.5062pt>
+LaTeX Warning: File `finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 458.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:458: Package pdftex.def Error: File `finetuning/pangu/maps/amazon/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.458 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 458.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:458: Package pdftex.def Error: File `finetuning/pangu/time_series/amazon/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.458 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[28
+
+]
+
+LaTeX Warning: File `finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found on input line 473.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:473: Package pdftex.def Error: File `finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.473 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=1880, 1003.5894pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 473.
 (pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [29
+[29
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2013, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 488.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2014, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 488.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [30
+ </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2079, 770.6391pt x 317.5062pt>
+LaTeX Warning: File `finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 488.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:488: Package pdftex.def Error: File `finetuning/pangu/maps/british_columbia/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.488 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 488.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:488: Package pdftex.def Error: File `finetuning/pangu/time_series/british_columbia/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.488 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[30
+
+]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2007, 770.6391pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 503.
 (pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2080, 1003.5894pt x 317.5062pt>
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2008, 1003.5894pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 503.
@@ -1337,25 +1736,45 @@ Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_w
  [31
 
  </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2147, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 518.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2148, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 518.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [32
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2214, 770.6391pt x 317.5062pt>
+LaTeX Warning: File `finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 518.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:518: Package pdftex.def Error: File `finetuning/pangu/maps/india/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.518 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 518.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:518: Package pdftex.def Error: File `finetuning/pangu/time_series/india/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.518 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[32
+
+]
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2138, 770.6391pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 533.
 (pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2215, 1003.5894pt x 317.5062pt>
+</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png, id=2139, 1003.5894pt x 317.5062pt>
 File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png Graphic file (type png)
 <use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>
 Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png  used on input line 533.
@@ -1363,19 +1782,39 @@ Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_w
  [33
 
  </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_2m_temperature_trainedwith_2m_temperature_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_2m_temperature_trainedwith_2m_temperature_24h_mlp.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2280, 770.6391pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 548.
-(pdftex.def)             Requested size: 398.3358pt x 76.40167pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png, id=2281, 1003.5894pt x 317.5062pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png  used on input line 548.
-(pdftex.def)             Requested size: 398.33531pt x 76.40167pt.
- [34
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png>]
+LaTeX Warning: File `finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 548.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:548: Package pdftex.def Error: File `finetuning/pangu/maps/usa_south/10x10/rmse_maps_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.548 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found on input line 548.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/slides.tex:548: Package pdftex.def Error: File `finetuning/pangu/time_series/usa_south/10x10/rmse_monthly_10m_wind_speed_trainedwith_10m_wind_speed_24h_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.548 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[34
+
+]
 \tf@nav=\write7
 \openout7 = `slides.nav'.
 
@@ -1407,18 +1846,18 @@ Package logreq Info: Writing requests to 'slides.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 31172 strings out of 476025
- 679438 string characters out of 5790016
+ 32111 strings out of 476025
+ 770843 string characters out of 5790016
  1881388 words of memory out of 5000000
- 50974 multiletter control sequences out of 15000+600000
+ 51854 multiletter control sequences out of 15000+600000
  524256 words of font info for 75 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 128i,19n,122p,3199b,1479s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 128i,19n,122p,3199b,1478s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmcsc10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb>
-Output written on slides.pdf (34 pages, 13726345 bytes).
+Output written on slides.pdf (34 pages, 2717094 bytes).
 PDF statistics:
- 2404 PDF objects out of 2487 (max. 8388607)
+ 2324 PDF objects out of 2487 (max. 8388607)
  2183 compressed objects within 22 object streams
  77 named destinations out of 1000 (max. 500000)
- 288 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 88 words of extra memory for PDF output out of 10000 (max. 10000000)
 

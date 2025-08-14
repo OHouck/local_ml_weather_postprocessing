@@ -1,0 +1,145 @@
+\documentclass[aspectratio=169, xcolor=dvipsnames]{beamer}
+
+\useoutertheme{miniframes}
+\useinnertheme{circles}
+\usepackage{appendixnumberbeamer}
+\setbeamertemplate{footline}[frame number]
+
+\definecolor{main_color}{HTML}{7D9D33}
+\definecolor{secondary_color}{HTML}{CED38C}
+
+\setbeamercolor{palette primary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette secondary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette tertiary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette quaternary}{bg=secondary_color,fg=white}
+\setbeamercolor{structure}{fg=main_color}
+\setbeamercolor{section in toc}{fg=secondary_color}
+\setbeamercolor{subsection in head/foot}{bg=main_color,fg=white}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{caption}
+
+% Set the path for figures
+\graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
+
+\title{Tailoring Machine Learning Weather Predictions for Local Impacts}
+\author{\textbf{Ozma Houck, James Franke}}
+\date{}
+
+\usepackage{bbm}
+
+\begin{document}
+
+\maketitle
+
+\section{Background}
+\begin{frame}{Advancements in ML Weather Forecasting have made Tailored Forecasting Models Possible}
+    \begin{itemize}
+        \item Traditional Physics Based Weather Forecasting Models Are Expensive and Slow to Run
+        \item New generation of data-driven ML weather models are competitive in accuracy and can be run on a laptop
+        \item New ML models are still very expensive to train and try to jointly predict the entire globe at once.
+        \item If we instead just focus on weather variables most relevant to people in a specific region, can we improve accuracy?
+
+    \end{itemize}
+    \pause 
+    \vspace{0.5em}
+    \textbf{Goal:} % Delays the appearance of the content below this line
+    Demonstrate that is is possible to meaningfully improve the accuracy of relevant weather variables using a small amount of compute power and data.
+\end{frame}
+
+
+\begin{frame}{Research Questions and Early Results}
+\begin{itemize}
+    \item Is it possible to improve forecast accuracy using easily available off the shelf tools?
+    \item Can NWP and ML weather models can be corrected in the same way? 
+    \item We train a simple neural network to correct both a data driven ML forecast (Pangu) and a traditional NWP forecast (IFS HRES) we find success predicting 10m wind speed but not so much 2m temperature. 
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Key Contribution:} Apply neural network post-processing to both NWP and ML weather models, showing that it is possible to improve the accuracy of both with perhaps some caveats.
+\end{frame}
+
+\begin{frame}{Start by Manually Looking at Four Regions of Interest}
+    \begin{itemize}
+        \item Choose a handful of regions with a variety of climates and land types. 
+    \end{itemize}
+    
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.8\linewidth]{finetuning/climate_zones_with_patches.png}
+    \end{figure}
+\end{frame}
+
+\section{Results}
+\begin{frame}{Do Better with Temperature: 2x2}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+\begin{frame}{Do Better with Temperature: 2x2}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Climate Zones}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Climate Zones}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_ifs_nn_mlp_bootstrap.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_ifs_nn_mlp_bootstrap.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\end{document}
+
+

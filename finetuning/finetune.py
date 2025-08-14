@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import xarray as xr
 from xarray.coding.times import CFDatetimeCoder
+import numcodecs
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -565,6 +566,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             
         fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
         obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+
+        # # FORCE COMPUTATION if these are dask arrays
+        # if hasattr(fc_output_lt, 'compute'):
+        #     fc_output_lt = fc_output_lt.compute()
+        # if hasattr(obs_lt, 'compute'):
+        #     obs_lt = obs_lt.compute()
+
         
         mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
         
@@ -735,7 +743,17 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
             if training_mean_forecast_error is not None:
                 key = f"{var}_lt{lead_time}h"
                 if key in training_mean_forecast_error:
+                    mean_error = training_mean_forecast_error[key]
+                    if hasattr(mean_error, 'compute'): # force computation to deal with it being slowly loaded
+                        mean_error = mean_error.compute()
                     mean_corrected = original_lt[var_idx] - training_mean_forecast_error[key]
+
+                    # Ensure it's a numpy array
+                    if hasattr(mean_corrected, 'compute'):
+                        mean_corrected = mean_corrected.compute()
+                    elif not isinstance(mean_corrected, np.ndarray):
+                        mean_corrected = np.array(mean_corrected)
+
                     data_vars[f"{var}_mean_corrected_lt{lead_time}h"] = xr.DataArray(
                         mean_corrected,
                         dims=['time', 'latitude', 'longitude'],
@@ -751,21 +769,29 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
                     dims=['time', 'latitude', 'longitude'],
                     coords={'time': times_lt, 'latitude': lat_values, 'longitude': lon_values}
                 )
-    
-    # Create dataset
+
+    # Create dataset and FORCE COMPUTATION before saving
     ds_out = xr.Dataset(data_vars)
     
+    # Compute all dask arrays before saving
+    print("Computing all variables before saving...")
+    ds_out = ds_out.compute()
+
     # Add metadata
     ds_out.attrs['description'] = f'Original and corrected forecasts from {model_name} using MLP fine-tuning'
     ds_out.attrs['lead_times_hours'] = lead_times
     ds_out.attrs['training_time_minutes'] = training_time_minutes if training_time_minutes is not None else -1
     
+    # Save to zarr with consistent chunking (without custom compression)
+    encoding = {}
+    for var_name in ds_out.data_vars:
+        encoding[var_name] = {
+            'chunks': (365, 20, 20)  # Just specify chunks, use default compression
+        }
+    
     # Save to zarr
     output_path = os.path.expanduser(output_path)
-    # ds_out.to_zarr(output_path, mode='w')
-    # save to netcdf as well for easier access
-    netcdf_path = output_path.replace('.zarr', '.nc')
-    ds_out.to_netcdf(netcdf_path)
+    ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
 
 
@@ -887,6 +913,7 @@ def main():
     # Prepare output dir and base path
     args.output_dir = os.path.expanduser(args.output_dir)
     args.data_dir = os.path.expanduser(args.data_dir)
+
     os.makedirs(args.output_dir, exist_ok=True)
     base_path = generate_output_path(args)
 

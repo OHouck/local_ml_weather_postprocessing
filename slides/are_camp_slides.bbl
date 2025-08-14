@@ -1,0 +1,162 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.2 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{nyt/global//global/global}
+    \entry{araujoPostProcessingAirTemperature2022}{article}{}
+      \name{author}{2}{}{%
+        {{un=0,uniquepart=base,hash=787b8acfe80b64c127a1da555afff7cd}{%
+           family={Araujo},
+           familyi={A\bibinitperiod},
+           given={Gustavo},
+           giveni={G\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=e831ff7ea5e550ec4b774511f648c6d3}{%
+           family={Andrade},
+           familyi={A\bibinitperiod},
+           given={Fabio\bibnamedelimb A.\bibnamedelimi A.},
+           giveni={F\bibinitperiod\bibinitdelim A\bibinitperiod\bibinitdelim A\bibinitperiod},
+           givenun=0}}%
+      }
+      \list{publisher}{1}{%
+        {MDPI AG}%
+      }
+      \strng{namehash}{ad5b1ea0096b411e88148ddd840427e8}
+      \strng{fullhash}{ad5b1ea0096b411e88148ddd840427e8}
+      \strng{bibnamehash}{ad5b1ea0096b411e88148ddd840427e8}
+      \strng{authorbibnamehash}{ad5b1ea0096b411e88148ddd840427e8}
+      \strng{authornamehash}{ad5b1ea0096b411e88148ddd840427e8}
+      \strng{authorfullhash}{ad5b1ea0096b411e88148ddd840427e8}
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{Human beings attempt to accurately predict the weather based on their knowledge of climate. The Norwegian Meteorological Institute is responsible for climate-related matters in Norway, and among its contributions is the numerical weather forecast, which is presented in a 2.5 km grid. To conduct a post-processing process that improves the resolution of the forecast and reduces its error, the Institute has developed the GRIDPP tool, which reduces the resolution to 1 km and introduces a correction based on altitude and meteorological station measurements. The present work aims to improve the current post-processing approach of the air temperature parameter by employing neural networks, using meteorological station measurements. Two neural network architectures are developed and tested: a multilayer perceptron and a convolutional neural network. Both architectures are able to achieve a smaller error than the original product. These results open doors for the Institute to plan for the practical implementation of this solution on its product for specific scenarios where the traditional numerical methods historically produce large errors. Among the test samples where the GRIDPP error is higher than 3 K, the proposed solution achieves a smaller error in 74.8\% of these samples.}
+      \field{issn}{2076-3417}
+      \field{journaltitle}{Applied Sciences}
+      \field{langid}{english}
+      \field{month}{7}
+      \field{number}{14}
+      \field{title}{Post-{{Processing Air Temperature Weather Forecast Using Artificial Neural Networks}} with {{Measurements}} from {{Meteorological Stations}}}
+      \field{urlday}{8}
+      \field{urlmonth}{7}
+      \field{urlyear}{2025}
+      \field{volume}{12}
+      \field{year}{2022}
+      \field{urldateera}{ce}
+      \field{pages}{7131}
+      \range{pages}{1}
+      \verb{doi}
+      \verb 10.3390/app12147131
+      \endverb
+      \verb{file}
+      \verb /Users/ohouck/Zotero/storage/Y6JSDCYU/Araujo and Andrade - 2022 - Post-Processing Air Temperature Weather Forecast Using Artificial Neural Networks with Measurements.pdf
+      \endverb
+    \endentry
+    \entry{hanDeepLearningMethod2021}{article}{}
+      \name{author}{8}{}{%
+        {{un=0,uniquepart=base,hash=d889ff4c770b193392dbd24796a4d207}{%
+           family={Han},
+           familyi={H\bibinitperiod},
+           given={Lei},
+           giveni={L\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=ea614675c6364be76b6aec32caf0bffa}{%
+           family={Chen},
+           familyi={C\bibinitperiod},
+           given={Mingxuan},
+           giveni={M\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=2805f41d16cc30eb74182d91a2536ec4}{%
+           family={Chen},
+           familyi={C\bibinitperiod},
+           given={Kangkai},
+           giveni={K\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=5aaf76b42312672cce68f13a4b42e59d}{%
+           family={Chen},
+           familyi={C\bibinitperiod},
+           given={Haonan},
+           giveni={H\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=23ebdae7578afa9c390b1727a5aba030}{%
+           family={Zhang},
+           familyi={Z\bibinitperiod},
+           given={Yanbiao},
+           giveni={Y\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=6efac3eadaa9e0f8f3ef319120a84735}{%
+           family={Lu},
+           familyi={L\bibinitperiod},
+           given={Bing},
+           giveni={B\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=0287753c7823ad4975ef02cd8c94386d}{%
+           family={Song},
+           familyi={S\bibinitperiod},
+           given={Linye},
+           giveni={L\bibinitperiod},
+           givenun=0}}%
+        {{un=0,uniquepart=base,hash=0cedc42b3af343d5254e84a0ef17dd7f}{%
+           family={Qin},
+           familyi={Q\bibinitperiod},
+           given={Rui},
+           giveni={R\bibinitperiod},
+           givenun=0}}%
+      }
+      \strng{namehash}{5701c0000241cc9c18d5024a7391062f}
+      \strng{fullhash}{ab0c95bc692d26e2c71f5f1230174b78}
+      \strng{bibnamehash}{5701c0000241cc9c18d5024a7391062f}
+      \strng{authorbibnamehash}{5701c0000241cc9c18d5024a7391062f}
+      \strng{authornamehash}{5701c0000241cc9c18d5024a7391062f}
+      \strng{authorfullhash}{ab0c95bc692d26e2c71f5f1230174b78}
+      \field{sortinit}{H}
+      \field{sortinithash}{23a3aa7c24e56cfa16945d55545109b5}
+      \field{extradatescope}{labelyear}
+      \field{labeldatesource}{}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{abstract}{Abstract Correcting the forecast bias of numerical weather prediction models is important for severe weather warnings. The refined grid forecast requires direct correction on gridded forecast products, as opposed to correcting forecast data only at individual weather stations. In this study, a deep learning method called CU-net is proposed to correct the gridded forecasts of four weather variables from the European Centre for Medium-Range Weather Forecast Integrated Forecasting System global model (ECMWF-IFS): 2-m temperature, 2-m relative humidity, 10-m wind speed, and 10-m wind direction, with a forecast lead time of 24 h to 240 h in North China. First, the forecast correction problem is transformed into an image-to-image translation problem in deep learning under the CU-net architecture, which is based on convolutional neural networks. Second, the ECMWF-IFS forecasts and ECMWF reanalysis data (ERA5) from 2005 to 2018 are used as training, validation, and testing datasets. The predictors and labels (ground truth) of the model are created using the ECMWF-IFS and ERA5, respectively. Finally, the correction performance of CU-net is compared with a conventional method, anomaly numerical correction with observations (ANO). Results show that forecasts from CU-net have lower root mean square error, bias, mean absolute error, and higher correlation coefficient than those from ANO for all forecast lead times from 24 h to 240 h. CU-net improves upon the ECMWF-IFS forecast for all four weather variables in terms of the above evaluation metrics, whereas ANO improves upon ECMWF-IFS performance only for 2-m temperature and relative humidity. For the correction of the 10-m wind direction forecast, which is often difficult to achieve, CU-net also improves the correction performance. , 摘 要 对数值天气预报 (NWP) 进行偏差订正, 是提高NWP结果准确性和业务支撑能力的重要途径. 与传统站点预报结果订正相比, 目前的精细化预报需要对NWP格点结果直接进行订正. 本研究提出了一种深度学习方法CU-net, 并用其对欧洲中期天气预报中心全球数值预报系统 (ECMWF-IFS) 的2米温度、 2米相对湿度、 10米风的24-240小时预报进行格点订正. 首先, 将NWP偏差订正问题转换为 ``图像到图像'' 的气象信息翻译问题, 并通过构建深度学习模型CU-net进行求解. 然后, 使用2005-2018年的ECMWF-IFS预报和ECMWF第5代再分析资料 (ECMWF-ERA5) 构成的数据集对CU-net模型进行训练、 验证和测试. 试验结果表明, 与传统的模式距平积分预报订正方法 (ANO) 相比, CU-net在均方根误差、 偏差、 平均绝对误差和相关系数等检验指标上, 都取得了更优的结果. 对气象领域公认较难订正的10米风速和风向两个变量, CU-net的订正性能也很显著. 本文的研究指出, 深度学习方法具有从NWP海量数据中直接进行 ``学习'' 从而构建NWP偏差特征的能力, 为NWP偏差订正研究和业务应用开辟了新的途径.}
+      \field{issn}{0256-1530, 1861-9533}
+      \field{journaltitle}{Advances in Atmospheric Sciences}
+      \field{langid}{english}
+      \field{month}{9}
+      \field{number}{9}
+      \field{title}{A {{Deep Learning Method}} for {{Bias Correction}} of {{ECMWF}} 24--240 h {{Forecasts}}}
+      \field{urlday}{10}
+      \field{urlmonth}{6}
+      \field{urlyear}{2025}
+      \field{volume}{38}
+      \field{year}{2021}
+      \field{urldateera}{ce}
+      \field{pages}{1444\bibrangedash 1459}
+      \range{pages}{16}
+      \verb{doi}
+      \verb 10.1007/s00376-021-0215-y
+      \endverb
+      \verb{file}
+      \verb /Users/ohouck/Zotero/storage/F7M4IMXC/Han et al. - 2021 - A Deep Learning Method for Bias Correction of ECMWF 24–240 h Forecasts.pdf
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+

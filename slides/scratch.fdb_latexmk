@@ -1,12 +1,16 @@
 # Fdb version 4
-["biber scratch"] 1753898671 "scratch.bcf" "scratch.bbl" "scratch" 1754606671 0
+["biber scratch"] 1753898671 "scratch.bcf" "scratch.bbl" "scratch" 1755181691 0
   "./regional_forecasting.bib" 1752532095 29317 fa9bb3983d925b602f7f8546f7b05e4d ""
-  "scratch.bcf" 1754606671 106266 8276bb0952aafc456641ad4af0509979 "pdflatex"
+  "scratch.bcf" 1755181691 106266 8276bb0952aafc456641ad4af0509979 "pdflatex"
   (generated)
   "scratch.bbl"
   "scratch.blg"
   (rewritten before read)
-["pdflatex"] 1754606670 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1754606671 2
+["pdflatex"] 1755181688 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1755181691 2
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 1754662130 532513 dcfd8a9a157b55f37fc7e277ac5a0428 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 1754662401 437636 ae45378e46637eadd2d537beae885e62 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 1754662278 457933 a3abc79b96c29c57821d71f3268bbf39 ""
+  "/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 1754662129 508929 08ba856bcb7ee1ea3fad6bb3a5d5696b ""
   "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1754497474 5111 6a3fb8cda9946ec71888a5790bd80ec2 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
@@ -221,12 +225,8 @@
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
   "finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
-  "finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
-  "finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
-  "finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
   "finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
-  "finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
-  "scratch.aux" 1754606671 1470 c072e4b365e0c47d7c7d472ca45897a6 "pdflatex"
+  "scratch.aux" 1755181691 1470 c072e4b365e0c47d7c7d472ca45897a6 "pdflatex"
   "scratch.bbl" 1753898673 466 ee04f40f768daeed26442158e95aba61 "biber scratch"
   "scratch.nav" 1754497194 989 cfdfccab7ca7481eacb03f6399af2e2c ""
   "scratch.tex" 1754497474 5111 6a3fb8cda9946ec71888a5790bd80ec2 ""

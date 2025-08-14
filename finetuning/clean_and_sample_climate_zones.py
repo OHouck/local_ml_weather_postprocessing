@@ -298,12 +298,15 @@ def main():
     usa_south_bounds = {"lat0": 30, "lat1": 40, "lon0": -105 + 180, "lon1": -95 + 180}
     amazon_bounds = {"lat0": -10, "lat1": 0, "lon0": -70 + 180, "lon1": -60 + 180}
     british_columbia_bounds = {"lat0": 48.25, "lat1": 58, "lon0": -130 + 180, "lon1": -120 + 180}
+    ethiopia_bounds = {"lat0": 4, "lat1": 14, "lon0": 34 + 180, "lon1": 44 + 180}
+
 
     manual_regions = [
         {"name": "India", "bounds": india_bounds},
         {"name": "USA South", "bounds": usa_south_bounds}, 
         {"name": "Amazon", "bounds": amazon_bounds},
-        {"name": "British Columbia", "bounds": british_columbia_bounds}
+        {"name": "British Columbia", "bounds": british_columbia_bounds},
+        {"name": "Ethiopia", "bounds": ethiopia_bounds},
     ]
         
 
