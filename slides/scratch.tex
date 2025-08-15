@@ -19,14 +19,12 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{graphicx}
-\usepackage{subcaption}
 \usepackage{caption}
-\usepackage[style=authoryear]{biblatex}
-\addbibresource{regional_forecasting.bib}
+\usepackage{subcaption}
+% \usepackage[style=authoryear]{biblatex}
 
-
-% Set the path for figures
-\graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
+% Set the path for figures (use relative path)
+\graphicspath{{figures/}}
 
 \title{Scratch Work: Tailoring Machine Learning Weather Predictions for Local Impacts}
 \author{\textbf{Ozma Houck, James Franke}}
@@ -42,8 +40,8 @@
 \begin{itemize}
     \item Rewrote databuild to be much faster and allow for using more regions. Early results for Ethiopia 
     \item Added month embeddings to unet and mlp architectures.
-    \item Capable to train on multiple lead times ast once using learned lead time embedding.
-    \item Implemented Baysian hyperparameter optimization and optmized parameters for 2m temperatures 1 week lead time in India.
+    \item Capable to train on multiple lead times at once using learned lead time embedding.
+    \item Implemented Bayesian hyperparameter optimization and optimized parameters for 2m temperatures 1 week lead time in India.
 \end{itemize}
 \end{frame}
 
@@ -67,7 +65,6 @@
 \end{frame}
 
 \begin{frame}{6x6 Region Size}
-
 \begin{figure}[ht]
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
@@ -101,32 +98,29 @@
 \end{figure}
 \end{frame}
 
-\begin{frame}{Subregion Comparision 240h Lead Time}
+\begin{frame}{Subregion Comparison 240h Lead Time}
     \begin{figure}[ht]
         \centering
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/subregion/subregion_rmse_improvement_lt_240.png}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt_240.png}
             \caption{2m Temperature: Pangu}
         \end{subfigure}
         \hfill
-        \centering
         \begin{subfigure}[t]{0.48\textwidth}
             \centering
-            \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/subregion/subregion_rmse_improvement_lt_240.png}
+            \includegraphics[width=\linewidth]{finetuning/pangu/subregion/subregion_rmse_improvement_lt_240.png}
             \caption{2m Temperature: Pangu}
         \end{subfigure}
-
+    \end{figure}
 \end{frame}
 
 \begin{frame}{Summary Table: 2m Temperature}
-    \input{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex}
+    \input{figures/finetuning/pangu/summary_stats/summary_stats_2m_temperature_mlp_10x10.tex}
 \end{frame}
 
-\begin{frame}{Sumary Table: 10m Wind Speed}
-    \input{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex}
+\begin{frame}{Summary Table: 10m Wind Speed}
+    \input{figures/finetuning/pangu/summary_stats/summary_stats_10m_wind_speed_mlp_10x10.tex}
 \end{frame}
-
 
 \end{document}
-

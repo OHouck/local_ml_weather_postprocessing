@@ -1166,17 +1166,6 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/multirow/multirow.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/graphics/graphicx.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption.sty
@@ -1204,118 +1193,18 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption-beamer.sto
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption-beamer.sto
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption-beamer.sto
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption-beamer.sto
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/subcaption.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/caption/caption.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/generic/pdftexcmds/pdftexcmds.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/etoolbox/etoolbox.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/graphics/keyval.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/kvoptions/kvoptions.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/etoolbox/etoolbox.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/graphics/keyval.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/logreq/logreq.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/base/ifthen.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/url/url.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-dm.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-dm.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-dm.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-compat.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-compat.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-compat.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/authoryear.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/authoryear.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/authoryear.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/standard.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/standard.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/bbx/standard.bbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/cbx/authoryear.cbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/cbx/authoryear.cbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/cbx/authoryear.cbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.cfg
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.cfg
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/biblatex.cfg
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3packages/xparse/xparse.sty
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3kernel/expl3.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
@@ -1327,6 +1216,20 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/bbm-macros/bbm.sty
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+INPUT ./scratch.aux
+INPUT scratch.aux
+INPUT scratch.aux
 OUTPUT scratch.aux
 INPUT /usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 INPUT /usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
@@ -1372,16 +1275,6 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-theorem
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-theorem-dictionary-English.dict
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-theorem-dictionary-English.dict
 INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-theorem-dictionary-English.dict
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/lbx/english.lbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/lbx/english.lbx
-INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/biblatex/lbx/english.lbx
-OUTPUT scratch.bcf
-INPUT scratch.bbl
-INPUT ./scratch.bbl
-INPUT scratch.bbl
-INPUT ./scratch.bbl
-INPUT ./scratch.bbl
-INPUT scratch.bbl
 INPUT ./scratch.nav
 INPUT scratch.nav
 INPUT scratch.nav
@@ -1421,22 +1314,6 @@ INPUT /usr/local/texlive/2023/texmf-dist/tex/latex/sansmathaccent/ot1mathkerncms
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/sansmathaccent/mathkerncmssi8.tfm
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
+INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss10.tfm
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmss9.tfm
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png
-INPUT /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/10x10/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png

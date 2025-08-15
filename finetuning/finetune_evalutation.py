@@ -461,7 +461,7 @@ def generate_lead_time_plots(
                        zorder=3)
     
     # Set consistent axes limits for all plot types
-    ax.set_ylim(-20, 31)
+    ax.set_ylim(-18, 35)
     
     # Set x-axis to show all lead times but only label those with data
     ax.set_xticks(range(len(lead_times)))
@@ -718,7 +718,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 else:
                     label = f"{region_label} {model_name.upper()} ({lead_time}h)"
                 
-                plt.ylim(-25, 30)
+                plt.ylim(-18, 35)
                 plt.plot(sizes, imps, 
                         marker=model_markers[model_name],
                         fillstyle=arch_fillstyles[arch],
@@ -1488,33 +1488,33 @@ def main():
     dirs = setup_directories()
 
     # Two options for training and output variable combinations, uncomment the one you want to use
-    training_vars = ["2m_temperature"]
-    output_vars = ["2m_temperature"]
-    prediction_var = "2m_temperature"
+    # training_vars = ["2m_temperature"]
+    # output_vars = ["2m_temperature"]
+    # prediction_var = "2m_temperature"
 
-    # training_vars = ["10m_wind_speed"]
-    # output_vars = ["10m_wind_speed"]
-    # prediction_var = "10m_wind_speed"
+    training_vars = ["10m_wind_speed"]
+    output_vars = ["10m_wind_speed"]
+    prediction_var = "10m_wind_speed"
 
     #============================================
     # Summary Stat Tables
     #============================================
 
-    # generate_summary_stat_table(
-    #     dirs=dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture="mlp",
-    #     regions = ["india", "amazon", "ethiopia"],
-    #     subregion="2x2",
-    #     lead_times=[24, 120, 240],  # Multiple lead times
-    #     simultaneous=True
-    # )
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["india", "amazon", "ethiopia"],
+        subregion="2x2",
+        lead_times=[24, 120, 240],  # Multiple lead times
+        simultaneous=True
+    )
 
     #============================================
     # Lead Time Plots
@@ -1539,70 +1539,71 @@ def main():
             plot_type="pangu_nn",
             simultaneous=True
         )
+    
+    exit()
 
     #=============================================
     # Subregion Comparison Plots
     #=============================================
-    # start = time.time()    
-    # generate_subregion_comparison_plots(
-    #     dirs = dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture=["mlp"],
-    #     lead_time=240,
-    #     simultaneous=True
-    # )
-    # end = time.time()
-    # time_minutes = (end - start) / 60
-    # print(f"Subregion comparison plots completed in {time_minutes:.2f} minutes.")
+    start = time.time()    
+    generate_subregion_comparison_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture=["mlp"],
+        lead_time=240,
+        simultaneous=True
+    )
+    end = time.time()
+    time_minutes = (end - start) / 60
+    print(f"Subregion comparison plots completed in {time_minutes:.2f} minutes.")
 
     #==============================================
     # Generate Maps
     #============================================== 
-
-    # regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
-    # for region in regions:
-    #     # MLP maps
-    #     generate_map_plots(
-    #         dirs=dirs,
-    #         train_start="2018-01-01",
-    #         train_end="2021-12-31",
-    #         test_start="2022-01-01",
-    #         test_end="2022-12-31",
-    #         model="pangu",
-    #         training_output_vars=(training_vars, output_vars),
-    #         prediction_var=prediction_var,
-    #         nn_architecture="mlp",
-    #         region=region,
-    #         subregion="10x10",
-    #         lead_time=24,
-    #         simultaneous=True
-    #     )
+    regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
+    for region in regions:
+        # MLP maps
+        generate_map_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="2x2",
+            lead_time=24,
+            simultaneous=True
+        )
 
         #===========================================
         # Generate time series plots
         #===========================================
+        generate_time_series_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="2x2",
+            lead_time=24,
+            simultaneous=True
+        )
 
-        # generate_time_series_plots(
-        #     dirs=dirs,
-        #     train_start="2018-01-01",
-        #     train_end="2021-12-31",
-        #     test_start="2022-01-01",
-        #     test_end="2022-12-31",
-        #     model="pangu",
-        #     training_output_vars=(training_vars, output_vars),
-        #     prediction_var=prediction_var,
-        #     nn_architecture="mlp",
-        #     region=region,
-        #     subregion="10x10",
-        #     lead_time=24,
-        #     simultaneous=True
-        # )
     #============================================
     # climate zone fig and table
     #============================================
@@ -1610,22 +1611,22 @@ def main():
     # clear cache
     load_zarr_cached.cache_clear()
 
-    # generate_summary_stat_table(
-    #     dirs=dirs,
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     model="pangu",
-    #     training_output_vars=(training_vars, output_vars),
-    #     prediction_var=prediction_var,
-    #     nn_architecture="mlp",
-    #     regions = ["tropical", "arid", "temperate"],
-    #     subregion="2x2",
-    #     bootstrap=True,
-    #     lead_times=[24, 120, 240],  
-    #     simultaneous=True
-    # )
+    generate_summary_stat_table(
+        dirs=dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture="mlp",
+        regions = ["tropical", "arid", "temperate"],
+        subregion="2x2",
+        bootstrap=True,
+        lead_times=[24, 120, 240],  
+        simultaneous=True
+    )
 
     generate_lead_time_plots(
         dirs = dirs,
