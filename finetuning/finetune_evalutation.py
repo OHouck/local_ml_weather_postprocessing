@@ -469,8 +469,8 @@ def generate_lead_time_plots(
                        for lt in lead_times])
     
     # Customize plot appearance
-    ax.set_xlabel("Forecast Lead Time", fontsize=15)
-    ax.set_ylabel("RMSE Improvement (%)", fontsize=15)
+    ax.set_xlabel("Forecast Lead Time", fontsize=20)
+    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
     
     # Add horizontal line at y=0 for reference
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
@@ -482,11 +482,14 @@ def generate_lead_time_plots(
     title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
     if bootstrap:
         title_parts[0] += " (with 95% CI)"
-    ax.set_title('\n'.join(title_parts), fontsize=14, pad=15)
+    ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
     
     # Grid
     ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
     ax.set_axisbelow(True)
+
+    ax.tick_params(axis='y', labelsize=20)  # Make y-axis labels larger
+    ax.tick_params(axis='x', labelsize=20)  # Make x-axis labels larger 
     
     # Create custom legend with four groups
     from matplotlib.lines import Line2D
@@ -911,7 +914,7 @@ def generate_map_plots(
         cax1 = divider1.append_axes("right", size="4%", pad=0.05, axes_class=plt.Axes)
         cbar1 = plt.colorbar(im1, cax=cax1)
         cbar1.set_label('RMSE', fontsize=10)
-        cbar1.ax.tick_params(labelsize=9)
+        cbar1.ax.tick_params(labelsize=20)
         
         ax1.set_title(f"Original {model.upper()} Forecast RMSE\n{prediction_var.replace('_', ' ').title()}", 
                       fontsize=13, pad=2)
@@ -962,7 +965,7 @@ def generate_map_plots(
         cax2 = divider2.append_axes("right", size="4%", pad=0.05, axes_class=plt.Axes)
         cbar2 = plt.colorbar(im2, cax=cax2)
         cbar2.set_label('Improvement (%)', fontsize=10)
-        cbar2.ax.tick_params(labelsize=9)
+        cbar2.ax.tick_params(labelsize=20)
         
         ax2.set_title(f"RMSE Percent Improvement ({nn_architecture.upper()} Corrected)\n{prediction_var.replace('_', ' ').title()}", 
                       fontsize=13, pad=2)
@@ -1178,7 +1181,7 @@ def generate_time_series_plots(
     ax.set_ylabel('RMSE', fontsize=15)
     ax.set_title(f'Monthly RMSE Comparison - {region.replace("_", " ").title()}\n'
                  f'{prediction_var.replace("_", " ").title()} - {lead_time}h Lead Time - Patch Size: {subregion}',
-                 fontsize=13)
+                 fontsize=20)
     ax.set_xticks(x)
     ax.set_xticklabels(months, rotation=45, ha='right')
     ax.legend()
@@ -1488,13 +1491,13 @@ def main():
     dirs = setup_directories()
 
     # Two options for training and output variable combinations, uncomment the one you want to use
-    # training_vars = ["2m_temperature"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
+    training_vars = ["2m_temperature"]
+    output_vars = ["2m_temperature"]
+    prediction_var = "2m_temperature"
 
-    training_vars = ["10m_wind_speed"]
-    output_vars = ["10m_wind_speed"]
-    prediction_var = "10m_wind_speed"
+    # training_vars = ["10m_wind_speed"]
+    # output_vars = ["10m_wind_speed"]
+    # prediction_var = "10m_wind_speed"
 
     #============================================
     # Summary Stat Tables
@@ -1540,8 +1543,6 @@ def main():
             simultaneous=True
         )
     
-    exit()
-
     #=============================================
     # Subregion Comparison Plots
     #=============================================

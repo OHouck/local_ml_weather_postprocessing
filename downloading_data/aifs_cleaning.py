@@ -1,3 +1,5 @@
+# Helper file used to clean aifs files when downloading from download_aifs.sh
+
 import xarray as xr
 import sys
 import os
@@ -67,6 +69,7 @@ def process_daily_forecasts(ds, lead_time_days, logger):
     Enhanced with better error handling and validation.
     """
     logger.info(f"Processing daily forecasts for lead days: {lead_time_days}")
+
     
     processed_data = []
     steps_available = ds.step.values
@@ -123,6 +126,7 @@ def process_daily_forecasts(ds, lead_time_days, logger):
                 "midnight_2t": midnight_2t, 
                 "noon_2t": noon_2t
             })
+            print(day_ds)
             
             # Validate the processed data
             for var_name, var_data in day_ds.data_vars.items():
@@ -178,6 +182,9 @@ def process_daily_forecasts(ds, lead_time_days, logger):
         "lead_days_requested": lead_time_days,
         "lead_days_processed": [int(x) for x in result.step.values]
     })
+
+    print(result)
+    exit()
     
     return result
 
@@ -230,13 +237,21 @@ def save_with_retry(processed_data, output_file, logger, max_retries=3):
     return False
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: aifs_cleaning.py <input_file> <output_file> <lead_days>")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2]  # This will be a .zarr path
-    lead_days = [int(x) for x in sys.argv[3].split(',')]
+    #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    input_file = "/Users/ohouck/tmp/aifs_temp/init_2023060400.nc"
+    output_file ="/Users/ohouck/tmp/aifs_temp/aifs_test.zarr"
+    lead_days= [1, 5, 10]
+    ds = xr.open_dataset(input_file)
+    print(ds)
+    exit()
+    #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+    # if len(sys.argv) != 4:
+    #     print("Usage: aifs_cleaning.py <input_file> <output_file> <lead_days>")
+    #     sys.exit(1)
+    # input_file = sys.argv[1]
+    # output_file = sys.argv[2]  # This will be a .zarr path
+    # lead_days = [int(x) for x in sys.argv[3].split(',')]
     
     # Set up logging
     logger = setup_logging(input_file)

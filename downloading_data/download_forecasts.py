@@ -288,7 +288,7 @@ def main():
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2018, 2019, 2020, 2021, 2022]
+    years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
     # model = 'pangu'
     model = "ifs"
     # Start timing
@@ -318,13 +318,24 @@ def main():
     print("\n2. Defining download parameters...")
     
     # Variable mapping for Pangu and ifs
-    variables_to_try = [
-        '2m_temperature',
-        '10m_u_component_of_wind',
-        '10m_v_component_of_wind',
-    ]
-    lead_times_hours = [24, 120, 240]
-    
+    if model == 'pangu':
+        variables_to_try = [
+            '2m_temperature',
+            '10m_u_component_of_wind',
+            '10m_v_component_of_wind'
+        ]
+        lead_times_hours = [24, 24 + 12, 120, 120 + 12, 240, 240 + 12] # midday and midnight forecasts for 1, 5, 10 days 
+    elif model == 'ifs':
+        variables_to_try = [
+            '2m_temperature',
+            '10m_u_component_of_wind',
+            '10m_v_component_of_wind',
+            'total_precipitation_6hr'
+        ]
+        lead_times_hours = [24, 24 + 6, 24 + 12, 24 + 18,
+                            120, 120 + 12, 120 + 18, 120 + 12, 
+                            216, 216 + 6, 216 + 12, 216 + 18]  # for IFS get all 6 hour intervals to get daily total precip
+
     
     start_time = print_time_and_memory("Parameter setup", start_time)
     
@@ -381,12 +392,62 @@ def main():
 
     print(f" Lead time options: {lead_times_hours} hours")
 
+
     subset = ds[available_vars].sel(
         prediction_timedelta=[np.timedelta64(hours, 'h') for hours in lead_times_hours]
     )
 
-    # filter for only hours 0 and 12
-    subset = subset.sel(init_time=subset.init_time.dt.hour.isin([0, 12]))
+    # only look at forecasts initialized at midnight 
+    subset = subset.sel(init_time=subset.init_time.dt.hour.isin([0]))
+
+    if 'total_precipitation_6hr' in available_vars:
+        # Convert 6-hourly total precipitation to daily total precipitation
+        # currently just for ifs
+        print("  Converting 6-hourly total precipitation to daily totals...")
+        precip_6hr = subset['total_precipitation_6hr']
+
+        # Convert timedelta to hours and assign day group as coordinate
+        hours = precip_6hr.prediction_timedelta / np.timedelta64(1, 'h')
+        day_groups = (hours // 24).astype(int)
+
+        # Attach day_groups as a coordinate
+        precip_6hr = precip_6hr.assign_coords(day_group=('prediction_timedelta', day_groups.data))
+
+        # Compute daily sums (collapsing 6hr steps into days)
+        daily_precip = precip_6hr.groupby('day_group').sum(dim='prediction_timedelta')
+
+        # Broadcast daily_precip back to original prediction_timedelta dimension
+        total_precipitation = xr.apply_ufunc(
+            lambda dg: daily_precip.sel(day_group=dg),
+            precip_6hr['day_group'],
+            vectorize=True,
+        )
+
+        subset['total_precipitation'] = total_precipitation
+        print(subset)
+        exit()
+        # precip_6hr = subset['total_precipitation_6hr']
+
+        # # Convert timedelta to hours for easier grouping
+        # hours = precip_6hr.prediction_timedelta / np.timedelta64(1, 'h')
+        # day_groups = (hours // 24).astype(int) 
+
+        # daily_precip = precip_6hr.groupby(day_groups).sum(dim='prediction_timedelta')
+
+        # # Create new array with subset's coordinates
+        # total_precipitation = xr.zeros_like(subset['total_precipitation_6hr'])
+
+        # for td in subset.prediction_timedelta.values:
+        #     hour = td / np.timedelta64(1, 'h')
+        #     day_group = int(hour // 24)
+        #     print("hour", hour, "day_group", day_group, "td", td)
+        #     total_precipitation.loc[dict(prediction_timedelta=td)] = daily_precip.sel(prediction_timedelta=day_group)
+        
+        # subset['total_precipitation'] = total_precipitation
+        # print(subset)
+
+        exit()
+
     # convert init_time to valid_time
     subset_valid_time = convert_init_to_valid_time(subset)
     # sort by valid_time

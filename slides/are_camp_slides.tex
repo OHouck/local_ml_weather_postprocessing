@@ -34,26 +34,28 @@
 
 \maketitle
 
-\begin{frame}{Advancements in ML Weather Forecasting have made Tailored Forecasting Models Possible}
+\begin{frame}{Advancements in ML based Weather Forecasting have made Tailored Forecasting Models Possible}
     \begin{itemize}
-        \item Traditional physics based weather forecasting models are expensive and slow to run. New ML based models can be run on a laptop.
-        \item ML models are still very expensive to train and try to predict the entire globe at once.
-        \item Can we improve accuracy on just the most relevant weather variables if we focus on a specific region? 
+        \item Traditional numerical weather prediction (NWP) models are expensive and slow to run. 
+        \item ML based weather models are fast to run, but are still expensive to train. 
+        \item These models predict the entire globe at once. A farmer in cares a lot about if it will rain in five days. Less about wind speeds over in the troposphere over Greenland. 
 
     \end{itemize}
     \pause 
     \vspace{0.5em}
     \textbf{Goal:} % Delays the appearance of the content below this line
     Demonstrate that is is possible to meaningfully improve the accuracy of relevant weather variables using a small amount of compute power and data.
+
     \pause 
     \vspace{0.5em}
-    \textbf{Contribution:} Apply neural network post-processing to both traditional and ML weather models, showing that it is possible to improve the accuracy of both (with perhaps some caveats).
+    \textbf{Contribution:} Apply neural network post-processing model to both traditional and ML weather models, showing that it is possible to improve the accuracy of both (perhaps with some caveats).
 \end{frame}
 
 
-\begin{frame}{Start by Manually Looking at Four Regions of Interest}
+\begin{frame}{Start by Manually Looking at Five Regions of Interest}
     \begin{itemize}
-        \item Choose a handful of regions with a variety of climates and land types. 
+        \item Manually choose a few regions with a variety of climates and land terrains. 
+        \item Sample from different climate zones. 
     \end{itemize}
     
     \begin{figure}
@@ -62,7 +64,7 @@
     \end{figure}
 \end{frame}
 
-\begin{frame}{See Greater Improvements for Longer Lead Times and for Widn Speed}
+\begin{frame}{See Greater Improvements for Longer Lead Times and for Wind Speed}
 \begin{figure}[ht]
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
@@ -75,22 +77,6 @@
         \centering
         \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
         \caption{Wind Speed: Pangu (ML Model)}
-    \end{subfigure}
-\end{figure}
-\end{frame}
-\begin{frame}{NWP Model Can be Corrected In a Similar Manner}
-\begin{figure}[ht]
-    \centering
-    \begin{subfigure}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png}
-        \caption{2m Temperature: Pangu (ML) + IFS (NWP)}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png}
-        \caption{Wind Speed: Pangu (ML) + IFS (NWP)}
     \end{subfigure}
 \end{figure}
 \end{frame}
