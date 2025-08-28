@@ -43,54 +43,109 @@ def convert_init_to_valid_time(ds):
     for lt in lead_times:
         ds_lt = ds.sel(prediction_timedelta=lt)
 
+        ds_lt = ds_lt.copy()
         ds_lt = ds_lt.rename({'init_time': 'valid_time'})
         ds_lt['valid_time'] = ds_lt.valid_time + lt
         converted_lead_times.append(ds_lt)
-        if not common_valid_times:
-            # Initialize with the first lead time's valid_time
-            common_valid_times = set(ds_lt.valid_time.values)
-        else:
-            common_valid_times.intersection_update(ds_lt.valid_time.values)
 
     # Combine all lead times into a single dataset and filter to common valid times
     combined_ds = xr.concat(converted_lead_times, dim='prediction_timedelta')
-    combined_ds = combined_ds.sel(valid_time=list(common_valid_times))
     combined_ds = combined_ds.sortby('valid_time')
+    combined_ds = combined_ds.transpose("valid_time", "prediction_timedelta", "latitude", "longitude")
 
     return combined_ds
 
 def validate_conversion(original_ds: xr.Dataset, converted_ds: xr.Dataset) -> bool:
     """
     Validate the conversion from init_time to valid_time.
-    Returns True if basic conversion appears correct, False otherwise.
+    Checks both structure and actual data values to ensure conversion is correct.
     """
     try:
         # Basic dimension check
         expected_dims = {'valid_time', 'prediction_timedelta', 'latitude', 'longitude'}
         if set(converted_ds.dims.keys()) != expected_dims:
+            print(f"Dimension mismatch. Expected: {expected_dims}, Got: {set(converted_ds.dims.keys())}")
             return False
         
         # Basic data variable check
         if set(original_ds.data_vars) != set(converted_ds.data_vars):
+            print(f"Data variable mismatch")
             return False
         
-        # Non-empty result
+        # Check that we have data
         if len(converted_ds.valid_time) == 0:
+            print(f"No valid times in converted dataset")
             return False
         
-        # Quick math check on one sample
-        first_pred_delta = converted_ds.prediction_timedelta.values[0]
-        first_valid_time = converted_ds.valid_time.values[0]
-        expected_init_time = pd.Timestamp(first_valid_time) - pd.Timedelta(first_pred_delta)
-        original_init_times_pd = pd.to_datetime(original_ds.init_time.values)
-        
-        if expected_init_time not in original_init_times_pd:
+        # Choose a variable to test with (prefer 2m_temperature if available)
+        test_var = None
+        if '2m_temperature' in converted_ds.data_vars:
+            test_var = '2m_temperature'
+        elif len(converted_ds.data_vars) > 0:
+            test_var = list(converted_ds.data_vars)[0]
+        else:
+            print("No data variables to test")
             return False
         
+        print(f"Using '{test_var}' for data validation...")
+        
+        # check a few random samples
+        n_samples = 5
+        for sample_idx in range(n_samples):
+
+            rand_idx = {dim: np.random.randint(0, converted_ds.sizes[dim]) for dim in converted_ds.dims}
+            rand_converted_obs = converted_ds[test_var].isel(**rand_idx)
+            var = rand_converted_obs.values
+
+            # if sampled value is nan because valid time and lead time combination doesn't exist, resample
+            if np.isnan(var):
+                while np.isnan(var):
+                    rand_idx = {dim: np.random.randint(0, converted_ds.sizes[dim]) for dim in converted_ds.dims}
+                    rand_converted_obs = converted_ds[test_var].isel(**rand_idx)
+                    var = rand_converted_obs.values
+
+
+            valid_time = rand_converted_obs.valid_time.values
+            # check if valid time is for noon or midnight forecast
+            pred_delta = rand_converted_obs.prediction_timedelta.values
+            lat = rand_converted_obs.latitude.values
+            lon = rand_converted_obs.longitude.values
+
+            pred_delta_hours = np.timedelta64(pred_delta, 'h')
+
+            expected_init_time = valid_time - pred_delta
+            print(f"Sample {sample_idx+1}: valid_time={valid_time}, pred_delta={pred_delta_hours}, "
+                  f"expected_init_time={expected_init_time}, lat={lat}, lon={lon}")
+
+            original_obs = original_ds[test_var].sel(
+                init_time=expected_init_time,
+                prediction_timedelta=pred_delta,
+                latitude=lat,
+                longitude=lon
+            )
+            original_var = original_obs.values  
+
+            # Check if values are equal (handling potential NaN values)
+            if np.isnan(var) and np.isnan(original_var):
+                continue  # Both NaN is okay
+            elif not np.isclose(var, original_var, rtol=1e-6):
+                print(f"Data mismatch at valid_time={valid_time}, "
+                        f"pred_delta={pred_delta}, lat_idx={lat}, lon_idx={lon}")
+                print(f"  Converted value: {var}")
+                print(f"  Original value: {original_var}")
+                print(f"  Expected init_time: {expected_init_time}")
+                return False
+        
+        
+        print("Validation passed! Data values match between original and converted datasets.")
         return True
     
-    except Exception:
+    except Exception as e:
+        print(f"Validation error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
 
 def print_time_and_memory(step_name, start_time):
     """Print elapsed time and current memory usage"""
@@ -333,7 +388,7 @@ def main():
             'total_precipitation_6hr'
         ]
         lead_times_hours = [24, 24 + 6, 24 + 12, 24 + 18,
-                            120, 120 + 12, 120 + 18, 120 + 12, 
+                            120, 120 + 6, 120 + 12, 120 + 18, 
                             216, 216 + 6, 216 + 12, 216 + 18]  # for IFS get all 6 hour intervals to get daily total precip
 
     
@@ -401,52 +456,42 @@ def main():
     subset = subset.sel(init_time=subset.init_time.dt.hour.isin([0]))
 
     if 'total_precipitation_6hr' in available_vars:
-        # Convert 6-hourly total precipitation to daily total precipitation
-        # currently just for ifs
         print("  Converting 6-hourly total precipitation to daily totals...")
         precip_6hr = subset['total_precipitation_6hr']
-
-        # Convert timedelta to hours and assign day group as coordinate
-        hours = precip_6hr.prediction_timedelta / np.timedelta64(1, 'h')
-        day_groups = (hours // 24).astype(int)
-
-        # Attach day_groups as a coordinate
-        precip_6hr = precip_6hr.assign_coords(day_group=('prediction_timedelta', day_groups.data))
-
-        # Compute daily sums (collapsing 6hr steps into days)
-        daily_precip = precip_6hr.groupby('day_group').sum(dim='prediction_timedelta')
-
-        # Broadcast daily_precip back to original prediction_timedelta dimension
-        total_precipitation = xr.apply_ufunc(
-            lambda dg: daily_precip.sel(day_group=dg),
-            precip_6hr['day_group'],
-            vectorize=True,
-        )
-
-        subset['total_precipitation'] = total_precipitation
-        print(subset)
-        exit()
-        # precip_6hr = subset['total_precipitation_6hr']
-
-        # # Convert timedelta to hours for easier grouping
-        # hours = precip_6hr.prediction_timedelta / np.timedelta64(1, 'h')
-        # day_groups = (hours // 24).astype(int) 
-
-        # daily_precip = precip_6hr.groupby(day_groups).sum(dim='prediction_timedelta')
-
-        # # Create new array with subset's coordinates
-        # total_precipitation = xr.zeros_like(subset['total_precipitation_6hr'])
-
-        # for td in subset.prediction_timedelta.values:
-        #     hour = td / np.timedelta64(1, 'h')
-        #     day_group = int(hour // 24)
-        #     print("hour", hour, "day_group", day_group, "td", td)
-        #     total_precipitation.loc[dict(prediction_timedelta=td)] = daily_precip.sel(prediction_timedelta=day_group)
         
-        # subset['total_precipitation'] = total_precipitation
-        # print(subset)
-
-        exit()
+        # Sum all 4 periods for each day
+        day1_total = precip_6hr.isel(prediction_timedelta=slice(0, 4)).sum(dim='prediction_timedelta')
+        day5_total = precip_6hr.isel(prediction_timedelta=slice(4, 8)).sum(dim='prediction_timedelta')  
+        day9_total = precip_6hr.isel(prediction_timedelta=slice(8, 12)).sum(dim='prediction_timedelta')
+        
+        # Create the dataset with only the lead times you need
+        # Midnight: 24h (day 1), 120h (day 5), 216h (day 9)
+        # Midday: 36h (day 1), 132h (day 5), 228h (day 9)
+        
+        total_precip_list = []
+        
+        # Day 1 - midnight and midday
+        for td in [np.timedelta64(24, 'h'), np.timedelta64(36, 'h')]:
+            expanded = day1_total.expand_dims(prediction_timedelta=[td])
+            total_precip_list.append(expanded)
+        
+        # Day 5 - midnight and midday
+        for td in [np.timedelta64(120, 'h'), np.timedelta64(132, 'h')]:
+            expanded = day5_total.expand_dims(prediction_timedelta=[td])
+            total_precip_list.append(expanded)
+        
+        # Day 9 - midnight and midday  
+        for td in [np.timedelta64(216, 'h'), np.timedelta64(228, 'h')]:
+            expanded = day9_total.expand_dims(prediction_timedelta=[td])
+            total_precip_list.append(expanded)
+        
+        # Concatenate
+        total_precipitation = xr.concat(total_precip_list, dim='prediction_timedelta')
+        
+        # Now subset the other variables to only keep these lead times too
+        keep_lead_times = [np.timedelta64(h, 'h') for h in [24, 36, 120, 132, 216, 228]]
+        subset = subset.sel(prediction_timedelta=keep_lead_times)
+        subset['total_precipitation'] = total_precipitation
 
     # convert init_time to valid_time
     subset_valid_time = convert_init_to_valid_time(subset)
@@ -473,4 +518,4 @@ if __name__ == '__main__':
     main()
 
 
-        
+       
