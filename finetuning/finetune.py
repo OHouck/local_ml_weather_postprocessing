@@ -314,6 +314,7 @@ def parse_args():
     parser.add_argument('--output_dir',   type=str, required=True)
     parser.add_argument('--climate_zones_file', type=str, default=None)
     parser.add_argument('--model_name',   type=str, required=True)
+    parser.add_argument('--ground_truth_source', type=str, default=None)
     parser.add_argument('--region',       type=str, default="india")
     parser.add_argument('--subregion',    type=str, default="2x2")
     parser.add_argument('--lead_time_hours', type=int, nargs='+', default=[24],
@@ -389,7 +390,7 @@ def generate_output_path(args):
     # Format lead times
     lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
 
-    output_path = f"{args.output_dir}/{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}_{dates_str}_{model_str}.zarr"
+    output_path = f"{args.output_dir}/{args.model_name}/{args.ground_truth_source}{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}_{dates_str}_{model_str}.zarr"
     return output_path 
 
 def sample_climate_zone_patches(
@@ -435,6 +436,8 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     """
 
+    # XX todo implement IDM cleaning here
+
     min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
     max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
 
@@ -447,12 +450,20 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
     
-    return xr.open_mfdataset(
+    # aifs has different variable names so rename them when loading
+    if data_source == "aifs":
+        preprocess_fn = lambda ds: ds.rename({'lat': 'latitude', 'lon': 'longitude', 'daily_tp': 'total_precipitation'}).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+    else:
+        preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+    
+    forecast_ds = xr.open_mfdataset(
         file_paths,
         combine="by_coords",
-        preprocess=lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude'),
+        preprocess=preprocess_fn,
         decode_timedelta=True
     )
+
+    return(forecast_ds)
 
 def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None):
     """
@@ -472,14 +483,25 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     time_values_np = time_values.to_numpy()
 
     # Define target dataset name
-    if args.model_name == "pangu":
-        target = "era5"
-    if args.model_name == "ifs":
-        target = "hres_t0"
+    if args.ground_truth_source is None:
+        if args.model_name == "pangu":
+            target = "era5"
+        elif args.model_name == "ifs":
+            target = "hres_t0"
+        elif args.model_name == "aifs":
+            target = "era5"
+        else:
+            raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
+    else: 
+        # For now only IMD is supported as alternative ground truth
+        target = args.ground_truth_source
     
     # Load datasets
     forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
     forecast_ds = forecast_ds.rename({'valid_time': 'time'})
+
+    print(forecast_ds)
+    exit()
 
     obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
     
@@ -879,6 +901,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
             mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
             print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
     print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
+
             
     save_start_time = time.time()
     # Save results

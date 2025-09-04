@@ -1486,6 +1486,718 @@ def _create_latex_table(df, prediction_var, nn_architecture, subregion, dirs, mo
     print(f"Table title: Summary Statistics for {variable_name}")
 
 
+#===============================================================================
+import os
+import glob
+import numpy as np
+import pandas as pd
+import xarray as xr
+from scipy import stats
+from types import SimpleNamespace
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+
+def calculate_and_save_statistics(
+        dirs,
+        train_start, train_end,
+        test_start, test_end,
+        models,  # Now accepts list of models
+        training_output_vars,
+        prediction_var,
+        nn_architectures=["mlp"],
+        regions=None,
+        subregions=["2x2", "4x4", "10x10"],  # Now accepts list
+        bootstrap=False,
+        lead_times=None,
+        simultaneous=False,
+        output_csv_path=None
+):
+    """
+    Calculate statistics for all forecast types and save to CSV.
+    
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    train_start, train_end, test_start, test_end : str
+        Date strings for train/test periods
+    models : list
+        List of model names (e.g., ['pangu', 'ifs'])
+    training_output_vars : tuple
+        Tuple of (training_vars, output_vars)
+    prediction_var : str
+        Variable to predict (e.g., '2m_temperature', '10m_wind_speed')
+    nn_architectures : list
+        List of architectures: ["mlp"], ["unet"], or ["mlp", "unet"]
+    regions : list
+        List of regions to analyze
+    subregions : list
+        List of patch sizes (e.g., ["2x2", "4x4", "10x10"])
+    bootstrap : bool
+        If True, uses bootstrap samples
+    lead_times : list
+        List of lead times in hours
+    simultaneous : bool
+        If True, use data from model that trained all lead times simultaneously
+    output_csv_path : str
+        Path to save the CSV file. If None, auto-generates path
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing all calculated statistics
+    """
+    
+    # Parse training and output variables
+    training_vars, output_vars = training_output_vars
+    if not isinstance(training_vars, (list, tuple)):
+        training_vars = [training_vars]
+    if not isinstance(output_vars, (list, tuple)):
+        output_vars = [output_vars]
+    
+    # Default values
+    if regions is None:
+        regions = ["india", "usa_south", "british_columbia", "amazon", "ethiopia"]
+    if lead_times is None:
+        lead_times = [24, 120, 240]
+    
+    # Storage for all results
+    all_results = []
+    
+    # Process each combination
+    for subregion in subregions:
+        for region in regions:
+            # Determine if it's a climate zone
+            is_climate_zone = region in ["tropical", "arid", "temperate", "cold", "polar"]
+            
+            for model in models:
+                for arch in nn_architectures:
+                    for lead_time in lead_times:
+                        # Set up args for generate_output_path
+                        if simultaneous:
+                            lead_time_hours = "_".join(str(lt) for lt in lead_times)
+                        else:
+                            lead_time_hours = lead_time
+                        
+                        args = SimpleNamespace(
+                            model_name=model,
+                            region=region,
+                            subregion=subregion,
+                            train_start=train_start,
+                            train_end=train_end,
+                            test_start=test_start,
+                            test_end=test_end,
+                            training_vars=training_vars,
+                            output_vars=output_vars,
+                            lead_time_hours=lead_time_hours,
+                            nn_architecture=arch
+                        )
+                        
+                        # Construct file paths
+                        if bootstrap:
+                            file_pattern = os.path.join(dirs['input'], 
+                                                       generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                        else:
+                            file_pattern = os.path.join(dirs['input'], generate_output_path(args))
+                        
+                        files = glob.glob(file_pattern)
+                        
+                        if not files:
+                            print(f"No files found for {model} {arch} {region} {subregion} {lead_time}h")
+                            continue
+                        
+                        if not bootstrap and len(files) > 1:
+                            print(f"Warning: Multiple files found for {model} {arch} {region} {subregion} {lead_time}h")
+                            files = files[:1]  # Use first file
+                        
+                        # Process each file (multiple for bootstrap)
+                        file_results = []
+                        ground_truth_values = []
+                        
+                        for idx, file_path in enumerate(files):
+                            try:
+                                ds = load_zarr_cached(file_path)
+                                
+                                # Extract data
+                                ground_truth, original, corrected, mean_corrected = extract_forecast_data(
+                                    ds, prediction_var, lead_time
+                                )
+                                
+                                # Flatten arrays for statistics
+                                gt_flat = ground_truth.values.flatten()
+                                orig_flat = original.values.flatten()
+                                corr_flat = corrected.values.flatten()
+                                
+                                # Remove NaN values
+                                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                                gt_flat = gt_flat[mask]
+                                orig_flat = orig_flat[mask]
+                                corr_flat = corr_flat[mask]
+                                
+                                # Store ground truth for statistics
+                                ground_truth_values.extend(gt_flat)
+                                
+                                # Calculate RMSE values
+                                rmse_original = np.sqrt(np.mean((orig_flat - gt_flat)**2))
+                                rmse_corrected = np.sqrt(np.mean((corr_flat - gt_flat)**2))
+                                
+                                # Calculate percent improvement
+                                pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
+                                
+                                # Calculate mean corrected RMSE if available
+                                rmse_mean_corrected = None
+                                pct_improvement_mean = None
+                                if mean_corrected is not None:
+                                    mc_flat = mean_corrected.values.flatten()[mask]
+                                    rmse_mean_corrected = np.sqrt(np.mean((mc_flat - gt_flat)**2))
+                                    pct_improvement_mean = (rmse_original - rmse_mean_corrected) / rmse_original * 100
+                                
+                                file_results.append({
+                                    'rmse_original': rmse_original,
+                                    'rmse_corrected': rmse_corrected,
+                                    'rmse_mean_corrected': rmse_mean_corrected,
+                                    'pct_improvement': pct_improvement,
+                                    'pct_improvement_mean': pct_improvement_mean,
+                                    'bootstrap_idx': idx if bootstrap else None
+                                })
+                                
+                            except Exception as e:
+                                print(f"Error processing {file_path}: {e}")
+                                continue
+                        
+                        if not file_results:
+                            continue
+                        
+                        # Calculate statistics across bootstrap samples if applicable
+                        if bootstrap:
+                            rmse_orig_values = [r['rmse_original'] for r in file_results]
+                            rmse_corr_values = [r['rmse_corrected'] for r in file_results]
+                            pct_imp_values = [r['pct_improvement'] for r in file_results]
+                            
+                            n = len(file_results)
+                            
+                            # Calculate means
+                            rmse_orig_mean = np.mean(rmse_orig_values)
+                            rmse_corr_mean = np.mean(rmse_corr_values)
+                            pct_imp_mean = np.mean(pct_imp_values)
+                            
+                            # Calculate standard errors and confidence intervals
+                            rmse_orig_se = np.std(rmse_orig_values, ddof=1) / np.sqrt(n)
+                            rmse_corr_se = np.std(rmse_corr_values, ddof=1) / np.sqrt(n)
+                            pct_imp_se = np.std(pct_imp_values, ddof=1) / np.sqrt(n)
+                            
+                            # 95% CI using t-distribution
+                            alpha_ci = 0.05
+                            t_crit = stats.t.ppf(1 - alpha_ci/2, df=n-1)
+                            
+                            rmse_orig_ci_lower = rmse_orig_mean - (t_crit * rmse_orig_se)
+                            rmse_orig_ci_upper = rmse_orig_mean + (t_crit * rmse_orig_se)
+                            rmse_corr_ci_lower = rmse_corr_mean - (t_crit * rmse_corr_se)
+                            rmse_corr_ci_upper = rmse_corr_mean + (t_crit * rmse_corr_se)
+                            pct_imp_ci_lower = pct_imp_mean - (t_crit * pct_imp_se)
+                            pct_imp_ci_upper = pct_imp_mean + (t_crit * pct_imp_se)
+                            
+                            # Handle mean corrected if available
+                            rmse_mc_mean = None
+                            pct_imp_mc_mean = None
+                            if file_results[0]['rmse_mean_corrected'] is not None:
+                                rmse_mc_values = [r['rmse_mean_corrected'] for r in file_results]
+                                pct_imp_mc_values = [r['pct_improvement_mean'] for r in file_results]
+                                rmse_mc_mean = np.mean(rmse_mc_values)
+                                pct_imp_mc_mean = np.mean(pct_imp_mc_values)
+                        else:
+                            # Single file case
+                            result = file_results[0]
+                            rmse_orig_mean = result['rmse_original']
+                            rmse_corr_mean = result['rmse_corrected']
+                            pct_imp_mean = result['pct_improvement']
+                            rmse_mc_mean = result['rmse_mean_corrected']
+                            pct_imp_mc_mean = result['pct_improvement_mean']
+                            
+                            # No confidence intervals for single file
+                            rmse_orig_ci_lower = rmse_orig_ci_upper = None
+                            rmse_corr_ci_lower = rmse_corr_ci_upper = None
+                            pct_imp_ci_lower = pct_imp_ci_upper = None
+                            n = 1
+                        
+                        # Calculate ground truth statistics
+                        if ground_truth_values:
+                            gt_mean = np.mean(ground_truth_values)
+                            gt_std = np.std(ground_truth_values)
+                        else:
+                            gt_mean = gt_std = None
+                        
+                        # Create row for results
+                        row = {
+                            'variable': prediction_var,
+                            'model': model,
+                            'architecture': arch,
+                            'region': region,
+                            'region_type': 'climate' if is_climate_zone else 'geographic',
+                            'subregion': subregion,
+                            'lead_time': lead_time,
+                            'training_vars': "_".join(training_vars),
+                            'output_vars': "_".join(output_vars),
+                            'train_period': f"{train_start}_{train_end}",
+                            'test_period': f"{test_start}_{test_end}",
+                            'rmse_original': rmse_orig_mean,
+                            'rmse_corrected': rmse_corr_mean,
+                            'rmse_mean_corrected': rmse_mc_mean,
+                            'pct_improvement': pct_imp_mean,
+                            'pct_improvement_mean_corrected': pct_imp_mc_mean,
+                            'ground_truth_mean': gt_mean,
+                            'ground_truth_std': gt_std,
+                            'bootstrap': bootstrap,
+                            'n_samples': n
+                        }
+                        
+                        # Add confidence intervals if bootstrap
+                        if bootstrap:
+                            row.update({
+                                'rmse_original_ci_lower': rmse_orig_ci_lower,
+                                'rmse_original_ci_upper': rmse_orig_ci_upper,
+                                'rmse_corrected_ci_lower': rmse_corr_ci_lower,
+                                'rmse_corrected_ci_upper': rmse_corr_ci_upper,
+                                'pct_improvement_ci_lower': pct_imp_ci_lower,
+                                'pct_improvement_ci_upper': pct_imp_ci_upper
+                            })
+                        
+                        all_results.append(row)
+                        print(f"Processed: {model} {arch} {region} {subregion} {lead_time}h - "
+                              f"Improvement: {pct_imp_mean:.1f}%")
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_results)
+    
+    # Save to CSV
+    if output_csv_path is None:
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        output_csv_path = os.path.join(dirs['processed'], 
+                                      f'forecast_statistics_{prediction_var}_{timestamp}.csv')
+    
+    df.to_csv(output_csv_path, index=False)
+    print(f"\nStatistics saved to: {output_csv_path}")
+    
+    return df
+
+
+def plot_lead_time_from_csv(
+        csv_path,
+        dirs,
+        regions=None,
+        subregion="4x4",
+        plot_type="all",
+        nn_architectures=["mlp"],
+        models=None,
+        save_path=None
+):
+    """
+    Generate lead time plots from pre-calculated statistics CSV.
+    
+    Parameters
+    ----------
+    csv_path : str
+        Path to CSV file containing statistics
+    dirs : dict
+        Dictionary of directories (for saving plots)
+    regions : list
+        List of regions to include in plot. If None, uses all in CSV
+    subregion : str
+        Patch size to filter for
+    plot_type : str
+        Type of plot: "pangu_nn", "pangu_ifs_nn", or "all"
+    nn_architectures : list
+        List of architectures to include: ["mlp"], ["unet"], or both
+    models : list
+        List of models to include. If None, determined by plot_type
+    save_path : str
+        Custom save path. If None, auto-generates based on parameters
+    """
+    
+    # Load statistics
+    df = pd.read_csv(csv_path)
+    
+    # Filter by subregion
+    df = df[df['subregion'] == subregion]
+    
+    # Filter by regions if specified
+    if regions is not None:
+        df = df[df['region'].isin(regions)]
+    else:
+        regions = df['region'].unique().tolist()
+    
+    # Filter by architectures
+    df = df[df['architecture'].isin(nn_architectures)]
+    
+    # Determine models based on plot_type
+    if models is None:
+        if plot_type == "pangu_nn":
+            models = ["pangu"]
+        elif plot_type == "pangu_ifs_nn":
+            models = ["pangu", "ifs"]
+        elif plot_type == "all":
+            models = df['model'].unique().tolist()
+    
+    df = df[df['model'].isin(models)]
+    
+    # Get unique values for plotting
+    lead_times = sorted(df['lead_time'].unique())
+    prediction_var = df['variable'].iloc[0] if len(df) > 0 else "unknown"
+    
+    # Define colors
+    region_colors = {
+        'india': '#E69F00',
+        'usa_south': '#56B4E9',
+        'british_columbia': '#009E73',
+        'amazon': '#CC79A7',
+        'ethiopia': '#D55E00',
+    }
+    
+    climate_region_colors = {
+        'tropical': '#228b22',
+        'arid': '#FFFF00',
+        'temperate': '#90EE90',
+        'cold': '#6495ED',
+        'polar': '#ADD8E6'
+    }
+    
+    model_markers = {
+        'pangu': 'o',
+        'ifs': '^'
+    }
+    
+    architecture_fillstyles = {
+        'mlp': 'full',
+        'unet': 'none'
+    }
+    
+    correction_styles = {
+        'nn': '-',
+        'ano': '--'
+    }
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Plot each combination
+    for region in regions:
+        # Get color for region
+        if region in climate_region_colors:
+            color = climate_region_colors[region]
+        else:
+            color = region_colors.get(region, '#1f77b4')
+        
+        region_df = df[df['region'] == region]
+        
+        for model in models:
+            model_df = region_df[region_df['model'] == model]
+            
+            for arch in nn_architectures:
+                arch_df = model_df[model_df['architecture'] == arch]
+                
+                if len(arch_df) == 0:
+                    continue
+                
+                # Sort by lead time
+                arch_df = arch_df.sort_values('lead_time')
+                
+                # Get styles
+                marker = model_markers.get(model, 'o')
+                fillstyle = architecture_fillstyles.get(arch, 'full')
+                
+                # Plot neural network correction
+                if 'pct_improvement' in arch_df.columns:
+                    x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                    y_values = arch_df['pct_improvement'].values
+                    
+                    ax.plot(x_pos, y_values,
+                           marker=marker,
+                           fillstyle=fillstyle,
+                           linestyle='-',
+                           color=color,
+                           linewidth=2.5,
+                           markersize=15,
+                           alpha=0.75,
+                           zorder=3)
+                    
+                    # Add confidence intervals if available
+                    if 'pct_improvement_ci_lower' in arch_df.columns:
+                        ci_lower = arch_df['pct_improvement_ci_lower'].values
+                        ci_upper = arch_df['pct_improvement_ci_upper'].values
+                        ax.fill_between(x_pos, ci_lower, ci_upper,
+                                       color=color,
+                                       alpha=0.1,
+                                       zorder=1)
+                
+                # Plot mean corrected if available and requested
+                if plot_type == "all" and 'pct_improvement_mean_corrected' in arch_df.columns:
+                    if not arch_df['pct_improvement_mean_corrected'].isna().all():
+                        x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                        y_values = arch_df['pct_improvement_mean_corrected'].values
+                        
+                        ax.plot(x_pos, y_values,
+                               marker=marker,
+                               fillstyle=fillstyle,
+                               linestyle='--',
+                               color=color,
+                               linewidth=2.5,
+                               markersize=15,
+                               alpha=0.75,
+                               zorder=3)
+    
+    # Set axes
+    ax.set_ylim(-18, 35)
+    ax.set_xticks(range(len(lead_times)))
+    ax.set_xticklabels([f"{lt}h" for lt in lead_times])
+    
+    # Labels and title
+    ax.set_xlabel("Forecast Lead Time", fontsize=20)
+    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
+    
+    # Add reference line
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    
+    # Title
+    arch_str = "/".join([a.upper() for a in nn_architectures])
+    regions_str = ", ".join(regions)
+    is_bootstrap = df['bootstrap'].iloc[0] if len(df) > 0 else False
+    
+    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"]
+    title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
+    if is_bootstrap:
+        title_parts[0] += " (with 95% CI)"
+    ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
+    
+    # Grid
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
+    
+    ax.tick_params(axis='both', labelsize=20)
+    
+    # Create legends
+    region_handles = []
+    for region in regions:
+        if region in climate_region_colors:
+            color = climate_region_colors[region]
+        else:
+            color = region_colors.get(region, '#1f77b4')
+        region_handles.append(Line2D([0], [0], color=color, linewidth=3,
+                                    label=region.replace('_', ' ').title()))
+    
+    model_handles = []
+    for model in models:
+        marker = model_markers.get(model, 'o')
+        model_handles.append(Line2D([0], [0], color='black', marker=marker,
+                                   linestyle='none', markersize=15,
+                                   label=model.upper()))
+    
+    arch_handles = []
+    for arch in nn_architectures:
+        fillstyle = architecture_fillstyles.get(arch, 'full')
+        arch_handles.append(Line2D([0], [0], color='black', marker='o',
+                                  fillstyle=fillstyle, markersize=15,
+                                  linestyle='none', label=arch.upper()))
+    
+    # Add legends
+    legend1 = ax.legend(handles=region_handles, title="Region",
+                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
+    legend2 = ax.legend(handles=model_handles, title="Model",
+                       loc='lower right', bbox_to_anchor=(1, 0.45), fontsize=12)
+    legend3 = ax.legend(handles=arch_handles, title="Architecture",
+                       loc='lower right', bbox_to_anchor=(1, 0.3), fontsize=12)
+    
+    ax.add_artist(legend1)
+    ax.add_artist(legend2)
+    
+    # Style legends
+    for legend in [legend1, legend2, legend3]:
+        legend.get_frame().set_facecolor('white')
+        legend.get_frame().set_alpha(0.95)
+        legend.get_frame().set_edgecolor('gray')
+    
+    # Remove spines
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.tight_layout()
+    
+    # Save figure
+    if save_path is None:
+        out_folder = os.path.join(dirs["fig"], models[0], "lead_time", "multi_region", subregion)
+        os.makedirs(out_folder, exist_ok=True)
+        
+        bootstrap_suffix = "_bootstrap" if is_bootstrap else ""
+        arch_suffix = "_".join(nn_architectures)
+        
+        if any(r in climate_region_colors for r in regions):
+            region_type = "climate_zones"
+        else:
+            region_type = "geographic"
+        
+        training_vars = df['training_vars'].iloc[0] if len(df) > 0 else "unknown"
+        fname = (f"leadtime_improvement_{prediction_var}_trainedwith_{training_vars}_"
+                f"{region_type}_{plot_type}_{arch_suffix}{bootstrap_suffix}.png")
+        save_path = os.path.join(out_folder, fname)
+    
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Lead-time plot saved to: {save_path}")
+
+
+def generate_summary_table_from_csv(
+        csv_path,
+        dirs,
+        regions=None,
+        subregion="2x2",
+        nn_architecture="mlp",
+        lead_times=None,
+        save_latex=True
+):
+    """
+    Generate summary statistics table from pre-calculated CSV.
+    
+    Parameters
+    ----------
+    csv_path : str
+        Path to CSV file containing statistics
+    dirs : dict
+        Dictionary of directories (for saving table)
+    regions : list
+        List of regions to include. If None, uses all in CSV
+    subregion : str
+        Patch size to filter for
+    nn_architecture : str
+        Architecture to filter for
+    lead_times : list
+        Lead times to include. If None, uses all in CSV
+    save_latex : bool
+        Whether to save LaTeX table
+        
+    Returns
+    -------
+    pd.DataFrame
+        Formatted summary table
+    """
+    
+    # Load statistics
+    df = pd.read_csv(csv_path)
+    
+    # Filter data
+    df = df[df['subregion'] == subregion]
+    df = df[df['architecture'] == nn_architecture]
+    
+    if regions is not None:
+        df = df[df['region'].isin(regions)]
+    
+    if lead_times is not None:
+        df = df[df['lead_time'].isin(lead_times)]
+    
+    # Get the first model in the dataframe (assuming we want consistent model)
+    model = df['model'].iloc[0] if len(df) > 0 else "unknown"
+    prediction_var = df['variable'].iloc[0] if len(df) > 0 else "unknown"
+    
+    # Create summary table
+    summary_rows = []
+    region_ground_truth_stats = {}
+    
+    for region in df['region'].unique():
+        region_df = df[df['region'] == region].sort_values('lead_time')
+        
+        # Calculate region-wide ground truth statistics
+        if 'ground_truth_mean' in region_df.columns and 'ground_truth_std' in region_df.columns:
+            gt_mean = region_df['ground_truth_mean'].mean()  # Average across lead times
+            gt_std = region_df['ground_truth_std'].mean()
+            region_display = region.replace('_', ' ').title()
+            region_ground_truth_stats[region_display] = f"{gt_mean:.2f} ({gt_std:.2f})"
+        
+        for _, row in region_df.iterrows():
+            summary_row = {
+                'Region': region.replace('_', ' ').title(),
+                'Lead Time': f"{row['lead_time']}h",
+                'RMSE (Orig)': row['rmse_original'],
+                'RMSE Change': row['rmse_corrected'] - row['rmse_original'],
+                'RMSE Improvement (%)': row['pct_improvement']
+            }
+            summary_rows.append(summary_row)
+    
+    summary_df = pd.DataFrame(summary_rows)
+    
+    # Save LaTeX table if requested
+    if save_latex:
+        _create_latex_table_from_df(summary_df, prediction_var, nn_architecture, 
+                                   subregion, dirs, model, region_ground_truth_stats)
+    
+    return summary_df
+
+
+def _create_latex_table_from_df(df, prediction_var, nn_architecture, subregion, 
+                               dirs, model, region_ground_truth_stats):
+    """
+    Creates a LaTeX table from DataFrame.
+    """
+    out_folder = os.path.join(dirs["fig"], model, "summary_stats")
+    os.makedirs(out_folder, exist_ok=True)
+    
+    latex_lines = []
+    latex_lines.append("\\begin{tabular}{llrr}")
+    latex_lines.append("\\toprule")
+    latex_lines.append("Region & Lead Time & RMSE & Improvement (\\%) \\\\")
+    latex_lines.append("\\midrule")
+    
+    current_region = None
+    region_rows = []
+    
+    for _, row in df.iterrows():
+        region = row['Region']
+        
+        if region != current_region and current_region is not None:
+            for i, region_row in enumerate(region_rows):
+                if i == 0:
+                    latex_lines.append(region_row)
+                elif i == 1:
+                    gt_stats = region_ground_truth_stats.get(current_region, "N/A")
+                    latex_lines.append(f"\\textit{{Ground Truth: {gt_stats}}} & {region_row}")
+                else:
+                    latex_lines.append(f" & {region_row}")
+            region_rows = []
+        
+        rmse_display = f"{row['RMSE (Orig)']:.3f} ({row['RMSE Change']:+.3f})"
+        data_portion = f"{row['Lead Time']} & {rmse_display} & {row['RMSE Improvement (%)']:.1f} \\\\"
+        
+        if region != current_region:
+            region_rows.append(f"{region} & {data_portion}")
+            current_region = region
+        else:
+            region_rows.append(data_portion)
+    
+    if region_rows:
+        for i, region_row in enumerate(region_rows):
+            if i == 0:
+                latex_lines.append(region_row)
+            elif i == 1:
+                gt_stats = region_ground_truth_stats.get(current_region, "N/A")
+                latex_lines.append(f"\\textit{{Ground Truth: {gt_stats}}} & {region_row}")
+            else:
+                latex_lines.append(f" & {region_row}")
+    
+    latex_lines.append("\\bottomrule")
+    latex_lines.append("\\end{tabular}")
+    
+    latex_str = "\n".join(latex_lines)
+    
+    variable_name = prediction_var.replace('_', ' ').title()
+    filename = f"summary_stats_{prediction_var}_{nn_architecture}_{subregion}.tex"
+    filepath = os.path.join(out_folder, filename)
+    
+    with open(filepath, 'w') as f:
+        f.write(latex_str)
+    
+    print(f"\nSaved LaTeX table to: {filepath}")
+    print(f"Table title: Summary Statistics for {variable_name}")
+
+
 
 def main():
     dirs = setup_directories()
@@ -1515,7 +2227,7 @@ def main():
         nn_architecture="mlp",
         regions = ["india", "amazon", "ethiopia"],
         subregion="2x2",
-        lead_times=[24, 120, 240],  # Multiple lead times
+        lead_times=[24, 120, 216],  # Multiple lead times
         simultaneous=True
     )
 
@@ -1625,7 +2337,7 @@ def main():
         regions = ["tropical", "arid", "temperate"],
         subregion="2x2",
         bootstrap=True,
-        lead_times=[24, 120, 240],  
+        lead_times=[24, 120, 216],  
         simultaneous=True
     )
 
