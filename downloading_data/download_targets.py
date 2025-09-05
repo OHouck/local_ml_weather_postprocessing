@@ -47,15 +47,23 @@ def download_data(data_name, year):
     # 2. Define variables and parameters
     print("\n2. Defining download parameters...")
     
-    variables_to_try = [
-        '2m_temperature',
-        '10m_u_component_of_wind',
-        '10m_v_component_of_wind',
-        'total_precipitation',
-        '2m_specific_humidity'
-    ]
+
+    if data_name == 'era5':
+        variables_to_try = [
+            '2m_temperature',
+            '10m_u_component_of_wind',
+            '10m_v_component_of_wind',
+            'total_precipitation'
+        ]
+    elif data_name == 'hres_t0':
+        variables_to_try = [
+            '2m_temperature',
+            '10m_u_component_of_wind',
+            '10m_v_component_of_wind',
+            'total_precipitation_6hr'
+        ]
     
-    # Define your domain
+    # Define your domain for each year to be downloaded
     time_range = [f'{year}-01-01', f'{year}-12-31']
     
     # Output path
@@ -73,7 +81,10 @@ def download_data(data_name, year):
                 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3',
                 consolidated=True
             )
-        if data_name == 'hres_t0':
+            # to match hres_t0 variable names to be consistent
+            ds = ds.rename({'total_precipitation': 'total_precipitation_6hr'})
+
+        elif data_name == 'hres_t0':
             print("  Using Weatherbenchy-HRES-T0 dataset")
             ds = xr.open_zarr(
                 "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr",
@@ -81,6 +92,10 @@ def download_data(data_name, year):
             )
         else:
             raise ValueError(f"Unknown dataset name: {data_name}")
+        
+        # print all available variables
+        vars = list(ds.data_vars)
+        print(f"Available variables in dataset: {vars}")
 
         print(f"Dataset opened successfully")
         print(f"Dataset dimensions: {ds.dims}")
@@ -98,16 +113,14 @@ def download_data(data_name, year):
                     print(f"  ✗ {var_name} not found. Similar: {similar[:3]}")
                 else:
                     print(f"  ✗ {var_name} not found")
-        
-        # Show all humidity-related variables
-        humidity_vars = [v for v in ds.data_vars if any(h in v.lower() for h in ['humidity', 'dewpoint', 'moisture'])]
-        if humidity_vars:
-            print(f"\nAvailable humidity-related variables: {humidity_vars}")
+    
         
     except Exception as e:
         print(f"Error opening dataset: {e}")
         client.close()
         raise
+
+    
     
     start_time = print_time_and_memory("Dataset opened", start_time)
     
@@ -119,9 +132,38 @@ def download_data(data_name, year):
     subset = ds[available_vars].sel(
         time=slice(time_range[0], time_range[1])
     )
-    
+
+    # calculate cumulative precipitation for the entire day
+    # group by 6, 12, 18, 24 hours and take the sum of the 6-hourly precipitation
+    if 'total_precipitation_6hr' in available_vars:
+
+        six_hour_precip = subset['total_precipitation_6hr']
+
+        # convert from being cumulative precip at the end of the 6-hour period 
+        # to being the precip over the coming 6-hour period
+        # This means we can sum by the day
+        # move each timestep back by 6 hours
+        # Shift time coordinate forward by 6 hours
+        six_hour_precip = six_hour_precip.assign_coords(
+            time=six_hour_precip.time + pd.Timedelta(hours=6)
+        )
+
+        # Create daily precipitation sums
+        daily_precip = six_hour_precip.resample(time='1D').sum()
+        daily_precip = daily_precip.rename('total_precipitation')
+
+        # Broadcast back to 6-hourly resolution so all timesteps within a day have the same value
+        total_precipitation = daily_precip.resample(time='6H').ffill()
+
+        # merge back
+        subset = subset.drop_vars('total_precipitation_6hr')
+        subset["total_precipitation"] = total_precipitation
+
     # filter for only hours 0 and 12
     subset = subset.sel(time=subset.time.dt.hour.isin([0, 12]))
+
+    # update available_vars to reflect changes
+    available_vars = list(subset.data_vars)
     
     # Print subset info
     print(f"\nSubset shape:")
@@ -315,7 +357,7 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    data_source = 'hres_t0'  # hrses_t0 or era5
+    data_source = 'era5'  # hres_t0 or era5
     
     # Try the download
     for year in years:

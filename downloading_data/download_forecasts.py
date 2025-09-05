@@ -344,8 +344,8 @@ def main():
     print(f"  dask: {dask.__version__}")
 
     years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    # model = 'pangu'
-    model = "ifs"
+    model = 'pangu'
+    # model = "ifs"
     # Start timing
     script_start = time.time()
     start_time = time.time()
@@ -379,7 +379,7 @@ def main():
             '10m_u_component_of_wind',
             '10m_v_component_of_wind'
         ]
-        lead_times_hours = [24, 24 + 12, 120, 120 + 12, 240, 240 + 12] # midday and midnight forecasts for 1, 5, 10 days 
+        lead_times_hours = [24, 24 + 12, 120, 120 + 12, 216, 216 + 12] # midday and midnight forecasts for 1, 5, 9 days 
     elif model == 'ifs':
         variables_to_try = [
             '2m_temperature',
@@ -387,9 +387,10 @@ def main():
             '10m_v_component_of_wind',
             'total_precipitation_6hr'
         ]
-        lead_times_hours = [24, 24 + 6, 24 + 12, 24 + 18,
-                            120, 120 + 6, 120 + 12, 120 + 18, 
-                            216, 216 + 6, 216 + 12, 216 + 18]  # for IFS get all 6 hour intervals to get daily total precip
+        base_days = [24,120,216] # 1, 5, 9 days
+        lead_times_hours = []
+        for b in base_days:
+            lead_times_hours += [b + offset for offset in (0, 6, 12, 18, 24)]
 
     
     start_time = print_time_and_memory("Parameter setup", start_time)
@@ -447,6 +448,9 @@ def main():
 
     print(f" Lead time options: {lead_times_hours} hours")
 
+    # print unique lead times in dataset
+    dataset_lead_times = np.unique(ds.prediction_timedelta.values).astype('timedelta64[h]').astype(int)
+    print(f"  Dataset lead times (hours): {dataset_lead_times}")
 
     subset = ds[available_vars].sel(
         prediction_timedelta=[np.timedelta64(hours, 'h') for hours in lead_times_hours]
@@ -458,40 +462,38 @@ def main():
     if 'total_precipitation_6hr' in available_vars:
         print("  Converting 6-hourly total precipitation to daily totals...")
         precip_6hr = subset['total_precipitation_6hr']
-        
-        # Sum all 4 periods for each day
-        day1_total = precip_6hr.isel(prediction_timedelta=slice(0, 4)).sum(dim='prediction_timedelta')
-        day5_total = precip_6hr.isel(prediction_timedelta=slice(4, 8)).sum(dim='prediction_timedelta')  
-        day9_total = precip_6hr.isel(prediction_timedelta=slice(8, 12)).sum(dim='prediction_timedelta')
+
+        # manually define the lead time needed to calculate daily totals
+        daily_precip_steps = {
+            "day1": [30, 36, 42, 48],   # 24-48h
+            "day5": [126, 132, 138, 144], # 120-144h
+            "day9": [222, 228, 234, 240]  # 216-240h
+        }
         
         # Create the dataset with only the lead times you need
         # Midnight: 24h (day 1), 120h (day 5), 216h (day 9)
         # Midday: 36h (day 1), 132h (day 5), 228h (day 9)
         
         total_precip_list = []
+        keep_lead_times =[]
+
+        for day, hours in daily_precip_steps.items():
+
+            # sum the 6h totals across 24h window
+            day_total = precip_6hr.sel(prediction_timedelta=[np.timedelta64(h, 'h') for h in hours]).sum(dim='prediction_timedelta')
         
-        # Day 1 - midnight and midday
-        for td in [np.timedelta64(24, 'h'), np.timedelta64(36, 'h')]:
-            expanded = day1_total.expand_dims(prediction_timedelta=[td])
-            total_precip_list.append(expanded)
-        
-        # Day 5 - midnight and midday
-        for td in [np.timedelta64(120, 'h'), np.timedelta64(132, 'h')]:
-            expanded = day5_total.expand_dims(prediction_timedelta=[td])
-            total_precip_list.append(expanded)
-        
-        # Day 9 - midnight and midday  
-        for td in [np.timedelta64(216, 'h'), np.timedelta64(228, 'h')]:
-            expanded = day9_total.expand_dims(prediction_timedelta=[td])
-            total_precip_list.append(expanded)
+            for td in [np.timedelta64(hours[0]-6, 'h'), np.timedelta64(hours[1], 'h')]:
+                expanded = day_total.expand_dims(prediction_timedelta=[td])
+                total_precip_list.append(expanded)
+                keep_lead_times.append(td)
         
         # Concatenate
         total_precipitation = xr.concat(total_precip_list, dim='prediction_timedelta')
-        
-        # Now subset the other variables to only keep these lead times too
-        keep_lead_times = [np.timedelta64(h, 'h') for h in [24, 36, 120, 132, 216, 228]]
+
+        # replace subset lead times with only the ones we want
         subset = subset.sel(prediction_timedelta=keep_lead_times)
         subset['total_precipitation'] = total_precipitation
+
 
     # convert init_time to valid_time
     subset_valid_time = convert_init_to_valid_time(subset)

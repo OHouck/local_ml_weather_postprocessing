@@ -1,3 +1,4 @@
+# download_aifs.sh
 #!/bin/bash
 
 # Configuration
@@ -6,7 +7,7 @@ REMOTE_DIR="/net/monsoon/marchakitus/model_data/AIFS/output_daily_march_15_octob
 LOCAL_DIR="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/aifs"
 LOCAL_TEMP="/Users/ohouck/tmp/aifs_temp_$"
 ERROR_LOG_DIR="${LOCAL_DIR}/error_logs"
-LEAD_DAYS="1,5,10"
+LEAD_DAYS="1,5,9"
 
 # More robust script directory detection
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -50,51 +51,51 @@ process_file() {
     # Skip file if already processed
     if [ -d "${final_output}" ]; then
         echo "✓ Skipping ${filename}: already processed (${processed_name})"
-        return 2  # 2 means skipped
+        return 2
     fi
 
     echo "========================================="
     echo "Processing: ${filename} (PID: $$)"
     echo "========================================="
 
-    echo "Step 1/3: Downloading ${filename} from cluster..."
-    
-    # Optimized rsync with compression and partial transfer support
-    rsync -avz --partial --progress --compress-level=1 \
-          --timeout=300 --contimeout=60 \
-          "${CLUSTER_HOST}:${remote_file}" \
-          "${temp_local_file}"
-    
-    local rsync_exit_code=$?
-    if [ $rsync_exit_code -ne 0 ]; then
-        echo "✗ Failed to download ${filename} (rsync exit code: $rsync_exit_code)"
-        echo "$(date): Failed to download ${filename} - rsync exit code: $rsync_exit_code" >> "$error_log"
-        return 1
+    echo "Step 1/3: Preparing ${filename}..."
+
+    # If file already exists locally, don’t redownload
+    if [ -f "${temp_local_file}" ]; then
+        echo "✓ Found existing local copy of ${filename}, skipping download"
+    else
+        echo "Downloading ${filename} from cluster..."
+        rsync -avz --partial --progress --compress-level=1 \
+              --timeout=300 --contimeout=60 \
+              "${CLUSTER_HOST}:${remote_file}" \
+              "${temp_local_file}"
+
+        local rsync_exit_code=$?
+        if [ $rsync_exit_code -ne 0 ]; then
+            echo "✗ Failed to download ${filename} (rsync exit code: $rsync_exit_code)"
+            echo "$(date): Failed to download ${filename} - rsync exit code: $rsync_exit_code" >> "$error_log"
+            return 1
+        fi
     fi
 
     local file_size=$(du -h "${temp_local_file}" | cut -f1)
-    echo "Downloaded ${filename} (${file_size})"
+    echo "Ready to process ${filename} (${file_size})"
 
     echo "Step 2/3: Processing ${filename} locally..."
     
-    # Debug Python execution
-    echo "Python script: ${PYTHON_SCRIPT}"
-    echo "Python command: python3 '${PYTHON_SCRIPT}' '${temp_local_file}' '${final_output}' '${LEAD_DAYS}'"
-    
-    # Run Python processing with detailed error logging
     if python3 "${PYTHON_SCRIPT}" \
            "${temp_local_file}" \
            "${final_output}" \
            "${LEAD_DAYS}" 2>&1 | tee -a "$error_log"; then
         
         echo "✓ Successfully processed ${filename}"
-        echo "Step 3/3: Cleaning up temporary file..."
-        rm -f "${temp_local_file}"
 
-        if [ $? -eq 0 ]; then
-            echo "✓ Deleted temporary file: ${temp_local_file}"
+        # Delete temporary file only in normal/parallel mode, not in test mode
+        if [ "$TEST_MODE" != "true" ]; then
+            echo "Step 3/3: Cleaning up temporary file..."
+            rm -f "${temp_local_file}"
         else
-            echo "⚠ Warning: Could not delete temporary file: ${temp_local_file}"
+            echo "TEST MODE: Keeping local file for debugging: ${temp_local_file}"
         fi
 
         if [ -d "${final_output}" ]; then
@@ -102,8 +103,7 @@ process_file() {
             echo "✓ Saved processed file: ${processed_name} (${processed_size})"
         fi
 
-        # Remove error log if processing was successful
-        rm -f "$error_log"
+        rm -f "$error_log"  # remove error log if successful
         return 0
     else
         echo "✗ Failed to process ${filename}"
@@ -256,8 +256,8 @@ main() {
     # Process files based on arguments
     if [ $# -ge 1 ]; then
         if [ "$1" == "--test" ]; then
-            # Test mode: process only first file
             echo "TEST MODE: Processing first file only"
+            TEST_MODE=true
             process_file "${files_array[0]}"
         elif [ "$1" == "--parallel" ]; then
             # Parallel mode for all files

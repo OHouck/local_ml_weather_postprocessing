@@ -6,15 +6,11 @@ import numpy as np
 import xarray as xr
 
 # Path to the GRIB2 file
-path = "/Users/ohouck/Downloads/20250825120000-360h-oper-fc.grib2"
+path = "/Users/ohouck/test.zarr"
 
-# Open the GRIB2 file using xarray and cfgrib
-ds = xr.open_dataset(path, engine="cfgrib")
-
-# Print the dataset to inspect its contents
-print(ds)
-
-# print step values in hours
-print(np.unique(ds.step.values / 3600))
+ds = xr.open_dataset(path)
+lead_times = np.unique(ds['prediction_timedelta'].values)
+lead_time_hours = lead_times / np.timedelta64(1, 'h')
+print(lead_time_hours)
 
 

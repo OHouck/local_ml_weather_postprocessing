@@ -1,3 +1,4 @@
+# aifs_cleaning.py
 # Helper file used to clean aifs files when downloading from download_aifs.sh
 
 import xarray as xr
@@ -62,131 +63,108 @@ def validate_input_data(ds, logger):
             logger.info(f"Variable '{var}' NaN values: {nan_count}/{total_count} ({100*nan_count/total_count:.2f}%)")
     
     return True
-
 def process_daily_forecasts(ds, lead_time_days, logger):
     """
     Transform forecast data to daily aggregates for specified lead times.
     Enhanced with better error handling and validation.
     """
     logger.info(f"Processing daily forecasts for lead days: {lead_time_days}")
-
     
-    processed_data = []
     steps_available = ds.step.values
+    logger.info(f"Available steps: {steps_available}")
     
     # Convert steps to hours if they're in different units
     if hasattr(ds.step, 'units'):
         logger.info(f"Step units: {ds.step.units}")
+    
+    # Lists to collect processed data
+    processed_datasets = []
     
     for lead_day in lead_time_days:
         logger.info(f"Processing lead day {lead_day}...")
         
         # Calculate step indices for this lead day (assuming steps are in hours)
         start_step = lead_day * 24 
-        end_step = start_step + 18 
         
-        logger.info(f"Looking for steps between {start_step} and {end_step} hours")
+        # For cumulative precipitation for a day - need steps at 6, 12, 18, 24 hours into the day
+        tp_steps = [start_step + 6, start_step + 12, start_step + 18, start_step + 24]
+        missing_tp_steps = [step for step in tp_steps if step not in steps_available]
         
-        # Check if required steps are available
-        required_steps = [start_step, start_step + 12]  # midnight and noon
-        missing_steps = [step for step in required_steps if step not in steps_available]
-        if missing_steps:
-            logger.warning(f"Missing required steps for lead day {lead_day}: {missing_steps}")
-            continue
+        if missing_tp_steps:
+            logger.warning(f"Missing required precipitation steps for lead day {lead_day}: {missing_tp_steps}")
+            continue  # Skip this lead day
             
-        try:
-            # Extract the relevant steps for this day
-            day_data = ds.sel(step=slice(start_step, end_step))
+        # Get precipitation data for this day and sum it
+        tp_selected = ds["tp"].sel(step=tp_steps)
+        # Sum across the 4 time steps to get daily total, but don't keep the step dimension
+        daily_tp_value = tp_selected.sum(dim="step")  # This removes the step dimension
+        
+        # Get temperature data for midnight and noon
+        temp_steps = [start_step, start_step + 12]  # midnight and noon
+        missing_temp_steps = [step for step in temp_steps if step not in steps_available]
+        
+        if missing_temp_steps:
+            logger.warning(f"Missing required temperature steps for lead day {lead_day}: {missing_temp_steps}")
+            continue  # Skip this lead day
             
-            if len(day_data.step) == 0:
-                logger.warning(f"No data found for lead day {lead_day} (steps {start_step}-{end_step})")
-                continue
-            
-            logger.info(f"Found {len(day_data.step)} time steps for lead day {lead_day}")
-            
-            # For precipitation: sum over the day
-            daily_tp = day_data["tp"].sum(dim="step", keepdims=True)
-            daily_tp = daily_tp.assign_coords(step=[lead_day])
-            
-            # For temperature: extract specific times
-            try:
-                midnight_2t = day_data["2t"].sel(step=start_step)  # midnight
-                noon_2t = day_data["2t"].sel(step=start_step + 12) # noon
-            except KeyError as e:
-                logger.error(f"Could not extract temperature data for lead day {lead_day}: {e}")
-                continue
-            
-            # Expand dims and assign correct step coordinate
-            midnight_2t = midnight_2t.expand_dims("step", axis=1).assign_coords(step=[lead_day])
-            noon_2t = noon_2t.expand_dims("step", axis=1).assign_coords(step=[lead_day])
-            
-            # Create dataset for this lead day
-            day_ds = xr.Dataset({
-                "daily_tp": daily_tp,
-                "midnight_2t": midnight_2t, 
-                "noon_2t": noon_2t
-            })
-            print(day_ds)
-            
-            # Validate the processed data
-            for var_name, var_data in day_ds.data_vars.items():
-                if np.isnan(var_data.values).all():
-                    logger.warning(f"All NaN values in {var_name} for lead day {lead_day}")
-                elif np.isnan(var_data.values).any():
-                    nan_fraction = np.isnan(var_data.values).sum() / var_data.size
-                    logger.info(f"{var_name} for lead day {lead_day}: {nan_fraction:.2%} NaN values")
-            
-            processed_data.append(day_ds)
-            logger.info(f"Successfully processed lead day {lead_day}")
-            
-        except Exception as e:
-            logger.error(f"Error processing lead day {lead_day}: {e}")
-            logger.error(traceback.format_exc())
-            continue
+        temp_selected = ds["2t"].sel(step=temp_steps)
+        
+        # Create dataset for this lead day
+        # Create new step coordinates for midnight and noon
+        temp_times = [np.timedelta64(step_val, 'h') for step_val in temp_steps]
+        
+        # Broadcast the daily precipitation to both time points (midnight and noon)
+        # We need to expand daily_tp_value along a new step dimension with 2 values
+        daily_tp_broadcast = daily_tp_value.expand_dims(
+            dim={'step': temp_steps}
+        )
+        
+        # Create the dataset with aligned dimensions
+        lead_day_ds = xr.Dataset({
+            'total_precipitation': daily_tp_broadcast.assign_coords(step=temp_times),
+            '2m_temperature': temp_selected.assign_coords(step=temp_times)
+        })
+        
+        processed_datasets.append(lead_day_ds)
     
-    if not processed_data:
-        raise ValueError("No lead days were successfully processed")
+    if not processed_datasets:
+        raise ValueError("No lead days could be processed due to missing data")
     
-    logger.info(f"Successfully processed {len(processed_data)} out of {len(lead_time_days)} lead days")
+    # Concatenate all lead days along step dimension
+    result_ds = xr.concat(processed_datasets, dim="step")
     
-    # Concatenate all lead days
-    result = xr.concat(processed_data, dim="step")
+    # Rename step to prediction_timedelta
+    result_ds = result_ds.rename({"step": "prediction_timedelta"})
+
+    # rename lat and lon to match other datasets
+    result_ds = result_ds.rename({"lat": "latitude", "lon": "longitude"})
     
-    # Update step coordinate attributes
-    result.step.attrs["units"] = "days"
-    result.step.attrs["long_name"] = "lead time in days"
+    # Update coordinate attributes
+    result_ds.prediction_timedelta.attrs["long_name"] = "forecast lead time"
+    result_ds.prediction_timedelta.attrs["description"] = "time since forecast initialization"
     
     # Update variable attributes
-    result.daily_tp.attrs.update({
+    result_ds.total_precipitation.attrs.update({
         "long_name": "Daily total precipitation",
         "units": "m",
         "description": "24-hour accumulated precipitation"
     })
     
-    result.midnight_2t.attrs.update({
-        "long_name": "2m temperature at midnight", 
+    result_ds['2m_temperature'].attrs.update({
+        "long_name": "2m temperature", 
         "units": ds["2t"].attrs.get("units", "K"),
-        "description": "2m temperature at 00:00 UTC"
-    })
-    
-    result.noon_2t.attrs.update({
-        "long_name": "2m temperature at noon",
-        "units": ds["2t"].attrs.get("units", "K"), 
-        "description": "2m temperature at 12:00 UTC"
+        "description": "2m temperature"
     })
     
     # Add processing metadata
-    result.attrs.update({
+    result_ds.attrs.update({
         "processing_timestamp": datetime.now().isoformat(),
         "original_file": os.path.basename(sys.argv[1]) if len(sys.argv) > 1 else "unknown",
         "lead_days_requested": lead_time_days,
-        "lead_days_processed": [int(x) for x in result.step.values]
+        "lead_days_processed": len(processed_datasets)
     })
-
-    print(result)
-    exit()
     
-    return result
+    return result_ds
 
 def save_with_retry(processed_data, output_file, logger, max_retries=3):
     """Save data with retry logic and different methods."""
@@ -237,21 +215,20 @@ def save_with_retry(processed_data, output_file, logger, max_retries=3):
     return False
 
 def main():
-    #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    input_file = "/Users/ohouck/tmp/aifs_temp/init_2023060400.nc"
-    output_file ="/Users/ohouck/tmp/aifs_temp/aifs_test.zarr"
-    lead_days= [1, 5, 10]
-    ds = xr.open_dataset(input_file)
-    print(ds)
-    exit()
-    #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-    # if len(sys.argv) != 4:
-    #     print("Usage: aifs_cleaning.py <input_file> <output_file> <lead_days>")
-    #     sys.exit(1)
-    # input_file = sys.argv[1]
-    # output_file = sys.argv[2]  # This will be a .zarr path
-    # lead_days = [int(x) for x in sys.argv[3].split(',')]
+    if len(sys.argv) != 4:
+        print("Usage: aifs_cleaning.py <input_file> <output_file> <lead_days>")
+        sys.exit(1)
+    input_file = sys.argv[1]
+    output_file = sys.argv[2]  # This will be a .zarr path
+    lead_days = [int(x) for x in sys.argv[3].split(',')]
+
+    ############################################################################
+    # # For testing purposes only - comment out when running from bash script
+    # input_file = "/Users/ohouck/Desktop/init_2021031500.nc"
+    # output_file = "/Users/ohouck/test.zarr"
+    # lead_days = [1, 5, 9]
+    ############################################################################
     
     # Set up logging
     logger = setup_logging(input_file)
@@ -277,14 +254,14 @@ def main():
             ds = xr.open_dataset(input_file)[["tp", "2t"]]
         
         logger.info(f"Dataset loaded successfully. Dimensions: {dict(ds.dims)}")
-        
+
         # Validate input data
         validate_input_data(ds, logger)
         
         # Process the data
         logger.info(f"Processing with lead days: {lead_days}...")
         processed = process_daily_forecasts(ds, lead_days, logger)
-        
+
         # Save to Zarr format with retry logic
         if save_with_retry(processed, output_file, logger):
             logger.info(f"SUCCESS: {output_file}")

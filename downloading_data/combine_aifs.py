@@ -112,6 +112,8 @@ def main():
 
 
     for file in aifs_files:
+        # xx## 
+        
         ds_temp = xr.open_zarr(file, consolidated=True, decode_timedelta = True)
 
         # rename step to lead_time, and time to init_time

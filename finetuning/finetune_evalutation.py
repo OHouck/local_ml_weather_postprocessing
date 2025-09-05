@@ -8,6 +8,7 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
 
 import time
+from types import SimpleNamespace
 
 
 #######################
@@ -97,7 +99,7 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     return (rmse_original - rmse_corrected) / rmse_original * 100
 
 
-def diagnose_zarr_performance(path, lead_times=[24, 120, 240]):
+def diagnose_zarr_performance(path, lead_times=[24, 120, 216]):
     """
     Diagnostic function to understand why different lead times have different performance.
     """
@@ -155,426 +157,6 @@ def diagnose_zarr_performance(path, lead_times=[24, 120, 240]):
         traceback.print_exc()
 
 
-def generate_lead_time_plots(
-        dirs,
-        train_start, train_end,
-        test_start, test_end,
-        model,
-        training_output_vars,
-        prediction_var,
-        nn_architecture=["mlp"],
-        regions=None,
-        subregion="4x4",
-        bootstrap=False,
-        plot_type="all",
-        simultaneous=False
-):
-    """
-    Generates a single plot showing percent improvement in RMSE by lead time for neural network
-    and anomaly correction methods across all specified regions.
-    
-    Parameters
-    ----------
-    nn_architecture : list
-        List of architectures to plot: ["mlp"], ["unet"], or ["mlp", "unet"]
-    simultaneous : bool
-        If True, use data from model that trained all lead times simultaneously.
-    """
-    
-    # Parse training and output variables
-    training_vars, output_vars = training_output_vars
-    if not isinstance(training_vars, (list, tuple)):
-        training_vars = [training_vars]
-    if not isinstance(output_vars, (list, tuple)):
-        output_vars = [output_vars]
-
-    # Create string representations for file naming
-    training_vars_str = "_".join(training_vars)
-    output_vars_str = "_".join(output_vars)
-    time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
-
-    lead_times = [24, 120, 240]
-
-    # Define colors for different regions
-    region_colors = {
-        'india': '#E69F00',          # Orange 
-        'usa_south': '#56B4E9',      # Sky Blue
-        'british_columbia': '#009E73',  # Teal Green
-        'amazon': '#CC79A7',         # Pink/Magenta
-        'ethiopia': '#D55E00',       # Reddish-Orange
-    }
-
-    climate_region_colors = {
-        'tropical': '#228b22',      # Green
-        'arid': '#FFFF00',          # Yellow
-        'temperate': '#90EE90'      # Light Green
-    }
-
-    # Define markers for different models
-    model_markers = {
-        'pangu': 'o',  # Circle
-        'ifs': '^'     # Triangle
-    }
-    
-    # Define fill styles for different architectures
-    architecture_fillstyles = {
-        'mlp': 'full',   # Filled markers
-        'unet': 'none'   # Hollow markers
-    }
-    
-    correction_styles = {
-        'nn': '-',     # Solid line
-        'ano': '--'    # Dashed line for mean debiased
-    }
-    
-    # Store all improvements for all regions
-    all_improvements = {}
-    
-    # Process each region
-    for region_idx, region in enumerate(regions):
-        # Initialize storage for improvement percentages for this region
-        improvements = {}
-        for arch in nn_architecture:
-            improvements[f'pangu_{arch}_nn'] = {}
-            improvements[f'pangu_{arch}_ano'] = {}
-            improvements[f'ifs_{arch}_nn'] = {}
-            improvements[f'ifs_{arch}_ano'] = {}
-        
-        # Process each lead time
-        for lead_time in lead_times:
-            # Process each architecture
-            for arch in nn_architecture:
-                # Set up args for generate_output_path
-                if simultaneous:
-                    # Convert to string for file naming
-                    lead_time_hours = "_".join(str(lt) for lt in lead_times)
-                else:
-                    lead_time_hours = lead_time
-
-                args = SimpleNamespace(
-                    model_name=model,
-                    region=region,
-                    subregion=subregion,
-                    train_start=train_start,
-                    train_end=train_end,
-                    test_start=test_start,
-                    test_end=test_end,
-                    training_vars=training_vars,
-                    output_vars=output_vars,
-                    lead_time_hours=lead_time_hours,
-                    nn_architecture=arch
-                )
-                
-                # Construct file paths
-                if bootstrap:
-                    pangu_pattern = os.path.join(dirs['input'], 
-                                                  generate_output_path(args).replace('.zarr', '*bs*.zarr'))
-                    args.model_name = 'ifs'
-                    ifs_pattern = os.path.join(dirs['input'], 
-                                                generate_output_path(args).replace('.zarr', '*bs*.zarr'))
-                else:
-                    pangu_pattern = os.path.join(dirs['input'], generate_output_path(args))
-                    args.model_name = 'ifs'
-                    ifs_pattern = os.path.join(dirs['input'], generate_output_path(args))
-                
-                # Process Pangu model files
-                pangu_files = glob.glob(pangu_pattern)
-                if not bootstrap and len(pangu_files) > 1:
-                    raise ValueError(f"Multiple files found for lead time {lead_time}h: {pangu_files}")
-                
-                for idx, file_path in enumerate(pangu_files):
-                    try:
-                        ds = load_zarr_cached(file_path)
-                        
-                        # Extract data using helper function
-                        ground_truth, original, corrected, mean_corrected = extract_forecast_data(
-                            ds, prediction_var, lead_time
-                        )
-                        
-                        # Calculate RMSE values
-                        rmse_original = calculate_rmse(original, ground_truth)
-                        rmse_nn = calculate_rmse(corrected, ground_truth)
-                        
-                        # Calculate percent improvements
-                        pct_improvement_nn = calculate_improvement_percentage(rmse_original, rmse_nn)
-                        improvements[f'pangu_{arch}_nn'][(lead_time, idx)] = pct_improvement_nn
-                        
-                        if mean_corrected is not None and plot_type == "all":
-                            rmse_ano = calculate_rmse(mean_corrected, ground_truth)
-                            pct_improvement_ano = calculate_improvement_percentage(rmse_original, rmse_ano)
-                            improvements[f'pangu_{arch}_ano'][(lead_time, idx)] = pct_improvement_ano
-
-                    except Exception as e:
-                        print(f"Error processing {file_path}: {e}")
-                        continue
-
-                # Process IFS model files only if needed
-                if plot_type in ["pangu_ifs_nn", "all"]:
-                    ifs_files = glob.glob(ifs_pattern)
-                    if ifs_files:
-                        assert len(ifs_files) == len(pangu_files)
-                        
-                    for idx, file_path in enumerate(ifs_files):
-                        try:
-                            ds = load_zarr_cached(file_path)
-                            
-                            # Extract data using helper function
-                            ground_truth, original, corrected, mean_corrected = extract_forecast_data(
-                                ds, prediction_var, lead_time
-                            )
-                            
-                            # Calculate RMSE values
-                            rmse_original = calculate_rmse(original, ground_truth)
-                            rmse_nn = calculate_rmse(corrected, ground_truth)
-                            
-                            # Calculate percent improvements
-                            pct_improvement_nn = calculate_improvement_percentage(rmse_original, rmse_nn)
-                            improvements[f'ifs_{arch}_nn'][(lead_time, idx)] = pct_improvement_nn
-                            
-                            if mean_corrected is not None and plot_type == "all":
-                                rmse_ano = calculate_rmse(mean_corrected, ground_truth)
-                                pct_improvement_ano = calculate_improvement_percentage(rmse_original, rmse_ano)
-                                improvements[f'ifs_{arch}_ano'][(lead_time, idx)] = pct_improvement_ano
-
-                        except Exception as e:
-                            print(f"Error processing IFS file {file_path}: {e}")
-                            continue
-        
-        # Store improvements for this region
-        all_improvements[region] = improvements
-
-    # Create a single plot for all regions
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    # Track which lead times actually have data across all regions
-    all_valid_lead_times = set()
-    
-    # Plot each region's data
-    for region_idx, (region, improvements) in enumerate(all_improvements.items()):
-        # Get color for this region
-        if "temperate" in region or "tropical" in region or "arid" in region:
-            color = climate_region_colors.get(region, '#1f77b4')
-        else:
-            color = region_colors[region]
-
-        # Determine which improvement types to plot based on plot_type
-        improvement_types_to_plot = []
-        for arch in nn_architecture:
-            if plot_type == "pangu_nn":
-                improvement_types_to_plot.append(f'pangu_{arch}_nn')
-            elif plot_type == "pangu_ifs_nn":
-                improvement_types_to_plot.extend([f'pangu_{arch}_nn', f'ifs_{arch}_nn'])
-            elif plot_type == "all":
-                improvement_types_to_plot.extend([f'pangu_{arch}_nn', f'pangu_{arch}_ano', 
-                                                  f'ifs_{arch}_nn', f'ifs_{arch}_ano'])
-        
-        # Process each improvement type for this region
-        for imp_type in improvement_types_to_plot:
-            imp_data = improvements.get(imp_type, {})
-            if not imp_data:
-                continue
-            
-            # Determine model, architecture, correction type, and get appropriate styles
-            model_name = 'ifs' if 'ifs' in imp_type else 'pangu'
-            architecture = 'unet' if 'unet' in imp_type else 'mlp'
-            correction_type = 'nn' if 'nn' in imp_type else 'ano'
-            
-            marker = model_markers[model_name]
-            fillstyle = architecture_fillstyles[architecture]
-            linestyle = correction_styles[correction_type]
-            line_alpha = 0.75  # Consistent alpha for all lines
-            
-            if bootstrap:
-                # Aggregate bootstrap results
-                aggregated = {}
-                for lt in lead_times:
-                    # Extract all values for this lead time
-                    lt_values = [imp_data[(lead_time, idx)] 
-                                 for (lead_time, idx) in imp_data.keys() 
-                                 if lead_time == lt]
-                    
-                    if lt_values:
-                        n = len(lt_values)
-                        mean = np.mean(lt_values)
-                        std = np.std(lt_values, ddof=1)
-                        se = std / np.sqrt(n)
-                        
-                        # Calculate 95% confidence interval using t-distribution
-                        alpha_ci = 0.05
-                        t_crit = stats.t.ppf(1 - alpha_ci/2, df=n-1)
-                        
-                        aggregated[lt] = {
-                            'mean': mean,
-                            'ci_lower': mean - (t_crit * se),
-                            'ci_upper': mean + (t_crit * se),
-                            'count': n
-                        }
-                
-                # Extract data for plotting
-                valid_lead_times = sorted(aggregated.keys())
-                if not valid_lead_times:
-                    continue
-                
-                all_valid_lead_times.update(valid_lead_times)
-                means = [aggregated[lt]['mean'] for lt in valid_lead_times]
-                ci_lower = [aggregated[lt]['ci_lower'] for lt in valid_lead_times]
-                ci_upper = [aggregated[lt]['ci_upper'] for lt in valid_lead_times]
-                
-                # Plot line with markers
-                x_pos = [lead_times.index(lt) for lt in valid_lead_times]
-                ax.plot(x_pos, means, 
-                       marker=marker, 
-                       fillstyle=fillstyle,
-                       linestyle=linestyle, 
-                       color=color, 
-                       linewidth=2.5, 
-                       markersize=15,
-                       alpha=line_alpha,
-                       zorder=3)
-                
-                # Add confidence interval bands
-                ax.fill_between(x_pos, ci_lower, ci_upper,
-                               color=color, 
-                               alpha=0.1 * line_alpha, 
-                               zorder=1)
-                
-            else:
-                # Non-bootstrap case
-                valid_data = [(lt, imp_data[(lt, 0)]) for lt in lead_times 
-                             if (lt, 0) in imp_data]
-                if not valid_data:
-                    continue
-                    
-                valid_lead_times, values = zip(*valid_data)
-                all_valid_lead_times.update(valid_lead_times)
-                
-                # Plot line
-                x_pos = [lead_times.index(lt) for lt in valid_lead_times]
-                ax.plot(x_pos, values, 
-                       marker=marker, 
-                       fillstyle=fillstyle,
-                       linestyle=linestyle,
-                       color=color, 
-                       linewidth=2.5, 
-                       markersize=15,
-                       alpha=line_alpha,
-                       zorder=3)
-    
-    # Set consistent axes limits for all plot types
-    ax.set_ylim(-18, 35)
-    
-    # Set x-axis to show all lead times but only label those with data
-    ax.set_xticks(range(len(lead_times)))
-    ax.set_xticklabels([f"{lt}h" if lt in all_valid_lead_times else "" 
-                       for lt in lead_times])
-    
-    # Customize plot appearance
-    ax.set_xlabel("Forecast Lead Time", fontsize=20)
-    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
-    
-    # Add horizontal line at y=0 for reference
-    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-    
-    # Title
-    regions_str = ", ".join(regions)
-    arch_str = "/".join([a.upper() for a in nn_architecture])
-    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"]
-    title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
-    if bootstrap:
-        title_parts[0] += " (with 95% CI)"
-    ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
-    
-    # Grid
-    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    ax.set_axisbelow(True)
-
-    ax.tick_params(axis='y', labelsize=20)  # Make y-axis labels larger
-    ax.tick_params(axis='x', labelsize=20)  # Make x-axis labels larger 
-    
-    # Create custom legend with four groups
-    from matplotlib.lines import Line2D
-    
-    # Region legend entries
-    region_handles = []
-    for region in regions:
-        if "temperate" in region or "tropical" in region or "arid" in region:
-            color = climate_region_colors.get(region, '#1f77b4')
-        else:
-            color = region_colors.get(region, '#1f77b4')
-        region_handles.append(Line2D([0], [0], color=color, linewidth=3, 
-                                   label=region.replace('_', ' ').title()))
-    
-    # Model legend entries
-    model_handles = []
-    if plot_type in ["pangu_nn", "all"]:
-        model_handles.append(Line2D([0], [0], color='black', marker='o', linestyle='none',
-                                   markersize=15, label='Pangu'))
-    if plot_type in ["pangu_ifs_nn", "all"]:
-        model_handles.append(Line2D([0], [0], color='black', marker='^', linestyle='none',
-                                   markersize=15, label='IFS'))
-    
-    # Architecture legend entries
-    arch_handles = []
-    for arch in nn_architecture:
-        fillstyle = architecture_fillstyles[arch]
-        arch_handles.append(Line2D([0], [0], color='black', marker='o', fillstyle=fillstyle,
-                                  markersize=15, linestyle='none', label=arch.upper()))
-    
-    # Correction type legend entries
-    correction_handles = []
-    correction_handles.append(Line2D([0], [0], color='black', linestyle='-', linewidth=2,
-                                    label='Neural Network'))
-    if plot_type == "all":
-        correction_handles.append(Line2D([0], [0], color='black', linestyle='--', linewidth=2,
-                                        label='Mean Debiased'))
-    
-    # Position legends
-    legend1 = ax.legend(handles=region_handles, title="Region", 
-                        loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
-    legend2 = ax.legend(handles=model_handles, title="Model", 
-                        loc='lower right', bbox_to_anchor=(1, 0.45), fontsize=12)
-    legend3 = ax.legend(handles=arch_handles, title="Architecture", 
-                        loc='lower right', bbox_to_anchor=(1, 0.3), fontsize=12)
-    legend4 = ax.legend(handles=correction_handles, title="Correction", 
-                        loc='lower right', bbox_to_anchor=(1, 0.2), fontsize=12)
-    
-    # Add all legends to the plot
-    ax.add_artist(legend1)
-    ax.add_artist(legend2)
-    ax.add_artist(legend3)
-    
-    # Style all legends consistently
-    for legend in [legend1, legend2, legend3, legend4]:
-        legend.get_frame().set_facecolor('white')
-        legend.get_frame().set_alpha(0.95)
-        legend.get_frame().set_edgecolor('gray')
-    
-    # Remove top and right spines
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    
-    # Adjust layout
-    plt.tight_layout()
-    
-    # Save figure
-    out_folder = os.path.join(dirs["fig"], model, "lead_time", "multi_region", subregion)
-    os.makedirs(out_folder, exist_ok=True)
-    
-    bootstrap_suffix = "_bootstrap" if bootstrap else ""
-    arch_suffix = "_".join(nn_architecture)
-    if "arid" in regions or "tropical" in regions or "temperate" in regions:
-        region_type = "climate_zones"
-    else:
-        region_type = "geographic"
-    fname = (f"leadtime_improvement_{prediction_var}_trainedwith_{training_vars_str}_"
-            f"{region_type}_{plot_type}_{arch_suffix}{bootstrap_suffix}.png")
-    save_path = os.path.join(out_folder, fname)
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Multi-region lead-time improvement plot ({plot_type}) saved to: {save_path}")
-
-
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
                                         prediction_var, nn_architecture=["mlp"],
@@ -587,7 +169,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
     output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
 
-    valid_lead_times = [24, 120, 240]
+    valid_lead_times = [24, 120, 216]
     if lead_time not in valid_lead_times:
         raise ValueError(f"Invalid lead time: {lead_time}. Must be one of {valid_lead_times}.")
     
@@ -699,7 +281,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     # Plotting code remains the same...
     region_colors = plt.get_cmap('Set1')
     region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
-    ls_map = {24: 'solid', 120: 'solid', 240: 'solid'} # change if I want to plot multiple lead times
+    ls_map = {24: 'solid', 120: 'solid', 216: 'solid'} # change if I want to plot multiple lead times
     
     model_markers = {'pangu': 'o', 'ifs': '^'}
     arch_fillstyles = {'mlp': 'full', 'unet': 'none'}
@@ -816,7 +398,7 @@ def generate_map_plots(
     output_vars_str = "_".join(output_vars)
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    valid_lead_times = [24, 120, 240]
+    valid_lead_times = [24, 120, 216]
     # Set leadtime arg for file naming
     if simultaneous:
         lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
@@ -1047,7 +629,7 @@ def generate_time_series_plots(
     output_vars_str = "_".join(output_vars)
     time_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
 
-    valid_lead_times = [24, 120, 240]
+    valid_lead_times = [24, 120, 216]
     if simultaneous:
         lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
     else:
@@ -1275,7 +857,7 @@ def generate_summary_stat_table(
     
     # Default lead times if not specified
     if lead_times is None:
-        lead_times = [24, 120, 240]
+        lead_times = [24, 120, 216]
     
     # Storage for all results
     all_rows = []
@@ -1487,304 +1069,10 @@ def _create_latex_table(df, prediction_var, nn_architecture, subregion, dirs, mo
 
 
 #===============================================================================
-import os
-import glob
-import numpy as np
-import pandas as pd
-import xarray as xr
-from scipy import stats
-from types import SimpleNamespace
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-
-
-def calculate_and_save_statistics(
-        dirs,
-        train_start, train_end,
-        test_start, test_end,
-        models,  # Now accepts list of models
-        training_output_vars,
-        prediction_var,
-        nn_architectures=["mlp"],
-        regions=None,
-        subregions=["2x2", "4x4", "10x10"],  # Now accepts list
-        bootstrap=False,
-        lead_times=None,
-        simultaneous=False,
-        output_csv_path=None
-):
-    """
-    Calculate statistics for all forecast types and save to CSV.
-    
-    Parameters
-    ----------
-    dirs : dict
-        Dictionary of directories
-    train_start, train_end, test_start, test_end : str
-        Date strings for train/test periods
-    models : list
-        List of model names (e.g., ['pangu', 'ifs'])
-    training_output_vars : tuple
-        Tuple of (training_vars, output_vars)
-    prediction_var : str
-        Variable to predict (e.g., '2m_temperature', '10m_wind_speed')
-    nn_architectures : list
-        List of architectures: ["mlp"], ["unet"], or ["mlp", "unet"]
-    regions : list
-        List of regions to analyze
-    subregions : list
-        List of patch sizes (e.g., ["2x2", "4x4", "10x10"])
-    bootstrap : bool
-        If True, uses bootstrap samples
-    lead_times : list
-        List of lead times in hours
-    simultaneous : bool
-        If True, use data from model that trained all lead times simultaneously
-    output_csv_path : str
-        Path to save the CSV file. If None, auto-generates path
-        
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame containing all calculated statistics
-    """
-    
-    # Parse training and output variables
-    training_vars, output_vars = training_output_vars
-    if not isinstance(training_vars, (list, tuple)):
-        training_vars = [training_vars]
-    if not isinstance(output_vars, (list, tuple)):
-        output_vars = [output_vars]
-    
-    # Default values
-    if regions is None:
-        regions = ["india", "usa_south", "british_columbia", "amazon", "ethiopia"]
-    if lead_times is None:
-        lead_times = [24, 120, 240]
-    
-    # Storage for all results
-    all_results = []
-    
-    # Process each combination
-    for subregion in subregions:
-        for region in regions:
-            # Determine if it's a climate zone
-            is_climate_zone = region in ["tropical", "arid", "temperate", "cold", "polar"]
-            
-            for model in models:
-                for arch in nn_architectures:
-                    for lead_time in lead_times:
-                        # Set up args for generate_output_path
-                        if simultaneous:
-                            lead_time_hours = "_".join(str(lt) for lt in lead_times)
-                        else:
-                            lead_time_hours = lead_time
-                        
-                        args = SimpleNamespace(
-                            model_name=model,
-                            region=region,
-                            subregion=subregion,
-                            train_start=train_start,
-                            train_end=train_end,
-                            test_start=test_start,
-                            test_end=test_end,
-                            training_vars=training_vars,
-                            output_vars=output_vars,
-                            lead_time_hours=lead_time_hours,
-                            nn_architecture=arch
-                        )
-                        
-                        # Construct file paths
-                        if bootstrap:
-                            file_pattern = os.path.join(dirs['input'], 
-                                                       generate_output_path(args).replace('.zarr', '*bs*.zarr'))
-                        else:
-                            file_pattern = os.path.join(dirs['input'], generate_output_path(args))
-                        
-                        files = glob.glob(file_pattern)
-                        
-                        if not files:
-                            print(f"No files found for {model} {arch} {region} {subregion} {lead_time}h")
-                            continue
-                        
-                        if not bootstrap and len(files) > 1:
-                            print(f"Warning: Multiple files found for {model} {arch} {region} {subregion} {lead_time}h")
-                            files = files[:1]  # Use first file
-                        
-                        # Process each file (multiple for bootstrap)
-                        file_results = []
-                        ground_truth_values = []
-                        
-                        for idx, file_path in enumerate(files):
-                            try:
-                                ds = load_zarr_cached(file_path)
-                                
-                                # Extract data
-                                ground_truth, original, corrected, mean_corrected = extract_forecast_data(
-                                    ds, prediction_var, lead_time
-                                )
-                                
-                                # Flatten arrays for statistics
-                                gt_flat = ground_truth.values.flatten()
-                                orig_flat = original.values.flatten()
-                                corr_flat = corrected.values.flatten()
-                                
-                                # Remove NaN values
-                                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-                                gt_flat = gt_flat[mask]
-                                orig_flat = orig_flat[mask]
-                                corr_flat = corr_flat[mask]
-                                
-                                # Store ground truth for statistics
-                                ground_truth_values.extend(gt_flat)
-                                
-                                # Calculate RMSE values
-                                rmse_original = np.sqrt(np.mean((orig_flat - gt_flat)**2))
-                                rmse_corrected = np.sqrt(np.mean((corr_flat - gt_flat)**2))
-                                
-                                # Calculate percent improvement
-                                pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
-                                
-                                # Calculate mean corrected RMSE if available
-                                rmse_mean_corrected = None
-                                pct_improvement_mean = None
-                                if mean_corrected is not None:
-                                    mc_flat = mean_corrected.values.flatten()[mask]
-                                    rmse_mean_corrected = np.sqrt(np.mean((mc_flat - gt_flat)**2))
-                                    pct_improvement_mean = (rmse_original - rmse_mean_corrected) / rmse_original * 100
-                                
-                                file_results.append({
-                                    'rmse_original': rmse_original,
-                                    'rmse_corrected': rmse_corrected,
-                                    'rmse_mean_corrected': rmse_mean_corrected,
-                                    'pct_improvement': pct_improvement,
-                                    'pct_improvement_mean': pct_improvement_mean,
-                                    'bootstrap_idx': idx if bootstrap else None
-                                })
-                                
-                            except Exception as e:
-                                print(f"Error processing {file_path}: {e}")
-                                continue
-                        
-                        if not file_results:
-                            continue
-                        
-                        # Calculate statistics across bootstrap samples if applicable
-                        if bootstrap:
-                            rmse_orig_values = [r['rmse_original'] for r in file_results]
-                            rmse_corr_values = [r['rmse_corrected'] for r in file_results]
-                            pct_imp_values = [r['pct_improvement'] for r in file_results]
-                            
-                            n = len(file_results)
-                            
-                            # Calculate means
-                            rmse_orig_mean = np.mean(rmse_orig_values)
-                            rmse_corr_mean = np.mean(rmse_corr_values)
-                            pct_imp_mean = np.mean(pct_imp_values)
-                            
-                            # Calculate standard errors and confidence intervals
-                            rmse_orig_se = np.std(rmse_orig_values, ddof=1) / np.sqrt(n)
-                            rmse_corr_se = np.std(rmse_corr_values, ddof=1) / np.sqrt(n)
-                            pct_imp_se = np.std(pct_imp_values, ddof=1) / np.sqrt(n)
-                            
-                            # 95% CI using t-distribution
-                            alpha_ci = 0.05
-                            t_crit = stats.t.ppf(1 - alpha_ci/2, df=n-1)
-                            
-                            rmse_orig_ci_lower = rmse_orig_mean - (t_crit * rmse_orig_se)
-                            rmse_orig_ci_upper = rmse_orig_mean + (t_crit * rmse_orig_se)
-                            rmse_corr_ci_lower = rmse_corr_mean - (t_crit * rmse_corr_se)
-                            rmse_corr_ci_upper = rmse_corr_mean + (t_crit * rmse_corr_se)
-                            pct_imp_ci_lower = pct_imp_mean - (t_crit * pct_imp_se)
-                            pct_imp_ci_upper = pct_imp_mean + (t_crit * pct_imp_se)
-                            
-                            # Handle mean corrected if available
-                            rmse_mc_mean = None
-                            pct_imp_mc_mean = None
-                            if file_results[0]['rmse_mean_corrected'] is not None:
-                                rmse_mc_values = [r['rmse_mean_corrected'] for r in file_results]
-                                pct_imp_mc_values = [r['pct_improvement_mean'] for r in file_results]
-                                rmse_mc_mean = np.mean(rmse_mc_values)
-                                pct_imp_mc_mean = np.mean(pct_imp_mc_values)
-                        else:
-                            # Single file case
-                            result = file_results[0]
-                            rmse_orig_mean = result['rmse_original']
-                            rmse_corr_mean = result['rmse_corrected']
-                            pct_imp_mean = result['pct_improvement']
-                            rmse_mc_mean = result['rmse_mean_corrected']
-                            pct_imp_mc_mean = result['pct_improvement_mean']
-                            
-                            # No confidence intervals for single file
-                            rmse_orig_ci_lower = rmse_orig_ci_upper = None
-                            rmse_corr_ci_lower = rmse_corr_ci_upper = None
-                            pct_imp_ci_lower = pct_imp_ci_upper = None
-                            n = 1
-                        
-                        # Calculate ground truth statistics
-                        if ground_truth_values:
-                            gt_mean = np.mean(ground_truth_values)
-                            gt_std = np.std(ground_truth_values)
-                        else:
-                            gt_mean = gt_std = None
-                        
-                        # Create row for results
-                        row = {
-                            'variable': prediction_var,
-                            'model': model,
-                            'architecture': arch,
-                            'region': region,
-                            'region_type': 'climate' if is_climate_zone else 'geographic',
-                            'subregion': subregion,
-                            'lead_time': lead_time,
-                            'training_vars': "_".join(training_vars),
-                            'output_vars': "_".join(output_vars),
-                            'train_period': f"{train_start}_{train_end}",
-                            'test_period': f"{test_start}_{test_end}",
-                            'rmse_original': rmse_orig_mean,
-                            'rmse_corrected': rmse_corr_mean,
-                            'rmse_mean_corrected': rmse_mc_mean,
-                            'pct_improvement': pct_imp_mean,
-                            'pct_improvement_mean_corrected': pct_imp_mc_mean,
-                            'ground_truth_mean': gt_mean,
-                            'ground_truth_std': gt_std,
-                            'bootstrap': bootstrap,
-                            'n_samples': n
-                        }
-                        
-                        # Add confidence intervals if bootstrap
-                        if bootstrap:
-                            row.update({
-                                'rmse_original_ci_lower': rmse_orig_ci_lower,
-                                'rmse_original_ci_upper': rmse_orig_ci_upper,
-                                'rmse_corrected_ci_lower': rmse_corr_ci_lower,
-                                'rmse_corrected_ci_upper': rmse_corr_ci_upper,
-                                'pct_improvement_ci_lower': pct_imp_ci_lower,
-                                'pct_improvement_ci_upper': pct_imp_ci_upper
-                            })
-                        
-                        all_results.append(row)
-                        print(f"Processed: {model} {arch} {region} {subregion} {lead_time}h - "
-                              f"Improvement: {pct_imp_mean:.1f}%")
-    
-    # Create DataFrame
-    df = pd.DataFrame(all_results)
-    
-    # Save to CSV
-    if output_csv_path is None:
-        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        output_csv_path = os.path.join(dirs['processed'], 
-                                      f'forecast_statistics_{prediction_var}_{timestamp}.csv')
-    
-    df.to_csv(output_csv_path, index=False)
-    print(f"\nStatistics saved to: {output_csv_path}")
-    
-    return df
-
-
 def plot_lead_time_from_csv(
         csv_path,
         dirs,
+        variable,
         regions=None,
         subregion="4x4",
         plot_type="all",
@@ -1801,6 +1089,8 @@ def plot_lead_time_from_csv(
         Path to CSV file containing statistics
     dirs : dict
         Dictionary of directories (for saving plots)
+    variable : str
+        Variable to plot (must match CSV column)
     regions : list
         List of regions to include in plot. If None, uses all in CSV
     subregion : str
@@ -1840,11 +1130,14 @@ def plot_lead_time_from_csv(
             models = df['model'].unique().tolist()
     
     df = df[df['model'].isin(models)]
+
+    # filter to variable of interest
+    df = df[df['variable'] == variable]
     
     # Get unique values for plotting
     lead_times = sorted(df['lead_time'].unique())
     prediction_var = df['variable'].iloc[0] if len(df) > 0 else "unknown"
-    
+
     # Define colors
     region_colors = {
         'india': '#E69F00',
@@ -1961,7 +1254,7 @@ def plot_lead_time_from_csv(
     # Title
     arch_str = "/".join([a.upper() for a in nn_architectures])
     regions_str = ", ".join(regions)
-    is_bootstrap = df['bootstrap'].iloc[0] if len(df) > 0 else False
+    is_bootstrap = df['bootstrap'].iloc[0] if len(df) > 0 and 'bootstrap' in df.columns else False
     
     title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"]
     title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
@@ -2044,6 +1337,7 @@ def plot_lead_time_from_csv(
     plt.close()
     
     print(f"Lead-time plot saved to: {save_path}")
+
 
 
 def generate_summary_table_from_csv(
@@ -2203,13 +1497,32 @@ def main():
     dirs = setup_directories()
 
     # Two options for training and output variable combinations, uncomment the one you want to use
-    training_vars = ["2m_temperature"]
-    output_vars = ["2m_temperature"]
-    prediction_var = "2m_temperature"
+    # training_vars = ["2m_temperature"]
+    # output_vars = ["2m_temperature"]
+    # prediction_var = "2m_temperature"
 
-    # training_vars = ["10m_wind_speed"]
-    # output_vars = ["10m_wind_speed"]
-    # prediction_var = "10m_wind_speed"
+    training_vars = ["10m_wind_speed"]
+    output_vars = ["10m_wind_speed"]
+    prediction_var = "10m_wind_speed"
+
+
+    stat_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/forecast_improvement_stats.csv"
+    plot_lead_time_from_csv(csv_path = stat_path,
+        dirs=dirs,
+        variable="10m_wind_speed",
+        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+        subregion="6x6",
+        plot_type="pangu_nn",
+        nn_architectures=["mlp"]
+    )
+    plot_lead_time_from_csv(csv_path = stat_path,
+        dirs=dirs,
+        variable="2m_temperature",
+        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+        subregion="6x6",
+        plot_type="pangu_nn",
+        nn_architectures=["mlp"]
+    )
 
     #============================================
     # Summary Stat Tables
@@ -2269,7 +1582,7 @@ def main():
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
         nn_architecture=["mlp"],
-        lead_time=240,
+        lead_time=216,
         simultaneous=True
     )
     end = time.time()
