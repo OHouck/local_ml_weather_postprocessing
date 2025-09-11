@@ -53,7 +53,7 @@ def download_data(data_name, year):
             '2m_temperature',
             '10m_u_component_of_wind',
             '10m_v_component_of_wind',
-            'total_precipitation'
+            'total_precipitation_6hr'
         ]
     elif data_name == 'hres_t0':
         variables_to_try = [
@@ -161,6 +161,8 @@ def download_data(data_name, year):
 
     # filter for only hours 0 and 12
     subset = subset.sel(time=subset.time.dt.hour.isin([0, 12]))
+
+    print(subset)
 
     # update available_vars to reflect changes
     available_vars = list(subset.data_vars)
@@ -356,7 +358,8 @@ if __name__ == '__main__':
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    years = [2023, 2024]
     data_source = 'era5'  # hres_t0 or era5
     
     # Try the download

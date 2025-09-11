@@ -449,7 +449,7 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
-    
+
     # aifs has different variable names so rename them when loading
     if data_source == "aifs":
         preprocess_fn = lambda ds: ds.rename({'lat': 'latitude', 'lon': 'longitude', 'daily_tp': 'total_precipitation'}).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
@@ -499,10 +499,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Load datasets
     forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
     forecast_ds = forecast_ds.rename({'valid_time': 'time'})
-
-    print(forecast_ds)
-    exit()
-
     obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
     
     # Create wind speed if needed
