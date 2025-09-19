@@ -1,4 +1,5 @@
 import xarray as xr
+import os
 import numpy as np
 import pandas as pd
 import glob
@@ -93,7 +94,7 @@ def count_days_without_rainfall(ds, threshold=0.1):
 def main():
     imd_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD/IMD_0p25deg"
     # start with subset of years to test with
-    year_list = np.arange(2022, 2022 + 1)
+    year_list = np.arange(2022, 2024 + 1)
     imd_patterns = [f"{imd_path}/data_{year}*.nc" for year in year_list]
     files = []
     for pattern in imd_patterns:
@@ -101,15 +102,22 @@ def main():
     # merge in all files together
     ds = xr.open_mfdataset(files, combine='by_coords', parallel=True)
     # rename dimensions to be lowercase rainfall is in mm
-    ds = ds.rename({'LATITUDE': 'latitude', 'LONGITUDE': 'longitude', 'TIME': 'time', 'RAINFALL': 'rainfall'})
+    ds = ds.rename({'LATITUDE': 'latitude', 'LONGITUDE': 'longitude', 'TIME': 'time', 'RAINFALL': 'total_precipitation'})
+
+    # save combined ds
+    output_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD"
+    file_name = f"imd_0p25deg_{year_list[0]}-{year_list[-1]}.nc"
+    ds.to_netcdf(os.path.join(output_path, file_name))
+
+    print(ds)
+    print(ds['time'].max().values)
 
     ds = ds.sel(time = "2022-07-11")
     lat0, lat1 = 17, 27
     lon0, lon1 = 72, 82
     ds = ds.sel(latitude=slice(lat0, lat1), longitude=slice(lon0, lon1))
-    mean_rainfall = ds['rainfall'].mean(dim=['latitude', 'longitude']).values
+    mean_rainfall = ds['total_precipitation'].mean(dim=['latitude', 'longitude']).values
     print(mean_rainfall)
-
 
 
     exit()

@@ -1524,49 +1524,6 @@ def main():
         nn_architectures=["mlp"]
     )
 
-    #============================================
-    # Summary Stat Tables
-    #============================================
-
-    generate_summary_stat_table(
-        dirs=dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture="mlp",
-        regions = ["india", "amazon", "ethiopia"],
-        subregion="2x2",
-        lead_times=[24, 120, 216],  # Multiple lead times
-        simultaneous=True
-    )
-
-    #============================================
-    # Lead Time Plots
-    #============================================
-
-    # plot_types = ["pangu_nn", "pangu_ifs_nn", "all"] # possible plot types
-    subregions = ["2x2", "6x6", "10x10"]
-    for subregion in subregions:
-        generate_lead_time_plots(
-            dirs = dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture=["mlp"],  # mlp 
-            regions = ["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
-            subregion=subregion,
-            bootstrap=False,
-            plot_type="pangu_nn",
-            simultaneous=True
-        )
     
     #=============================================
     # Subregion Comparison Plots
@@ -1631,7 +1588,7 @@ def main():
         )
 
     #============================================
-    # climate zone fig and table
+    # summary stat tables
     #============================================
     print("Generating climate zone figure and table...")
     # clear cache
@@ -1653,9 +1610,8 @@ def main():
         lead_times=[24, 120, 216],  
         simultaneous=True
     )
-
-    generate_lead_time_plots(
-        dirs = dirs,
+    generate_summary_stat_table(
+        dirs=dirs,
         train_start="2018-01-01",
         train_end="2021-12-31",
         test_start="2022-01-01",
@@ -1663,11 +1619,10 @@ def main():
         model="pangu",
         training_output_vars=(training_vars, output_vars),
         prediction_var=prediction_var,
-        nn_architecture=["mlp"],  # mlp 
-        regions = ["arid", "temperate", "tropical"], 
+        nn_architecture="mlp",
+        regions = ["india", "amazon", "ethiopia"],
         subregion="2x2",
-        bootstrap=True,
-        plot_type="pangu_nn",
+        lead_times=[24, 120, 216],  # Multiple lead times
         simultaneous=True
     )
         

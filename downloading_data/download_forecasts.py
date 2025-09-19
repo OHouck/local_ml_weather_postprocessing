@@ -157,7 +157,9 @@ def print_time_and_memory(step_name, start_time):
 def download_data_by_year(model, year, subset, available_vars, start_time, client):
 
     # Output path
-    output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{model}_{year}.zarr")
+    # output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{model}_{year}.zarr")
+    output_path = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/{model}_{year}.zarr")
+    # output_path = os.path.expanduser(f"/Volumes/wd_external_hd/forecast_data/{model}_{year}.zarr")
 
     time_range = [f'{year}-01-01', f'{year}-12-31'] 
     print(f"  Time range: {time_range[0]} to {time_range[1]}")
@@ -343,7 +345,7 @@ def main():
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2021, 2022]
+    years = [2022]
     model = 'pangu'
     # model = "ifs"
     # Start timing

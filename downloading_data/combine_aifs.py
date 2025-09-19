@@ -1,3 +1,5 @@
+#combine_aifs.py
+
 # Create yearly files from daily AIFS data downloaded from downlaod_aifs.sh and aifs_cleaning.py
 
 import sys
@@ -21,6 +23,7 @@ def setup_directories():
     dirs = {
         'root': root,
         'raw': os.path.join(root, "raw"),
+        'globus': os.path.expanduser(f"/Users/ohouck/globus/forecast_data"),
         'processed': os.path.join(root, "processed"),
         'fig': os.path.join(root, "../figures/finetuning"),
         'input': os.path.join(root, "fine_tuning_output")
@@ -109,18 +112,19 @@ def main():
     
     aifs_files = sorted(glob.glob(os.path.join(aifs_dir, "processed_init*.zarr")))
     ds = None
-
+    for file in aifs_files:
+        
+        try:
+            ds_temp = xr.open_zarr(file, consolidated=True, decode_timedelta = True)
+        except Exception as e:
+            print(f"Error opening {file}: {e}")
+            continue
 
     for file in aifs_files:
-        # xx## 
         
         ds_temp = xr.open_zarr(file, consolidated=True, decode_timedelta = True)
 
-        # rename step to lead_time, and time to init_time
-        ds_temp = ds_temp.rename({"step": "prediction_timedelta"})
         ds_temp = ds_temp.rename({"time": "init_time"})
-
-        # append to previous files
         ds= xr.concat([ds, ds_temp], dim="init_time") if ds is not None else ds_temp
 
     ds_valid_time = convert_init_to_valid_time(ds)
@@ -132,7 +136,8 @@ def main():
     years = [2021, 2022, 2023, 2024]
     for year in years:
         ds_year = ds_valid_time.sel(valid_time=slice(f"{year}-01-01", f"{year}-12-31"))
-        out_path = os.path.join(dirs["raw"], f"aifs_{year}.zarr")
+        # save yearly files to globus forecast data directory 
+        out_path = os.path.join(dirs["globus"], f"aifs_{year}.zarr")
         ds_year.to_zarr(out_path, mode="w", consolidated=True)
 
 if __name__ == "__main__":

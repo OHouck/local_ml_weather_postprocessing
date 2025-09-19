@@ -67,7 +67,9 @@ def download_data(data_name, year):
     time_range = [f'{year}-01-01', f'{year}-12-31']
     
     # Output path
-    output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{data_name}_{year}.zarr")
+    # output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{data_name}_{year}.zarr")
+    # output_path = os.path.expanduser(f"/Volumes/wd_external_hd/forecast_data/{data_name}_{year}.zarr")
+    output_path = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/{data_name}_{year}.zarr")
     
     start_time = print_time_and_memory("Parameter setup", start_time)
     
@@ -90,6 +92,17 @@ def download_data(data_name, year):
                 "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr",
                 consolidated=True
             )
+            print(ds)
+            # Select a single month (e.g., January 2020)
+            from datetime import date
+
+            tp = ds["total_precipitation_6hr"].sel(time=slice(date(2018, 6, 1), date(2018, 6, 30)))
+
+            # Print the selected data
+            print(tp)
+            print("min, max, mean, std of total_precipitation_6hr:")
+            print(tp.min().values, tp.max().values, tp.mean().values, tp.std().values)
+            exit()
         else:
             raise ValueError(f"Unknown dataset name: {data_name}")
         
@@ -133,6 +146,7 @@ def download_data(data_name, year):
         time=slice(time_range[0], time_range[1])
     )
 
+
     # calculate cumulative precipitation for the entire day
     # group by 6, 12, 18, 24 hours and take the sum of the 6-hourly precipitation
     if 'total_precipitation_6hr' in available_vars:
@@ -161,8 +175,6 @@ def download_data(data_name, year):
 
     # filter for only hours 0 and 12
     subset = subset.sel(time=subset.time.dt.hour.isin([0, 12]))
-
-    print(subset)
 
     # update available_vars to reflect changes
     available_vars = list(subset.data_vars)
@@ -358,9 +370,8 @@ if __name__ == '__main__':
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    years = [2023, 2024]
-    data_source = 'era5'  # hres_t0 or era5
+    years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    data_source = 'hres_t0'  # hres_t0 or era5
     
     # Try the download
     for year in years:

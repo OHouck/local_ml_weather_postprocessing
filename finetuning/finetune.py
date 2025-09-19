@@ -314,7 +314,7 @@ def parse_args():
     parser.add_argument('--output_dir',   type=str, required=True)
     parser.add_argument('--climate_zones_file', type=str, default=None)
     parser.add_argument('--model_name',   type=str, required=True)
-    parser.add_argument('--ground_truth_source', type=str, default=None)
+    parser.add_argument('--ground_truth_source', type=str, default="")
     parser.add_argument('--region',       type=str, default="india")
     parser.add_argument('--subregion',    type=str, default="2x2")
     parser.add_argument('--lead_time_hours', type=int, nargs='+', default=[24],
@@ -483,7 +483,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     time_values_np = time_values.to_numpy()
 
     # Define target dataset name
-    if args.ground_truth_source is None:
+    if args.ground_truth_source == "":
         if args.model_name == "pangu":
             target = "era5"
         elif args.model_name == "ifs":
@@ -809,6 +809,7 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     
     # Save to zarr
     output_path = os.path.expanduser(output_path)
+    print(ds_out)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
 
@@ -896,6 +897,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
             mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
             mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
             print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
+
     print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
 
             

@@ -23,6 +23,7 @@ def setup_directories():
     dirs = {
         'root': root,
         'raw': os.path.join(root, "raw"),
+        'globus': os.path.expanduser("~/globus/forecast_data/processed"),
         'processed': os.path.join(root, "processed"),
         'fig': os.path.join(root, "../figures/finetuning"),
         'input': os.path.join(root, "fine_tuning_output")
@@ -238,9 +239,10 @@ def calculate_and_save_statistics(
                             for idx, file_path in enumerate(files):
                                 try:
                                     ds = load_zarr_cached(file_path)
+                                    print(file_path)
                                     
                                     # Extract data
-                                    ground_truth, original, corrected, mean_corrected = extract_forecast_data(
+                                    ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
                                         ds, prediction_var, lead_time
                                     )
                                     
@@ -248,12 +250,14 @@ def calculate_and_save_statistics(
                                     gt_flat = ground_truth.values.flatten()
                                     orig_flat = original.values.flatten()
                                     corr_flat = corrected.values.flatten()
+                                    mean_bias_flat = mean_bias_corrected.values.flatten() if mean_bias_corrected is not None else None
                                     
                                     # Remove NaN values
-                                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat)) | (mean_bias_flat is not None and np.isnan(mean_bias_flat))
                                     gt_flat = gt_flat[mask]
                                     orig_flat = orig_flat[mask]
                                     corr_flat = corr_flat[mask]
+                                    mean_bias_flat = mean_bias_flat[mask] if mean_bias_flat is not None else None
                                     
                                     # Store ground truth for statistics
                                     ground_truth_values.extend(gt_flat)
@@ -291,14 +295,13 @@ def calculate_and_save_statistics(
                                         pct_error_cutoff_original = None
                                         pct_error_cutoff_corrected = None
                                     
-                                    # Calculate mean corrected RMSE if available
+                                    # Calculate mean bias corrected RMSE if available
                                     rmse_mean_corrected = None
                                     pct_improvement_mean = None
-                                    if mean_corrected is not None:
-                                        mc_flat = mean_corrected.values.flatten()[mask]
-                                        rmse_mean_corrected = np.sqrt(np.mean((mc_flat - gt_flat)**2))
-                                        pct_improvement_mean = (rmse_original - rmse_mean_corrected) / rmse_original * 100
-                                    
+                                    if mean_bias_corrected is not None:
+                                        rmse_mean_bias_corrected = np.sqrt(np.mean((mean_bias_flat - gt_flat)**2))
+                                        pct_improvement_mean = (rmse_original - rmse_mean_bias_corrected) / rmse_original * 100
+
                                     file_results.append({
                                         'rmse_original': rmse_original,
                                         'rmse_corrected': rmse_corrected,
@@ -314,6 +317,7 @@ def calculate_and_save_statistics(
                                     
                                 except Exception as e:
                                     print(f"Error processing {file_path}: {e}")
+                                    exit()
                                     continue
                             
                             if not file_results:
@@ -428,7 +432,6 @@ def calculate_and_save_statistics(
                                 'bootstrap': bootstrap,
                                 'n_samples': n
                             }
-                            
                             # Add confidence intervals if bootstrap
                             if bootstrap:
                                 row.update({
@@ -448,11 +451,12 @@ def calculate_and_save_statistics(
     
     # Create DataFrame
     df = pd.DataFrame(all_results)
+    print(df.columns)
     
     # Save to CSV
     if output_csv_path is None:
         timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        output_csv_path = os.path.join(dirs['processed'], 
+        output_csv_path = os.path.join(dirs['globus'], 
                                       f'forecast_statistics_all_vars_{timestamp}.csv')
     
     df.to_csv(output_csv_path, index=False)
@@ -492,7 +496,7 @@ def main():
         subregions=["2x2", "6x6", "10x10"],  # All subregions
         lead_times=[24, 120, 216],
         simultaneous=True,
-        output_csv_path=f"{dirs['processed']}/forecast_improvement_stats.csv"
+        output_csv_path=f"{dirs['globus']}/forecast_improvement_stats.csv"
     )
 
 if __name__ == "__main__":
