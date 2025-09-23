@@ -1,5 +1,7 @@
+# Name: figures_finetuning.py
+# Author: Ozma Houck
+
 import os
-import re
 import glob
 import socket
 import calendar
@@ -97,64 +99,6 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     if rmse_original == 0:
         return 0
     return (rmse_original - rmse_corrected) / rmse_original * 100
-
-
-def diagnose_zarr_performance(path, lead_times=[24, 120, 216]):
-    """
-    Diagnostic function to understand why different lead times have different performance.
-    """
-    print(f"Diagnosing Zarr performance for: {path}")
-    
-    try:
-        with xr.open_zarr(path) as ds:
-            print(f"Dataset shape: {ds.dims}")
-            print(f"Available variables: {list(ds.data_vars.keys())}")
-            
-            for lead_time in lead_times:
-                var_name = f"2m_temperature_original_lt{lead_time}h"
-                if var_name in ds:
-                    var = ds[var_name]
-                    print(f"\n=== Lead Time {lead_time}h ===")
-                    print(f"Variable shape: {var.shape}")
-                    print(f"Variable chunks: {var.chunks}")
-                    print(f"Chunk sizes: {var.chunksizes}")
-                    
-                    # Get number of chunks correctly
-                    if hasattr(var.data, 'nchunks'):
-                        print(f"Number of chunks: {var.data.nchunks}")
-                    elif hasattr(var.data, 'chunks'):
-                        nchunks = np.prod([len(c) for c in var.data.chunks])
-                        print(f"Number of chunks: {nchunks}")
-                    
-                    # Test loading speed
-                    start_time = time.time()
-                    _ = var.load()  # Force load into memory
-                    load_time = time.time() - start_time
-                    print(f"Load time: {load_time:.3f} seconds")
-                    
-                    # Memory usage
-                    memory_usage = var.nbytes / (1024**2)  # MB
-                    print(f"Memory usage: {memory_usage:.2f} MB")
-                    
-                    # Dask array info
-                    if hasattr(var.data, 'chunks'):
-                        print(f"Dask chunks: {var.data.chunks}")
-                        print(f"Chunk dtype: {var.data.dtype}")
-                        
-                        # Calculate chunk efficiency
-                        total_elements = var.size
-                        chunks_per_dim = [len(c) for c in var.data.chunks]
-                        total_chunks = np.prod(chunks_per_dim)
-                        avg_elements_per_chunk = total_elements / total_chunks
-                        print(f"Average elements per chunk: {avg_elements_per_chunk:.1f}")
-                        print(f"Chunks per dimension: {chunks_per_dim}")
-                else:
-                    print(f"Variable {var_name} not found")
-                    
-    except Exception as e:
-        print(f"Error diagnosing {path}: {e}")
-        import traceback
-        traceback.print_exc()
 
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
@@ -1067,12 +1011,11 @@ def _create_latex_table(df, prediction_var, nn_architecture, subregion, dirs, mo
     print(f"\nSaved LaTeX table to: {filepath}")
     print(f"Table title: Summary Statistics for {variable_name}")
 
-
-#===============================================================================
 def plot_lead_time_from_csv(
         csv_path,
         dirs,
         variable,
+        evaluation_metric,
         regions=None,
         subregion="4x4",
         plot_type="all",
@@ -1091,6 +1034,11 @@ def plot_lead_time_from_csv(
         Dictionary of directories (for saving plots)
     variable : str
         Variable to plot (must match CSV column)
+    evaluation_metric : str
+        Type of evaluation metric to plot:
+        - "rmse_pct_improvement": Percentage improvement in RMSE
+        - "raw_values": Raw forecast values (ground truth, original, corrected)
+        - "error_cutoff": Percentage of forecasts exceeding error threshold
     regions : list
         List of regions to include in plot. If None, uses all in CSV
     subregion : str
@@ -1104,6 +1052,7 @@ def plot_lead_time_from_csv(
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
+    
     
     # Load statistics
     df = pd.read_csv(csv_path)
@@ -1165,100 +1114,394 @@ def plot_lead_time_from_csv(
         'unet': 'none'
     }
     
-    correction_styles = {
-        'nn': '-',
-        'ano': '--'
-    }
-    
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
     
-    # Plot each combination
-    for region in regions:
-        # Get color for region
-        if region in climate_region_colors:
-            color = climate_region_colors[region]
-        else:
-            color = region_colors.get(region, '#1f77b4')
-        
-        region_df = df[df['region'] == region]
-        
-        for model in models:
-            model_df = region_df[region_df['model'] == model]
+    # Extract error cutoff information if available
+    error_cutoff_value = None
+    error_cutoff_units = None
+    if 'metadata' in df.columns and evaluation_metric == "error_cutoff":
+        metadata_str = df['metadata'].iloc[0]
+        if pd.notna(metadata_str) and 'Error cutoff:' in metadata_str:
+            # Parse metadata string like "Error cutoff: >2.5 K"
+            parts = metadata_str.split(':')[1].strip().split()
+            if len(parts) >= 2:
+                error_cutoff_value = parts[0].replace('>', '')
+                error_cutoff_units = ' '.join(parts[1:])
+    
+    # Plot based on evaluation metric
+    if evaluation_metric == "rmse_pct_improvement":
+        # Original percentage improvement plot
+        for region in regions:
+            # Get color for region
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
             
-            for arch in nn_architectures:
-                arch_df = model_df[model_df['architecture'] == arch]
+            region_df = df[df['region'] == region]
+            
+            for model in models:
+                model_df = region_df[region_df['model'] == model]
                 
-                if len(arch_df) == 0:
-                    continue
-                
-                # Sort by lead time
-                arch_df = arch_df.sort_values('lead_time')
-                
-                # Get styles
-                marker = model_markers.get(model, 'o')
-                fillstyle = architecture_fillstyles.get(arch, 'full')
-                
-                # Plot neural network correction
-                if 'pct_improvement' in arch_df.columns:
-                    x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
-                    y_values = arch_df['pct_improvement'].values
+                for arch in nn_architectures:
+                    arch_df = model_df[model_df['architecture'] == arch]
                     
-                    ax.plot(x_pos, y_values,
-                           marker=marker,
-                           fillstyle=fillstyle,
-                           linestyle='-',
-                           color=color,
-                           linewidth=2.5,
-                           markersize=15,
-                           alpha=0.75,
-                           zorder=3)
+                    if len(arch_df) == 0:
+                        continue
                     
-                    # Add confidence intervals if available
-                    if 'pct_improvement_ci_lower' in arch_df.columns:
-                        ci_lower = arch_df['pct_improvement_ci_lower'].values
-                        ci_upper = arch_df['pct_improvement_ci_upper'].values
-                        ax.fill_between(x_pos, ci_lower, ci_upper,
-                                       color=color,
-                                       alpha=0.1,
-                                       zorder=1)
-                
-                # Plot mean corrected if available and requested
-                if plot_type == "all" and 'pct_improvement_mean_corrected' in arch_df.columns:
-                    if not arch_df['pct_improvement_mean_corrected'].isna().all():
+                    # Sort by lead time
+                    arch_df = arch_df.sort_values('lead_time')
+                    
+                    # Get styles
+                    marker = model_markers.get(model, 'o')
+                    fillstyle = architecture_fillstyles.get(arch, 'full')
+                    
+                    # Plot neural network correction
+                    if 'rmse_pct_improvement' in arch_df.columns:
                         x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
-                        y_values = arch_df['pct_improvement_mean_corrected'].values
+                        y_values = arch_df['rmse_pct_improvement'].values
                         
                         ax.plot(x_pos, y_values,
                                marker=marker,
                                fillstyle=fillstyle,
-                               linestyle='--',
+                               linestyle='-',
                                color=color,
                                linewidth=2.5,
                                markersize=15,
                                alpha=0.75,
                                zorder=3)
+                        
+                        # Add confidence intervals if available
+                        if 'rmse_pct_improvement_ci_lower' in arch_df.columns:
+                            ci_lower = arch_df['rmse_pct_improvement_ci_lower'].values
+                            ci_upper = arch_df['rmse_pct_improvement_ci_upper'].values
+                            ax.fill_between(x_pos, ci_lower, ci_upper,
+                                           color=color,
+                                           alpha=0.1,
+                                           zorder=1)
+                    
+                    # Plot mean corrected if available and requested
+                    if plot_type == "all" and 'pct_improvement_mean_corrected' in arch_df.columns:
+                        if not arch_df['pct_improvement_mean_corrected'].isna().all():
+                            x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                            y_values = arch_df['pct_improvement_mean_corrected'].values
+                            
+                            ax.plot(x_pos, y_values,
+                                   marker=marker,
+                                   fillstyle=fillstyle,
+                                   linestyle='--',
+                                   color=color,
+                                   linewidth=2.5,
+                                   markersize=15,
+                                   alpha=0.75,
+                                   zorder=3)
+        
+        # Set axes
+        ax.set_ylim(-18, 35)
+        ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
+        
+        # Add reference line
+        ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        
+    elif evaluation_metric == "raw_values":
+        # Plot raw forecast values as deviations from ground truth mean
+        
+        # Track which forecast types we've added to legend
+        legend_added = {'ground_truth': False, 'original': False, 'corrected': False}
+        
+        # Store mean values for annotation
+        region_means = {}
+        
+        for region in regions:
+            # Get color for region
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
+            
+            region_df = df[df['region'] == region]
+            
+            for model in models:
+                model_df = region_df[region_df['model'] == model]
+                
+                for arch in nn_architectures:
+                    arch_df = model_df[model_df['architecture'] == arch]
+                    
+                    if len(arch_df) == 0:
+                        continue
+                    
+                    # Sort by lead time
+                    arch_df = arch_df.sort_values('lead_time')
+                    
+                    # Get styles
+                    marker = model_markers.get(model, 'o')
+                    fillstyle = architecture_fillstyles.get(arch, 'full')
+                    
+                    x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                    
+                    # Calculate overall mean of ground truth for this region/model/arch
+                    if 'ground_truth_mean' in arch_df.columns:
+                        ground_truth_values = arch_df['ground_truth_mean'].values
+                        if not np.all(np.isnan(ground_truth_values)):
+                            overall_gt_mean = np.nanmean(ground_truth_values)
+                            
+                            # Store mean for annotation (convert K to C for temperature)
+                            region_key = f"{region}_{model}_{arch}"
+                            if variable == '2m_temperature':
+                                region_means[region_key] = (region, overall_gt_mean - 273.15, 'C')  # Convert K to C
+                            elif variable == '10m_wind_speed':
+                                region_means[region_key] = (region, overall_gt_mean, 'm/s')
+                            elif variable == 'total_precipitation':
+                                region_means[region_key] = (region, overall_gt_mean, 'mm')
+                            else:
+                                region_means[region_key] = (region, overall_gt_mean, '')
+                            
+                            # Plot ground truth deviations
+                            y_values_dev = ground_truth_values - overall_gt_mean
+                            
+                            # Only add label for first ground truth line
+                            label = 'Ground Truth' if not legend_added['ground_truth'] else None
+                            if label:
+                                legend_added['ground_truth'] = True
+                            
+                            ax.plot(x_pos, y_values_dev,
+                                   marker='s',
+                                   fillstyle=fillstyle,
+                                   linestyle=':',
+                                   color=color,
+                                   linewidth=2,
+                                   markersize=10,
+                                   alpha=0.9,
+                                   label=label,
+                                   zorder=4)
+                            
+                            # Plot original forecast deviations
+                            if 'mean_original_forecast' in arch_df.columns:
+                                y_values = arch_df['mean_original_forecast'].values
+                                if not np.all(np.isnan(y_values)):
+                                    y_values_dev = y_values - overall_gt_mean
+                                    
+                                    # Only add label for first original line
+                                    label = 'Original Forecast' if not legend_added['original'] else None
+                                    if label:
+                                        legend_added['original'] = True
+                                    
+                                    ax.plot(x_pos, y_values_dev,
+                                           marker=marker,
+                                           fillstyle=fillstyle,
+                                           linestyle='--',
+                                           color=color,
+                                           linewidth=2,
+                                           markersize=12,
+                                           alpha=0.6,
+                                           label=label,
+                                           zorder=2)
+                            
+                            # Plot corrected forecast deviations
+                            if 'mean_corrected_forecast' in arch_df.columns:
+                                y_values = arch_df['mean_corrected_forecast'].values
+                                if not np.all(np.isnan(y_values)):
+                                    y_values_dev = y_values - overall_gt_mean
+                                    
+                                    # Only add label for first corrected line
+                                    label = 'Corrected Forecast' if not legend_added['corrected'] else None
+                                    if label:
+                                        legend_added['corrected'] = True
+                                    
+                                    ax.plot(x_pos, y_values_dev,
+                                           marker=marker,
+                                           fillstyle=fillstyle,
+                                           linestyle='-',
+                                           color=color,
+                                           linewidth=2.5,
+                                           markersize=15,
+                                           alpha=0.75,
+                                           label=label,
+                                           zorder=3)
+        
+        # Set ylabel based on variable (now for deviations)
+        if variable == '2m_temperature':
+            ax.set_ylabel("Temperature Deviation (K)", fontsize=20)
+        elif variable == '10m_wind_speed':
+            ax.set_ylabel("Wind Speed Deviation (m/s)", fontsize=20)
+        elif variable == 'total_precipitation':
+            ax.set_ylabel("Precipitation Deviation (mm)", fontsize=20)
+        else:
+            ax.set_ylabel(f"{variable.replace('_', ' ').title()} Deviation", fontsize=20)
+        
+        # Add horizontal line at y=0
+        ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3, linewidth=1)
+        
+        # Add annotations for mean values
+        if region_means:
+            # Create annotation text
+            annotation_lines = ["Ground Truth Means:"]
+            
+            # Group by region for cleaner display
+            region_annotations = {}
+            for key, (region, mean_val, units) in region_means.items():
+                if region not in region_annotations:
+                    region_annotations[region] = []
+                region_annotations[region].append((mean_val, units))
+            
+            # Format annotations by region
+            for region in sorted(region_annotations.keys()):
+                values = region_annotations[region]
+                # Average if multiple models/architectures for same region
+                avg_mean = np.mean([v[0] for v in values])
+                units = values[0][1]
+                
+                # Get region color for the annotation
+                if region in climate_region_colors:
+                    color = climate_region_colors[region]
+                else:
+                    color = region_colors.get(region, '#1f77b4')
+                
+                # Format the mean value
+                if variable == '2m_temperature':
+                    annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.1f}°{units}")
+                else:
+                    annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.2f} {units}")
+            
+            # Place annotation box
+            annotation_text = '\n'.join(annotation_lines)
+            ax.text(0.02, 0.98, annotation_text,
+                   transform=ax.transAxes,
+                   fontsize=11,
+                   verticalalignment='top',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.9),
+                   family='monospace')
+        
+        # Create custom legend that combines line styles and regions
+        # First add the forecast type legend
+        forecast_handles = []
+        if legend_added['ground_truth']:
+            forecast_handles.append(Line2D([0], [0], color='gray', marker='s', 
+                                          linestyle=':', linewidth=2, markersize=10,
+                                          label='Ground Truth'))
+        if legend_added['original']:
+            forecast_handles.append(Line2D([0], [0], color='gray', marker='o',
+                                          linestyle='--', linewidth=2, markersize=12,
+                                          label='Original Forecast'))
+        if legend_added['corrected']:
+            forecast_handles.append(Line2D([0], [0], color='gray', marker='o',
+                                          linestyle='-', linewidth=2.5, markersize=15,
+                                          label='Corrected Forecast'))
+        
+    elif evaluation_metric == "error_cutoff":
+        # Plot percentage of forecasts exceeding error threshold
+        
+        # Track if we've plotted anything
+        has_data = False
+        
+        for region in regions:
+            # Get color for region
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
+            
+            region_df = df[df['region'] == region]
+            
+            for model in models:
+                model_df = region_df[region_df['model'] == model]
+                
+                for arch in nn_architectures:
+                    arch_df = model_df[model_df['architecture'] == arch]
+                    
+                    if len(arch_df) == 0:
+                        continue
+                    
+                    # Sort by lead time
+                    arch_df = arch_df.sort_values('lead_time')
+                    
+                    # Get styles
+                    marker = model_markers.get(model, 'o')
+                    fillstyle = architecture_fillstyles.get(arch, 'full')
+                    
+                    # Create label only for the first plot of each type (to avoid duplicate legends)
+                    label_original = None
+                    label_corrected = None
+                    if not has_data:
+                        label_original = 'Original'
+                        label_corrected = 'Corrected'
+                        has_data = True
+                    
+                    # Plot original error rate (dashed line)
+                    if 'pct_error_cutoff_original' in arch_df.columns:
+                        x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                        y_values = arch_df['pct_error_cutoff_original'].values
+                        
+                        # Only plot if we have valid data
+                        if not np.all(np.isnan(y_values)):
+                            ax.plot(x_pos, y_values,
+                                   marker=marker,
+                                   fillstyle=fillstyle,
+                                   linestyle='--',
+                                   color=color,
+                                   linewidth=2,
+                                   markersize=12,
+                                   alpha=0.6,
+                                   label=label_original,
+                                   zorder=2)
+                    
+                    # Plot corrected error rate (solid line)
+                    if 'pct_error_cutoff_corrected' in arch_df.columns:
+                        x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
+                        y_values = arch_df['pct_error_cutoff_corrected'].values
+                        
+                        # Only plot if we have valid data
+                        if not np.all(np.isnan(y_values)):
+                            ax.plot(x_pos, y_values,
+                                   marker=marker,
+                                   fillstyle=fillstyle,
+                                   linestyle='-',
+                                   color=color,
+                                   linewidth=2.5,
+                                   markersize=15,
+                                   alpha=0.75,
+                                   label=label_corrected,
+                                   zorder=3)
+        
+        # Set y-axis label
+        ax.set_ylabel("Forecasts Exceeding Error Threshold (%)", fontsize=20)
+        
+        # Add annotation for cutoff value
+        if error_cutoff_value and error_cutoff_units:
+            annotation_text = f"Error threshold: >{error_cutoff_value} {error_cutoff_units}"
+            ax.text(0.02, 0.98, annotation_text,
+                   transform=ax.transAxes,
+                   fontsize=14,
+                   verticalalignment='top',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.3))
+        
+        # Set y-axis limits based on data
+        ax.set_ylim(bottom=0)
+        
+        # Add a subtle grid for better readability
+        ax.yaxis.grid(True, alpha=0.2, linestyle=':', linewidth=0.5)
     
-    # Set axes
-    ax.set_ylim(-18, 35)
+    # Common settings for all plot types
     ax.set_xticks(range(len(lead_times)))
     ax.set_xticklabels([f"{lt}h" for lt in lead_times])
-    
-    # Labels and title
     ax.set_xlabel("Forecast Lead Time", fontsize=20)
-    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
-    
-    # Add reference line
-    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     
     # Title
     arch_str = "/".join([a.upper() for a in nn_architectures])
     regions_str = ", ".join(regions)
     is_bootstrap = df['bootstrap'].iloc[0] if len(df) > 0 and 'bootstrap' in df.columns else False
     
-    title_parts = [f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"]
+    if evaluation_metric == "rmse_pct_improvement":
+        title_main = f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"
+    elif evaluation_metric == "raw_values":
+        title_main = f"Forecast Values for {prediction_var.replace('_', ' ').title()} ({arch_str})"
+    elif evaluation_metric == "error_cutoff":
+        title_main = f"Error Frequency for {prediction_var.replace('_', ' ').title()} ({arch_str})"
+    
+    title_parts = [title_main]
     title_parts.append(f"Regions: {regions_str}, Patch Size: {subregion}")
-    if is_bootstrap:
+    if is_bootstrap and evaluation_metric == "rmse_pct_improvement":
         title_parts[0] += " (with 95% CI)"
     ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
     
@@ -1268,46 +1511,111 @@ def plot_lead_time_from_csv(
     
     ax.tick_params(axis='both', labelsize=20)
     
-    # Create legends
-    region_handles = []
-    for region in regions:
-        if region in climate_region_colors:
-            color = climate_region_colors[region]
+    # Create legends (for all evaluation metrics)
+    if evaluation_metric == "raw_values":
+        # For raw_values, we need both forecast type and region legends
+        # Forecast type legend (already created above as forecast_handles)
+        legend1 = ax.legend(handles=forecast_handles, title="Forecast Type",
+                           loc='upper left', fontsize=12)
+        
+        # Region legend
+        region_handles = []
+        for region in regions:
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
+            region_handles.append(Line2D([0], [0], color=color, linewidth=3,
+                                        label=region.replace('_', ' ').title()))
+        
+        legend2 = ax.legend(handles=region_handles, title="Region",
+                           loc='upper left', bbox_to_anchor=(0, 0.75), fontsize=12)
+        
+        # Model legend if multiple models
+        if len(models) > 1:
+            model_handles = []
+            for model in models:
+                marker = model_markers.get(model, 'o')
+                model_handles.append(Line2D([0], [0], color='black', marker=marker,
+                                           linestyle='none', markersize=15,
+                                           label=model.upper()))
+            legend3 = ax.legend(handles=model_handles, title="Model",
+                               loc='upper left', bbox_to_anchor=(0, 0.5), fontsize=12)
+            ax.add_artist(legend3)
+        
+        ax.add_artist(legend1)
+        ax.add_artist(legend2)
+        
+        # Style legends
+        for legend in [legend1, legend2]:
+            legend.get_frame().set_facecolor('white')
+            legend.get_frame().set_alpha(0.95)
+            legend.get_frame().set_edgecolor('gray')
+            
+    elif evaluation_metric in ["rmse_pct_improvement", "error_cutoff"]:
+        region_handles = []
+        for region in regions:
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
+            region_handles.append(Line2D([0], [0], color=color, linewidth=3,
+                                        label=region.replace('_', ' ').title()))
+        
+        model_handles = []
+        for model in models:
+            marker = model_markers.get(model, 'o')
+            model_handles.append(Line2D([0], [0], color='black', marker=marker,
+                                       linestyle='none', markersize=15,
+                                       label=model.upper()))
+        
+        arch_handles = []
+        for arch in nn_architectures:
+            fillstyle = architecture_fillstyles.get(arch, 'full')
+            arch_handles.append(Line2D([0], [0], color='black', marker='o',
+                                      fillstyle=fillstyle, markersize=15,
+                                      linestyle='none', label=arch.upper()))
+        
+        # Add line style legend for error_cutoff
+        if evaluation_metric == "error_cutoff":
+            line_handles = [
+                Line2D([0], [0], color='gray', linestyle='--', linewidth=2,
+                      label='Original', alpha=0.6),
+                Line2D([0], [0], color='gray', linestyle='-', linewidth=2.5,
+                      label='Corrected', alpha=0.75)
+            ]
+            
+            # Adjust legend positions for error_cutoff
+            legend1 = ax.legend(handles=region_handles, title="Region",
+                               loc='upper left', fontsize=12)
+            legend2 = ax.legend(handles=model_handles, title="Model",
+                               loc='upper left', bbox_to_anchor=(0, 0.75), fontsize=12)
+            legend3 = ax.legend(handles=arch_handles, title="Architecture",
+                               loc='upper left', bbox_to_anchor=(0, 0.55), fontsize=12)
+            legend4 = ax.legend(handles=line_handles, title="Forecast Type",
+                               loc='upper left', bbox_to_anchor=(0, 0.35), fontsize=12)
+            
+            ax.add_artist(legend1)
+            ax.add_artist(legend2)
+            ax.add_artist(legend3)
+            ax.add_artist(legend4)  # This was missing!
         else:
-            color = region_colors.get(region, '#1f77b4')
-        region_handles.append(Line2D([0], [0], color=color, linewidth=3,
-                                    label=region.replace('_', ' ').title()))
-    
-    model_handles = []
-    for model in models:
-        marker = model_markers.get(model, 'o')
-        model_handles.append(Line2D([0], [0], color='black', marker=marker,
-                                   linestyle='none', markersize=15,
-                                   label=model.upper()))
-    
-    arch_handles = []
-    for arch in nn_architectures:
-        fillstyle = architecture_fillstyles.get(arch, 'full')
-        arch_handles.append(Line2D([0], [0], color='black', marker='o',
-                                  fillstyle=fillstyle, markersize=15,
-                                  linestyle='none', label=arch.upper()))
-    
-    # Add legends
-    legend1 = ax.legend(handles=region_handles, title="Region",
-                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
-    legend2 = ax.legend(handles=model_handles, title="Model",
-                       loc='lower right', bbox_to_anchor=(1, 0.45), fontsize=12)
-    legend3 = ax.legend(handles=arch_handles, title="Architecture",
-                       loc='lower right', bbox_to_anchor=(1, 0.3), fontsize=12)
-    
-    ax.add_artist(legend1)
-    ax.add_artist(legend2)
-    
-    # Style legends
-    for legend in [legend1, legend2, legend3]:
-        legend.get_frame().set_facecolor('white')
-        legend.get_frame().set_alpha(0.95)
-        legend.get_frame().set_edgecolor('gray')
+            # Original legend positions for rmse_pct_improvement
+            legend1 = ax.legend(handles=region_handles, title="Region",
+                               loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
+            legend2 = ax.legend(handles=model_handles, title="Model",
+                               loc='lower right', bbox_to_anchor=(1, 0.45), fontsize=12)
+            legend3 = ax.legend(handles=arch_handles, title="Architecture",
+                               loc='lower right', bbox_to_anchor=(1, 0.3), fontsize=12)
+            
+            ax.add_artist(legend1)
+            ax.add_artist(legend2)
+        
+        # Style legends
+        for legend in [legend1, legend2, legend3]:
+            legend.get_frame().set_facecolor('white')
+            legend.get_frame().set_alpha(0.95)
+            legend.get_frame().set_edgecolor('gray')
     
     # Remove spines
     ax.spines['top'].set_visible(False)
@@ -1329,15 +1637,18 @@ def plot_lead_time_from_csv(
             region_type = "geographic"
         
         training_vars = df['training_vars'].iloc[0] if len(df) > 0 else "unknown"
-        fname = (f"leadtime_improvement_{prediction_var}_trainedwith_{training_vars}_"
+        
+        # Add evaluation metric to filename
+        metric_suffix = evaluation_metric
+        fname = (f"leadtime_{metric_suffix}_{prediction_var}_trainedwith_{training_vars}_"
                 f"{region_type}_{plot_type}_{arch_suffix}{bootstrap_suffix}.png")
         save_path = os.path.join(out_folder, fname)
-    
+    plt.show()
+    exit() 
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     print(f"Lead-time plot saved to: {save_path}")
-
 
 
 def generate_summary_table_from_csv(
@@ -1506,23 +1817,30 @@ def main():
     prediction_var = "10m_wind_speed"
 
 
-    stat_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/processed/forecast_improvement_stats.csv"
+    stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
+
     plot_lead_time_from_csv(csv_path = stat_path,
         dirs=dirs,
-        variable="10m_wind_speed",
-        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-        subregion="6x6",
-        plot_type="pangu_nn",
-        nn_architectures=["mlp"]
-    )
-    plot_lead_time_from_csv(csv_path = stat_path,
-        dirs=dirs,
+        evaluation_metric = "raw_values",
         variable="2m_temperature",
         regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
         subregion="6x6",
         plot_type="pangu_nn",
         nn_architectures=["mlp"]
     )
+    exit()
+    plot_lead_time_from_csv(csv_path = stat_path,
+        dirs=dirs,
+        variable="10m_wind_speed",
+        evaluation_metric = "error_cutoff",
+        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+        subregion="6x6",
+        plot_type="pangu_nn",
+        nn_architectures=["mlp"]
+    )
+
+
+
 
     
     #=============================================

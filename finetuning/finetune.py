@@ -465,7 +465,7 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
 
     return(forecast_ds)
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None):
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, growing_season_only=False, patch_num=None,):
     """
     Vectorized version that processes all data at once without loops.
     More memory intensive but faster for reasonable data sizes.
@@ -480,7 +480,18 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     
     # Create time range
     time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+
+    # only keep growing season dates: 3-15 to 10-31
+    if growing_season_only:
+        time_values= time_values[
+            ((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15)) &
+            ((time_values.month <= 10)))
+        ]
+
     time_values_np = time_values.to_numpy()
+
+
+
 
     # Define target dataset name
     if args.ground_truth_source == "":
@@ -819,11 +830,16 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     Run experiment with multiple lead times and month encoding.
     """
     start_time = time.time()
+    if args.model_name == "aifs":
+        gs_flag = True # growing season flag
+    else:
+        gs_flag = False
 
     # Load training data
     (fc, fc_output, obs, lead_time_indices, month_indices, train_times, lat_u, lon_u, 
      n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, patch_num=patch_num)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, 
+                       growing_season_only = gs_flag, patch_num=patch_num)
     
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
@@ -882,7 +898,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Load test data
     (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_month_indices,
      test_times, _, _, _, _, _, _, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, growing_season_only= gs_flag, train=False, patch_num=patch_num)
 
     # Apply correction
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']

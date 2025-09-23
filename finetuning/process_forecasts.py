@@ -1,3 +1,5 @@
+# now done on dsi cluster
+
 import os
 import glob
 import numpy as np
@@ -136,7 +138,7 @@ def calculate_and_save_statistics(
     
     # Define error cutoffs for each variable
     ERROR_CUTOFFS = {
-        '2m_temperature': {'value': 5.0, 'type': 'absolute', 'units': 'K'},
+        '2m_temperature': {'value': 2.5, 'type': 'absolute', 'units': 'K'},
         '10m_wind_speed': {'value': 2.0, 'type': 'absolute', 'units': 'm/s'},
         'total_precipitation': {'value': 0.0, 'type': 'binary', 'units': 'rain/no-rain'}
     }
@@ -159,17 +161,12 @@ def calculate_and_save_statistics(
     # Storage for all results
     all_results = []
     
-    # Track metadata row indices for each variable
-    metadata_row_count = {}
     
     # Process each variable configuration
     for var_config in variable_configs:
         training_vars = var_config['training_vars']
         output_vars = var_config['output_vars']
         prediction_var = var_config['prediction_var']
-        
-        # Initialize metadata counter for this variable
-        metadata_row_count[prediction_var] = 0
         
         # Ensure variables are lists
         if not isinstance(training_vars, (list, tuple)):
@@ -239,21 +236,23 @@ def calculate_and_save_statistics(
                             for idx, file_path in enumerate(files):
                                 try:
                                     ds = load_zarr_cached(file_path)
-                                    print(file_path)
                                     
                                     # Extract data
                                     ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
                                         ds, prediction_var, lead_time
                                     )
-                                    
+
                                     # Flatten arrays for statistics
                                     gt_flat = ground_truth.values.flatten()
                                     orig_flat = original.values.flatten()
                                     corr_flat = corrected.values.flatten()
                                     mean_bias_flat = mean_bias_corrected.values.flatten() if mean_bias_corrected is not None else None
                                     
-                                    # Remove NaN values
-                                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat)) | (mean_bias_flat is not None and np.isnan(mean_bias_flat))
+                                    # Remove NaN values - fixed logic here
+                                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                                    if mean_bias_flat is not None:
+                                        mask = mask & ~np.isnan(mean_bias_flat)
+                                    
                                     gt_flat = gt_flat[mask]
                                     orig_flat = orig_flat[mask]
                                     corr_flat = corr_flat[mask]
@@ -271,7 +270,7 @@ def calculate_and_save_statistics(
                                     rmse_corrected = np.sqrt(np.mean((corr_flat - gt_flat)**2))
                                     
                                     # Calculate percent improvement
-                                    pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
+                                    rmse_pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
                                     
                                     # Calculate error frequency metrics
                                     if prediction_var in ERROR_CUTOFFS:
@@ -297,17 +296,17 @@ def calculate_and_save_statistics(
                                     
                                     # Calculate mean bias corrected RMSE if available
                                     rmse_mean_corrected = None
-                                    pct_improvement_mean = None
+                                    pct_improvement_mean_correction = None  # Fixed variable name
                                     if mean_bias_corrected is not None:
-                                        rmse_mean_bias_corrected = np.sqrt(np.mean((mean_bias_flat - gt_flat)**2))
-                                        pct_improvement_mean = (rmse_original - rmse_mean_bias_corrected) / rmse_original * 100
+                                        rmse_mean_corrected = np.sqrt(np.mean((mean_bias_flat - gt_flat)**2))
+                                        pct_improvement_mean_correction = (rmse_original - rmse_mean_corrected) / rmse_original * 100
 
                                     file_results.append({
                                         'rmse_original': rmse_original,
                                         'rmse_corrected': rmse_corrected,
                                         'rmse_mean_corrected': rmse_mean_corrected,
-                                        'pct_improvement': pct_improvement,
-                                        'pct_improvement_mean': pct_improvement_mean,
+                                        'rmse_pct_improvement': rmse_pct_improvement,
+                                        'pct_improvement_mean_correction': pct_improvement_mean_correction,  # Fixed key name
                                         'mean_original': mean_original,
                                         'mean_corrected': mean_corrected,
                                         'pct_error_cutoff_original': pct_error_cutoff_original,
@@ -317,8 +316,7 @@ def calculate_and_save_statistics(
                                     
                                 except Exception as e:
                                     print(f"Error processing {file_path}: {e}")
-                                    exit()
-                                    continue
+                                    continue  # Changed from exit() to continue
                             
                             if not file_results:
                                 continue
@@ -327,7 +325,7 @@ def calculate_and_save_statistics(
                             if bootstrap:
                                 rmse_orig_values = [r['rmse_original'] for r in file_results]
                                 rmse_corr_values = [r['rmse_corrected'] for r in file_results]
-                                pct_imp_values = [r['pct_improvement'] for r in file_results]
+                                rmse_pct_imp_values = [r['rmse_pct_improvement'] for r in file_results]
                                 mean_orig_values = [r['mean_original'] for r in file_results]
                                 mean_corr_values = [r['mean_corrected'] for r in file_results]
                                 pct_error_orig_values = [r['pct_error_cutoff_original'] for r in file_results if r['pct_error_cutoff_original'] is not None]
@@ -338,7 +336,7 @@ def calculate_and_save_statistics(
                                 # Calculate means
                                 rmse_orig_mean = np.mean(rmse_orig_values)
                                 rmse_corr_mean = np.mean(rmse_corr_values)
-                                pct_imp_mean = np.mean(pct_imp_values)
+                                rmse_pct_imp_mean = np.mean(rmse_pct_imp_values)
                                 mean_orig_forecast = np.mean(mean_orig_values)
                                 mean_corr_forecast = np.mean(mean_corr_values)
                                 pct_error_orig_mean = np.mean(pct_error_orig_values) if pct_error_orig_values else None
@@ -347,7 +345,7 @@ def calculate_and_save_statistics(
                                 # Calculate standard errors and confidence intervals
                                 rmse_orig_se = np.std(rmse_orig_values, ddof=1) / np.sqrt(n)
                                 rmse_corr_se = np.std(rmse_corr_values, ddof=1) / np.sqrt(n)
-                                pct_imp_se = np.std(pct_imp_values, ddof=1) / np.sqrt(n)
+                                rmse_pct_imp_se = np.std(rmse_pct_imp_values, ddof=1) / np.sqrt(n)  # Fixed variable name
                                 
                                 # 95% CI using t-distribution
                                 alpha_ci = 0.05
@@ -357,15 +355,15 @@ def calculate_and_save_statistics(
                                 rmse_orig_ci_upper = rmse_orig_mean + (t_crit * rmse_orig_se)
                                 rmse_corr_ci_lower = rmse_corr_mean - (t_crit * rmse_corr_se)
                                 rmse_corr_ci_upper = rmse_corr_mean + (t_crit * rmse_corr_se)
-                                pct_imp_ci_lower = pct_imp_mean - (t_crit * pct_imp_se)
-                                pct_imp_ci_upper = pct_imp_mean + (t_crit * pct_imp_se)
+                                rmse_pct_imp_ci_lower = rmse_pct_imp_mean - (t_crit * rmse_pct_imp_se)  # Fixed variable name
+                                rmse_pct_imp_ci_upper = rmse_pct_imp_mean + (t_crit * rmse_pct_imp_se)  # Fixed variable name
                                 
                                 # Handle mean corrected if available
                                 rmse_mc_mean = None
                                 pct_imp_mc_mean = None
                                 if file_results[0]['rmse_mean_corrected'] is not None:
                                     rmse_mc_values = [r['rmse_mean_corrected'] for r in file_results]
-                                    pct_imp_mc_values = [r['pct_improvement_mean'] for r in file_results]
+                                    pct_imp_mc_values = [r['pct_improvement_mean_correction'] for r in file_results]  # Fixed key name
                                     rmse_mc_mean = np.mean(rmse_mc_values)
                                     pct_imp_mc_mean = np.mean(pct_imp_mc_values)
                             else:
@@ -373,18 +371,18 @@ def calculate_and_save_statistics(
                                 result = file_results[0]
                                 rmse_orig_mean = result['rmse_original']
                                 rmse_corr_mean = result['rmse_corrected']
-                                pct_imp_mean = result['pct_improvement']
+                                rmse_pct_imp_mean = result['rmse_pct_improvement']
                                 mean_orig_forecast = result['mean_original']
                                 mean_corr_forecast = result['mean_corrected']
                                 pct_error_orig_mean = result['pct_error_cutoff_original']
                                 pct_error_corr_mean = result['pct_error_cutoff_corrected']
                                 rmse_mc_mean = result['rmse_mean_corrected']
-                                pct_imp_mc_mean = result['pct_improvement_mean']
+                                pct_imp_mc_mean = result['pct_improvement_mean_correction']  # Fixed key name
                                 
                                 # No confidence intervals for single file
                                 rmse_orig_ci_lower = rmse_orig_ci_upper = None
                                 rmse_corr_ci_lower = rmse_corr_ci_upper = None
-                                pct_imp_ci_lower = pct_imp_ci_upper = None
+                                rmse_pct_imp_ci_lower = rmse_pct_imp_ci_upper = None  # Fixed variable names
                                 n = 1
                             
                             # Calculate ground truth statistics
@@ -396,13 +394,15 @@ def calculate_and_save_statistics(
                             
                             # Prepare metadata string (only for first 3 rows of each variable)
                             metadata_str = None
-                            if prediction_var in ERROR_CUTOFFS and metadata_row_count[prediction_var] < 3:
+                            if prediction_var in ERROR_CUTOFFS:
                                 cutoff_info = ERROR_CUTOFFS[prediction_var]
                                 if cutoff_info['type'] == 'absolute':
                                     metadata_str = f"Error cutoff: >{cutoff_info['value']} {cutoff_info['units']}"
                                 elif cutoff_info['type'] == 'binary':
                                     metadata_str = f"Error type: {cutoff_info['units']} misclassification"
-                                metadata_row_count[prediction_var] += 1
+                            else:
+                                metadata_str = "No error cutoff defined"
+                                print(f"Warning: No error cutoff defined for variable: {prediction_var}")
                             
                             # Create row for results
                             row = {
@@ -420,7 +420,7 @@ def calculate_and_save_statistics(
                                 'rmse_original': rmse_orig_mean,
                                 'rmse_corrected': rmse_corr_mean,
                                 'rmse_mean_corrected': rmse_mc_mean,
-                                'pct_improvement': pct_imp_mean,
+                                'rmse_pct_improvement': rmse_pct_imp_mean,
                                 'pct_improvement_mean_corrected': pct_imp_mc_mean,
                                 'mean_original_forecast': mean_orig_forecast,
                                 'mean_corrected_forecast': mean_corr_forecast,
@@ -439,19 +439,23 @@ def calculate_and_save_statistics(
                                     'rmse_original_ci_upper': rmse_orig_ci_upper,
                                     'rmse_corrected_ci_lower': rmse_corr_ci_lower,
                                     'rmse_corrected_ci_upper': rmse_corr_ci_upper,
-                                    'pct_improvement_ci_lower': pct_imp_ci_lower,
-                                    'pct_improvement_ci_upper': pct_imp_ci_upper
+                                    'rmse_pct_improvement_ci_lower': rmse_pct_imp_ci_lower,  # Fixed key name
+                                    'rmse_pct_improvement_ci_upper': rmse_pct_imp_ci_upper   # Fixed key name
                                 })
                             
                             all_results.append(row)
-                            print(f"Processed: {prediction_var} {model} {arch} {region} {subregion} {lead_time}h - "
-                                  f"Improvement: {pct_imp_mean:.1f}%, "
-                                  f"Error rate orig: {pct_error_orig_mean:.1f}% -> corr: {pct_error_corr_mean:.1f}%" 
-                                  if pct_error_orig_mean is not None else f"Improvement: {pct_imp_mean:.1f}%")
+                            
+                            # Optional progress message
+                            if pct_error_orig_mean is not None:
+                                print(f"Processed: {prediction_var} {model} {arch} {region} {subregion} {lead_time}h - "
+                                      f"Improvement: {rmse_pct_imp_mean:.1f}%, "
+                                      f"Error rate orig: {pct_error_orig_mean:.1f}% -> corr: {pct_error_corr_mean:.1f}%")
+                            else:
+                                print(f"Processed: {prediction_var} {model} {arch} {region} {subregion} {lead_time}h - "
+                                      f"Improvement: {rmse_pct_imp_mean:.1f}%")
     
     # Create DataFrame
     df = pd.DataFrame(all_results)
-    print(df.columns)
     
     # Save to CSV
     if output_csv_path is None:
@@ -486,7 +490,7 @@ def main():
         dirs=dirs,
         variable_configs=variable_configs,
         geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
-        climate_regions=["tropical", "arid", "temperate"],  # Automatically bootstrapped
+        climate_regions=[], # XX need to add climate regions
         train_start="2018-01-01",
         train_end="2021-12-31",
         test_start="2022-01-01",
@@ -500,4 +504,4 @@ def main():
     )
 
 if __name__ == "__main__":
-    main()
+    main() 
