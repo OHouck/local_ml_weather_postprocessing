@@ -360,7 +360,7 @@ def train_model_with_hyperparams(model, train_loader, valid_loader, hyperparams,
 
 
 def evaluate_hyperparameters(hyperparams: Dict[str, Any], 
-                           regions_config: List[Dict[str, Any]], 
+                           config_list: List[Dict[str, Any]], 
                            device: torch.device,
                            architecture: str = None,
                            verbose: bool = False) -> Dict[str, Any]:
@@ -369,7 +369,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     
     Args:
         hyperparams: Dictionary of hyperparameters to evaluate
-        regions_config: List of region configurations
+        config_list: List of region configurations
         device: torch device
         architecture: Force specific architecture ('mlp' or 'unet'), overrides hyperparams
         verbose: Whether to print progress
@@ -391,7 +391,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     total_weight = 0.0
     region_losses = {}
     
-    for config in regions_config:
+    for config in config_list:
         args = config['args']
         data_dir = config['data_dir']
         weight = config.get('weight', 1.0)
@@ -526,7 +526,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     }
 
 
-def optimize_hyperparameters(regions_config: List[Dict[str, Any]], 
+def optimize_hyperparameters(config_list: List[Dict[str, Any]], 
                            architecture: str,
                            max_evals: int = 100,
                            output_dir: str = None,
@@ -536,7 +536,7 @@ def optimize_hyperparameters(regions_config: List[Dict[str, Any]],
     Optimize hyperparameters for a specific architecture (MLP or UNet).
     
     Args:
-        regions_config: List of region configurations
+        config_list: List of configurations
         architecture: 'mlp' or 'unet'
         max_evals: Maximum number of evaluations
         output_dir: Directory to save results
@@ -569,7 +569,7 @@ def optimize_hyperparameters(regions_config: List[Dict[str, Any]],
     def objective(hyperparams):
         """Objective function to minimize."""
         print(f"\nEvaluating {architecture.upper()} hyperparameters: {hyperparams}")
-        result = evaluate_hyperparameters(hyperparams, regions_config, device, 
+        result = evaluate_hyperparameters(hyperparams, config_list, device, 
                                         architecture=architecture, verbose=True)
         
         # Save intermediate results
@@ -645,53 +645,6 @@ def optimize_hyperparameters(regions_config: List[Dict[str, Any]],
     
     return results
 
-def create_region_config(region_specs: List[Dict[str, Any]], 
-                        base_args: Any,
-                        data_dir: str) -> List[Dict[str, Any]]:
-    """
-    Helper function to create region configurations for optimization.
-    
-    Args:
-        region_specs: List of region specifications, each containing:
-            - 'region': Region name
-            - 'subregion': Subregion specification (e.g., '2x2')
-            - 'lead_time_hours': List of lead times
-            - 'weight': Optional weight for this region
-        base_args: Base arguments namespace to copy
-        data_dir: Data directory path
-        
-    Returns:
-        List of region configurations
-    """
-    import copy
-    from types import SimpleNamespace
-    
-    configs = []
-    for spec in region_specs:
-        # Create a copy of base args
-        args = copy.deepcopy(base_args) if hasattr(base_args, '__dict__') else SimpleNamespace()
-        
-        # Update with region-specific settings
-        args.region = spec['region']
-        args.subregion = spec['subregion']
-        args.lead_time_hours = spec['lead_time_hours']
-        
-        # Copy other relevant attributes from base_args if they exist
-        for attr in ['training_vars', 'output_vars', 'train_start', 'train_end', 
-                     'test_start', 'test_end', 'model_name']:
-            if hasattr(base_args, attr):
-                setattr(args, attr, getattr(base_args, attr))
-        
-        config = {
-            'args': args,
-            'data_dir': data_dir,
-            'weight': spec.get('weight', 1.0)
-        }
-        configs.append(config)
-    
-    return configs
-
-
 def analyze_optimization_results(results_dir: str):
     """
     Analyze and visualize optimization results.
@@ -748,44 +701,54 @@ if __name__ == "__main__":
     from types import SimpleNamespace
     
     # Base configuration
-    base_args = SimpleNamespace(
+    pangu_args = SimpleNamespace(
         model_name="pangu",
         training_vars=["2m_temperature"],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
         train_end="2021-12-31",
         test_start="2022-01-01",
-        test_end="2022-12-31"
+        test_end="2022-12-31",
+        region = 'india',
+        subregion = '6x6',
+        lead_time_hours = [24, 120, 216],
+        growing_season_only = True
     )
-    
-    # Define regions to optimize across
-    region_specs = [
-        {
-            'region': 'india',
-            'subregion': '4x4',
-            'lead_time_hours': [24, 120, 240],
-            'weight': 1.0
-        },
-        {
-            'region': 'ethiopia',
-            'subregion': '4x4',
-            'lead_time_hours': [24, 120, 240],
-            'weight': 1.0
-        }
-    ]
-    
-    # Create region configurations
-    data_dir = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" 
-    regions_config = create_region_config(region_specs, base_args, data_dir)
+    aifs_args = SimpleNamespace(
+        model_name="aifs",
+        training_vars=["total_precipitation"],
+        output_vars=["total_precipitation"],
+        train_start="2021-01-01",
+        train_end="2023-12-31",
+        test_start="2024-01-01",
+        test_end="2024-12-31",
+        region = 'india',
+        subregion = '6x6',
+        lead_time_hours = [24, 120, 216],
+        growing_season_only = True
+    )
+
+    data_dir = "/Users/ohouck/globus/forecast_data/"
+    config_list = [
+    {
+        'args': pangu_args,
+        'data_dir': data_dir,
+        'weight': 1.0  # Optional, defaults to 1.0 if not specified
+    },
+    {
+        'args': aifs_args,
+        'data_dir': data_dir,
+        'weight': 1.0
+    }
+]
 
     device = torch.device('cuda' if torch.cuda.is_available() else
                           'mps' if torch.backends.mps.is_available() else
                           'cpu')
     
-    # Example 1: Optimize MLP only
     print("Example 1: MLP optimization")
     mlp_results = optimize_hyperparameters(
-        regions_config=regions_config,
+        config_list=config_list,
         architecture="mlp",
         max_evals=100,
         output_dir="hyperopt_results_mlp",

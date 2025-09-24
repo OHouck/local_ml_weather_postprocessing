@@ -1,4 +1,3 @@
-# now done on dsi cluster
 
 import os
 import glob
@@ -81,10 +80,6 @@ def generate_output_path(args):
 
 def calculate_and_save_statistics(
         dirs: Dict[str, str],
-        train_start: str, 
-        train_end: str,
-        test_start: str, 
-        test_end: str,
         models: List[str],
         variable_configs: List[Dict[str, Union[str, Tuple]]],
         nn_architectures: List[str] = ["mlp"],
@@ -104,8 +99,6 @@ def calculate_and_save_statistics(
     ----------
     dirs : dict
         Dictionary of directories
-    train_start, train_end, test_start, test_end : str
-        Date strings for train/test periods
     models : list
         List of model names (e.g., ['pangu', 'ifs'])
     variable_configs : list of dict
@@ -149,7 +142,7 @@ def calculate_and_save_statistics(
     if climate_regions is None:
         climate_regions = []
     if lead_times is None:
-        lead_times = [24, 120, 240]
+        lead_times = [24, 120, 216]
     
     # Combine all regions with their types
     all_regions = []
@@ -160,7 +153,7 @@ def calculate_and_save_statistics(
     
     # Storage for all results
     all_results = []
-    
+
     
     # Process each variable configuration
     for var_config in variable_configs:
@@ -196,6 +189,18 @@ def calculate_and_save_statistics(
                                 lead_time_hours = "_".join(str(lt) for lt in lead_times)
                             else:
                                 lead_time_hours = lead_time
+                            if model == "ifs" or model == "pangu":
+                                train_start="2018-01-01"
+                                train_end="2021-12-31"
+                                test_start="2022-01-01"
+                                test_end="2022-12-31"
+                            elif model == "aifs":
+                                train_start="2021-01-01"
+                                train_end="2023-12-31"
+                                test_start="2024-01-01"
+                                test_end="2024-12-31"
+                            else:
+                                raise ValueError(f"Unknown model: {model}")
                             
                             args = SimpleNamespace(
                                 model_name=model,
@@ -214,10 +219,12 @@ def calculate_and_save_statistics(
                             
                             # Construct file paths
                             if bootstrap:
-                                file_pattern = os.path.join(dirs['input'], 
-                                                           generate_output_path(args).replace('.zarr', '*bs*.zarr'))
+                                file_pattern = os.path.join(dirs['globus'], 
+                                    "finetuning_output", 
+                                    generate_output_path(args).replace('.zarr', '*bs*.zarr'))
                             else:
-                                file_pattern = os.path.join(dirs['input'], generate_output_path(args))
+                                file_pattern = os.path.join(dirs['globus'], 
+                                                            "finetuning_output", generate_output_path(args))
                             
                             files = glob.glob(file_pattern)
                             
@@ -236,7 +243,6 @@ def calculate_and_save_statistics(
                             for idx, file_path in enumerate(files):
                                 try:
                                     ds = load_zarr_cached(file_path)
-                                    
                                     # Extract data
                                     ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
                                         ds, prediction_var, lead_time
@@ -484,6 +490,11 @@ def main():
         'output_vars': ['10m_wind_speed'],
         'prediction_var': '10m_wind_speed'
     },
+    {
+        'training_vars': ['total_precipitation'],
+        'output_vars': ['total_precipitation'],
+        'prediction_var': 'total_precipitation'
+    }
 ]
 
     df = calculate_and_save_statistics(
@@ -491,11 +502,7 @@ def main():
         variable_configs=variable_configs,
         geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
         climate_regions=[], # XX need to add climate regions
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        models=["pangu", "ifs"],  # Both models
+        models=["pangu", "ifs", "aifs"],  # Both models
         nn_architectures=["mlp"],  # Can also include "unet"
         subregions=["2x2", "6x6", "10x10"],  # All subregions
         lead_times=[24, 120, 216],

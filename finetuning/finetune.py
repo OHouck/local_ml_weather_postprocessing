@@ -328,6 +328,8 @@ def parse_args():
     parser.add_argument('--model_type',   type=str, default='MLP', choices=['MLP', 'UNet'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
+    parser.add_argument('--growing_season_only', action='store_true',
+                        help='Filter data to growing season days only')
     return parser.parse_args()
 
 # ------------------------------
@@ -386,11 +388,16 @@ def generate_output_path(args):
         model_str = "unet"
     else: 
         model_str = "mlp"
+    if args.growing_season_only:
+        grow_str = "_growing_season"
+    else:
+        grow_str = ""
+
     
     # Format lead times
     lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
 
-    output_path = f"{args.output_dir}/{args.model_name}/{args.ground_truth_source}{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}_{dates_str}_{model_str}.zarr"
+    output_path = f"{args.output_dir}/{args.model_name}/{args.ground_truth_source}{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}{grow_str}_{dates_str}_{model_str}.zarr"
     return output_path 
 
 def sample_climate_zone_patches(
@@ -451,10 +458,7 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
         raise ValueError(f"No files found matching pattern: {file_pattern}")
 
     # aifs has different variable names so rename them when loading
-    if data_source == "aifs":
-        preprocess_fn = lambda ds: ds.rename({'lat': 'latitude', 'lon': 'longitude', 'daily_tp': 'total_precipitation'}).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
-    else:
-        preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+    preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
     
     forecast_ds = xr.open_mfdataset(
         file_paths,
@@ -465,7 +469,7 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
 
     return(forecast_ds)
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, growing_season_only=False, patch_num=None,):
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,):
     """
     Vectorized version that processes all data at once without loops.
     More memory intensive but faster for reasonable data sizes.
@@ -482,7 +486,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, growing_s
     time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
 
     # only keep growing season dates: 3-15 to 10-31
-    if growing_season_only:
+    if args.growing_season_only:
         time_values= time_values[
             ((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15)) &
             ((time_values.month <= 10)))
@@ -820,7 +824,6 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     
     # Save to zarr
     output_path = os.path.expanduser(output_path)
-    print(ds_out)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
 
@@ -830,16 +833,12 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     Run experiment with multiple lead times and month encoding.
     """
     start_time = time.time()
-    if args.model_name == "aifs":
-        gs_flag = True # growing season flag
-    else:
-        gs_flag = False
 
     # Load training data
     (fc, fc_output, obs, lead_time_indices, month_indices, train_times, lat_u, lon_u, 
      n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, 
-                       growing_season_only = gs_flag, patch_num=patch_num)
+                       patch_num=patch_num)
     
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
@@ -898,7 +897,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Load test data
     (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_month_indices,
      test_times, _, _, _, _, _, _, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, growing_season_only= gs_flag, train=False, patch_num=patch_num)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
 
     # Apply correction
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
