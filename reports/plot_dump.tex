@@ -1,0 +1,303 @@
+% forecast_finetuning_report.tex
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}       % 1-inch margins on all sides :contentReference[oaicite:1]{index=1}
+\usepackage{graphicx}                   % Enhanced includegraphics interface :contentReference[oaicite:2]{index=2}
+\usepackage{subcaption}
+
+\usepackage{caption}                    % Customizable captions :contentReference[oaicite:5]{index=5}
+\usepackage{hyperref}                   % Clickable hyperlinks :contentReference[oaicite:6]{index=6}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\begin{document}
+
+\section{Pangu}
+
+% Pangu RMSE Improvement
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:rmse_improvement_temp_pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:rmse_improvement_windspeed_pangu}
+    \end{subfigure}
+    \caption{RMSE improvement over the baseline for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather with data from all regions.}
+    \label{fig:rmse_improvement_pangu}
+  \end{figure}
+
+  % Pangu Error Rate
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:error_rate_temp_pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:error_rate_windspeed_pangu}
+    \end{subfigure}
+    \caption{Large error rate for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather with data from all regions.}
+    \label{fig:error_rate_pangu}
+  \end{figure}
+
+  % Pangu Raw Values
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:raw_values_temp_pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:raw_values_windspeed_pangu}
+    \end{subfigure}
+    \caption{Raw values for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather with data from all regions.}
+    \label{fig:raw_values_pangu}
+  \end{figure}
+  
+\section{Pangu Climate Zones}
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png}
+      \caption{2m temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png}
+      \caption{10m Wind Speed}
+    \end{subfigure}
+    \caption{RMSE improvement over the baseline for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather for primary climate regions.}
+  \end{figure}
+
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp.png}
+      \caption{2m temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp.png}
+      \caption{10m Wind Speed}
+    \end{subfigure}
+    \caption{Large error rate for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather with climate zone data}
+  \end{figure}
+
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp.png}
+      \caption{2\,m temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/2x2/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp.png}
+      \caption{10m Wind Speed}
+    \end{subfigure}
+    \caption{Raw values for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning Pangu-Weather with data from climate zones.}
+  \end{figure}
+
+
+\section{IFS}
+
+% IFS RMSE Improvement
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:rmse_improvement_temp_ifs}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:rmse_improvement_windspeed_ifs}
+    \end{subfigure}
+    \caption{RMSE improvement over the baseline for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning IFS with data from all regions.}
+    \label{fig:rmse_improvement_ifs}
+  \end{figure}
+
+% IFS Error Rate
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:error_rate_temp_ifs}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:error_rate_windspeed_ifs}
+    \end{subfigure}
+    \caption{Large error rate for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning IFS with data from all regions.}
+    \label{fig:error_rate_ifs}
+  \end{figure}
+
+  % IFS Raw Values
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
+      \caption{2\,m temperature}
+      \label{fig:raw_values_temp_ifs}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
+      \caption{10m Wind Speed}
+      \label{fig:raw_values_windspeed_ifs}
+    \end{subfigure}
+    \caption{Raw values for (a) 2\,m temperature and (b) 10\,m wind speed when fine-tuning IFS with data from all regions.}
+    \label{fig:raw_values_ifs}
+  \end{figure}
+
+  \section{AIFS}
+
+ % AIFS RMSE Improvement
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/aifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_total_precipitation_trainedwith_total_precipitation_geographic_aifs_mlp_growing_season.png"}
+      \caption{Total 24h Precipitation}
+      \label{fig:rmse_improvement_precip_aifs}
+    \end{subfigure}
+    \caption{RMSE improvement over the baseline for total precipitation when fine-tuning AIFS with data from all regions.}
+    \label{fig:rmse_improvement_ifs}
+  \end{figure}
+
+% AIFS Error Rate
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/aifs/lead_time/multi_region/6x6/leadtime_error_cutoff_total_precipitation_trainedwith_total_precipitation_geographic_aifs_mlp_growing_season.png}
+      \caption{Total 24h Precipitation}
+      \label{fig:error_rate_prcip_aifs}
+    \end{subfigure}
+    \caption{Large error rate for 24h total precipitation when fine-tuning AIFS with data from all regions.}
+    \label{fig:error_rate_aifs}
+  \end{figure}
+
+  % AIFS Raw Values
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/aifs/lead_time/multi_region/6x6/leadtime_error_cutoff_total_precipitation_trainedwith_total_precipitation_geographic_aifs_mlp_growing_season.png}
+      \caption{Total 24h Precipitation}
+      \label{fig:raw_values_temp_aifs}
+    \end{subfigure}
+    \caption{Raw values for 24h total precipitation when fine-tuning AIFS with data from all regions.}
+    \label{fig:raw_values_aifs}
+  \end{figure}
+
+
+
+\section{Focus on Growing Season Only}
+  % RMSE for full time vs just during growing season
+  % Pangu grow season compare temp
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+      \caption{2m temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp_growing_season.png}
+      \caption{2m temperature (growing season only)}
+    \end{subfigure}
+    \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
+  \end{figure}
+
+  % Pangu grow season compare windspeed
+\begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+      \caption{10m Wind Speed}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp_growing_season.png}
+      \caption{10m Wind Speed (growing season only)}
+    \end{subfigure}
+    \caption{RMSE windspeed improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
+  \end{figure}
+
+  % IFS grow season compare temp
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
+      \caption{2m temperature}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp_growing_season.png}
+      \caption{2m temperature (growing season only)}
+    \end{subfigure}
+    \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
+  \end{figure}
+
+  % IFS grow season compare windspeed
+  \begin{figure}[!htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
+      \caption{10m Wind Speed}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp_growing_season.png}
+      \caption{10m Wind Speed (growing season only)}
+    \end{subfigure}
+    \caption{RMSE wind speed improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
+  \end{figure}
+
+
+
+\end{document}

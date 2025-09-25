@@ -505,17 +505,19 @@ def main():
     }
 ]
 
+    # geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
+    # climate_regions=["arid", "tropical", "temperate"]
     df = calculate_and_save_statistics(
         dirs=dirs,
         variable_configs=variable_configs,
         geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
-        climate_regions=[], # XX need to add climate regions
+        climate_regions=["arid", "tropical", "temperate"], # XX need to add climate regions
         models=["pangu", "ifs", "aifs"],  # Both models
         nn_architectures=["mlp"],  # Can also include "unet"
         subregions=["2x2", "6x6", "10x10"],  # All subregions
         lead_times=[24, 120, 216],
         simultaneous=True,
-        output_csv_path=f"{dirs['globus']}/forecast_improvement_stats.csv"
+        output_csv_path=f"{dirs['globus']}/forecast_improvement_stats_climate.csv"
     )
 
 if __name__ == "__main__":

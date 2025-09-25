@@ -1646,6 +1646,43 @@ def main():
     variable_list = ["2m_temperature", "10m_wind_speed", "total_precipitation"]
     model_list = ["pangu", "ifs", "aifs"]
     growing_season_flags = [True, False]
+    for var in variable_list:
+        for model in model_list:
+            for gs_flag in growing_season_flags:
+
+                if model == "aifs" and not gs_flag:
+                    # aifs results are only for growing season
+                    continue
+
+                plot_rmse_improvement(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+                plot_raw_forecast_values(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+                plot_error_cutoff(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+    
+    exit()
 
     for var in variable_list:
         for model in model_list:
