@@ -494,9 +494,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     time_values_np = time_values.to_numpy()
 
-
-
-
     # Define target dataset name
     if args.ground_truth_source == "":
         if args.model_name == "pangu":
@@ -634,12 +631,12 @@ def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices,
                                              shuffle=True)
     return dataloader
 
-
 def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_decay=0, patience=50, min_delta=9.8e-05):
     """
     Train the model over multiple epochs with early stopping.
     """
     criterion = nn.MSELoss()
+
     optimizer = optim.Adam(model.parameters(), 
                            lr=lr,
                            weight_decay =weight_decay) 

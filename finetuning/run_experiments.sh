@@ -15,7 +15,7 @@ echo "Training mode: $TRAIN_MODE"
 
 # python3 finetuning/finetune.py \
 #     --data_dir="/Users/ohouck/globus/forecast_data" \
-#     --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
+#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
 #     --training_vars total_precipitation \
 #     --output_vars total_precipitation \
 #     --train_start="2022-01-01" --train_end="2023-12-31" \
@@ -25,191 +25,109 @@ echo "Training mode: $TRAIN_MODE"
 #     --subregion="2x2" \
 #     --lead_time_hours 120 \
 #     --growing_season_only
-python3 finetuning/finetune.py \
-    --data_dir="/Users/ohouck/globus/forecast_data" \
-    --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --train_start="2018-01-01" --train_end="2021-12-31" \
-    --test_start="2022-01-01" --test_end="2022-12-31" \
-    --model_name="ifs" \
-    --region="india" \
-    --subregion="6x6" \
-    --lead_time_hours 120 \
-    --growing_season_only
-exit 0
+# python3 finetuning/finetune.py \
+#     --data_dir="/Users/ohouck/globus/forecast_data" \
+    # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+#     --training_vars 2m_temperature \
+#     --output_vars 2m_temperature \
+#     --train_start="2018-01-01" --train_end="2021-12-31" \
+#     --test_start="2022-01-01" --test_end="2022-12-31" \
+#     --model_name="ifs" \
+#     --region="india" \
+#     --subregion="6x6" \
+#     --lead_time_hours 120 \
+#     --growing_season_only
 
 
-# regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
-# subregions=(2x2 6x6 10x10)
+regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
+subregions=(6x6)
 
-regions=("tropical" "temperate" "arid")
-subregions=(2x2)
+# regions=("tropical" "temperate" "arid")
+# subregions=(2x2)
 
 all_lead_times=(24 120 216)
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
         
-        if [[ "$TRAIN_MODE" == "simultaneous" ]]; then
-            # Train all lead times simultaneously (single model for all lead times)
-            all_lead_times_str="${all_lead_times[*]}"  # Convert array to space-separated string
-            echo "Running simultaneous fine-tuning for region: $region, subregion: $subregion, lead times: $all_lead_times_str hours"
+        # Train all lead times simultaneously (single model for all lead times)
+        all_lead_times_str="${all_lead_times[*]}"  # Convert array to space-separated string
+        echo "Running simultaneous fine-tuning for region: $region, subregion: $subregion, lead times: $all_lead_times_str hours"
 
-            # 2m temperature - pangu
-            echo "Running fine-tuning for 2m_temperature pangu (simultaneous)"
-            # python3 finetuning/finetune.py \
-            #     --data_dir="/Users/ohouck/globus/forecast_data" \
-            #     --training_vars 2m_temperature \
-            #     --output_vars 2m_temperature \
-            #     --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-            #     --train_start="2018-01-01" --train_end="2021-12-31" \
-            #     --test_start="2022-01-01" --test_end="2022-12-31" \
-            #     --model_name="pangu" \
-            #     --region="$region" \
-            #     --subregion="$subregion" \
-            #     --lead_time_hours $all_lead_times_str \
-            #     --model_type="MLP"
+        # 2m temperature - pangu
+        echo "Running fine-tuning for 2m_temperature pangu (simultaneous)"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data" \
+            --training_vars 2m_temperature \
+            --output_vars 2m_temperature \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="pangu" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --model_type="MLP" \
 
-            # # 2m temperature - ifs
-            # echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
-            # python3 finetuning/finetune.py \
-            #     --data_dir="/Users/ohouck/globus/forecast_data" \
-            #     --training_vars 2m_temperature \
-            #     --output_vars 2m_temperature \
-            #     --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-            #     --train_start="2018-01-01" --train_end="2021-12-31" \
-            #     --test_start="2022-01-01" --test_end="2022-12-31" \
-            #     --model_name="ifs" \
-            #     --region="$region" \
-            #     --subregion="$subregion" \
-            #     --lead_time_hours $all_lead_times_str \
-            #     --model_type="MLP"
+        # 2m temperature - ifs
+        echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data" \
+            --training_vars 2m_temperature \
+            --output_vars 2m_temperature \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="ifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --model_type="MLP" \
 
-            # # 10m wind speed - pangu
-            # echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
-            # python3 finetuning/finetune.py \
-            #     --data_dir="/Users/ohouck/globus/forecast_data" \
-            #     --training_vars 10m_wind_speed \
-            #     --output_vars 10m_wind_speed \
-            #     --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-            #     --train_start="2018-01-01" --train_end="2021-12-31" \
-            #     --test_start="2022-01-01" --test_end="2022-12-31" \
-            #     --model_name="pangu" \
-            #     --region="$region" \
-            #     --subregion="$subregion" \
-            #     --lead_time_hours $all_lead_times_str \
-            #     --model_type="MLP"
+        # 10m wind speed - pangu
+        echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data" \
+            --training_vars 10m_wind_speed \
+            --output_vars 10m_wind_speed \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="pangu" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --model_type="MLP" \
 
-            # # 10m wind speed - ifs
-            # echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
-            # python3 finetuning/finetune.py \
-            #     --data_dir="/Users/ohouck/globus/forecast_data" \
-            #     --training_vars 10m_wind_speed \
-            #     --output_vars 10m_wind_speed \
-            #     --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-            #     --train_start="2018-01-01" --train_end="2021-12-31" \
-            #     --test_start="2022-01-01" --test_end="2022-12-31" \
-            #     --model_name="ifs" \
-            #     --region="$region" \
-            #     --subregion="$subregion" \
-            #     --lead_time_hours $all_lead_times_str
+        # 10m wind speed - ifs
+        echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data" \
+            --training_vars 10m_wind_speed \
+            --output_vars 10m_wind_speed \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="ifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --model_type="MLP" \
 
-            
-            # Total Daily Precipitation - AIFS
-            python3 finetuning/finetune.py \
-                --data_dir="/Users/ohouck/globus/forecast_data" \
-                --training_vars total_precipitation \
-                --output_vars total_precipitation \
-                --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-                --train_start="2021-01-01" --train_end="2023-12-31" \
-                --test_start="2024-01-01" --test_end="2024-12-31" \
-                --model_name="aifs" \
-                --region="$region" \
-                --subregion="$subregion" \
-                --lead_time_hours $all_lead_times_str \
-                --model_type="MLP"
-
-        else
-            # Train each lead time separately (separate model for each lead time)
-            echo "Running separate fine-tuning for region: $region, subregion: $subregion"
-            for lead_time in "${all_lead_times[@]}"; do
-                echo "Training lead time: $lead_time hours"
-                
-                # 2m temperature - pangu
-                echo "Running fine-tuning for 2m_temperature pangu (lead time: $lead_time)"
-                python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/globus/forecast_data" \
-                    --training_vars 2m_temperature \
-                    --output_vars 2m_temperature \
-                    --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-                    --train_start="2018-01-01" --train_end="2021-12-31" \
-                    --test_start="2022-01-01" --test_end="2022-12-31" \
-                    --model_name="pangu" \
-                    --region="$region" \
-                    --subregion="$subregion" \
-                    --lead_time_hours $lead_time \
-                    --model_type="MLP"
-
-                # 2m temperature - ifs
-                echo "Running fine-tuning for 2m_temperature ifs (lead time: $lead_time)"
-                python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/globus/forecast_data" \
-                    --training_vars 2m_temperature \
-                    --output_vars 2m_temperature \
-                    --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-                    --train_start="2018-01-01" --train_end="2021-12-31" \
-                    --test_start="2022-01-01" --test_end="2022-12-31" \
-                    --model_name="ifs" \
-                    --region="$region" \
-                    --subregion="$subregion" \
-                    --lead_time_hours $lead_time \
-                    --model_type="MLP"
-
-#                 # 10m wind speed - pangu
-                echo "Running fine-tuning for 10m_wind_speed pangu (lead time: $lead_time)"
-                python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/globus/forecast_data" \
-                    --training_vars 10m_wind_speed \
-                    --output_vars 10m_wind_speed \
-                    --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-                    --train_start="2018-01-01" --train_end="2021-12-31" \
-                    --test_start="2022-01-01" --test_end="2022-12-31" \
-                    --model_name="pangu" \
-                    --region="$region" \
-                    --subregion="$subregion" \
-                    --lead_time_hours $lead_time \
-                    --model_type="MLP"
-
-#                 # 10m wind speed - ifs
-                echo "Running fine-tuning for 10m_wind_speed ifs (lead time: $lead_time)"
-                python3 finetuning/finetune.py \
-                    --data_dir="/Users/ohouck/globus/forecast_data" \
-                    --training_vars 10m_wind_speed \
-                    --output_vars 10m_wind_speed \
-                    --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-                    --train_start="2018-01-01" --train_end="2021-12-31" \
-                    --test_start="2022-01-01" --test_end="2022-12-31" \
-                    --model_name="ifs" \
-                    --region="$region" \
-                    --subregion="$subregion" \
-                    --lead_time_hours $lead_time
-
-#                 # Precipitation - ifs
-#                 echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
-#                 python3 finetuning/finetune.py \
-#                     --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/" \
-#                     --training_vars total_precipitation \
-#                     --output_vars total_precipitation \
-                    # --output_dir="/Users/ohouck/globus/forecast_data/finetuning_output" \
-#                     --train_start="2018-01-01" --train_end="2021-12-31" \
-#                     --test_start="2022-01-01" --test_end="2022-12-31" \
-#                     --model_name="ifs" \
-#                     --region="$region" \
-#                     --subregion="$subregion" \
-#                     --lead_time_hours $all_lead_times_str \
-#                     --model_type="MLP"
-            done
-        fi
+        
+        # Total Daily Precipitation - AIFS
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data" \
+            --training_vars total_precipitation \
+            --output_vars total_precipitation \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2021-01-01" --train_end="2023-12-31" \
+            --test_start="2024-01-01" --test_end="2024-12-31" \
+            --model_name="aifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --model_type="MLP" \
+            --growing_season_only
     done
 done

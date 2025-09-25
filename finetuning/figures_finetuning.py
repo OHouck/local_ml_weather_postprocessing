@@ -32,6 +32,7 @@ def setup_directories():
     nodename = socket.gethostname()
     if nodename == "oMac.local":
         root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
+        root = os.path.expanduser("/Users/ohouck/globus/forecast_data")
     else:
         raise Exception(f"Unknown environment, Please specify the root directory. "
                         f"Nodename found: {nodename}")
@@ -40,7 +41,7 @@ def setup_directories():
         'root': root,
         'raw': os.path.join(root, "raw"),
         'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "../figures/finetuning"),
+        'fig': os.path.join(root, "figures"),
         'input': os.path.join(root, "fine_tuning_output")
     }
 
@@ -879,7 +880,8 @@ def _create_latex_table_from_df(df, prediction_var, nn_architecture, subregion,
     print(f"\nSaved LaTeX table to: {filepath}")
     print(f"Table title: Summary Statistics for {variable_name}")
 
-def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures, model):
+def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures, 
+                       model, growing_season_only = False):
     """
     Common data preparation for all plot types.
     """
@@ -887,6 +889,9 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
     
     # Filter by subregion
     df = df[df['subregion'] == subregion]
+
+    # Filter by growing season flag
+    df = df[df['growing_season_only'] == growing_season_only]
     
     # Filter by regions if specified
     if regions is not None:
@@ -896,6 +901,7 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
     
     # Filter by architectures
     df = df[df['architecture'].isin(nn_architectures)]
+
     
     # Filter by model
     df = df[df['model'] == model]
@@ -939,7 +945,7 @@ def _get_color_schemes():
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
                          regions=None, subregion="4x4", 
-                         nn_architectures=["mlp"], save_path=None):
+                         nn_architectures=["mlp"], growing_season_only=False, save_path=None):
     """
     Generate RMSE percentage improvement plots from pre-calculated statistics.
     
@@ -959,12 +965,14 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         Patch size to filter for (default: "4x4")
     nn_architectures : list
         List of architectures to include: ["mlp"], ["unet"], or both
+    growing_season_only : bool
+        Whether to use results on model trained only on growing season
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
     # Prepare data
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
-                                    nn_architectures, model)
+                                    nn_architectures, model, growing_season_only)
     
     if len(df) == 0:
         print(f"No data found for specified filters")
@@ -1028,7 +1036,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                                    zorder=1)
     
     # Set axes
-    ax.set_ylim(-18, 35)
+    ax.set_ylim(-28, 35)
     ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     
@@ -1105,13 +1113,16 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             region_type = "geographic"
         
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
+
+        if growing_season_only:
+            grow_flag = "_growing_season"
+        else:
+            grow_flag = ""
         
         fname = (f"leadtime_rmse_improvement_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}{bootstrap_suffix}.png")
+                f"{region_type}_{model}_{arch_suffix}{bootstrap_suffix}{grow_flag}.png")
         save_path = os.path.join(out_folder, fname)
     
-    plt.show()
-    exit()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -1121,7 +1132,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
 # XX these results are not making sense...
 def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                             regions=None, subregion="4x4",
-                            nn_architectures=["mlp"], save_path=None):
+                            nn_architectures=["mlp"], growing_season_only = False, save_path=None):
     """
     Plot raw forecast values as deviations from ground truth mean.
     
@@ -1141,12 +1152,14 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         Patch size to filter for (default: "4x4")
     nn_architectures : list
         List of architectures to include: ["mlp"], ["unet"], or both
+    growing_season_only : bool
+        Whether to use results on model trained only on growing season
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
     # Prepare data
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
-                                    nn_architectures, model)
+                                    nn_architectures, model, growing_season_only=growing_season_only)
     
     if len(df) == 0:
         print(f"No data found for specified filters")
@@ -1368,10 +1381,14 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         else:
             region_type = "geographic"
         
+        if growing_season_only:
+            grow_flag = "_growing_season"
+        else:
+            grow_flag = ""
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
         
         fname = (f"leadtime_raw_values_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}.png")
+                f"{region_type}_{model}_{arch_suffix}{grow_flag}.png")
         save_path = os.path.join(out_folder, fname)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1382,7 +1399,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
 
 def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
                      regions=None, subregion="4x4",
-                     nn_architectures=["mlp"], save_path=None):
+                     nn_architectures=["mlp"], save_path=None, growing_season_only=False):
     """
     Plot percentage of forecasts exceeding error threshold.
     
@@ -1402,12 +1419,14 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
         Patch size to filter for (default: "4x4")
     nn_architectures : list
         List of architectures to include: ["mlp"], ["unet"], or both
+    growing_season_only : bool
+        Whether to use results on model trained only on growing season
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
     # Prepare data
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
-                                    nn_architectures, model)
+                                    nn_architectures, model, growing_season_only=growing_season_only)
     
     if len(df) == 0:
         print(f"No data found for specified filters")
@@ -1602,10 +1621,15 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
         else:
             region_type = "geographic"
         
+        if growing_season_only:
+            grow_flag = "_growing_season"
+        else:
+            grow_flag = ""
+        
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
         
         fname = (f"leadtime_error_cutoff_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}.png")
+                f"{region_type}_{model}_{arch_suffix}{grow_flag}.png")
         save_path = os.path.join(out_folder, fname)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1617,36 +1641,50 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 def main():
     dirs = setup_directories()
 
-    # Two options for training and output variable combinations, uncomment the one you want to use
-    # training_vars = ["2m_temperature"]
-    # output_vars = ["2m_temperature"]
-    # prediction_var = "2m_temperature"
-
-    training_vars = ["10m_wind_speed"]
-    output_vars = ["10m_wind_speed"]
-    prediction_var = "10m_wind_speed"
-
-
     stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
 
-    plot_rmse_improvement(csv_path = stat_path,
-        dirs=dirs,
-        variable="total_precipitation",
-        model="aifs",
-        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-        subregion="10x10",
-        nn_architectures=["mlp"]
-    )
+    variable_list = ["2m_temperature", "10m_wind_speed", "total_precipitation"]
+    model_list = ["pangu", "ifs", "aifs"]
+    growing_season_flags = [True, False]
+
+    for var in variable_list:
+        for model in model_list:
+            for gs_flag in growing_season_flags:
+
+                if model == "aifs" and not gs_flag:
+                    # aifs results are only for growing season
+                    continue
+
+                plot_rmse_improvement(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+                plot_raw_forecast_values(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+                plot_error_cutoff(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=["mlp"],
+                    growing_season_only=gs_flag
+                )
+
     exit()
-    plot_lead_time_from_csv(csv_path = stat_path,
-        dirs=dirs,
-        variable="10m_wind_speed",
-        evaluation_metric = "error_cutoff",
-        regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-        subregion="6x6",
-        plot_type="pangu_nn",
-        nn_architectures=["mlp"]
-    )
+
 
 
 
