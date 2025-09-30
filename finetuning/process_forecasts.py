@@ -16,7 +16,7 @@ def setup_directories():
     """Set up directory structure based on environment."""
     nodename = socket.gethostname()
     if nodename == "oMac.local":
-        root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
+        root =os.path.expanduser("~/globus/forecast_data/")
     else:
         raise Exception(f"Unknown environment, Please specify the root directory. "
                         f"Nodename found: {nodename}")
@@ -24,10 +24,9 @@ def setup_directories():
     dirs = {
         'root': root,
         'raw': os.path.join(root, "raw"),
-        'globus': os.path.expanduser("~/globus/forecast_data/processed"),
         'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "../figures/finetuning"),
-        'input': os.path.join(root, "fine_tuning_output")
+        'fig': os.path.join(root, "figures"),
+        'input': os.path.join(root, "processed/finetuning_output")
     }
 
     for path in dirs.values():
@@ -70,7 +69,7 @@ def generate_output_path(args):
     training_vars_str = "_".join(args.training_vars)
     output_vars_str = "_".join(args.output_vars)
 
-    if args.nn_architecture == "UNet":
+    if args.nn_architecture == "unet":
         model_str = "unet"
     else: 
         model_str = "mlp"
@@ -226,13 +225,11 @@ def calculate_and_save_statistics(
                                 
                                 # Construct file paths
                                 if bootstrap:
-                                    file_pattern = os.path.join(dirs['globus'], 
-                                        "finetuning_output", 
+                                    file_pattern = os.path.join(dirs['input'], 
                                         generate_output_path(args).replace('.zarr', '*bs*.zarr'))
                                 else:
-                                    file_pattern = os.path.join(dirs['globus'], 
-                                                                "finetuning_output", generate_output_path(args))
-                                
+                                    file_pattern = os.path.join(dirs['input'], 
+                                        generate_output_path(args))
                                 files = glob.glob(file_pattern)
                                 
                                 if not files:
@@ -474,7 +471,7 @@ def calculate_and_save_statistics(
     # Save to CSV
     if output_csv_path is None:
         timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        output_csv_path = os.path.join(dirs['globus'], 
+        output_csv_path = os.path.join(dirs['processed'], 
                                       f'forecast_statistics_all_vars_{timestamp}.csv')
     
     df.to_csv(output_csv_path, index=False)
@@ -511,13 +508,13 @@ def main():
         dirs=dirs,
         variable_configs=variable_configs,
         geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"],
-        climate_regions=["arid", "tropical", "temperate"], # XX need to add climate regions
+        climate_regions=["arid", "tropical", "temperate"], 
         models=["pangu", "ifs", "aifs"],  # Both models
-        nn_architectures=["mlp"],  # Can also include "unet"
+        nn_architectures=["mlp", "unet"],  # Can also include "unet"
         subregions=["2x2", "6x6", "10x10"],  # All subregions
         lead_times=[24, 120, 216],
         simultaneous=True,
-        output_csv_path=f"{dirs['globus']}/forecast_improvement_stats_climate.csv"
+        output_csv_path=f"{dirs['processed']}/forecast_improvement_stats.csv"
     )
 
 if __name__ == "__main__":

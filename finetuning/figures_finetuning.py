@@ -1129,7 +1129,6 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     print(f"RMSE improvement plot saved to: {save_path}")
 
 
-# XX these results are not making sense...
 def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                             regions=None, subregion="4x4",
                             nn_architectures=["mlp"], growing_season_only = False, save_path=None):
@@ -1643,6 +1642,7 @@ def main():
 
     stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
 
+    nn_architectures = ["unet"]
     variable_list = ["2m_temperature", "10m_wind_speed", "total_precipitation"]
     model_list = ["pangu", "ifs", "aifs"]
     growing_season_flags = [True, False]
@@ -1658,32 +1658,30 @@ def main():
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=["mlp"],
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
                 plot_raw_forecast_values(csv_path = stat_path,
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=["mlp"],
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
                 plot_error_cutoff(csv_path = stat_path,
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=["mlp"],
+                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    subregion="6x6",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
-    
     exit()
-
     for var in variable_list:
         for model in model_list:
             for gs_flag in growing_season_flags:
@@ -1696,31 +1694,30 @@ def main():
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-                    subregion="6x6",
-                    nn_architectures=["mlp"],
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
                 plot_raw_forecast_values(csv_path = stat_path,
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-                    subregion="6x6",
-                    nn_architectures=["mlp"],
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
                 plot_error_cutoff(csv_path = stat_path,
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-                    subregion="6x6",
-                    nn_architectures=["mlp"],
+                    regions=["temperate", "arid", "tropical"],
+                    subregion="2x2",
+                    nn_architectures=nn_architectures,
                     growing_season_only=gs_flag
                 )
-
-    exit()
+    
 
 
 

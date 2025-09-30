@@ -745,15 +745,24 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else
                           'mps' if torch.backends.mps.is_available() else
                           'cpu')
-    
-    print("Example 1: MLP optimization")
-    mlp_results = optimize_hyperparameters(
+
+    # mlp_results = optimize_hyperparameters(
+    #     config_list=config_list,
+    #     architecture="mlp",
+    #     max_evals=100,
+    #     output_dir="hyperopt_results_mlp",
+    #     device=device,
+    #     random_seed=42
+    # )
+    # print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
+
+    unet_results = optimize_hyperparameters(
         config_list=config_list,
-        architecture="mlp",
+        architecture="unet",
         max_evals=100,
-        output_dir="hyperopt_results_mlp",
+        output_dir="hyperopt_results_unet",
         device=device,
         random_seed=42
     )
-    print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
+    print(f"UNet best loss: {unet_results['best_loss']:.6f}")
     

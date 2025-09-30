@@ -125,88 +125,127 @@ class SimpleMLP(nn.Module):
 # ------------------------------
 class UNet(nn.Module):
     """
-    U-Net architecture for weather forecast bias correction with lead time and month support.
+    U-Net architecture with FiLM conditioning for weather forecast bias correction.
+    Uses Feature-wise Linear Modulation to incorporate lead time and month information.
     """
     
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
                  n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
-                 n_lead_times=1, lead_time_embedding_dim=16, month_embedding_dim=16):
+                 n_lead_times=1, lead_time_embedding_dim=16, month_embedding_dim=16,
+                 dropout_rate=0.1):
         """
-        Initialize U-Net with spatial dimension information, lead time and month support.
+        Initialize U-Net with FiLM conditioning.
+        
+        Args:
+            input_dim: Flattened input dimension (for compatibility)
+            hidden_dim: Base number of channels in first encoder layer
+            output_dim: Flattened output dimension
+            n_lat, n_lon: Spatial dimensions
+            n_input_vars, n_output_vars: Number of input/output variables
+            n_lead_times: Number of distinct lead times
+            lead_time_embedding_dim: Dimension of lead time embedding
+            month_embedding_dim: Dimension of month embedding
+            dropout_rate: Dropout rate for conv blocks
         """
         super(UNet, self).__init__()
         
+        # Store dimensions
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
         self.n_lead_times = n_lead_times
+        self.dropout_rate = dropout_rate
         
-        # Lead time embedding
+        # Spatial dimensions
+        if n_lat is None or n_lon is None or n_input_vars is None:
+            raise ValueError("Spatial dimensions and n_input_vars must be provided")
+            
+        self.height = n_lat
+        self.width = n_lon
+        self.n_input_vars = n_input_vars
+        self.n_output_vars = n_output_vars if n_output_vars is not None else 1
+        
+        # Create embeddings
         self.lead_time_embedding = None
         if n_lead_times > 1:
             self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
             
-        # Month embedding (12 months)
         self.month_embedding = nn.Embedding(12, month_embedding_dim)
         
-        # Calculate number of additional channels
-        # We'll add 1 channel for month and 1 for lead time (if multi-lead time)
-        additional_channels = 1  # month channel
+        # Calculate total embedding dimension
+        self.total_embedding_dim = month_embedding_dim
         if n_lead_times > 1:
-            additional_channels += 1  # lead time channel
-            
-        actual_in_channels = n_input_vars + additional_channels
-
-        # Use provided spatial dimensions if available
-        if n_lat is not None and n_lon is not None and n_input_vars is not None:
-            self.height = n_lat
-            self.width = n_lon
-            self.in_channels = actual_in_channels
-            self.out_channels = n_output_vars if n_output_vars is not None else 1
-            
-            # Verify dimensions match (approximately, since we might have embeddings)
-            expected_input_base = n_input_vars * self.height * self.width
-            if abs(expected_input_base - input_dim) > max(lead_time_embedding_dim, month_embedding_dim):
-                print(f"Warning: Dimension mismatch. Base input: {expected_input_base}, provided: {input_dim}")
-                
-            expected_output = self.out_channels * self.height * self.width
-            if expected_output != output_dim:
-                print(f"Warning: Expected output dim {expected_output} but got {output_dim}")
-        else:
-            raise ValueError("Dimensions not provided")
+            self.total_embedding_dim += lead_time_embedding_dim
         
-        # Calculate maximum number of levels based on spatial dimensions
+        # Calculate number of encoder/decoder levels
+        self.num_levels = self._calculate_num_levels()
+        
+        # Build encoder and decoder
+        self._build_encoder()
+        self._build_decoder()
+        
+        # Build FiLM conditioning layers
+        self._build_film_layers()
+        
+        # Final output layer
+        self.final_conv = nn.Conv2d(self.encoder_channels[0], self.n_output_vars, kernel_size=1)
+        
+    def _calculate_num_levels(self):
+        """Calculate maximum number of pooling levels based on spatial dimensions."""
         min_spatial_dim = min(self.height, self.width)
         max_pools = 0
         current_dim = min_spatial_dim
         while current_dim >= 4:  # Need at least 4x4 to pool down to 2x2
             max_pools += 1
             current_dim = current_dim // 2
-        self.num_levels = max_pools + 1
-
-        # Build encoder (downsampling path)
+        return min(max_pools + 1, 5)  # Cap at 5 levels to avoid too deep networks
+    
+    def _make_conv_block(self, in_channels, out_channels):
+        """Create a convolutional block with two conv layers, batch norm, and dropout."""
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True), # briefly tried leaky ReLU and got worse results
+            nn.Dropout2d(self.dropout_rate),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(self.dropout_rate)
+        )
+    
+    def _make_upconv(self, in_channels, out_channels):
+        """Create upsampling layer using transposed convolution."""
+        return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+    
+    def _build_encoder(self):
+        """Build the encoder (downsampling) path."""
         self.encoders = nn.ModuleList()
         self.pools = nn.ModuleList()
-        
-        # Track channel sizes for each encoder level
         self.encoder_channels = []
         
-        in_ch = self.in_channels
-        out_ch = hidden_dim
+        in_ch = self.n_input_vars
+        out_ch = self.hidden_dim
         
         for i in range(self.num_levels):
+            # Add encoder block
             self.encoders.append(self._make_conv_block(in_ch, out_ch))
             self.encoder_channels.append(out_ch)
+            
+            # Add pooling layer (except for last level)
             if i < self.num_levels - 1:
-                self.pools.append(nn.MaxPool2d(2))
+                self.pools.append(nn.MaxPool2d(kernel_size=2))
+            
+            # Update channels for next level
             in_ch = out_ch
-            out_ch = out_ch * 2
-        
-        # Build decoder (upsampling path)
+            out_ch = min(out_ch * 2, 512)  # Cap at 512 channels
+    
+    def _build_decoder(self):
+        """Build the decoder (upsampling) path."""
         self.decoders = nn.ModuleList()
         self.upconvs = nn.ModuleList()
-
+        
         for i in range(self.num_levels - 1):
+            # Calculate channel numbers
             decoder_level = self.num_levels - 1 - i
             skip_level = self.num_levels - 2 - i
             
@@ -214,89 +253,124 @@ class UNet(nn.Module):
             skip_ch = self.encoder_channels[skip_level]
             out_ch = skip_ch
             
+            # Add upconvolution
             self.upconvs.append(self._make_upconv(in_ch, out_ch))
+            
+            # Add decoder block (takes concatenated skip connection)
             combined_ch = out_ch + skip_ch
             self.decoders.append(self._make_conv_block(combined_ch, out_ch))
-
-        # Final output layer
-        if self.decoders:
-            final_in_ch = self.encoder_channels[0]
-        else:
-            final_in_ch = self.encoder_channels[-1]
-            
-        self.final_conv = nn.Conv2d(final_in_ch, self.out_channels, kernel_size=1)
-        self.original_n_input_vars = n_input_vars
     
-    def _make_conv_block(self, in_channels, out_channels):
-        """Create a convolutional block with two conv layers."""
-        block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
-        )
-        block.out_channels = out_channels
-        return block
+    def _build_film_layers(self):
+        """Build FiLM (Feature-wise Linear Modulation) layers for each encoder level."""
+        self.film_generators = nn.ModuleList()
+        
+        for i, channels in enumerate(self.encoder_channels):
+            # Each FiLM generator produces scale and shift parameters
+            film_generator = nn.Sequential(
+                nn.Linear(self.total_embedding_dim, channels * 4),
+                nn.ReLU(),
+                nn.Linear(channels * 4, channels * 2)  # Output: channels for scale + channels for shift
+            )
+            self.film_generators.append(film_generator)
     
-    def _make_upconv(self, in_channels, out_channels):
-        """Create upsampling layer using transposed convolution."""
-        return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+    def apply_film(self, x, film_params):
+        """
+        Apply FiLM conditioning to feature maps.
+        
+        Args:
+            x: Feature maps [batch_size, channels, height, width]
+            film_params: FiLM parameters [batch_size, channels * 2]
+        
+        Returns:
+            Modulated feature maps
+        """
+        batch_size, channels, height, width = x.shape
+        
+        # Split into scale and shift
+        scale, shift = torch.chunk(film_params, 2, dim=1)
+        
+        # Reshape for broadcasting
+        scale = scale.view(batch_size, channels, 1, 1)
+        shift = shift.view(batch_size, channels, 1, 1)
+        
+        # Apply affine transformation
+        return x * (1 + scale) + shift
     
     def forward(self, x, lead_time_idx=None, month_idx=None):
         """
-        Forward pass through U-Net with lead time and month support.
+        Forward pass through U-Net with FiLM conditioning.
+        
+        Args:
+            x: Input tensor [batch_size, input_dim]
+            lead_time_idx: Lead time indices [batch_size]
+            month_idx: Month indices [batch_size]
+        
+        Returns:
+            Output tensor [batch_size, output_dim]
         """
         batch_size = x.shape[0]
         
-        # Reshape flat input to spatial format
-        x = x.view(batch_size, self.original_n_input_vars, self.height, self.width)
+        # Reshape input to spatial format
+        x = x.view(batch_size, self.n_input_vars, self.height, self.width)
         
-        channels_to_concat = []
+        # Prepare conditioning vector from embeddings
+        conditioning_vectors = []
         
-        # Add month channel
         if month_idx is not None:
             month_emb = self.month_embedding(month_idx)
-            # Create spatial month channel by taking mean of embedding dims
-            month_channel = month_emb.view(batch_size, -1, 1, 1)
-            month_channel = month_channel.mean(dim=1, keepdim=True)
-            month_channel = month_channel.expand(batch_size, 1, self.height, self.width)
-            channels_to_concat.append(month_channel)
+            conditioning_vectors.append(month_emb)
         
-        # Add lead time channel if multi-lead time
         if self.lead_time_embedding is not None and lead_time_idx is not None:
             lead_time_emb = self.lead_time_embedding(lead_time_idx)
-            # Create spatial lead time channel
-            lead_time_channel = lead_time_emb.view(batch_size, -1, 1, 1)
-            lead_time_channel = lead_time_channel.mean(dim=1, keepdim=True)
-            lead_time_channel = lead_time_channel.expand(batch_size, 1, self.height, self.width)
-            channels_to_concat.append(lead_time_channel)
+            conditioning_vectors.append(lead_time_emb)
         
-        # Concatenate all channels
-        if channels_to_concat:
-            x = torch.cat([x] + channels_to_concat, dim=1)
+        # Concatenate conditioning vectors
+        if conditioning_vectors:
+            conditioning = torch.cat(conditioning_vectors, dim=1)
+        else:
+            # If no conditioning, create zeros
+            conditioning = torch.zeros(batch_size, self.total_embedding_dim, device=x.device)
         
-        # Encoder path with skip connections
+        # Generate FiLM parameters for each encoder level
+        film_params_list = []
+        for film_gen in self.film_generators:
+            film_params = film_gen(conditioning)
+            film_params_list.append(film_params)
+        
+        # Encoder path with skip connections and FiLM modulation
         encoder_outputs = []
         
-        for i in range(len(self.encoders)):
+        for i in range(self.num_levels):
+            # Apply convolution
             x = self.encoders[i](x)
-            if i < len(self.encoders) - 1:
+            
+            # Apply FiLM modulation
+            # XX Note original paper( https://arxiv.org/abs/1907.01277) applies
+            # FiLM in encoder block not after. This is simplier to implement and
+            # requires less parameters to estimate.
+            x = self.apply_film(x, film_params_list[i])
+            
+            # Store skip connections (except for bottleneck)
+            if i < self.num_levels - 1:
                 encoder_outputs.append(x)
-            if i < len(self.pools):
+                # Apply pooling
                 x = self.pools[i](x)
         
         # Decoder path with skip connections
-        for i, (upconv, decoder) in enumerate(zip(self.upconvs, self.decoders)):
-            x = upconv(x)
+        for i in range(len(self.upconvs)):
+            # Upsample
+            x = self.upconvs[i](x)
+            
+            # Get skip connection
             skip_connection = encoder_outputs[-(i+1)]
             
-            if x.shape[2:] != skip_connection.shape[2:]:
-                x = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
-            
+            # Concatenate with skip connection
             x = torch.cat([x, skip_connection], dim=1)
-            x = decoder(x)
+            
+            # Apply decoder convolution
+            x = self.decoders[i](x)
         
-        # Final convolution
+        # Final 1x1 convolution to get output channels
         x = self.final_conv(x)
         
         # Reshape back to flat output
@@ -304,8 +378,6 @@ class UNet(nn.Module):
         
         return x
 
-
-# ------------------------------
 # Argument parsing
 # ------------------------------
 def parse_args():
@@ -577,7 +649,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Create time array
     all_times = np.repeat(common_times, n_lead_times)
     
-    # Remove any samples with NaN (XX with updated version of databuild that converts from init to valid time this might not be needed)
+    # Remove any samples with NaN 
     valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
     fc_combined = fc_combined[valid_mask]
     fc_output_combined = fc_output_combined[valid_mask]
@@ -659,7 +731,10 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_de
             optimizer.zero_grad()
             
             # Pass lead time and month indices to model
-            preds = model(x_batch, lead_time_batch, month_batch)
+            # Model predicts the error, so add to input forecast
+            pred_error = model(x_batch, lead_time_batch, month_batch) # this use to be directly preds
+            preds = x_batch + pred_error 
+
             loss = criterion(preds, y_batch)
             loss.backward()
             optimizer.step()
@@ -674,7 +749,8 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_de
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
                 
-                preds = model(x_batch, lead_time_batch, month_batch)
+                pred_error = model(x_batch, lead_time_batch, month_batch)
+                preds = x_batch + pred_error # XX new
                 loss = criterion(preds, y_batch)
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
@@ -708,7 +784,7 @@ def apply_correction(model, forecast_data, lead_time_indices, month_indices, dev
     corrected_all = []
     
     # Process in batches to handle memory efficiently
-    batch_size = 128
+    batch_size = 128 
     n_samples = forecast_data.shape[0]
     
     with torch.no_grad():
@@ -717,7 +793,8 @@ def apply_correction(model, forecast_data, lead_time_indices, month_indices, dev
             x_batch = torch.from_numpy(forecast_data[i:end_idx]).float().to(device)
             lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
             month_batch = torch.from_numpy(month_indices[i:end_idx]).long().to(device)
-            corrected_batch = model(x_batch, lt_batch, month_batch).cpu().numpy()
+            predicted_error = model(x_batch, lt_batch, month_batch).cpu().numpy()
+            corrected_batch = x_batch.cpu().numpy() + predicted_error 
             corrected_all.append(corrected_batch)
     
     return np.concatenate(corrected_all, axis=0)
@@ -858,7 +935,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                     batch_size=128)
     val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], 
                                   lead_time_indices[v_idx], month_indices[v_idx], 
-                                  batch_size=16)
+                                  batch_size=64)
 
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon

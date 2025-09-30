@@ -5,10 +5,11 @@ import numpy as np
 
 import xarray as xr
 
-path = "/Users/ohouck/globus/forecast_data/aifs_2024.zarr"
+path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD/IMD_0p25deg/data_1916.nc"
 
+ds = xr.open_dataset(path, engine = 'netcdf4')
 
-ds = xr.open_zarr(path, consolidated=True)
 print(ds)
+
 
 
