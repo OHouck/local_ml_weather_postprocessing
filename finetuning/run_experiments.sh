@@ -24,8 +24,9 @@ python3 finetuning/finetune.py \
     --region="india" \
     --subregion="6x6" \
     --lead_time_hours 216 \
-    --model_type="UNet" \
-    --growing_season_only
+    --model_type="unet" \
+    --growing_season_only \
+    --alternate_loss_fn="extreme_heat_loss"
 
 exit 0
 

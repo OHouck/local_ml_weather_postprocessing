@@ -92,7 +92,7 @@ def count_days_without_rainfall(ds, threshold=0.1):
     return df
 
 def main():
-    imd_path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD/IMD_0p25deg"
+    imd_path = "/Users/ohouck/globus/forecast_data/raw/IMD_0p25deg" 
     # start with subset of years to test with
     year_list = np.arange(2022, 2024 + 1)
     imd_patterns = [f"{imd_path}/data_{year}*.nc" for year in year_list]

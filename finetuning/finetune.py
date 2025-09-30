@@ -378,6 +378,7 @@ class UNet(nn.Module):
         
         return x
 
+# ------------------------------
 # Argument parsing
 # ------------------------------
 def parse_args():
@@ -397,11 +398,12 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--model_type',   type=str, default='MLP', choices=['MLP', 'UNet'])
+    parser.add_argument('--model_type',   type=str, default='mlp', choices=['mlp', 'unet'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
                         help='Filter data to growing season days only')
+    parser.add_argument('--alternate_loss_fn', type=str, default=None, choices=['quantile_loss', 'extreme_heat_loss'])
     return parser.parse_args()
 
 # ------------------------------
@@ -456,16 +458,19 @@ def generate_output_path(args):
     training_vars_str = "_".join(args.training_vars)
     output_vars_str = "_".join(args.output_vars)
 
-    if args.model_type == "UNet":
+    if args.model_type == "unet":
         model_str = "unet"
     else: 
         model_str = "mlp"
+
+    if args.alternate_loss_fn is not None:
+        model_str += f"_{args.alternate_loss_fn}"
     if args.growing_season_only:
         grow_str = "_growing_season"
     else:
         grow_str = ""
-
     
+
     # Format lead times
     lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
 
@@ -703,11 +708,59 @@ def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices,
                                              shuffle=True)
     return dataloader
 
-def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_decay=0, patience=50, min_delta=9.8e-05):
+
+def quantile_loss(preds, targets, quantile=0.95):
+    """
+    Quantile loss (pinball loss)
+    """
+    errors = targets - preds
+    # if positive error, use quantile * error, else (quantile - 1) * error
+    return torch.max((quantile - 1) * errors, quantile*errors).mean()
+
+def extreme_heat_loss(preds, targets, std_train, mean_train):
+    """
+    up-weight loss for negative errors (under-predictions) above 25C in 
+    proportion to coefficents on mortality curve in fatal errors shrader paper
+
+    preds: (batch_size, n_features) in normalized units
+    targets: (batch_size, n_features) in normalized units
+    """
+    # un-normalize
+    preds = preds * std_train + mean_train
+    targets = targets * std_train + mean_train
+
+
+    # convert to celsius for easier thresholding 
+    targets_c = targets - 273.15
+    preds_c = preds - 273.15
+    errors = targets_c - preds_c
+    weights = torch.ones_like(errors)
+    weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2.5
+    weights += (targets_c > 30) * (errors < 0).float() * 10 
+
+    weighted_mse = (weights * errors**2).mean()
+    return weighted_mse
+
+
+def train_model(model, train_loader, valid_loader, epochs, lr, device, 
+                weight_decay=0, patience=50, min_delta=9.8e-05, 
+                stats_train=None, stats_out=None, alternate_loss_fn=None):
     """
     Train the model over multiple epochs with early stopping.
     """
-    criterion = nn.MSELoss()
+    if alternate_loss_fn is not None:
+        use_custom_loss = False
+        criterion = nn.MSELoss()
+    else:
+        use_custom_loss = True
+        criterion = alternate_loss_fn 
+    
+    # convert stats to torch tensors to un-normalize if needed
+    if alternate_loss_fn in {"extreme_heat_loss"} and stats_train is not None and stats_out is not None:
+        mean_train = torch.from_numpy(stats_train['mean']).float().to(device)
+        std_train = torch.from_numpy(stats_train['std']).float().to(device)
+        mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
+        std_out = torch.from_numpy(stats_out['std']).float().to(device)
 
     optimizer = optim.Adam(model.parameters(), 
                            lr=lr,
@@ -733,9 +786,15 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_de
             # Pass lead time and month indices to model
             # Model predicts the error, so add to input forecast
             pred_error = model(x_batch, lead_time_batch, month_batch) # this use to be directly preds
-            preds = x_batch + pred_error 
 
-            loss = criterion(preds, y_batch)
+            # some custom loss functions need un-normalized values
+            if alternate_loss_fn in {"extreme_heat_loss"}:
+                loss = criterion(pred_error, y_batch, std_train, mean_train)
+
+            else:
+                preds = x_batch + pred_error
+                loss = criterion(preds, y_batch)
+
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * x_batch.size(0)
@@ -778,7 +837,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device, weight_de
 
 def apply_correction(model, forecast_data, lead_time_indices, month_indices, device):
     """
-    Apply the MLP-based correction to forecast data with lead times and months.
+    Apply the correction to forecast data with lead times and months.
     """
     model.eval()
     corrected_all = []
@@ -920,6 +979,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Normalize data
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+
+    print(stats_train)
+    print(stats_out)
+
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
@@ -942,7 +1005,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     output_dim = n_output_vars * n_lat * n_lon
     n_lead_times = len(args.lead_time_hours)
 
-    if hasattr(args, 'model_type') and args.model_type == 'UNet':
+    if hasattr(args, 'model_type') and args.model_type == 'unet':
         print(f"Using UNet with {n_lead_times} lead times and month encoding")
         model = UNet(input_dim, 32, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
@@ -964,7 +1027,11 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                                 epochs=1000, lr=4.673747105982307e-05, 
                                                 device=device,
                                                 weight_decay=2.8276153644203165e-06,
-                                                patience=70, min_delta=0.000286450816778278)
+                                                patience=70, min_delta=0.000286450816778278,
+                                                stats_train=stats_train,
+                                                stats_out=stats_out,
+                                                alternate_loss_fn = args.alternate_loss_fn
+                                                )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     load_time = time.time()

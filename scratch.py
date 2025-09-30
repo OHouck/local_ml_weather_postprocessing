@@ -5,7 +5,7 @@ import numpy as np
 
 import xarray as xr
 
-path = "/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/IMD/IMD_0p25deg/data_1916.nc"
+path = "/Users/ohouck/globus/forecast_data/raw/IMD_0p25deg/data_2005.nc"
 
 ds = xr.open_dataset(path, engine = 'netcdf4')
 
