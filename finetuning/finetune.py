@@ -520,15 +520,17 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     """
 
-    # XX todo implement IDM cleaning here
-
     min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
     max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
 
     file_paths = []
     for year in range(min_year, max_year + 1):
+        
+        if data_source == "imd":
+            file_pattern = f"IMD_0p25deg/data_{year}.nc" 
+        else:
+            file_pattern = f"{data_source}_{year}.zarr" 
 
-        file_pattern = f"{data_source}_{year}.zarr" 
         file_paths.append(os.path.join(root_dir, file_pattern))
     
     if len(file_paths) == 0:
@@ -536,7 +538,11 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
 
     # aifs has different variable names so rename them when loading
     preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
-    
+
+    if data_source == "imd":
+        preprocess_fn = lambda ds: ds.rename({'TIME': 'time','LONGITUDE': 'longitude', 
+                            'LATITUDE': 'latitude', 'RAINFALL':'total_precipitation'}
+                            ).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
     forecast_ds = xr.open_mfdataset(
         file_paths,
         combine="by_coords",
@@ -725,10 +731,10 @@ def extreme_heat_loss(preds, targets, std_train, mean_train):
     preds: (batch_size, n_features) in normalized units
     targets: (batch_size, n_features) in normalized units
     """
-    # un-normalize
+
+    # un-normalize (I believe this is wrong because std_train and mean_train are for all obs not just those in batch)
     preds = preds * std_train + mean_train
     targets = targets * std_train + mean_train
-
 
     # convert to celsius for easier thresholding 
     targets_c = targets - 273.15
@@ -737,6 +743,9 @@ def extreme_heat_loss(preds, targets, std_train, mean_train):
     weights = torch.ones_like(errors)
     weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2.5
     weights += (targets_c > 30) * (errors < 0).float() * 10 
+
+    # re-normalize weights to add to 1
+    weights = weights / weights.mean()
 
     weighted_mse = (weights * errors**2).mean()
     return weighted_mse
@@ -748,12 +757,18 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     """
     Train the model over multiple epochs with early stopping.
     """
-    if alternate_loss_fn is not None:
+
+    loss_functions = {
+        "extreme_heat_loss": extreme_heat_loss,
+        # Add other loss functions here if needed
+    }
+
+    if alternate_loss_fn is None: # use mse if not specified
         use_custom_loss = False
         criterion = nn.MSELoss()
     else:
         use_custom_loss = True
-        criterion = alternate_loss_fn 
+        criterion = loss_functions[alternate_loss_fn]
     
     # convert stats to torch tensors to un-normalize if needed
     if alternate_loss_fn in {"extreme_heat_loss"} and stats_train is not None and stats_out is not None:
@@ -809,8 +824,13 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
                 
                 pred_error = model(x_batch, lead_time_batch, month_batch)
-                preds = x_batch + pred_error # XX new
-                loss = criterion(preds, y_batch)
+
+                if alternate_loss_fn in {"extreme_heat_loss"}:
+                    loss = criterion(pred_error, y_batch, std_train, mean_train)
+                else:
+                    preds = x_batch + pred_error # XX new
+                    loss = criterion(preds, y_batch)
+
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
 
@@ -979,9 +999,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Normalize data
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
-
-    print(stats_train)
-    print(stats_out)
 
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
