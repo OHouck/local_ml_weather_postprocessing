@@ -31,7 +31,6 @@ def setup_directories():
     """Set up directory structure based on environment."""
     nodename = socket.gethostname()
     if nodename == "oMac.local":
-        root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
         root = os.path.expanduser("/Users/ohouck/globus/forecast_data")
     else:
         raise Exception(f"Unknown environment, Please specify the root directory. "
@@ -65,6 +64,8 @@ def generate_output_path(args):
         nn_str = "unet"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
+    if args.loss_fn == "extreme_heat_mse":
+        model_str += "_extreme_heat_loss"
     
     lead_time_str = f"leadtime_{args.lead_time_hours}"
 
@@ -881,7 +882,7 @@ def _create_latex_table_from_df(df, prediction_var, nn_architecture, subregion,
     print(f"Table title: Summary Statistics for {variable_name}")
 
 def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures, 
-                       model, growing_season_only = False):
+                       model, growing_season_only = False, loss_type="rmse"):
     """
     Common data preparation for all plot types.
     """
@@ -892,16 +893,24 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
 
     # Filter by growing season flag
     df = df[df['growing_season_only'] == growing_season_only]
-    
+
     # Filter by regions if specified
     if regions is not None:
         df = df[df['region'].isin(regions)]
     else:
         regions = df['region'].unique().tolist()
     
+    if loss_type == "rmse":
+        df = df[df['loss_fn'] == 'mse']
+    elif loss_type == "extreme_heat":
+        df = df[df['loss_fn'] == 'extreme_heat_loss']
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}")
+
+    
     # Filter by architectures
     df = df[df['architecture'].isin(nn_architectures)]
-
+    # print number of rows
     
     # Filter by model
     df = df[df['model'] == model]
@@ -945,7 +954,8 @@ def _get_color_schemes():
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
                          regions=None, subregion="4x4", 
-                         nn_architectures=["mlp"], growing_season_only=False, save_path=None):
+                         nn_architectures=["mlp"], growing_season_only=False,
+                         loss_type="rmse", save_path=None):
     """
     Generate RMSE percentage improvement plots from pre-calculated statistics.
     
@@ -967,6 +977,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         List of architectures to include: ["mlp"], ["unet"], or both
     growing_season_only : bool
         Whether to use results on model trained only on growing season
+    loss_type : str
+        Loss type to filter for (default: "rmse")
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
@@ -1010,11 +1022,19 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             # Get styles
             marker = model_markers.get(model, 'o')
             fillstyle = architecture_fillstyles.get(arch, 'full')
+
+            if loss_type == "rmse":
+                outcome_str = "rmse_pct_improvement"
+            elif loss_type == "extreme_heat":
+                outcome_str = "rmse_pct_improvement_extreme_heat"
+            else:
+                raise ValueError(f"Unknown loss_type: {loss_type}")
             
             # Plot neural network correction
-            if 'rmse_pct_improvement' in arch_df.columns:
+            if outcome_str in arch_df.columns:
                 x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
-                y_values = arch_df['rmse_pct_improvement'].values
+                y_values = arch_df[outcome_str].values
+
                 
                 ax.plot(x_pos, y_values,
                        marker=marker,
@@ -1027,9 +1047,9 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                        zorder=3)
                 
                 # Add confidence intervals if available
-                if 'rmse_pct_improvement_ci_lower' in arch_df.columns:
-                    ci_lower = arch_df['rmse_pct_improvement_ci_lower'].values
-                    ci_upper = arch_df['rmse_pct_improvement_ci_upper'].values
+                if f'{outcome_str}_ci_lower' in arch_df.columns:
+                    ci_lower = arch_df[f'{outcome_str}_ci_lower'].values
+                    ci_upper = arch_df[f'{outcome_str}_ci_upper'].values
                     ax.fill_between(x_pos, ci_lower, ci_upper,
                                    color=color,
                                    alpha=0.1,
@@ -1037,7 +1057,13 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     
     # Set axes
     ax.set_ylim(-28, 35)
-    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
+    if loss_type == "rmse":
+        ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
+    elif loss_type == "extreme_heat":
+        ax.set_ylabel("RMSE Improvement for Extreme Heat (%)", fontsize=20)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}")
+
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     
     # Common x-axis settings
@@ -1049,8 +1075,14 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     arch_str = "/".join([a.upper() for a in nn_architectures])
     regions_str = ", ".join(regions)
     is_bootstrap = df['bootstrap'].iloc[0] if 'bootstrap' in df.columns else False
-    
-    title_main = f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"
+
+    if loss_type == "rmse": 
+        title_main = f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"
+    elif loss_type == "extreme_heat":
+        title_main = f"RMSE Improvement for Extreme Heat {prediction_var.replace('_', ' ').title()} ({arch_str})"
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}")
+
     if is_bootstrap:
         title_main += " (with 95% CI)"
     title_parts = [title_main, f"Model: {model.upper()}, Regions: {regions_str}, Patch Size: {subregion}"]
@@ -1118,9 +1150,13 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             grow_flag = "_growing_season"
         else:
             grow_flag = ""
+        if loss_type == "rmse":
+            model_str = model
+        elif loss_type == "extreme_heat":
+            model_str = f"{model}_extreme_heat"
         
         fname = (f"leadtime_rmse_improvement_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}{bootstrap_suffix}{grow_flag}.png")
+                f"{region_type}_{model_str}_{arch_suffix}{bootstrap_suffix}{grow_flag}.png")
         save_path = os.path.join(out_folder, fname)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1642,9 +1678,11 @@ def main():
 
     stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
 
-    nn_architectures = ["unet"]
+    nn_architectures = ["mlp"]
     variable_list = ["2m_temperature", "10m_wind_speed", "total_precipitation"]
     model_list = ["pangu", "ifs", "aifs"]
+    geo_regions = ["india", "amazon", "ethiopia", "british_columbia", "usa_south"]
+    climate_regions = ["tropical", "arid", "temperate"]
     growing_season_flags = [True, False]
     for var in variable_list:
         for model in model_list:
@@ -1658,29 +1696,30 @@ def main():
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
+                    regions=geo_regions,
                     subregion="6x6",
                     nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
+                    growing_season_only=gs_flag,
+                    loss_type="extreme_heat" # options: "rmse", "extreme_heat"
                 )
-                plot_raw_forecast_values(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
-                )
-                plot_error_cutoff(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=["india", "amazon", "ethiopia", "british_columbia", "usa_south"],
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
-                )
+                # plot_raw_forecast_values(csv_path = stat_path,
+                #     dirs=dirs,
+                #     variable=var,
+                #     model=model,
+                #     regions=climate_regions,
+                #     subregion="2x2",
+                #     nn_architectures=nn_architectures,
+                #     growing_season_only=gs_flag
+                # )
+                # plot_error_cutoff(csv_path = stat_path,
+                #     dirs=dirs,
+                #     variable=var,
+                #     model=model,
+                #     regions=climate_regions,
+                #     subregion="2x2",
+                #     nn_architectures=nn_architectures,
+                #     growing_season_only=gs_flag
+                # )
     exit()
     for var in variable_list:
         for model in model_list:

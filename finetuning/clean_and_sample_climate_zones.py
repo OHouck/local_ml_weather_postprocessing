@@ -22,26 +22,27 @@ CLIMATE_ZONE_MAP = {
     'polar':      5,
 }
 
-
 def setup_directories():
-    # Determine root directory based on environment.
+    """Set up directory structure based on environment."""
     nodename = socket.gethostname()
-    if nodename == "oMac.local":  # local laptop
-        root = os.path.expanduser(
-            "~/OneDrive - The University of Chicago/ai_weather_ag/data"
-        )
+    if nodename == "oMac.local":
+        root = os.path.expanduser("/Users/ohouck/globus/forecast_data")
     else:
-        raise Exception("Unknown environment, please specify the root directory")
+        raise Exception(f"Unknown environment, Please specify the root directory. "
+                        f"Nodename found: {nodename}")
 
     dirs = {
-        "root": root,
-        "raw": os.path.join(root, "raw"),
-        "processed": os.path.join(root, "processed"),
-        "fig": os.path.join(root, "../figures/finetuning"),
+        'root': root,
+        'raw': os.path.join(root, "raw"),
+        'processed': os.path.join(root, "processed"),
+        'fig': os.path.join(root, "figures"),
+        'input': os.path.join(root, "fine_tuning_output")
     }
+
     for path in dirs.values():
         os.makedirs(path, exist_ok=True)
     return dirs
+
 
 def regrid_to_025(
     da: xr.DataArray,
@@ -261,7 +262,7 @@ def main():
     regrid_and_save_climate_zones(dirs)
 
     # sample and save climate zone patches for bootstrapping
-    create_climate_zone_patches(dirs)
+    # create_climate_zone_patches(dirs) # uncomment if need to resample patches
 
 
     # load and plot the data
@@ -293,12 +294,15 @@ def main():
     temperate_patches = np.load(temperate_patch_path, allow_pickle=True)
     arid_patches = np.load(arid_patch_path, allow_pickle=True)
 
+    subregion_size = 6
+    buffer = subregion_size // 2
+
     # Define bounding boxes to create rectangles to plot
-    india_bounds = {"lat0": 17, "lat1": 27, "lon0": 72 + 180, "lon1": 82 + 180}
-    usa_south_bounds = {"lat0": 30, "lat1": 40, "lon0": -105 + 180, "lon1": -95 + 180}
-    amazon_bounds = {"lat0": -10, "lat1": 0, "lon0": -70 + 180, "lon1": -60 + 180}
-    british_columbia_bounds = {"lat0": 48.25, "lat1": 58, "lon0": -130 + 180, "lon1": -120 + 180}
-    ethiopia_bounds = {"lat0": 4, "lat1": 14, "lon0": 34 + 180, "lon1": 44 + 180}
+    india_bounds = {"lat0": 32 - buffer, "lat1": 32 + buffer, "lon0": 77 - buffer + 180, "lon1": 77 + buffer + 180}
+    usa_south_bounds = {"lat0": 35 - buffer, "lat1": 35 + buffer, "lon0": -100 - buffer + 180, "lon1": -100 + buffer + 180}
+    amazon_bounds = {"lat0": -5 - buffer, "lat1": -5 + buffer, "lon0": -65 - buffer + 180, "lon1": -65 + buffer + 180}
+    british_columbia_bounds = {"lat0": 53 - buffer + 0.25, "lat1": 53 + buffer, "lon0": -125 - buffer + 180, "lon1": -125 + buffer + 180}
+    ethiopia_bounds = {"lat0": 9 - buffer, "lat1": 9 + buffer, "lon0": 39 - buffer + 180, "lon1": 39 + buffer + 180}
 
 
     manual_regions = [
@@ -354,20 +358,20 @@ def main():
             plt.gca().add_patch(rect)
             
             # Calculate center 2x2 rectangle
-            center_lat = (min_lat + max_lat) / 2
-            center_lon = (min_lon + max_lon) / 2
+            # center_lat = (min_lat + max_lat) / 2
+            # center_lon = (min_lon + max_lon) / 2
             
-            # 2x2 degree rectangle centered on the region center
-            small_width = 2.0
-            small_height = 2.0
-            small_min_lon = center_lon - small_width / 2
-            small_min_lat = center_lat - small_height / 2
+            # # 2x2 degree rectangle centered on the region center (no longer using)
+            # small_width = 2.0
+            # small_height = 2.0
+            # small_min_lon = center_lon - small_width / 2
+            # small_min_lat = center_lat - small_height / 2
             
-            # Add small 2x2 rectangle (almost opaque)
-            small_rect = Rectangle((small_min_lon, small_min_lat), small_width, small_height,
-                                 facecolor=color, alpha=0.9, edgecolor='black', linewidth=1.5,
-                                 label="2x2 Center Regions" if i == 0 else "")
-            plt.gca().add_patch(small_rect)
+            # # Add small 2x2 rectangle (almost opaque)
+            # small_rect = Rectangle((small_min_lon, small_min_lat), small_width, small_height,
+            #                      facecolor=color, alpha=0.9, edgecolor='black', linewidth=1.5,
+            #                      label="2x2 Center Regions" if i == 0 else "")
+            # plt.gca().add_patch(small_rect)
 
     # Add patches for each climate zone
     add_patch_rectangles(tropical_patches, colors[0])  # Green
@@ -381,6 +385,8 @@ def main():
     cbar.ax.set_yticklabels(['Tropical', 'Arid', 'Temperate', 'Cold', 'Polar'])
     cbar.set_label('Climate Zone')
 
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
     plt.legend(loc='upper left', bbox_to_anchor=(0.02, 0.98))
 
     plt.title("Climate Zones (0.25°) with Sampling Patches")

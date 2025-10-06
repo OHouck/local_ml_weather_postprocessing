@@ -723,7 +723,7 @@ def quantile_loss(preds, targets, quantile=0.95):
     # if positive error, use quantile * error, else (quantile - 1) * error
     return torch.max((quantile - 1) * errors, quantile*errors).mean()
 
-def extreme_heat_loss(preds, targets, std_train, mean_train):
+def extreme_heat_loss(preds, targets, std_out, mean_out):
     """
     up-weight loss for negative errors (under-predictions) above 25C in 
     proportion to coefficents on mortality curve in fatal errors shrader paper
@@ -732,28 +732,30 @@ def extreme_heat_loss(preds, targets, std_train, mean_train):
     targets: (batch_size, n_features) in normalized units
     """
 
-    # un-normalize (I believe this is wrong because std_train and mean_train are for all obs not just those in batch)
-    preds = preds * std_train + mean_train
-    targets = targets * std_train + mean_train
+    raw_errors = targets - preds
+
+    # un-normalize 
+    preds = preds * std_out + mean_out
+    targets = targets * std_out + mean_out
 
     # convert to celsius for easier thresholding 
     targets_c = targets - 273.15
     preds_c = preds - 273.15
     errors = targets_c - preds_c
+    squared_errors = errors**2
     weights = torch.ones_like(errors)
-    weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2.5
+    weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2
     weights += (targets_c > 30) * (errors < 0).float() * 10 
 
-    # re-normalize weights to add to 1
-    weights = weights / weights.mean()
+    weights = weights / weights.sum()  # sum to 1 for interpretability
+    weighted_mse = (weights * squared_errors).sum()
 
-    weighted_mse = (weights * errors**2).mean()
     return weighted_mse
 
 
 def train_model(model, train_loader, valid_loader, epochs, lr, device, 
                 weight_decay=0, patience=50, min_delta=9.8e-05, 
-                stats_train=None, stats_out=None, alternate_loss_fn=None):
+                stats_out=None, alternate_loss_fn=None):
     """
     Train the model over multiple epochs with early stopping.
     """
@@ -771,9 +773,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         criterion = loss_functions[alternate_loss_fn]
     
     # convert stats to torch tensors to un-normalize if needed
-    if alternate_loss_fn in {"extreme_heat_loss"} and stats_train is not None and stats_out is not None:
-        mean_train = torch.from_numpy(stats_train['mean']).float().to(device)
-        std_train = torch.from_numpy(stats_train['std']).float().to(device)
+    if alternate_loss_fn in {"extreme_heat_loss"} and stats_out is not None:
         mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
         std_out = torch.from_numpy(stats_out['std']).float().to(device)
 
@@ -800,11 +800,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
             
             # Pass lead time and month indices to model
             # Model predicts the error, so add to input forecast
-            pred_error = model(x_batch, lead_time_batch, month_batch) # this use to be directly preds
+            pred_error = model(x_batch, lead_time_batch, month_batch) 
 
             # some custom loss functions need un-normalized values
             if alternate_loss_fn in {"extreme_heat_loss"}:
-                loss = criterion(pred_error, y_batch, std_train, mean_train)
+                loss = criterion(pred_error, y_batch, std_out, mean_out)
 
             else:
                 preds = x_batch + pred_error
@@ -826,9 +826,9 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 pred_error = model(x_batch, lead_time_batch, month_batch)
 
                 if alternate_loss_fn in {"extreme_heat_loss"}:
-                    loss = criterion(pred_error, y_batch, std_train, mean_train)
+                    loss = criterion(pred_error, y_batch, std_out, mean_out)
                 else:
-                    preds = x_batch + pred_error # XX new
+                    preds = x_batch + pred_error  
                     loss = criterion(preds, y_batch)
 
                 val_loss += loss.item() * x_batch.size(0)
@@ -1001,7 +1001,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
 
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
-    obs_norm = (obs - stats_out['mean']) / stats_out['std']
+
+    # normalize target observations using forecasts to be corrected
+    obs_norm = (obs - stats_out['mean']) / stats_out['std'] 
 
     # Split train/validation
     n_train = len(fc)
@@ -1045,8 +1047,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                                 device=device,
                                                 weight_decay=2.8276153644203165e-06,
                                                 patience=70, min_delta=0.000286450816778278,
-                                                stats_train=stats_train,
-                                                stats_out=stats_out,
+                                                stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn = args.alternate_loss_fn
                                                 )
     print(f"Training complete in {training_time_minutes:.2f} minutes")

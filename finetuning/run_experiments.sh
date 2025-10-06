@@ -13,22 +13,20 @@ TRAIN_MODE=simultaneous
 echo "Training mode: $TRAIN_MODE"
 
 
-python3 finetuning/finetune.py \
-    --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-    --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
-    --training_vars total_precipitation \
-    --output_vars total_precipitation \
-    --train_start="2022-01-01" --train_end="2023-12-31" \
-    --test_start="2024-01-01" --test_end="2024-12-31" \
-    --model_name="aifs" \
-    --region="india" \
-    --subregion="6x6" \
-    --lead_time_hours 216 \
-    --model_type="unet" \
-    --growing_season_only \
-    --alternate_loss_fn="extreme_heat_loss"
-
-exit 0
+# python3 finetuning/finetune.py \
+#     --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
+#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+#     --training_vars 2m_temperature \
+#     --output_vars 2m_temperature \
+#     --train_start="2022-01-01" --train_end="2023-12-31" \
+#     --test_start="2024-01-01" --test_end="2024-12-31" \
+#     --model_name="aifs" \
+#     --region="india" \
+#     --subregion="6x6" \
+#     --lead_time_hours 216 \
+#     --model_type="unet" \
+#     --growing_season_only \
+#     --alternate_loss_fn="extreme_heat_loss"
 
 
 # python3 finetuning/finetune.py \
@@ -42,10 +40,11 @@ exit 0
 #     --region="india" \
 #     --subregion="6x6" \
 #     --lead_time_hours 120 \
-#     --model_type="UNet" \
+#     --model_type="unet" \
 #     --growing_season_only
 
-regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
+# regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
+regions=("india" "usa_south")
 subregions=(6x6)
 
 # regions=("tropical" "temperate" "arid")
@@ -73,7 +72,8 @@ for region in "${regions[@]}"; do
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="UNet" \
+            --model_type="mlp" \
+            --alternate_loss_fn="extreme_heat_loss"
 
         # 2m temperature - ifs
         echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
@@ -88,44 +88,46 @@ for region in "${regions[@]}"; do
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="UNet" \
+            --model_type="mlp" \
+            --growing_season_only \
+            --alternate_loss_fn="extreme_heat_loss"
 
-        # 10m wind speed - pangu
-        echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
+
+        # # 10m wind speed - pangu
+        # echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
+        # python3 finetuning/finetune.py \
+        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+        #     --training_vars 10m_wind_speed \
+        #     --output_vars 10m_wind_speed \
+        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+        #     --train_start="2018-01-01" --train_end="2021-12-31" \
+        #     --test_start="2022-01-01" --test_end="2022-12-31" \
+        #     --model_name="pangu" \
+        #     --region="$region" \
+        #     --subregion="$subregion" \
+        #     --lead_time_hours $all_lead_times_str \
+        #     --model_type="unet" \
+
+        # # 10m wind speed - ifs
+        # echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
+        # python3 finetuning/finetune.py \
+        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+        #     --training_vars 10m_wind_speed \
+        #     --output_vars 10m_wind_speed \
+        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+        #     --train_start="2018-01-01" --train_end="2021-12-31" \
+        #     --test_start="2022-01-01" --test_end="2022-12-31" \
+        #     --model_name="ifs" \
+        #     --region="$region" \
+        #     --subregion="$subregion" \
+        #     --lead_time_hours $all_lead_times_str \
+        #     --model_type="unet" \
+
+        # 2m Temp - AIFS
         python3 finetuning/finetune.py \
             --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-            --training_vars 10m_wind_speed \
-            --output_vars 10m_wind_speed \
-            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-            --train_start="2018-01-01" --train_end="2021-12-31" \
-            --test_start="2022-01-01" --test_end="2022-12-31" \
-            --model_name="pangu" \
-            --region="$region" \
-            --subregion="$subregion" \
-            --lead_time_hours $all_lead_times_str \
-            --model_type="UNet" \
-
-        # 10m wind speed - ifs
-        echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
-        python3 finetuning/finetune.py \
-            --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-            --training_vars 10m_wind_speed \
-            --output_vars 10m_wind_speed \
-            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-            --train_start="2018-01-01" --train_end="2021-12-31" \
-            --test_start="2022-01-01" --test_end="2022-12-31" \
-            --model_name="ifs" \
-            --region="$region" \
-            --subregion="$subregion" \
-            --lead_time_hours $all_lead_times_str \
-            --model_type="UNet" \
-
-        
-        # Total Daily Precipitation - AIFS
-        python3 finetuning/finetune.py \
-            --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-            --training_vars total_precipitation \
-            --output_vars total_precipitation \
+            --training_vars 2m_temperature \
+            --output_vars 2m_temperature \
             --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
             --train_start="2021-01-01" --train_end="2023-12-31" \
             --test_start="2024-01-01" --test_end="2024-12-31" \
@@ -133,7 +135,23 @@ for region in "${regions[@]}"; do
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="UNet" \
-            --growing_season_only
+            --model_type="mlp" \
+            --growing_season_only \
+            --alternate_loss_fn="extreme_heat_loss"
+        
+        # # Total Daily Precipitation - AIFS
+        # python3 finetuning/finetune.py \
+        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+        #     --training_vars total_precipitation \
+        #     --output_vars total_precipitation \
+        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+        #     --train_start="2021-01-01" --train_end="2023-12-31" \
+        #     --test_start="2024-01-01" --test_end="2024-12-31" \
+        #     --model_name="aifs" \
+        #     --region="$region" \
+        #     --subregion="$subregion" \
+        #     --lead_time_hours $all_lead_times_str \
+        #     --model_type="unet" \
+        #     --growing_season_only
     done
 done
