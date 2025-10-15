@@ -298,7 +298,7 @@ def main():
     buffer = subregion_size // 2
 
     # Define bounding boxes to create rectangles to plot
-    india_bounds = {"lat0": 32 - buffer, "lat1": 32 + buffer, "lon0": 77 - buffer + 180, "lon1": 77 + buffer + 180}
+    india_bounds = {"lat0": 22 - buffer, "lat1": 22 + buffer, "lon0": 77 - buffer + 180, "lon1": 77 + buffer + 180}
     usa_south_bounds = {"lat0": 35 - buffer, "lat1": 35 + buffer, "lon0": -100 - buffer + 180, "lon1": -100 + buffer + 180}
     amazon_bounds = {"lat0": -5 - buffer, "lat1": -5 + buffer, "lon0": -65 - buffer + 180, "lon1": -65 + buffer + 180}
     british_columbia_bounds = {"lat0": 53 - buffer + 0.25, "lat1": 53 + buffer, "lon0": -125 - buffer + 180, "lon1": -125 + buffer + 180}

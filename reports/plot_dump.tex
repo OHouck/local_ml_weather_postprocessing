@@ -304,76 +304,105 @@
   \end{figure}
 
 
+\section{Explore Custom Loss Function}
 
-\section{Focus on Growing Season Only}
-  % RMSE for full time vs just during growing season
-  % Pangu grow season compare temp
 \begin{figure}[!htbp]
     \centering
     \begin{subfigure}[b]{0.48\textwidth}
       \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
-      \caption{2m temperature}
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png}
+      \caption{Pangu MLP}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.48\textwidth}
       \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp_growing_season.png}
-      \caption{2m temperature (growing season only)}
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_unet.png}
+      \caption{Pangu UNET}
     \end{subfigure}
-    \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_extreme_heat_mlp.png}
+      \caption{IFS MLP}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_extreme_heat_unet.png}
+      \caption{IFS UNET}
+    \end{subfigure}
+    \caption{RMSE improvement over Extreme Heat Loss}
   \end{figure}
 
-  % Pangu grow season compare windspeed
-\begin{figure}[!htbp]
-    \centering
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
-      \caption{10m Wind Speed}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp_growing_season.png}
-      \caption{10m Wind Speed (growing season only)}
-    \end{subfigure}
-    \caption{RMSE windspeed improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
-  \end{figure}
+% \section{Focus on Growing Season Only}
+%   % RMSE for full time vs just during growing season
+%   % Pangu grow season compare temp
+% \begin{figure}[!htbp]
+%     \centering
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+%       \caption{2m temperature}
+%     \end{subfigure}
+%     \hfill
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp_growing_season.png}
+%       \caption{2m temperature (growing season only)}
+%     \end{subfigure}
+%     \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
+%   \end{figure}
 
-  % IFS grow season compare temp
-  \begin{figure}[!htbp]
-    \centering
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
-      \caption{2m temperature}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp_growing_season.png}
-      \caption{2m temperature (growing season only)}
-    \end{subfigure}
-    \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
-  \end{figure}
+%   % Pangu grow season compare windspeed
+% \begin{figure}[!htbp]
+%     \centering
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+%       \caption{10m Wind Speed}
+%     \end{subfigure}
+%     \hfill
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp_growing_season.png}
+%       \caption{10m Wind Speed (growing season only)}
+%     \end{subfigure}
+%     \caption{RMSE windspeed improvement using full year data (a) vs only growing season data (b) when fine-tuning Pangu-Weather with data from all regions.}
+%   \end{figure}
 
-  % IFS grow season compare windspeed
-  \begin{figure}[!htbp]
-    \centering
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
-      \caption{10m Wind Speed}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.48\textwidth}
-      \centering
-      \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp_growing_season.png}
-      \caption{10m Wind Speed (growing season only)}
-    \end{subfigure}
-    \caption{RMSE wind speed improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
-  \end{figure}
+%   % IFS grow season compare temp
+%   \begin{figure}[!htbp]
+%     \centering
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png}
+%       \caption{2m temperature}
+%     \end{subfigure}
+%     \hfill
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp_growing_season.png}
+%       \caption{2m temperature (growing season only)}
+%     \end{subfigure}
+%     \caption{RMSE temperature improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
+%   \end{figure}
+
+%   % IFS grow season compare windspeed
+%   \begin{figure}[!htbp]
+%     \centering
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png}
+%       \caption{10m Wind Speed}
+%     \end{subfigure}
+%     \hfill
+%     \begin{subfigure}[b]{0.48\textwidth}
+%       \centering
+%       \includegraphics[width=\textwidth]{/Users/ohouck/globus/forecast_data/figures/ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp_growing_season.png}
+%       \caption{10m Wind Speed (growing season only)}
+%     \end{subfigure}
+%     \caption{RMSE wind speed improvement using full year data (a) vs only growing season data (b) when fine-tuning IFS with data from all regions.}
+%   \end{figure}
 
 
 
