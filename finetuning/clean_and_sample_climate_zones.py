@@ -6,12 +6,15 @@ import socket
 import numpy as np
 import xarray as xr
 import pandas as pd
-from rasterio.enums import Resampling
-from rasterio.transform import Affine
 from matplotlib import pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.patches import Rectangle
 import random
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
 
 # Map the new region strings to Koppen‐Geiger codes:
 CLIMATE_ZONE_MAP = {
@@ -21,28 +24,6 @@ CLIMATE_ZONE_MAP = {
     'cold':       4,
     'polar':      5,
 }
-
-def setup_directories():
-    """Set up directory structure based on environment."""
-    nodename = socket.gethostname()
-    if nodename == "oMac.local":
-        root = os.path.expanduser("/Users/ohouck/globus/forecast_data")
-    else:
-        raise Exception(f"Unknown environment, Please specify the root directory. "
-                        f"Nodename found: {nodename}")
-
-    dirs = {
-        'root': root,
-        'raw': os.path.join(root, "raw"),
-        'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "figures"),
-        'input': os.path.join(root, "fine_tuning_output")
-    }
-
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-    return dirs
-
 
 def regrid_to_025(
     da: xr.DataArray,

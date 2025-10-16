@@ -12,29 +12,11 @@ from functools import lru_cache
 import socket
 from typing import List, Tuple, Dict, Optional, Union
 
-def setup_directories():
-    """Set up directory structure based on environment."""
-    nodename = socket.gethostname()
-    if nodename == "oMac.local":
-        root =os.path.expanduser("~/globus/forecast_data/")
-    else:
-        raise Exception(f"Unknown environment, Please specify the root directory. "
-                        f"Nodename found: {nodename}")
-
-    dirs = {
-        'root': root,
-        'raw': os.path.join(root, "raw"),
-        'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "figures"),
-        'input': os.path.join(root, "processed/finetuning_output")
-    }
-
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-    return dirs
-
-
-
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
+from helper_funcs import generate_output_path
 
 @lru_cache(maxsize=256)
 def load_zarr_cached(file_path):
@@ -86,29 +68,6 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     if rmse_original == 0:
         return 0
     return (rmse_original - rmse_corrected) / rmse_original * 100
-
-def generate_output_path(args):
-    region_str = f"{args.region}"
-    subregion_str = f"{args.subregion}"
-    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
-    training_vars_str = "_".join(args.training_vars)
-    output_vars_str = "_".join(args.output_vars)
-
-
-    if args.nn_architecture == "unet":
-        model_str = "unet"
-    else: 
-        model_str = "mlp"
-    if args.loss_fn == "extreme_heat_loss":
-        model_str += "_extreme_heat_loss"
-    
-    if args.growing_season_only:
-        grow_str = "_growing_season"
-    else:
-        grow_str = ""
-
-    output_path = f"{args.model_name}/{args.ground_truth_source}{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_leadtime_{args.lead_time_hours}h{grow_str}_{dates_str}_{model_str}.zarr"
-    return output_path 
 
 def calculate_and_save_statistics(
         dirs: Dict[str, str],

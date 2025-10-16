@@ -41,6 +41,12 @@ import torch.optim as optim
 import copy
 import time
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
+from helper_funcs import generate_output_path
+
 # Map the new region strings to Koppen‐Geiger codes:
 CLIMATE_ZONE_MAP = {
     'tropical':  1,
@@ -51,26 +57,6 @@ CLIMATE_ZONE_MAP = {
 }
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
-def setup_directories():
-    # Determine root directory based on environment.
-    nodename = socket.gethostname()
-    if nodename == "oMac.local":  # local laptop
-        root = os.path.expanduser(
-            "~/OneDrive - The University of Chicago/ai_weather_ag/data"
-        )
-    else:
-        raise Exception("Unknown environment, please specify the root directory")
-
-    dirs = {
-        "root": root,
-        "raw": os.path.join(root, "raw"),
-        "processed": os.path.join(root, "processed"),
-        "fig": os.path.join(root, "../figures/finetuning"),
-        "external": os.path.join("Volumes" ,"wd_external_hd", "weatherbench")
-    }
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-    return dirs
 # ------------------------------
 # Simple MLP definition with lead time and month encoding
 # ------------------------------
@@ -451,65 +437,6 @@ def get_patch_shape(args):
     nlon = int(deg_lon / 0.25)
     return nlat, nlon
 
-def generate_output_path(args):
-    region_str = f"{args.region}"
-    subregion_str = f"{args.subregion}"
-    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
-    training_vars_str = "_".join(args.training_vars)
-    output_vars_str = "_".join(args.output_vars)
-
-    if args.model_type == "unet":
-        model_str = "unet"
-    else: 
-        model_str = "mlp"
-
-    if args.alternate_loss_fn is not None:
-        model_str += f"_{args.alternate_loss_fn}"
-    if args.growing_season_only:
-        grow_str = "_growing_season"
-    else:
-        grow_str = ""
-    
-
-    # Format lead times
-    lead_times_str = "leadtime_" + "_".join([str(lt) for lt in args.lead_time_hours]) + "h"
-
-    output_path = f"{args.output_dir}/{args.model_name}/{args.ground_truth_source}{region_str}/train_{training_vars_str}_test_{output_vars_str}_dim{subregion_str}_{lead_times_str}{grow_str}_{dates_str}_{model_str}.zarr"
-    return output_path 
-
-def sample_climate_zone_patches(
-    cz_da: xr.DataArray,
-    zone: int,
-    lat_vals: np.ndarray,
-    lon_vals: np.ndarray,
-    nlat: int,
-    nlon: int,
-    N: int,
-    threshold: float = 0.75
-):
-    """
-    Return a list of N (lat_slice, lon_slice) each of shape (nlat,nlon),
-    drawn at random (with replacement) from cz_da restricted to
-    lat_vals×lon_vals, such that ≥threshold fraction = zone.
-    """
-    # restrict to your region grid
-    cz = cz_da.sel(latitude=lat_vals, longitude=lon_vals)
-    lats = cz.latitude.values
-    lons = cz.longitude.values
-    H, W = len(lats), len(lons)
-
-    patches = []
-    for _ in range(N):
-        while True:
-            i = random.randint(0, H - nlat)
-            j = random.randint(0, W - nlon)
-            block = cz.isel(latitude=slice(i, i+nlat),
-                            longitude=slice(j, j+nlon))
-            frac = (block.values == zone).sum() / float(nlat * nlon)
-            if frac >= threshold:
-                patches.append((lats[i:i+nlat], lons[j:j+nlon]))
-                break
-    return patches
 
 def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
@@ -1110,7 +1037,7 @@ def main():
     args.data_dir = os.path.expanduser(args.data_dir)
 
     os.makedirs(args.output_dir, exist_ok=True)
-    base_path = generate_output_path(args)
+    base_path = os.path.join(args.output_dir, generate_output_path(args))
 
     # Setup device & seeds
     device = torch.device('cuda' if torch.cuda.is_available() else

@@ -2,36 +2,17 @@
 
 # Create yearly files from daily AIFS data downloaded from downlaod_aifs.sh and aifs_cleaning.py
 
-import sys
 import os
-import socket
 import glob 
 import xarray as xr
 import pandas as pd
 import numpy as np
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
 
-def setup_directories():
-    """Set up directory structure based on environment."""
-    nodename = socket.gethostname()
-    if nodename == "oMac.local":
-        root = os.path.expanduser("~/OneDrive - The University of Chicago/ai_weather_ag/data")
-    else:
-        raise Exception(f"Unknown environment, Please specify the root directory. "
-                        f"Nodename found: {nodename}")
-
-    dirs = {
-        'root': root,
-        'raw': os.path.join(root, "raw"),
-        'globus': os.path.expanduser(f"/Users/ohouck/globus/forecast_data"),
-        'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "../figures/finetuning"),
-        'input': os.path.join(root, "fine_tuning_output")
-    }
-
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-    return dirs
 
 def convert_init_to_valid_time(ds):
     """
@@ -178,7 +159,7 @@ def validate_conversion(original_ds: xr.Dataset, converted_ds: xr.Dataset) -> bo
 def main():
 
     dirs = setup_directories()
-    aifs_dir = os.path.join(dirs['globus'], "aifs")
+    aifs_dir = os.path.join(dirs['processed'], "aifs")
     
     aifs_files = sorted(glob.glob(os.path.join(aifs_dir, "processed_init*.zarr")))
     ds = None
@@ -212,8 +193,7 @@ def main():
             'latitude': 181,             # Keep spatial chunks as they are
             'longitude': 360
         })
-        # save yearly files to globus forecast data directory 
-        out_path = os.path.join(dirs["globus"], f"aifs_{year}.zarr")
+        out_path = os.path.join(dirs["raw"], f"aifs_{year}.zarr")
         ds_year.to_zarr(out_path, mode="w", consolidated=True)
 
 if __name__ == "__main__":

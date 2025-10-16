@@ -23,56 +23,15 @@ from scipy import stats
 import time
 from types import SimpleNamespace
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
+from helper_funcs import generate_output_path
 
 #######################
 # Utility Functions
 #######################
-def setup_directories():
-    """Set up directory structure based on environment."""
-    nodename = socket.gethostname()
-    if nodename == "oMac.local":
-        root = os.path.expanduser("/Users/ohouck/globus/forecast_data")
-    else:
-        raise Exception(f"Unknown environment, Please specify the root directory. "
-                        f"Nodename found: {nodename}")
-
-    dirs = {
-        'root': root,
-        'raw': os.path.join(root, "raw"),
-        'processed': os.path.join(root, "processed"),
-        'fig': os.path.join(root, "figures"),
-        'input': os.path.join(root, "fine_tuning_output")
-    }
-
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-    return dirs
-
-
-def generate_output_path(args):
-    """Generate standardized output path for forecast files."""
-    region_str = f"{args.region}"
-    subregion_str = f"{args.subregion}"
-    dates_str = f"train{args.train_start}-{args.train_end}_test{args.test_start}-{args.test_end}"
-    training_vars_str = "_".join(args.training_vars)
-    output_vars_str = "_".join(args.output_vars)
-    
-    # Handle different nn architectures
-    if args.nn_architecture == 'mlp':
-        nn_str = "mlp"
-    elif args.nn_architecture == 'unet':
-        nn_str = "unet"
-    else:
-        raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
-    if args.loss_fn == "extreme_heat_mse":
-        model_str += "_extreme_heat_loss"
-    
-    lead_time_str = f"leadtime_{args.lead_time_hours}"
-
-    output_path = (f"{args.model_name}/{region_str}/train_{training_vars_str}_test_{output_vars_str}_"
-                   f"dim{subregion_str}_{lead_time_str}h_{dates_str}_{nn_str}.zarr")
-    return output_path
-
 
 @lru_cache(maxsize=256)
 def load_zarr_cached(file_path):
@@ -106,7 +65,8 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, training_output_vars,
                                         prediction_var, nn_architecture=["mlp"],
-                                        lead_time=None, simultaneous=False):
+                                        lead_time=None, simultaneous=False,
+                                        growing_season_only = False, alternative_loss_fn = None):
     """
     Creates plot showing how RMSE changes when trained on different sizes of subregions.
     """
@@ -154,7 +114,9 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                         test_start=test_start, test_end=test_end,
                         training_vars=training_vars, output_vars=output_vars,
                         lead_time_hours=lead_time_hours,
-                        nn_architecture=arch
+                        nn_architecture=arch,
+                        growing_season_only = growing_season_only,
+                        alternative_loss_fn = alternative_loss_fn
                     )
                     
                     path = os.path.join(input_folder, generate_output_path(args))
@@ -320,7 +282,9 @@ def generate_map_plots(
         region="usa_south",
         subregion="2x2",
         lead_time=24,
-        simultaneous=False
+        simultaneous=False,
+        growing_season_only = False,
+        alternative_loss_fn = None
 ):
     """
     Generates a figure with 2 maps: original forecast RMSE and percent improvement in RMSE.
@@ -363,7 +327,9 @@ def generate_map_plots(
         training_vars=training_vars,
         output_vars=output_vars,
         lead_time_hours=lead_time_hours,
-        nn_architecture=nn_architecture
+        nn_architecture=nn_architecture,
+        growing_season_only=growing_season_only,
+        alternative_loss_fn= alternative_loss_fn
     )
     
 
@@ -551,7 +517,9 @@ def generate_time_series_plots(
         region="usa_south",
         subregion="2x2",
         lead_time=24,
-        simultaneous=False
+        simultaneous=False,
+        growing_season_only=False,
+        alternative_loss_fn=None
 ):
     """
     Generates a single bar plot showing monthly RMSE for original and corrected forecasts
@@ -593,7 +561,11 @@ def generate_time_series_plots(
         training_vars=training_vars,
         output_vars=output_vars,
         lead_time_hours=lead_time_hours,
-        nn_architecture=nn_architecture
+        nn_architecture=nn_architecture,
+        growing_season_only=growing_season_only,
+        alternative_loss_fn=alternative_loss_fn
+
+
     )
 
     # Construct file paths for main model and IFS
