@@ -39,13 +39,14 @@ def generate_output_path(args):
     
     # Handle different nn architectures
     if args.nn_architecture == 'mlp':
-        nn_str = "mlp"
+        model_str = "mlp"
     elif args.nn_architecture == 'unet':
-        nn_str = "unet"
+        model_str = "unet"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:
         model_str += f"_{args.alternate_loss_fn}"
+
     if args.growing_season_only:
         grow_str = "_growing_season"
     else:

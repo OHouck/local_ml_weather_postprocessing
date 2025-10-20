@@ -12,21 +12,29 @@ TRAIN_MODE=simultaneous
 
 echo "Training mode: $TRAIN_MODE"
 
+    # # midway
+    # --data_dir="/project/jfranke/ozma/data/raw/" \
+    # --output_dir="/project/jfranke/ozma/data/finetuning_output/" \
+    # # laptop
+    # --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
+    # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
 
-# python3 finetuning/finetune.py \
-#     --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
-#     --training_vars 2m_temperature \
-#     --output_vars 2m_temperature \
-#     --train_start="2022-01-01" --train_end="2023-12-31" \
-#     --test_start="2024-01-01" --test_end="2024-12-31" \
-#     --model_name="aifs" \
-#     --region="india" \
-#     --subregion="6x6" \
-#     --lead_time_hours 216 \
-#     --model_type="unet" \
-#     --growing_season_only \
-#     --alternate_loss_fn="extreme_heat_loss"
+python3 finetuning/finetune.py \
+    --data_dir="/project/jfranke/ozma/data/raw/" \
+    --output_dir="/project/jfranke/ozma/data/fine_tuning_output/" \
+    --training_vars 2m_temperature \
+    --output_vars 2m_temperature \
+    --train_start="2022-01-01" --train_end="2023-12-31" \
+    --test_start="2024-01-01" --test_end="2024-12-31" \
+    --model_name="aifs" \
+    --region="india" \
+    --subregion="2x2" \
+    --lead_time_hours 216 \
+    --nn_architecture="mlp" \
+    --growing_season_only \
+    --alternate_loss_fn="extreme_heat_loss"
+
+exit 0
 
 
 # python3 finetuning/finetune.py \

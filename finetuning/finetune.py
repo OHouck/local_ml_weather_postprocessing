@@ -384,7 +384,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--model_type',   type=str, default='mlp', choices=['mlp', 'unet'])
+    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
@@ -951,7 +951,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     output_dim = n_output_vars * n_lat * n_lon
     n_lead_times = len(args.lead_time_hours)
 
-    if hasattr(args, 'model_type') and args.model_type == 'unet':
+    if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
         print(f"Using UNet with {n_lead_times} lead times and month encoding")
         model = UNet(input_dim, 32, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
