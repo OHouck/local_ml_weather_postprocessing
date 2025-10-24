@@ -55,6 +55,12 @@ CLIMATE_ZONE_MAP = {
     'cold':       4,
     'polar':      5,
 }
+# Map topographic zones
+TOPO_ZONE_MAP = {
+    'flat': 1,
+    'hilly': 2,
+    'mountainous': 3,
+}
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
 # ------------------------------
@@ -371,7 +377,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune MLP for regional post-processing')
     parser.add_argument('--data_dir',     type=str, default="~/weatherbench2_data")
     parser.add_argument('--output_dir',   type=str, required=True)
-    parser.add_argument('--climate_zones_file', type=str, default=None)
     parser.add_argument('--model_name',   type=str, required=True)
     parser.add_argument('--ground_truth_source', type=str, default="")
     parser.add_argument('--region',       type=str, default="india")
@@ -418,7 +423,7 @@ def get_region_grid(args):
     elif args.region == "ethiopia":
         lat0, lat1 = 4, 14
         lon0, lon1 = 34, 44
-    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP:
+    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
     else:
@@ -1050,12 +1055,19 @@ def main():
     nlat_patch, nlon_patch = get_patch_shape(args)
 
     # Decide if we're in a climate‐zone region or a geographic one
-    if args.region in CLIMATE_ZONE_MAP:
+    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
         
-        patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
+        if args.region in CLIMATE_ZONE_MAP:
+            patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
+        elif args.region in TOPO_ZONE_MAP:
+            patches_path = os.path.join(dirs["processed"], f"topo_zone_patches_{args.region}_{args.subregion}.npy")
+        else:
+            raise ValueError(f'Unknown file path for region {args.region}')
+    
         patches = np.load(patches_path, allow_pickle=True)
         patch_ids = np.arange(1, len(patches) + 1)
         assert len(patches) == 50
+
 
         for patch, idx in zip(patches, patch_ids):
             lat_min = patch[0,].min()

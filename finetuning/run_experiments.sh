@@ -19,44 +19,44 @@ echo "Training mode: $TRAIN_MODE"
     # --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
     # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
 
-python3 finetuning/finetune.py \
-    --data_dir="/project/jfranke/ozma/data/raw/" \
-    --output_dir="/project/jfranke/ozma/data/fine_tuning_output/" \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --train_start="2022-01-01" --train_end="2023-12-31" \
-    --test_start="2024-01-01" --test_end="2024-12-31" \
-    --model_name="aifs" \
-    --region="india" \
-    --subregion="2x2" \
-    --lead_time_hours 216 \
-    --nn_architecture="mlp" \
-    --growing_season_only \
-    --alternate_loss_fn="extreme_heat_loss"
-
-exit 0
-
-
 # python3 finetuning/finetune.py \
-#     --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+#     --data_dir="/project/jfranke/ozma/data/raw/" \
+#     --output_dir="/project/jfranke/ozma/data/fine_tuning_output/" \
 #     --training_vars 2m_temperature \
 #     --output_vars 2m_temperature \
-#     --train_start="2018-01-01" --train_end="2021-12-31" \
-#     --test_start="2022-01-01" --test_end="2022-12-31" \
-#     --model_name="ifs" \
+#     --train_start="2022-01-01" --train_end="2023-12-31" \
+#     --test_start="2024-01-01" --test_end="2024-12-31" \
+#     --model_name="aifs" \
 #     --region="india" \
-#     --subregion="6x6" \
-#     --lead_time_hours 120 \
-#     --model_type="unet" \
-#     --growing_season_only
+#     --subregion="2x2" \
+#     --lead_time_hours 216 \
+#     --nn_architecture="mlp" \
+#     --growing_season_only \
+#     --alternate_loss_fn="extreme_heat_loss"
+
+python3 finetuning/finetune.py \
+    --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
+    --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+    --training_vars 2m_temperature \
+    --output_vars 2m_temperature \
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --model_name="pangu" \
+    --region="flat" \
+    --subregion="2x2" \
+    --lead_time_hours 120 \
+    --nn_architecture="unet" \
+    --growing_season_only
+
+exit 0 
 
 # regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
 regions=("india" "usa_south")
 subregions=(6x6)
 
-# regions=("tropical" "temperate" "arid")
+# regions=("tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 # subregions=(2x2)
+
 
 all_lead_times=(24 120 216)
 
