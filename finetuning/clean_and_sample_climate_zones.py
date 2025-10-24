@@ -1,15 +1,20 @@
 # Author: Ozma Houck 
 # Date Created: 6/09/2025
+# Modified: Added topographical zone sampling based on stdor
 
 import os
 import socket
 import numpy as np
 import xarray as xr
-import pandas as pd
+import pandas as p
+import rioxarray
+from rasterio.enums import Resampling
+from rasterio.transform import Affine
 from matplotlib import pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.patches import Rectangle
 import random
+from typing import Dict
 
 import sys
 from pathlib import Path
@@ -23,6 +28,13 @@ CLIMATE_ZONE_MAP = {
     'temperate':  3,
     'cold':       4,
     'polar':      5,
+}
+
+# Map topographic zones
+TOPO_ZONE_MAP = {
+    'flat': 1,
+    'hilly': 2,
+    'mountainous': 3,
 }
 
 def regrid_to_025(
@@ -91,18 +103,84 @@ def regrid_to_025(
     out = reproj.assign_coords(lon=dst_lons, lat=dst_lats_desc).sortby("lat")
     return out
 
-def regrid_and_save_climate_zones(dirs):
-    # 1) open the raw 0.1° mask
-    land_mask_path = os.path.join(dirs["raw"], "IMERG_land_sea_mask.nc")
-    da = xr.open_dataset(land_mask_path)["landseamask"]
-    # 3)  make it strictly binary (land vs sea)
-    #    e.g. if original mask < 20 is land:
-    da = xr.where(da < 20, 1, 0)
+def apply_sea_mask(da: xr.DataArray, dirs: Dict) -> xr.DataArray:
 
-    # 2) regrid to 0.25°
-    sea_mask = regrid_to_025(da, resolution=0.25)
-    sea_mask.name = "landseamask"
-    sea_mask.attrs = da.attrs  # carry over any metadata
+    # open the raw 0.1° mask
+    sea_mask_path= os.path.join(dirs["raw"], "IMERG_land_sea_mask.nc")
+    sea_mask= xr.open_dataset(sea_mask_path)["landseamask"]
+
+    # make strict binary of land vs sea <20 is land in original mask
+    sea_mask = xr.where(sea_mask < 20, 1, 0)
+
+    # regrid to 0.25°
+    sea_mask_p25 = regrid_to_025(sea_mask, resolution=0.25)
+    sea_mask_p25.name = "landseamask"
+    sea_mask_p25.attrs = sea_mask.attrs  # carry over any metadata
+
+    # Replace nodata values with 0 (ocean)
+    sea_mask_p25 = xr.where(sea_mask_p25 < 0, 0, sea_mask_p25)
+
+    # Align coordinates - rename to match da's coordinate names
+    if 'latitude' in da.dims and 'lat' in sea_mask_p25.dims:
+        sea_mask_p25 = sea_mask_p25.rename({'lat': 'latitude', 'lon': 'longitude'})
+    
+    # Align the grids - this ensures coordinates match exactly
+    sea_mask_p25, da_aligned = xr.align(sea_mask_p25, da, join='inner')
+
+    # mask the data array
+    da_masked = da.where(sea_mask_p25 == 1)
+
+    return da_masked
+
+def bin_topography(sdor_da: xr.DataArray, dirs: Dict) -> xr.DataArray:
+    """
+    Bin the standard deviation of orography into 3 topographic zones:
+    - flat (bottom 25%): zone = 1
+    - hilly (middle 50%): zone = 2  
+    - mountainous (top 25%): zone = 3
+    
+    Parameters
+    ----------
+    sdor_da : xr.DataArray
+        Standard deviation of orography data
+    dirs : Dict
+        Directory paths
+        
+    Returns
+    -------
+    topo_zones : xr.DataArray
+        Topographic zones (1, 2, or 3) with same shape as input
+    """
+    # Apply sea mask first
+    sdor_masked = apply_sea_mask(sdor_da, dirs)
+    
+    # Get valid (non-NaN) values for computing percentiles
+    valid_values = sdor_masked.values[~np.isnan(sdor_masked.values)]
+    
+    # Calculate 25th and 75th percentiles
+    p25 = np.percentile(valid_values, 40)
+    p75 = np.percentile(valid_values, 80)
+    
+    print(f"Topography percentiles - 25th: {p25:.2f}, 75th: {p75:.2f}")
+    
+    # Create binned topography zones
+    topo_zones = xr.full_like(sdor_masked, np.nan)
+    
+    # Assign zones: 1 = flat, 2 = hilly, 3 = mountainous
+    topo_zones = xr.where(sdor_masked <= p25, 1, topo_zones)
+    topo_zones = xr.where((sdor_masked > p25) & (sdor_masked <= p75), 2, topo_zones)
+    topo_zones = xr.where(sdor_masked > p75, 3, topo_zones)
+    
+    # Set attributes
+    topo_zones.name = "topo_zones"
+    topo_zones.attrs['long_name'] = 'Topographic zones based on stdor'
+    topo_zones.attrs['description'] = 'Zone 1: flat (bottom 25%), Zone 2: hilly (middle 50%), Zone 3: mountainous (top 25%)'
+    topo_zones.attrs['p25'] = p25
+    topo_zones.attrs['p75'] = p75
+    
+    return topo_zones
+
+def regrid_and_save_climate_zones(dirs):
 
     # ==========================================================================
     # open the Koppen-Geiger climate zones data
@@ -132,7 +210,7 @@ def regrid_and_save_climate_zones(dirs):
     climate_zones_simplified = xr.full_like(climate_zones, np.nan)
 
     # Apply the sea mask to the climate zones data
-    climate_zones_simplified = climate_zones_simplified.where(sea_mask == 1)
+    climate_zones_simplified = apply_sea_mask(climate_zones_simplified, dirs)
     climate_zones_simplified = xr.where(climate_zones.isin(tropical), 1, climate_zones_simplified)
     climate_zones_simplified = xr.where(climate_zones.isin(arid), 2, climate_zones_simplified)
     climate_zones_simplified = xr.where(climate_zones.isin(temperate), 3, climate_zones_simplified)
@@ -158,38 +236,78 @@ def get_patch_shape(subregion):
     nlon = int(deg_lon / 0.25)
     return nlat, nlon
 
-def sample_climate_zone_patches(
-    cz_da: xr.DataArray,
+def sample_zone_patches(
+    da: xr.DataArray,
     zone: int,
     lat_vals: np.ndarray,
     lon_vals: np.ndarray,
     nlat: int,
     nlon: int,
     N: int,
-    threshold: float = 0.75
+    threshold: float = 0.75,
+    zone_type: str = 'climate'
 ):
     """
     Return a list of N (lat_slice, lon_slice) each of shape (nlat,nlon),
-    drawn at random (with replacement) from cz_da restricted to
+    drawn at random (with replacement) from da restricted to
     lat_vals×lon_vals, such that ≥threshold fraction = zone.
+    
+    Parameters
+    ----------
+    da : xr.DataArray
+        Data array containing zone classifications
+    zone : int
+        Zone number to sample
+    lat_vals : np.ndarray
+        Latitude values to sample from
+    lon_vals : np.ndarray
+        Longitude values to sample from
+    nlat : int
+        Number of latitude points in each patch
+    nlon : int
+        Number of longitude points in each patch
+    N : int
+        Number of patches to sample
+    threshold : float
+        Minimum fraction of patch that must be in the target zone
+    zone_type : str
+        Either 'climate' or 'topographic' to specify which zone type
+        
+    Returns
+    -------
+    patches : list
+        List of N tuples (lat_slice, lon_slice)
     """
     # restrict to your region grid
-    cz = cz_da.sel(latitude=lat_vals, longitude=lon_vals)
-    lats = cz.latitude.values
-    lons = cz.longitude.values
+    da = da.sel(latitude=lat_vals, longitude=lon_vals)
+    lats = da.latitude.values
+    lons = da.longitude.values
     H, W = len(lats), len(lons)
 
     patches = []
+    attempts = 0
+    max_attempts = N * 1000  # Prevent infinite loops
+    
     for _ in range(N):
-        while True:
+        while attempts < max_attempts:
+            attempts += 1
             i = random.randint(0, H - nlat)
             j = random.randint(0, W - nlon)
-            block = cz.isel(latitude=slice(i, i+nlat),
-                            longitude=slice(j, j+nlon))
-            frac = (block.values == zone).sum() / float(nlat * nlon)
-            if frac >= threshold:
-                patches.append((lats[i:i+nlat], lons[j:j+nlon]))
+            
+            lat_slice = lats[i:i+nlat]
+            lon_slice = lons[j:j+nlon]
+            patch = da.sel(latitude=lat_slice, longitude=lon_slice)
+            
+            # Check if at least threshold fraction equals zone
+            valid = (patch == zone).values
+            if np.nanmean(valid) >= threshold:
+                patches.append((lat_slice, lon_slice))
                 break
+        
+        if attempts >= max_attempts:
+            print(f"Warning: Could only sample {len(patches)} patches for {zone_type} zone {zone} (requested {N})")
+            break
+    
     return patches
 
 def create_climate_zone_patches(dirs):
@@ -223,27 +341,116 @@ def create_climate_zone_patches(dirs):
 
         # Sample N patches for this zone
         N = 50
-        patches = sample_climate_zone_patches(
+        patches = sample_zone_patches(
             climate_zones.climate_zones,
             zone_code,
             lat_values,
             lon_values,
             nlat_patch,
             nlon_patch,
-            N
+            N,
+            zone_type='climate'
         )
         # save patches to disk
         np.save(patch_path, patches)
 
+def create_topographic_zone_patches(topo_zones: xr.DataArray, dirs: Dict):
+    """
+    Create patches of topographic zones for bootstrapping.
+    
+    Parameters
+    ----------
+    topo_zones : xr.DataArray
+        Binned topographic zones (1=flat, 2=hilly, 3=mountainous)
+    dirs : Dict
+        Directory paths
+    """
+
+    subregion = "2x2"
+    lat_values = topo_zones.latitude.values
+    lon_values = topo_zones.longitude.values
+
+    nlat_patch, nlon_patch = get_patch_shape(subregion)
+    topo_zone_list = ["flat", "hilly", "mountainous"]
+    
+    for zone_name in topo_zone_list:
+        zone_code = TOPO_ZONE_MAP[zone_name]
+        print(f"Sampling {zone_name} topographic patches...")
+        
+        patch_path = os.path.join(dirs["processed"], f"topo_zone_patches_{zone_name}_{subregion}.npy")
+        
+        # check if the patches already exist
+        if os.path.exists(patch_path):
+            print(f"Patch file {patch_path} already exists. Skipping sampling.")
+            continue
+        
+        # Sample N patches for this zone
+        N = 50
+        patches = sample_zone_patches(
+            topo_zones,
+            zone_code,
+            lat_values,
+            lon_values,
+            nlat_patch,
+            nlon_patch,
+            N,
+            threshold=0.75,
+            zone_type='topographic'
+        )
+        
+        # save patches to disk
+        np.save(patch_path, patches)
+        print(f"Saved {len(patches)} patches to {patch_path}")
+
 def main():
 
     dirs = setup_directories()
+
+
+    # Get ERA5 Standard Deviation of Orthography from static variables 
+    # Downloaded to initialize aurora model
+    era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
+    sdor = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
+    print("Original sdor shape:", sdor.shape)
+
+    # Bin topography into 3 zones
+    topo_zones = bin_topography(sdor, dirs)
+    print("Topographic zones shape:", topo_zones.shape)
+    print("Unique zones:", np.unique(topo_zones.values[~np.isnan(topo_zones.values)]))
+
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+
+    # Define a custom colormap for discrete values
+    cmap = mcolors.ListedColormap(['red', 'green', 'blue'])  # Colors for 1, 2, 3
+    bounds = [0.5, 1.5, 2.5, 3.5]  # Boundaries for the values
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+    # Plot map of topographic zones
+    plt.figure(figsize=(12, 6))
+    im = topo_zones.plot(cmap=cmap, norm=norm, add_colorbar=True)
+
+    # Add title and labels
+    plt.title("Topographic Zones (0.25°)")
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+    plt.show()
+    exit()
+
+    
+    # Save topographic zones
+    topo_zones_path = os.path.join(dirs["processed"], "topo_zones_0p25.nc")
+    topo_zones.to_netcdf(topo_zones_path)
+    print(f"Saved topographic zones to {topo_zones_path}")
 
     # regrid koppen-geiger climate zones to 0.25°
     regrid_and_save_climate_zones(dirs)
 
     # sample and save climate zone patches for bootstrapping
     # create_climate_zone_patches(dirs) # uncomment if need to resample patches
+    
+    # sample and save topographic zone patches for bootstrapping
+    # create_topographic_zone_patches(topo_zones, dirs) # uncomment to sample topo patches
 
 
     # load and plot the data
