@@ -1,4 +1,5 @@
 import time
+import sys
 from datetime import datetime
 import psutil
 import os
@@ -9,7 +10,19 @@ import numpy as np
 import dask
 from dask.distributed import Client, as_completed
 from dask.diagnostics import ProgressBar
+from pathlib import Path
 warnings.filterwarnings('ignore')
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from helper_funcs import setup_directories
+
+# import ssl
+# import certifi
+# # Set environment variables to use certifi's certificate bundle
+# os.environ['SSL_CERT_FILE'] = certifi.where()
+# os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+# Create SSL context
+# ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 
 def print_time_and_memory(step_name, start_time):
@@ -116,7 +129,7 @@ def save_to_zarr_with_fallback(subset_rechunked, output_path, available_vars):
     return save_successful
 
 
-def download_data(data_name, year):
+def download_data(data_name, year, dirs):
     """Main download function"""
     # Start timing
     script_start = time.time()
@@ -153,10 +166,13 @@ def download_data(data_name, year):
             'total_precipitation_6hr'
         ]
     elif data_name == 'hres_t0':
+
+        # for some reason precip was empty when last downloaded in summer 2025
         surface_vars = [
             '2m_temperature',
             '10m_u_component_of_wind',
             '10m_v_component_of_wind',
+            'mean_sea_level_pressure',
         ]
         atmos_vars = [
             "temperature",
@@ -166,15 +182,12 @@ def download_data(data_name, year):
             "geopotential",
         ]
     
-    time_range = [f'{year}-01-01', f'{year}-12-31']
+    # test XX
+    time_range = [f'{year}-01-01', f'{year}-01-31']
     
-    # Output paths
-    # output_path_surface = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/{data_name}_{year}.zarr")
-    # output_path_atmos = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/{data_name}_{year}_atmospheric.zarr")
-
-    # XX
-    output_path_surface = os.path.expanduser(f"/Users/ohouck/Downloads/{data_name}_{year}.zarr")
-    output_path_atmos = os.path.expanduser(f"/Users/ohouck/Downloads/{data_name}_{year}_atmospheric.zarr")
+    # Output paths XX
+    output_path_surface = os.path.join(dirs['raw'], f"{data_name}_{year}_test.zarr")
+    output_path_atmos = os.path.join(dirs["raw"], f"{data_name}_{year}_atmospheric_test.zarr")
     
     start_time = print_time_and_memory("Parameter setup", start_time)
     
@@ -185,7 +198,8 @@ def download_data(data_name, year):
             print("  Using ARCO-ERA5 dataset")
             ds = xr.open_zarr(
                 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3',
-                consolidated=True
+                consolidated=True,
+                storage_options={"token": "annon"}
             )
             ds = ds.rename({'total_precipitation': 'total_precipitation_6hr'})
 
@@ -193,7 +207,8 @@ def download_data(data_name, year):
             print("  Using Weatherbench2-HRES-T0 dataset")
             ds = xr.open_zarr(
                 "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr",
-                consolidated=True
+                consolidated=True,
+                storage_options={"token": "annon"}
             )
         else:
             raise ValueError(f"Unknown dataset name: {data_name}")
@@ -464,10 +479,11 @@ if __name__ == '__main__':
     # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
     years = [2018]
     data_source = 'hres_t0'  # hres_t0 or era5
+    dirs = setup_directories()
     
     # Try the download
     for year in years:
-        output_surface, output_atmos = download_data(data_source, year)
+        output_surface, output_atmos = download_data(data_source, year, dirs)
         print(f"\nSuccess!")
         print(f"  Surface data saved to: {output_surface}")
         if output_atmos:
