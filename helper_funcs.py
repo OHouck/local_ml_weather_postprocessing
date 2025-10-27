@@ -20,7 +20,7 @@ def setup_directories():
         'raw': os.path.join(root, "raw"),
         'processed': os.path.join(root, "processed"),
         'fig': os.path.join(root, "figures/finetuning"),
-        'input': os.path.join(root, "fine_tuning_output")
+        'input': os.path.join(root, "processed", "finetuning_output")
     }
 
     for path in dirs.values():

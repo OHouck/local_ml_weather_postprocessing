@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Ozma Houck 
+Filename: finetune/finetune.py
 
 # Purpose: use a simple MLP to post-process weather forecasts trained on
 specific regions and variables. Call this script from command line or with 

@@ -34,29 +34,27 @@ echo "Training mode: $TRAIN_MODE"
 #     --growing_season_only \
 #     --alternate_loss_fn="extreme_heat_loss"
 
-python3 finetuning/finetune.py \
-    --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-    --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --train_start="2018-01-01" --train_end="2021-12-31" \
-    --test_start="2022-01-01" --test_end="2022-12-31" \
-    --model_name="pangu" \
-    --region="flat" \
-    --subregion="2x2" \
-    --lead_time_hours 120 \
-    --nn_architecture="unet" \
-    --growing_season_only
-
-exit 0 
+# python3 finetuning/finetune.py \
+#     --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
+#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+#     --training_vars 2m_temperature \
+#     --output_vars 2m_temperature \
+#     --train_start="2018-01-01" --train_end="2021-12-31" \
+#     --test_start="2022-01-01" --test_end="2022-12-31" \
+#     --model_name="pangu" \
+#     --region="india" \
+#     --subregion="6x6" \
+#     --lead_time_hours 120 \
+#     --nn_architecture="mlp" \
+#     --growing_season_only
 
 # regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
-regions=("india" "usa_south")
-subregions=(6x6)
+# regions=("india" "usa_south")
+# subregions=(6x6)
 
-# regions=("tropical" "temperate" "arid" "flat" "mountainous" "hilly")
-# subregions=(2x2)
-
+# regions=("tropical" "temperate" "arid")
+regions=("flat" "mountainous" "hilly")
+subregions=(2x2)
 
 all_lead_times=(24 120 216)
 
@@ -80,8 +78,7 @@ for region in "${regions[@]}"; do
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="mlp" \
-            --alternate_loss_fn="extreme_heat_loss"
+            --nn_architecture="mlp" 
 
         # 2m temperature - ifs
         echo "Running fine-tuning for 2m_temperature ifs (simultaneous)"
@@ -96,56 +93,54 @@ for region in "${regions[@]}"; do
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="mlp" \
-            --growing_season_only \
-            --alternate_loss_fn="extreme_heat_loss"
+            --nn_architecture="mlp" 
 
 
-        # # 10m wind speed - pangu
-        # echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
-        # python3 finetuning/finetune.py \
-        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-        #     --training_vars 10m_wind_speed \
-        #     --output_vars 10m_wind_speed \
-        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-        #     --train_start="2018-01-01" --train_end="2021-12-31" \
-        #     --test_start="2022-01-01" --test_end="2022-12-31" \
-        #     --model_name="pangu" \
-        #     --region="$region" \
-        #     --subregion="$subregion" \
-        #     --lead_time_hours $all_lead_times_str \
-        #     --model_type="unet" \
-
-        # # 10m wind speed - ifs
-        # echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
-        # python3 finetuning/finetune.py \
-        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-        #     --training_vars 10m_wind_speed \
-        #     --output_vars 10m_wind_speed \
-        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-        #     --train_start="2018-01-01" --train_end="2021-12-31" \
-        #     --test_start="2022-01-01" --test_end="2022-12-31" \
-        #     --model_name="ifs" \
-        #     --region="$region" \
-        #     --subregion="$subregion" \
-        #     --lead_time_hours $all_lead_times_str \
-        #     --model_type="unet" \
-
-        # 2m Temp - AIFS
+        # 10m wind speed - pangu
+        echo "Running fine-tuning for 10m_wind_speed pangu (simultaneous)"
         python3 finetuning/finetune.py \
             --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-            --training_vars 2m_temperature \
-            --output_vars 2m_temperature \
+            --training_vars 10m_wind_speed \
+            --output_vars 10m_wind_speed \
             --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-            --train_start="2021-01-01" --train_end="2023-12-31" \
-            --test_start="2024-01-01" --test_end="2024-12-31" \
-            --model_name="aifs" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="pangu" \
             --region="$region" \
             --subregion="$subregion" \
             --lead_time_hours $all_lead_times_str \
-            --model_type="mlp" \
-            --growing_season_only \
-            --alternate_loss_fn="extreme_heat_loss"
+            --nn_architecture="mlp" \
+
+        # 10m wind speed - ifs
+        echo "Running fine-tuning for 10m_wind_speed ifs (simultaneous)"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+            --training_vars 10m_wind_speed \
+            --output_vars 10m_wind_speed \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2018-01-01" --train_end="2021-12-31" \
+            --test_start="2022-01-01" --test_end="2022-12-31" \
+            --model_name="ifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --nn_architecture="mlp" \
+
+        # 2m Temp - AIFS
+        # python3 finetuning/finetune.py \
+        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+        #     --training_vars 2m_temperature \
+        #     --output_vars 2m_temperature \
+        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+        #     --train_start="2021-01-01" --train_end="2023-12-31" \
+        #     --test_start="2024-01-01" --test_end="2024-12-31" \
+        #     --model_name="aifs" \
+        #     --region="$region" \
+        #     --subregion="$subregion" \
+        #     --lead_time_hours $all_lead_times_str \
+        #     --nn_architecture="mlp" \
+        #     --growing_season_only \
+        #     --alternate_loss_fn="extreme_heat_loss"
         
         # # Total Daily Precipitation - AIFS
         # python3 finetuning/finetune.py \
@@ -159,7 +154,7 @@ for region in "${regions[@]}"; do
         #     --region="$region" \
         #     --subregion="$subregion" \
         #     --lead_time_hours $all_lead_times_str \
-        #     --model_type="unet" \
+        #     --nn_architecture="unet" \
         #     --growing_season_only
     done
 done

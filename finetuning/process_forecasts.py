@@ -21,6 +21,7 @@ from helper_funcs import generate_output_path
 @lru_cache(maxsize=256)
 def load_zarr_cached(file_path):
     """Cache zarr dataset loading to avoid redundant file reads."""
+    print(f"Loading dataset from: {file_path}")
     return xr.open_zarr(file_path)
 
 def extract_forecast_data(ds, prediction_var, lead_time):
@@ -75,7 +76,7 @@ def calculate_and_save_statistics(
         variable_configs: List[Dict[str, Union[str, Tuple]]],
         nn_architectures: List[str] = ["mlp"],
         geographic_regions: Optional[List[str]] = None,
-        climate_regions: Optional[List[str]] = None,
+        bootstrap_regions: Optional[List[str]] = None,
         subregions: List[str] = ["2x2", "6x6", "10x10"],
         lead_times: Optional[List[int]] = None,
         loss_fns: Optional[List[str]] = None,
@@ -102,8 +103,8 @@ def calculate_and_save_statistics(
         List of architectures: ["mlp"], ["unet"], or ["mlp", "unet"]
     geographic_regions : list, optional
         List of geographic regions (e.g., ["india", "usa_south"])
-    climate_regions : list, optional
-        List of climate regions (e.g., ["tropical", "arid", "temperate"])
+    bootstrap_regions: list, optional
+        List of regions that need bootrapping(e.g., ["tropical", "arid", "temperate"])
     subregions : list
         List of patch sizes (e.g., ["2x2", "6x6", "10x10"])
     lead_times : list
@@ -133,8 +134,8 @@ def calculate_and_save_statistics(
     # Default values
     if geographic_regions is None:
         geographic_regions = []
-    if climate_regions is None:
-        climate_regions = []
+    if bootstrap_regions is None:
+        bootstrap_regions = []
     if lead_times is None:
         lead_times = [24, 120, 216]
     
@@ -142,7 +143,7 @@ def calculate_and_save_statistics(
     all_regions = []
     for region in geographic_regions:
         all_regions.append({'name': region, 'type': 'geographic', 'bootstrap': False})
-    for region in climate_regions:
+    for region in bootstrap_regions:
         all_regions.append({'name': region, 'type': 'climate', 'bootstrap': True})
     
     # Storage for all results
@@ -185,7 +186,7 @@ def calculate_and_save_statistics(
                                 for lead_time in lead_times:
                                     # Set up args for generate_output_path
                                     if simultaneous:
-                                        lead_time_hours = "_".join(str(lt) for lt in lead_times)
+                                        lead_time_hours = lead_times
                                     else:
                                         lead_time_hours = lead_time
                                     if model == "ifs" or model == "pangu":
@@ -200,13 +201,19 @@ def calculate_and_save_statistics(
                                         test_end="2024-12-31"
                                     else:
                                         raise ValueError(f"Unknown model: {model}")
-                                    
+                                    if loss_fn == "mse":
+                                        alternate_loss_fn = None
+                                    elif loss_fn == "extreme_heat_loss":
+                                        alternate_loss_fn = "extreme_heat_loss"
+                                    else:
+                                        alternate_loss_fn = None
+
                                     args = SimpleNamespace(
                                         model_name=model,
                                         ground_truth_source=ground_truth_source,
                                         region=region,
                                         subregion=subregion,
-                                        loss_fn=loss_fn,
+                                        alternate_loss_fn=alternate_loss_fn,
                                         train_start=train_start,
                                         train_end=train_end,
                                         test_start=test_start,
@@ -225,7 +232,9 @@ def calculate_and_save_statistics(
                                     else:
                                         file_pattern = os.path.join(dirs['input'], 
                                             generate_output_path(args))
+                                    
                                     files = glob.glob(file_pattern)
+
                                     
                                     if not files:
                                         print(f"No files found for {prediction_var} {model} {arch} {region} {subregion} {lead_time}h")
@@ -240,93 +249,92 @@ def calculate_and_save_statistics(
                                     ground_truth_values = []
                                     
                                     for idx, file_path in enumerate(files):
-                                        try:
-                                            ds = load_zarr_cached(file_path)
-                                            # Extract data
-                                            ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
-                                                ds, prediction_var, lead_time
-                                            )
+                                        ds = load_zarr_cached(file_path)
+                                        if subregion == "6x6":
+                                            print(file_pattern)
+                                            print(len(files))
+                                            print(ds)
+                                            exit()
+                                        # Extract data
+                                        ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
+                                            ds, prediction_var, lead_time
+                                        )
 
-                                            # Flatten arrays for statistics
-                                            gt_flat = ground_truth.values.flatten()
-                                            orig_flat = original.values.flatten()
-                                            corr_flat = corrected.values.flatten()
-                                            mean_bias_flat = mean_bias_corrected.values.flatten() if mean_bias_corrected is not None else None
+                                        # Flatten arrays for statistics
+                                        gt_flat = ground_truth.values.flatten()
+                                        orig_flat = original.values.flatten()
+                                        corr_flat = corrected.values.flatten()
+                                        mean_bias_flat = mean_bias_corrected.values.flatten() if mean_bias_corrected is not None else None
 
-                                            # Calculate RMSE values
-                                            rmse_original = calculate_rmse(orig_flat, gt_flat)
-                                            rmse_corrected = calculate_rmse(corr_flat, gt_flat)
-                                            rmse_pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
+                                        # Calculate RMSE values
+                                        rmse_original = calculate_rmse(orig_flat, gt_flat)
+                                        rmse_corrected = calculate_rmse(corr_flat, gt_flat)
+                                        rmse_pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
 
-                                            rmse_og_extreme_heat = calculate_extreme_heat_rmse(orig_flat, gt_flat) 
-                                            rmse_corr_extreme_heat = calculate_extreme_heat_rmse(corr_flat, gt_flat) 
-                                            rmse_pct_improvement_extreme_heat = (rmse_og_extreme_heat - rmse_corr_extreme_heat) / rmse_og_extreme_heat * 100 if rmse_og_extreme_heat and rmse_corr_extreme_heat else None   
+                                        rmse_og_extreme_heat = calculate_extreme_heat_rmse(orig_flat, gt_flat) 
+                                        rmse_corr_extreme_heat = calculate_extreme_heat_rmse(corr_flat, gt_flat) 
+                                        rmse_pct_improvement_extreme_heat = (rmse_og_extreme_heat - rmse_corr_extreme_heat) / rmse_og_extreme_heat * 100 if rmse_og_extreme_heat and rmse_corr_extreme_heat else None   
 
-                                            # Remove NaN values - fixed logic here
-                                            mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-                                            if mean_bias_flat is not None:
-                                                mask = mask & ~np.isnan(mean_bias_flat)
+                                        # Remove NaN values - fixed logic here
+                                        mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                                        if mean_bias_flat is not None:
+                                            mask = mask & ~np.isnan(mean_bias_flat)
+                                        
+                                        gt_flat = gt_flat[mask]
+                                        orig_flat = orig_flat[mask]
+                                        corr_flat = corr_flat[mask]
+                                        mean_bias_flat = mean_bias_flat[mask] if mean_bias_flat is not None else None
+                                        
+                                        # Store ground truth for statistics
+                                        ground_truth_values.extend(gt_flat)
+                                        
+                                        # Calculate mean forecast values
+                                        mean_original = np.mean(orig_flat)
+                                        mean_corrected = np.mean(corr_flat)
+                                        
+                                        
+                                        # Calculate error frequency metrics
+                                        if prediction_var in ERROR_CUTOFFS:
+                                            cutoff_info = ERROR_CUTOFFS[prediction_var]
                                             
-                                            gt_flat = gt_flat[mask]
-                                            orig_flat = orig_flat[mask]
-                                            corr_flat = corr_flat[mask]
-                                            mean_bias_flat = mean_bias_flat[mask] if mean_bias_flat is not None else None
-                                            
-                                            # Store ground truth for statistics
-                                            ground_truth_values.extend(gt_flat)
-                                            
-                                            # Calculate mean forecast values
-                                            mean_original = np.mean(orig_flat)
-                                            mean_corrected = np.mean(corr_flat)
-                                            
-                                            
-                                            # Calculate error frequency metrics
-                                            if prediction_var in ERROR_CUTOFFS:
-                                                cutoff_info = ERROR_CUTOFFS[prediction_var]
+                                            if cutoff_info['type'] == 'absolute':
+                                                # Calculate percentage of errors above cutoff
+                                                errors_orig = np.abs(orig_flat - gt_flat)
+                                                errors_corr = np.abs(corr_flat - gt_flat)
+                                                pct_error_cutoff_original = (errors_orig > cutoff_info['value']).mean() * 100
+                                                pct_error_cutoff_corrected = (errors_corr > cutoff_info['value']).mean() * 100
                                                 
-                                                if cutoff_info['type'] == 'absolute':
-                                                    # Calculate percentage of errors above cutoff
-                                                    errors_orig = np.abs(orig_flat - gt_flat)
-                                                    errors_corr = np.abs(corr_flat - gt_flat)
-                                                    pct_error_cutoff_original = (errors_orig > cutoff_info['value']).mean() * 100
-                                                    pct_error_cutoff_corrected = (errors_corr > cutoff_info['value']).mean() * 100
-                                                    
-                                                elif cutoff_info['type'] == 'binary':
-                                                    # For precipitation: calculate misclassification rate for rain/no-rain
-                                                    gt_binary = (gt_flat > 0).astype(int)
-                                                    orig_binary = (orig_flat > 0).astype(int)
-                                                    corr_binary = (corr_flat > 0).astype(int)
-                                                    pct_error_cutoff_original = (gt_binary != orig_binary).mean() * 100
-                                                    pct_error_cutoff_corrected = (gt_binary != corr_binary).mean() * 100
-                                            else:
-                                                pct_error_cutoff_original = None
-                                                pct_error_cutoff_corrected = None
-                                            
-                                            # Calculate mean bias corrected RMSE if available
-                                            rmse_mean_corrected = None
-                                            pct_improvement_mean_correction = None  # Fixed variable name
-                                            if mean_bias_corrected is not None:
-                                                rmse_mean_corrected = np.sqrt(np.mean((mean_bias_flat - gt_flat)**2))
-                                                pct_improvement_mean_correction = (rmse_original - rmse_mean_corrected) / rmse_original * 100
+                                            elif cutoff_info['type'] == 'binary':
+                                                # For precipitation: calculate misclassification rate for rain/no-rain
+                                                gt_binary = (gt_flat > 0).astype(int)
+                                                orig_binary = (orig_flat > 0).astype(int)
+                                                corr_binary = (corr_flat > 0).astype(int)
+                                                pct_error_cutoff_original = (gt_binary != orig_binary).mean() * 100
+                                                pct_error_cutoff_corrected = (gt_binary != corr_binary).mean() * 100
+                                        else:
+                                            pct_error_cutoff_original = None
+                                            pct_error_cutoff_corrected = None
+                                        
+                                        # Calculate mean bias corrected RMSE if available
+                                        rmse_mean_corrected = None
+                                        pct_improvement_mean_correction = None  # Fixed variable name
+                                        if mean_bias_corrected is not None:
+                                            rmse_mean_corrected = np.sqrt(np.mean((mean_bias_flat - gt_flat)**2))
+                                            pct_improvement_mean_correction = (rmse_original - rmse_mean_corrected) / rmse_original * 100
 
-                                            file_results.append({
-                                                'rmse_original': rmse_original,
-                                                'rmse_corrected': rmse_corrected,
-                                                'rmse_mean_corrected': rmse_mean_corrected,
-                                                'rmse_pct_improvement': rmse_pct_improvement,
-                                                'rmse_pct_improvement_extreme_heat': rmse_pct_improvement_extreme_heat,
-                                                'pct_improvement_mean_correction': pct_improvement_mean_correction,  # Fixed key name
-                                                'mean_original': mean_original,
-                                                'mean_corrected': mean_corrected,
-                                                'pct_error_cutoff_original': pct_error_cutoff_original,
-                                                'pct_error_cutoff_corrected': pct_error_cutoff_corrected,
-                                                'bootstrap_idx': idx if bootstrap else None
-                                            })
-                                            
-                                        except Exception as e:
-                                            print(f"Error processing {file_path}: {e}")
-                                            continue  
-                                    
+                                        file_results.append({
+                                            'rmse_original': rmse_original,
+                                            'rmse_corrected': rmse_corrected,
+                                            'rmse_mean_corrected': rmse_mean_corrected,
+                                            'rmse_pct_improvement': rmse_pct_improvement,
+                                            'rmse_pct_improvement_extreme_heat': rmse_pct_improvement_extreme_heat,
+                                            'pct_improvement_mean_correction': pct_improvement_mean_correction,  # Fixed key name
+                                            'mean_original': mean_original,
+                                            'mean_corrected': mean_corrected,
+                                            'pct_error_cutoff_original': pct_error_cutoff_original,
+                                            'pct_error_cutoff_corrected': pct_error_cutoff_corrected,
+                                            'bootstrap_idx': idx if bootstrap else None
+                                        })
                                     if not file_results:
                                         continue
                                     
@@ -509,12 +517,14 @@ def main():
     loss_function_list = ['mse', 'extreme_heat_loss']
 
     geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"]
-    climate_regions=["arid", "tropical", "temperate"]
+    # regions that require bootstrapping
+    bootstrap_regions=["arid", "tropical", "temperate", "flat", "hilly", "mountainous"]
+    bootstrap_regions=[]
     df = calculate_and_save_statistics(
         dirs=dirs,
         variable_configs=variable_configs,
         geographic_regions=geographic_regions,
-        climate_regions=climate_regions,
+        bootstrap_regions=bootstrap_regions,
         models=["pangu", "ifs", "aifs"],  
         nn_architectures=["mlp", "unet"],  # Can also include "unet"
         subregions=["2x2", "6x6", "10x10"],  # All subregions
