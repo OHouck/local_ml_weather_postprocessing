@@ -480,7 +480,8 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
         file_paths,
         combine="by_coords",
         preprocess=preprocess_fn,
-        decode_timedelta=True
+        decode_timedelta=True,
+        engine="zarr",
     )
 
     return(forecast_ds)

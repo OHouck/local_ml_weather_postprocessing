@@ -1,0 +1,128 @@
+\documentclass[aspectratio=169, xcolor=dvipsnames]{beamer}
+
+\useoutertheme{miniframes}
+\useinnertheme{circles}
+\usepackage{appendixnumberbeamer}
+\setbeamertemplate{footline}[frame number]
+
+\definecolor{main_color}{HTML}{7D9D33}
+\definecolor{secondary_color}{HTML}{CED38C}
+
+\setbeamercolor{palette primary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette secondary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette tertiary}{bg=secondary_color,fg=white}
+\setbeamercolor{palette quaternary}{bg=secondary_color,fg=white}
+\setbeamercolor{structure}{fg=main_color}
+\setbeamercolor{section in toc}{fg=secondary_color}
+\setbeamercolor{subsection in head/foot}{bg=main_color,fg=white}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{caption}
+
+% Set the path for figures
+\graphicspath{{/Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures/}}
+
+\title{Tailoring Machine Learning Weather Predictions for Local Impacts}
+\author{\textbf{Ozma Houck, James Franke}}
+\date{}
+
+\usepackage{bbm}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{What's Been Happening in Weather Forecasting?}
+    \begin{itemize}
+        \item Traditional numerical weather prediction (NWP) models are expensive and slow to run. 
+        %These are physics based models which create predictions by solving the PDE's that govern the atmosphere.
+        \begin{itemize}
+            \item Ex: Best global weather model created by Eurpean Centre for Medium-Range Weather Forecasts (ECMWF) requires a supercomputer.
+        \end{itemize}
+        \pause
+        \item Beginning in 2022, several machine learning (ML) based weather models have been created that have rivaled or exceeded the accuracy of traditional models.
+        \item Critically, these models can be run on a personal laptop. 
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Increased Accessibility of Weather Predictions Opens New Opportunities}
+    \begin{itemize}
+        \item Individual countries and smaller organizations can now run their own weather models instead of relying on large government agencies.
+        \item Global models are more accurate in some areas than others.
+        \item Different groups prioritize accuracy for different weather variables.
+    \end{itemize}
+        
+    \pause
+    \begin{itemize}
+        \item \textbf{The Rub}: All global weather models (NWP or ML) are trained to optimize overall global accuracy.
+        \begin{itemize}
+            \item A temperature error in Greenland is treated the same as a temperature error in Chicago!
+            \item The ML models might be cheap to train, but they are extremely expensive to train!
+        \end{itemize}
+     \item \textbf{Potential Solution}: Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{How to Post-Process Weather Model Outputs? What Outputs Matter Most?}
+
+    \begin{itemize}
+        \item Just as ML tools can be used to post-process models just as they have been used to build them. 
+        \begin{itemize}
+            \item \textbf{Contribution}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle.
+            \item Additionally, show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.
+        \end{itemize}
+    \end{itemize}
+
+\end{frame}
+
+\begin{frame}{Start by Manually Looking at Five Regions of Interest}
+    \begin{itemize}
+        \item Manually choose a few regions with a variety of climates and land terrains. 
+        \item Sample from different climate zones. 
+    \end{itemize}
+    
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.8\linewidth]{finetuning/climate_zones_with_patches.png}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{See Greater Improvements for Longer Lead Times and for Wind Speed}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
+        \caption{2m Temperature: Pangu (ML Model)}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
+        \caption{Wind Speed: Pangu (ML Model)}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Climate Zones}
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png}
+        \caption{2m Temperature: Pangu}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png}
+        \caption{Wind Speed: Pangu}
+    \end{subfigure}
+\end{figure}
+\end{frame}
+
+\end{document}
+
+

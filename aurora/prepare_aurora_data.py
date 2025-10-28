@@ -13,8 +13,6 @@ import cdsapi
 import sys
 import os
 
-
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 
@@ -24,8 +22,8 @@ download_path = dirs["raw"]
 
 # We will download from Google Cloud.
 url = "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr"
-ds = xr.open_zarr(fsspec.get_mapper(url), chunks=None)
-# ds = xr.open_zarr(url, chunks=None, storage_options={"token": "anon"})
+# ds = xr.open_zarr(fsspec.get_mapper(url), chunks=None)
+ds = xr.open_zarr(url, chunks=None, storage_options={"token": "anon"})
 
 # Day to download. This will download all times for that day.
 day = "2022-05-11"

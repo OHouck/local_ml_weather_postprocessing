@@ -34,26 +34,28 @@ echo "Training mode: $TRAIN_MODE"
 #     --growing_season_only \
 #     --alternate_loss_fn="extreme_heat_loss"
 
-# python3 finetuning/finetune.py \
-#     --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-#     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
-#     --training_vars 2m_temperature \
-#     --output_vars 2m_temperature \
-#     --train_start="2018-01-01" --train_end="2021-12-31" \
-#     --test_start="2022-01-01" --test_end="2022-12-31" \
-#     --model_name="pangu" \
-#     --region="india" \
-#     --subregion="6x6" \
-#     --lead_time_hours 120 \
-#     --nn_architecture="mlp" \
-#     --growing_season_only
+python3 finetuning/finetune.py \
+    --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
+    --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+    --training_vars 2m_temperature \
+    --output_vars 2m_temperature \
+    --train_start="2018-01-01" --train_end="2021-12-31" \
+    --test_start="2022-01-01" --test_end="2022-12-31" \
+    --model_name="pangu" \
+    --region="india" \
+    --subregion="6x6" \
+    --lead_time_hours 120 \
+    --nn_architecture="mlp" \
+    --growing_season_only
+
+exit 0 
 
 # regions=("ethiopia" "india" "amazon" "usa_south" "british_columbia")
 # regions=("india" "usa_south")
 # subregions=(6x6)
 
-# regions=("tropical" "temperate" "arid")
-regions=("flat" "mountainous" "hilly")
+regions=("tropical" "temperate" "arid")
+# regions=("flat" "mountainous" "hilly")
 subregions=(2x2)
 
 all_lead_times=(24 120 216)
@@ -127,34 +129,33 @@ for region in "${regions[@]}"; do
             --nn_architecture="mlp" \
 
         # 2m Temp - AIFS
-        # python3 finetuning/finetune.py \
-        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-        #     --training_vars 2m_temperature \
-        #     --output_vars 2m_temperature \
-        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-        #     --train_start="2021-01-01" --train_end="2023-12-31" \
-        #     --test_start="2024-01-01" --test_end="2024-12-31" \
-        #     --model_name="aifs" \
-        #     --region="$region" \
-        #     --subregion="$subregion" \
-        #     --lead_time_hours $all_lead_times_str \
-        #     --nn_architecture="mlp" \
-        #     --growing_season_only \
-        #     --alternate_loss_fn="extreme_heat_loss"
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+            --training_vars 2m_temperature \
+            --output_vars 2m_temperature \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2021-01-01" --train_end="2023-12-31" \
+            --test_start="2024-01-01" --test_end="2024-12-31" \
+            --model_name="aifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --nn_architecture="mlp" \
+            --growing_season_only 
         
-        # # Total Daily Precipitation - AIFS
-        # python3 finetuning/finetune.py \
-        #     --data_dir="/Users/ohouck/globus/forecast_data/raw" \
-        #     --training_vars total_precipitation \
-        #     --output_vars total_precipitation \
-        #     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
-        #     --train_start="2021-01-01" --train_end="2023-12-31" \
-        #     --test_start="2024-01-01" --test_end="2024-12-31" \
-        #     --model_name="aifs" \
-        #     --region="$region" \
-        #     --subregion="$subregion" \
-        #     --lead_time_hours $all_lead_times_str \
-        #     --nn_architecture="unet" \
-        #     --growing_season_only
+        # Total Daily Precipitation - AIFS
+        python3 finetuning/finetune.py \
+            --data_dir="/Users/ohouck/globus/forecast_data/raw" \
+            --training_vars total_precipitation \
+            --output_vars total_precipitation \
+            --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output" \
+            --train_start="2021-01-01" --train_end="2023-12-31" \
+            --test_start="2024-01-01" --test_end="2024-12-31" \
+            --model_name="aifs" \
+            --region="$region" \
+            --subregion="$subregion" \
+            --lead_time_hours $all_lead_times_str \
+            --nn_architecture="mlp" \
+            --growing_season_only
     done
 done
