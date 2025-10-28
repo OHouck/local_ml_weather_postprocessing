@@ -45,7 +45,7 @@ python3 finetuning/finetune.py \
     --region="india" \
     --subregion="6x6" \
     --lead_time_hours 120 \
-    --nn_architecture="mlp" \
+    --nn_architecture="unet" \
     --growing_season_only
 
 exit 0 

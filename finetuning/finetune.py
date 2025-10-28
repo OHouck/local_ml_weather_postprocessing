@@ -690,11 +690,29 @@ def extreme_heat_loss(preds, targets, std_out, mean_out):
     return weighted_mse
 
 
-def train_model(model, train_loader, valid_loader, epochs, lr, device, 
-                weight_decay=0, patience=50, min_delta=9.8e-05, 
-                stats_out=None, alternate_loss_fn=None):
+def train_model(model, train_loader, valid_loader, epochs, lr, device,
+                weight_decay=0, patience=50, min_delta=9.8e-05,
+                stats_out=None, alternate_loss_fn=None, use_cosine_annealing=True,
+                T_0=10, T_mult=2, eta_min=1e-7):
     """
     Train the model over multiple epochs with early stopping.
+
+    Args:
+        model: PyTorch model to train
+        train_loader: DataLoader for training data
+        valid_loader: DataLoader for validation data
+        epochs: Maximum number of epochs to train
+        lr: Initial learning rate
+        device: Device to train on (cpu/cuda)
+        weight_decay: L2 regularization weight
+        patience: Early stopping patience (epochs without improvement)
+        min_delta: Minimum change in validation loss to qualify as improvement
+        stats_out: Statistics for denormalizing outputs (for custom losses)
+        alternate_loss_fn: Name of custom loss function to use
+        use_cosine_annealing: Whether to use cosine annealing LR scheduler
+        T_0: Number of epochs for first restart cycle (cosine annealing)
+        T_mult: Factor to increase T_0 after each restart (cosine annealing)
+        eta_min: Minimum learning rate (cosine annealing)
     """
 
     loss_functions = {
@@ -708,20 +726,26 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     else:
         use_custom_loss = True
         criterion = loss_functions[alternate_loss_fn]
-    
+
     # convert stats to torch tensors to un-normalize if needed
     if alternate_loss_fn in {"extreme_heat_loss"} and stats_out is not None:
         mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
         std_out = torch.from_numpy(stats_out['std']).float().to(device)
 
-    optimizer = optim.Adam(model.parameters(), 
+    optimizer = optim.Adam(model.parameters(),
                            lr=lr,
-                           weight_decay =weight_decay) 
+                           weight_decay=weight_decay)
+
+    # Add cosine annealing with warm restarts scheduler
+    if use_cosine_annealing:
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min
+        )
 
     best_val_loss = float('inf')
     epochs_without_improvement = 0
     best_model_wts = copy.deepcopy(model.state_dict())
-    
+
     # Track training time
     train_start_time = time.time()
 
@@ -771,6 +795,10 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
 
+        # --- learning rate scheduling ---
+        if use_cosine_annealing:
+            scheduler.step()
+
         # --- early stopping check ---
         if val_loss + min_delta < best_val_loss:
             best_val_loss = val_loss
@@ -782,6 +810,12 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 print(f"→ Early stopping at epoch {epoch}. "
                       f"No improvement in {patience} epochs.")
                 break
+
+        # Print progress every 10 epochs (optional, shows LR changes)
+        if epoch % 10 == 0 and use_cosine_annealing:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, "
+                  f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}")
 
     # Calculate training time in minutes
     train_end_time = time.time()
@@ -980,12 +1014,16 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr=4.673747105982307e-05, 
+                                                epochs=1000, lr=4.673747105982307e-05,
                                                 device=device,
                                                 weight_decay=2.8276153644203165e-06,
                                                 patience=70, min_delta=0.000286450816778278,
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
-                                                alternate_loss_fn = args.alternate_loss_fn
+                                                alternate_loss_fn=args.alternate_loss_fn,
+                                                use_cosine_annealing=True,
+                                                T_0=15,  # First restart after 15 epochs
+                                                T_mult=2,  # Double cycle length after each restart
+                                                eta_min=1e-7  # Minimum learning rate
                                                 )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
