@@ -691,7 +691,7 @@ def extreme_heat_loss(preds, targets, std_out, mean_out):
 
 
 def train_model(model, train_loader, valid_loader, epochs, lr, device,
-                weight_decay=0, patience=50, min_delta=9.8e-05,
+                weight_decay=0, patience=0, min_delta=9.8e-05,
                 stats_out=None, alternate_loss_fn=None, use_cosine_annealing=True,
                 T_0=10, T_mult=2, eta_min=1e-7):
     """
@@ -1014,10 +1014,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=1000, lr=4.673747105982307e-05,
+                                                epochs=500, lr=4.673747105982307e-05,
                                                 device=device,
                                                 weight_decay=2.8276153644203165e-06,
-                                                patience=70, min_delta=0.000286450816778278,
+                                                patience=1000, min_delta=0.000286450816778278, # set patience high to disable early stopping
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn=args.alternate_loss_fn,
                                                 use_cosine_annealing=True,

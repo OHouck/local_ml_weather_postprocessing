@@ -1,0 +1,17 @@
+{
+  "hyperparams": {
+    "T_0": 15,
+    "T_mult": 1,
+    "batch_size": 4,
+    "dropout_rate": 0.18787635167180833,
+    "eta_min": 5.11697776324298e-08,
+    "lead_time_embedding_dim": 4,
+    "learning_rate": 0.0002354926674240222,
+    "num_epochs": 100,
+    "unet_hidden_dim": 32,
+    "weight_decay": 1.3124300602852741e-05
+  },
+  "loss": 10000000000.0,
+  "region_losses": {},
+  "architecture": "unet"
+}

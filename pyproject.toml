@@ -54,6 +54,7 @@ dependencies = [
         "h5py",
         "hf-xet",
         "huggingface-hub",
+        "hyperopt>=0.2.7",
         "idna",
         "importlib-metadata",
         "isodate",
@@ -115,8 +116,8 @@ dependencies = [
         "toolz",
         "torch",
         "torchvision",
-        "xarray",
-        "zarr<3",
+        "xarray>2025",
+        "zarr>3",
 ]
 
 [project.optional-dependencies]

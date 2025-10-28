@@ -1,6 +1,5 @@
 {
-  "architecture": "mlp",
-  "best_hyperparams": {
+  "hyperparams": {
     "T_0": 10,
     "T_mult": 1,
     "batch_size": 128,
@@ -13,7 +12,7 @@
     "num_epochs": 500,
     "weight_decay": 0.00158659594857339
   },
-  "best_loss": 10000000000.0,
-  "best_region_losses": {},
-  "n_evaluations": 1
+  "loss": 10000000000.0,
+  "region_losses": {},
+  "architecture": "mlp"
 }

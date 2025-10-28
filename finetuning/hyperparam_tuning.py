@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-filename: hyperparam_tuning_enhanced.py
+filename: hyperparam_tuning.py
 Author: Ozma Houck
-Date created: 07/17/2025 
+Date created: 07/17/2025
+Date modified: 10/28/2025
 
 Enhanced hyperparameter optimization module for weather forecast fine-tuning using hyperopt.
-This module provides Bayesian optimization for both MLP and UNet hyperparameters across 
+This module provides Bayesian optimization for both MLP and UNet hyperparameters across
 multiple regions and lead time groups.
+
+Updates (10/28/2025):
+- Replaced early stopping with cosine annealing with warm restarts
+- Added hyperparameters for cosine annealing: T_0, T_mult, eta_min, num_epochs
+- Replaced month embeddings with day-of-year sin/cos features
+- Removed modified model classes, now imports from finetune.py
 """
 
 import os
@@ -14,7 +21,6 @@ import sys
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import hyperopt
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from hyperopt.pyll import scope
@@ -24,11 +30,16 @@ import copy
 from typing import Dict, List, Tuple, Any, Union
 import pickle
 
+# Import model classes and utilities from finetune.py
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from finetuning.finetune import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid
+from helper_funcs import setup_directories
+
 
 def create_mlp_search_space():
     """
     Define the hyperparameter search space for MLP architecture.
-    
+
     Returns:
         dict: Search space definition for MLP hyperopt
     """
@@ -36,476 +47,266 @@ def create_mlp_search_space():
         # Model architecture parameters
         'mlp_hidden_dim': hp.choice('mlp_hidden_dim', [64, 128, 256, 512, 1024]),
         'mlp_layers': hp.choice('mlp_layers', [2, 3, 4, 5, 6, 7]),
-        
+
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-6), high=np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [16, 32, 64, 128]),
-        
+        'num_epochs': hp.choice('num_epochs', [100, 200, 300, 400, 500]),
+
+        # Cosine annealing parameters
+        'T_0': hp.choice('T_0', [5, 10, 15, 20, 30]),
+        'T_mult': hp.choice('T_mult', [1, 2, 3]),
+        'eta_min': hp.loguniform('eta_min', low=np.log(1e-8), high=np.log(1e-5)),
+
         # Embedding dimensions
         'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
-        'month_embedding_dim': hp.choice('month_embedding_dim', [4, 8, 16, 32]),
-        
+
         # Regularization
         'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.5),
-        'weight_decay': hp.loguniform('weight_decay', low=np.log(1e-6), high=np.log(1e-2)),
-        
-        # Early stopping parameters
-        'patience': hp.choice('patience', [20, 30, 50, 70]),
-        'min_delta': hp.loguniform('min_delta', low=np.log(1e-6), high=np.log(1e-3))
+        'weight_decay': hp.loguniform('weight_decay', low=np.log(1e-6), high=np.log(1e-2))
     }
-    
+
     return search_space
 
 
 def create_unet_search_space():
     """
     Define the hyperparameter search space for UNet architecture.
-    
+
     Returns:
         dict: Search space definition for UNet hyperopt
     """
     search_space = {
         # UNet architecture parameters
-        'unet_init_features': hp.choice('unet_init_features', [16, 32, 64, 128]),
-        'unet_depth': hp.choice('unet_depth', [3, 4, 5]),
-        'unet_kernel_size': hp.choice('unet_kernel_size', [3, 5, 7]),
-        'unet_batch_norm': hp.choice('unet_batch_norm', [True, False]),
-        'unet_upsampling_mode': hp.choice('unet_upsampling_mode', ['bilinear', 'nearest']),
-        
+        'unet_hidden_dim': hp.choice('unet_hidden_dim', [16, 32, 64, 128]),
+
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-6), high=np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [4, 8, 16, 32]),  # Smaller batches for UNet due to memory
-        
+        'num_epochs': hp.choice('num_epochs', [100, 200, 300, 400, 500]),
+
+        # Cosine annealing parameters
+        'T_0': hp.choice('T_0', [5, 10, 15, 20, 30]),
+        'T_mult': hp.choice('T_mult', [1, 2, 3]),
+        'eta_min': hp.loguniform('eta_min', low=np.log(1e-8), high=np.log(1e-5)),
+
         # Embedding dimensions
         'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
-        'month_embedding_dim': hp.choice('month_embedding_dim', [4, 8, 16, 32]),
-        
+
         # Regularization
         'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.3),  # Generally lower for UNet
-        'weight_decay': hp.loguniform('weight_decay', low=np.log(1e-6), high=np.log(1e-2)),
-        
-        # Early stopping parameters
-        'patience': hp.choice('patience', [20, 30, 50, 70]),
-        'min_delta': hp.loguniform('min_delta', low=np.log(1e-6), high=np.log(1e-3))
+        'weight_decay': hp.loguniform('weight_decay', low=np.log(1e-6), high=np.log(1e-2))
     }
-    
+
     return search_space
-
-
-class ModifiedSimpleMLP(nn.Module):
-    """
-    Modified SimpleMLP with dropout for hyperparameter optimization.
-    """
-    def __init__(self, input_dim, hidden_dim=128, output_dim=1, num_hidden_layers=3, 
-                 n_lead_times=1, lead_time_embedding_dim=16,
-                 month_embedding_dim=16, dropout_rate=0.0):
-        super(ModifiedSimpleMLP, self).__init__()
-        
-        # Lead time embedding
-        self.n_lead_times = n_lead_times
-        self.lead_time_embedding = None
-        
-        # Month embedding (12 months)
-        self.month_embedding = nn.Embedding(12, month_embedding_dim)
-        
-        # Calculate actual input dimension
-        actual_input_dim = input_dim + month_embedding_dim
-        
-        if n_lead_times > 1:
-            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            actual_input_dim += lead_time_embedding_dim
-            
-        # Build network with dropout
-        layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
-        if dropout_rate > 0:
-            layers.append(nn.Dropout(dropout_rate))
-            
-        for _ in range(num_hidden_layers - 1):
-            layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
-            if dropout_rate > 0:
-                layers.append(nn.Dropout(dropout_rate))
-                
-        layers.append(nn.Linear(hidden_dim, output_dim))
-        self.net = nn.Sequential(*layers)
-        
-    def forward(self, x, lead_time_idx=None, month_idx=None):
-        # Always add month embedding
-        if month_idx is not None:
-            month_emb = self.month_embedding(month_idx)
-            x = torch.cat([x, month_emb], dim=-1)
-            
-        # Add lead time embedding if available
-        if self.lead_time_embedding is not None and lead_time_idx is not None:
-            lead_time_emb = self.lead_time_embedding(lead_time_idx)
-            x = torch.cat([x, lead_time_emb], dim=-1)
-            
-        return self.net(x)
-
-
-class UNetBlock(nn.Module):
-    """Basic UNet building block with optional batch normalization and dropout."""
-    
-    def __init__(self, in_channels, out_channels, kernel_size=3, use_batch_norm=True, dropout_rate=0.0):
-        super(UNetBlock, self).__init__()
-        
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size//2)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, padding=kernel_size//2)
-        
-        self.use_batch_norm = use_batch_norm
-        if use_batch_norm:
-            self.bn1 = nn.BatchNorm2d(out_channels)
-            self.bn2 = nn.BatchNorm2d(out_channels)
-        
-        self.dropout = nn.Dropout2d(dropout_rate) if dropout_rate > 0 else None
-        
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        if self.use_batch_norm:
-            x = self.bn1(x)
-        if self.dropout is not None:
-            x = self.dropout(x)
-            
-        x = F.relu(self.conv2(x))
-        if self.use_batch_norm:
-            x = self.bn2(x)
-        if self.dropout is not None:
-            x = self.dropout(x)
-            
-        return x
-
-
-class ModifiedUNet(nn.Module):
-    """
-    Modified UNet architecture for weather forecasting with hyperparameter optimization support.
-    """
-    
-    def __init__(self, input_channels, output_channels, init_features=64, depth=4,
-                 kernel_size=3, use_batch_norm=True, dropout_rate=0.1,
-                 upsampling_mode='bilinear', n_lead_times=1, 
-                 lead_time_embedding_dim=16, month_embedding_dim=16):
-        super(ModifiedUNet, self).__init__()
-        
-        self.depth = depth
-        self.upsampling_mode = upsampling_mode
-        
-        # Embedding layers
-        self.n_lead_times = n_lead_times
-        self.lead_time_embedding = None
-        self.month_embedding = nn.Embedding(12, month_embedding_dim)
-        
-        # Calculate actual input channels including embeddings
-        actual_input_channels = input_channels + month_embedding_dim
-        
-        if n_lead_times > 1:
-            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            actual_input_channels += lead_time_embedding_dim
-        
-        # Encoder path
-        self.encoder_blocks = nn.ModuleList()
-        self.pool = nn.MaxPool2d(2, 2)
-        
-        features = init_features
-        in_channels = actual_input_channels
-        
-        for i in range(depth):
-            self.encoder_blocks.append(
-                UNetBlock(in_channels, features, kernel_size, use_batch_norm, dropout_rate)
-            )
-            in_channels = features
-            features *= 2
-        
-        # Bottleneck
-        self.bottleneck = UNetBlock(in_channels, features, kernel_size, use_batch_norm, dropout_rate)
-        
-        # Decoder path
-        self.decoder_blocks = nn.ModuleList()
-        self.upconv_blocks = nn.ModuleList()
-        
-        for i in range(depth):
-            self.upconv_blocks.append(
-                nn.ConvTranspose2d(features, features // 2, 2, stride=2)
-            )
-            self.decoder_blocks.append(
-                UNetBlock(features, features // 2, kernel_size, use_batch_norm, dropout_rate)
-            )
-            features //= 2
-        
-        # Final output layer
-        self.final_conv = nn.Conv2d(features, output_channels, 1)
-        
-    def forward(self, x, lead_time_idx=None, month_idx=None):
-        batch_size, channels, height, width = x.shape
-        
-        # Add embeddings to input
-        if month_idx is not None:
-            month_emb = self.month_embedding(month_idx)  # [batch_size, month_embedding_dim]
-            month_emb = month_emb.unsqueeze(-1).unsqueeze(-1)  # [batch_size, month_embedding_dim, 1, 1]
-            month_emb = month_emb.expand(-1, -1, height, width)  # [batch_size, month_embedding_dim, height, width]
-            x = torch.cat([x, month_emb], dim=1)
-            
-        if self.lead_time_embedding is not None and lead_time_idx is not None:
-            lead_time_emb = self.lead_time_embedding(lead_time_idx)  # [batch_size, lead_time_embedding_dim]
-            lead_time_emb = lead_time_emb.unsqueeze(-1).unsqueeze(-1)  # [batch_size, lead_time_embedding_dim, 1, 1]
-            lead_time_emb = lead_time_emb.expand(-1, -1, height, width)  # [batch_size, lead_time_embedding_dim, height, width]
-            x = torch.cat([x, lead_time_emb], dim=1)
-        
-        # Encoder path
-        encoder_features = []
-        for i, encoder_block in enumerate(self.encoder_blocks):
-            x = encoder_block(x)
-            encoder_features.append(x)
-            if i < len(self.encoder_blocks) - 1:  # Don't pool after last encoder block
-                x = self.pool(x)
-        
-        # Bottleneck
-        x = self.bottleneck(x)
-        
-        # Decoder path
-        for i, (upconv, decoder_block) in enumerate(zip(self.upconv_blocks, self.decoder_blocks)):
-            x = upconv(x)
-            
-            # Get corresponding encoder feature
-            encoder_feature = encoder_features[-(i+1)]
-            
-            # Handle size mismatch due to pooling/upsampling
-            if x.shape != encoder_feature.shape:
-                x = F.interpolate(x, size=encoder_feature.shape[2:], mode=self.upsampling_mode, align_corners=False)
-            
-            # Concatenate skip connection
-            x = torch.cat([x, encoder_feature], dim=1)
-            x = decoder_block(x)
-        
-        # Final output
-        x = self.final_conv(x)
-        
-        return x
 
 
 def train_model_with_hyperparams(model, train_loader, valid_loader, hyperparams, device):
     """
-    Train model with specific hyperparameters.
-    
+    Train model with specific hyperparameters using cosine annealing.
+
     Args:
         model: The neural network model
         train_loader: Training data loader
         valid_loader: Validation data loader
         hyperparams: Dictionary of hyperparameters
         device: torch device
-        
+
     Returns:
         tuple: (trained_model, best_val_loss, training_time_minutes)
     """
     import time
     import torch.optim as optim
-    
+
     criterion = nn.MSELoss()
     optimizer = optim.Adam(
-        model.parameters(), 
+        model.parameters(),
         lr=hyperparams['learning_rate'],
         weight_decay=hyperparams['weight_decay']
     )
-    
+
+    # Add cosine annealing with warm restarts scheduler
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0=hyperparams['T_0'],
+        T_mult=hyperparams['T_mult'],
+        eta_min=hyperparams['eta_min']
+    )
+
     best_val_loss = float('inf')
-    epochs_without_improvement = 0
     best_model_wts = copy.deepcopy(model.state_dict())
-    
+
     train_start_time = time.time()
-    max_epochs = 300  # Maximum epochs to prevent infinite training
-    
-    for epoch in range(1, max_epochs + 1):
+    num_epochs = hyperparams['num_epochs']
+
+    for epoch in range(1, num_epochs + 1):
         # Training step
         model.train()
         train_loss = 0.0
-        for x_batch, y_batch, lead_time_batch, month_batch in train_loader:
+        for x_batch, y_batch, lead_time_batch, doy_batch in train_loader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-            lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
-            
+            lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+
             optimizer.zero_grad()
-            preds = model(x_batch, lead_time_batch, month_batch)
+            pred_error = model(x_batch, lead_time_batch, doy_batch)
+            preds = x_batch + pred_error
             loss = criterion(preds, y_batch)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * x_batch.size(0)
         train_loss /= len(train_loader.dataset)
-        
+
         # Validation step
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_batch, y_batch, lead_time_batch, month_batch in valid_loader:
+            for x_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-                lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
-                
-                preds = model(x_batch, lead_time_batch, month_batch)
+                lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+
+                pred_error = model(x_batch, lead_time_batch, doy_batch)
+                preds = x_batch + pred_error
                 loss = criterion(preds, y_batch)
                 val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
-        
-        # Early stopping check
-        if val_loss + hyperparams['min_delta'] < best_val_loss:
+
+        # Update learning rate
+        scheduler.step()
+
+        # Track best model (no early stopping, but still save best)
+        if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_model_wts = copy.deepcopy(model.state_dict())
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= hyperparams['patience']:
-                break
-    
+
     train_end_time = time.time()
     training_time_minutes = (train_end_time - train_start_time) / 60.0
-    
+
     # Load best weights
     model.load_state_dict(best_model_wts)
     return model, best_val_loss, training_time_minutes
 
 
-def evaluate_hyperparameters(hyperparams: Dict[str, Any], 
-                           config_list: List[Dict[str, Any]], 
+def evaluate_hyperparameters(hyperparams: Dict[str, Any],
+                           config_list: List[Dict[str, Any]],
                            device: torch.device,
                            architecture: str = None,
                            verbose: bool = False) -> Dict[str, Any]:
     """
     Evaluate a set of hyperparameters across multiple regions and lead times.
-    
+
     Args:
         hyperparams: Dictionary of hyperparameters to evaluate
         config_list: List of region configurations
         device: torch device
         architecture: Force specific architecture ('mlp' or 'unet'), overrides hyperparams
         verbose: Whether to print progress
-        
+
     Returns:
         dict: {'loss': weighted_average_loss, 'status': STATUS_OK, 'region_losses': {...}}
     """
-    # Import from main module 
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from finetune import load_forecasts, create_dataloader, get_region_grid
-    
     # Determine architecture
     if architecture is not None:
         arch = architecture
     else:
         arch = hyperparams.get('architecture', 'mlp')
-    
+
     total_weighted_loss = 0.0
     total_weight = 0.0
     region_losses = {}
-    
+
     for config in config_list:
         args = config['args']
         data_dir = config['data_dir']
         weight = config.get('weight', 1.0)
-        
+
         try:
             # Get region grid
             if hasattr(args, 'lat_vals') and hasattr(args, 'lon_vals'):
                 lat_vals, lon_vals = args.lat_vals, args.lon_vals
             else:
                 lat_vals, lon_vals = get_region_grid(args)
-            
-            # Load training data
-            (fc, fc_output, obs, lead_time_indices, month_indices, train_times, 
+
+            # Load training data (now returns day_of_year_features instead of month_indices)
+            (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
              lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
                 load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
-            
+
             # Normalize data
             stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
             stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
             fc_norm = (fc - stats_train['mean']) / stats_train['std']
             obs_norm = (obs - stats_out['mean']) / stats_out['std']
-            
+
             # Split train/validation
             n_train = len(fc)
             idx = np.arange(n_train)
             np.random.shuffle(idx)
             split = int(0.8 * n_train)
             t_idx, v_idx = idx[:split], idx[split:]
-            
+
             # Adjust batch size based on architecture
             batch_size = hyperparams['batch_size']
             if arch == 'unet' and batch_size > 32:
                 batch_size = min(batch_size, 16)  # Reduce for UNet due to memory constraints
-            
+
             # Create data loaders
+            train_loader = create_dataloader(
+                fc_norm[t_idx], obs_norm[t_idx],
+                lead_time_indices[t_idx], day_of_year_features[t_idx],
+                batch_size=batch_size
+            )
+            val_loader = create_dataloader(
+                fc_norm[v_idx], obs_norm[v_idx],
+                lead_time_indices[v_idx], day_of_year_features[v_idx],
+                batch_size=batch_size
+            )
+
+            # Initialize model
+            input_dim = n_training_vars * n_lat * n_lon
+            output_dim = n_output_vars * n_lat * n_lon
+            n_lead_times = len(args.lead_time_hours)
+
             if arch == 'mlp':
-                # For MLP, flatten spatial dimensions
-                train_loader = create_dataloader(
-                    fc_norm[t_idx], obs_norm[t_idx], 
-                    lead_time_indices[t_idx], month_indices[t_idx], 
-                    batch_size=batch_size
-                )
-                val_loader = create_dataloader(
-                    fc_norm[v_idx], obs_norm[v_idx], 
-                    lead_time_indices[v_idx], month_indices[v_idx], 
-                    batch_size=batch_size
-                )
-                
-                # Initialize MLP model
-                input_dim = n_training_vars * n_lat * n_lon
-                output_dim = n_output_vars * n_lat * n_lon
-                n_lead_times = len(args.lead_time_hours)
-                
-                model = ModifiedSimpleMLP(
+                model = SimpleMLP(
                     input_dim=input_dim,
                     hidden_dim=hyperparams['mlp_hidden_dim'],
                     output_dim=output_dim,
                     num_hidden_layers=hyperparams['mlp_layers'],
                     n_lead_times=n_lead_times,
                     lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
-                    month_embedding_dim=hyperparams['month_embedding_dim'],
                     dropout_rate=hyperparams['dropout_rate']
                 ).to(device)
-                
+
             elif arch == 'unet':
-                # For UNet, keep spatial structure but need different data loader
-                # This would need to be implemented based on your UNet data loader
-                # For now, assuming similar interface to MLP loader
-                train_loader = create_dataloader(
-                    fc_norm[t_idx], obs_norm[t_idx], 
-                    lead_time_indices[t_idx], month_indices[t_idx], 
-                    batch_size=batch_size
-                )
-                val_loader = create_dataloader(
-                    fc_norm[v_idx], obs_norm[v_idx], 
-                    lead_time_indices[v_idx], month_indices[v_idx], 
-                    batch_size=batch_size
-                )
-                
-                # Initialize UNet model
-                input_channels = n_training_vars
-                output_channels = n_output_vars
-                n_lead_times = len(args.lead_time_hours)
-                
-                model = ModifiedUNet(
-                    input_channels=input_channels,
-                    output_channels=output_channels,
-                    init_features=hyperparams['unet_init_features'],
-                    depth=hyperparams['unet_depth'],
-                    kernel_size=hyperparams['unet_kernel_size'],
-                    use_batch_norm=hyperparams['unet_batch_norm'],
-                    dropout_rate=hyperparams['dropout_rate'],
-                    upsampling_mode=hyperparams['unet_upsampling_mode'],
+                model = UNet(
+                    input_dim=input_dim,
+                    hidden_dim=hyperparams['unet_hidden_dim'],
+                    output_dim=output_dim,
+                    n_lat=n_lat,
+                    n_lon=n_lon,
+                    n_input_vars=n_training_vars,
+                    n_output_vars=n_output_vars,
                     n_lead_times=n_lead_times,
                     lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
-                    month_embedding_dim=hyperparams['month_embedding_dim']
+                    dropout_rate=hyperparams['dropout_rate']
                 ).to(device)
-            
+
             else:
                 raise ValueError(f"Unknown architecture: {arch}")
-            
+
             # Train model
             model, val_loss, training_time = train_model_with_hyperparams(
                 model, train_loader, val_loader, hyperparams, device
             )
-            
+
             # Store results
             region_key = f"{args.region}_{args.subregion}_{'_'.join(map(str, args.lead_time_hours))}h_{arch}"
             region_losses[region_key] = val_loss
-            
+
             # Add to weighted average
             total_weighted_loss += val_loss * weight
             total_weight += weight
-            
+
             if verbose:
                 print(f"Region {region_key}: val_loss = {val_loss:.6f}")
                 
@@ -711,6 +512,7 @@ if __name__ == "__main__":
         test_end="2022-12-31",
         region = 'india',
         subregion = '6x6',
+        ground_truth_source = 'era5',
         lead_time_hours = [24, 120, 216],
         growing_season_only = True
     )
@@ -724,11 +526,15 @@ if __name__ == "__main__":
         test_end="2024-12-31",
         region = 'india',
         subregion = '6x6',
+        ground_truth_source = 'era5',
         lead_time_hours = [24, 120, 216],
         growing_season_only = True
     )
 
-    data_dir = "/Users/ohouck/globus/forecast_data/"
+    dirs = setup_directories()
+
+    # where raw data is stored
+    data_dir = dirs['raw']
     config_list = [
     {
         'args': pangu_args,
@@ -746,23 +552,23 @@ if __name__ == "__main__":
                           'mps' if torch.backends.mps.is_available() else
                           'cpu')
 
-    # mlp_results = optimize_hyperparameters(
-    #     config_list=config_list,
-    #     architecture="mlp",
-    #     max_evals=100,
-    #     output_dir="hyperopt_results_mlp",
-    #     device=device,
-    #     random_seed=42
-    # )
-    # print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
-
-    unet_results = optimize_hyperparameters(
+    mlp_results = optimize_hyperparameters(
         config_list=config_list,
-        architecture="unet",
-        max_evals=100,
-        output_dir="hyperopt_results_unet",
+        architecture="mlp",
+        max_evals=1,
+        output_dir="hyperopt_results_mlp",
         device=device,
         random_seed=42
     )
-    print(f"UNet best loss: {unet_results['best_loss']:.6f}")
+    print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
+
+    # unet_results = optimize_hyperparameters(
+    #     config_list=config_list,
+    #     architecture="unet",
+    #     max_evals=1,
+    #     output_dir="hyperopt_results_unet",
+    #     device=device,
+    #     random_seed=42
+    # )
+    # print(f"UNet best loss: {unet_results['best_loss']:.6f}")
     
