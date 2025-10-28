@@ -68,25 +68,25 @@ TOPO_ZONE_MAP = {
 # Simple MLP definition with lead time and month encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2, 
+    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
                 n_lead_times=1, lead_time_embedding_dim=8, month_embedding_dim=16,
                 dropout_rate=0.0):
         super(SimpleMLP, self).__init__()
-        
+
         # Lead time embedding
         self.n_lead_times = n_lead_times
         self.lead_time_embedding = None
-        
-        # Month embedding (12 months)
-        self.month_embedding = nn.Embedding(12, month_embedding_dim)
-        
+
+        # Day-of-year features (sin/cos) - 2 features instead of month embedding
+        # month_embedding_dim parameter kept for backward compatibility but not used
+
         # Calculate actual input dimension
-        actual_input_dim = input_dim + month_embedding_dim
-        
+        actual_input_dim = input_dim + 2  # +2 for sin and cos of day of year
+
         if n_lead_times > 1:
             self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
             actual_input_dim += lead_time_embedding_dim
-            
+
         layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
 
         if dropout_rate > 0:
@@ -99,18 +99,17 @@ class SimpleMLP(nn.Module):
                 layers.append(nn.Dropout(dropout_rate))
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.net = nn.Sequential(*layers)
-        
-    def forward(self, x, lead_time_idx=None, month_idx=None):
-        # Always add month embedding
-        if month_idx is not None:
-            month_emb = self.month_embedding(month_idx)
-            x = torch.cat([x, month_emb], dim=-1)
-            
+
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
+        # Add day-of-year sin/cos features
+        if day_of_year_features is not None:
+            x = torch.cat([x, day_of_year_features], dim=-1)
+
         # Add lead time embedding if available
         if self.lead_time_embedding is not None and lead_time_idx is not None:
             lead_time_emb = self.lead_time_embedding(lead_time_idx)
             x = torch.cat([x, lead_time_emb], dim=-1)
-            
+
         return self.net(x)
 
 # ------------------------------
@@ -128,7 +127,7 @@ class UNet(nn.Module):
                  dropout_rate=0.1):
         """
         Initialize U-Net with FiLM conditioning.
-        
+
         Args:
             input_dim: Flattened input dimension (for compatibility)
             hidden_dim: Base number of channels in first encoder layer
@@ -137,36 +136,35 @@ class UNet(nn.Module):
             n_input_vars, n_output_vars: Number of input/output variables
             n_lead_times: Number of distinct lead times
             lead_time_embedding_dim: Dimension of lead time embedding
-            month_embedding_dim: Dimension of month embedding
+            month_embedding_dim: Kept for backward compatibility but not used (now using day-of-year sin/cos)
             dropout_rate: Dropout rate for conv blocks
         """
         super(UNet, self).__init__()
-        
+
         # Store dimensions
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
         self.n_lead_times = n_lead_times
         self.dropout_rate = dropout_rate
-        
+
         # Spatial dimensions
         if n_lat is None or n_lon is None or n_input_vars is None:
             raise ValueError("Spatial dimensions and n_input_vars must be provided")
-            
+
         self.height = n_lat
         self.width = n_lon
         self.n_input_vars = n_input_vars
         self.n_output_vars = n_output_vars if n_output_vars is not None else 1
-        
+
         # Create embeddings
         self.lead_time_embedding = None
         if n_lead_times > 1:
             self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            
-        self.month_embedding = nn.Embedding(12, month_embedding_dim)
-        
-        # Calculate total embedding dimension
-        self.total_embedding_dim = month_embedding_dim
+
+        # Calculate total conditioning dimension
+        # Day-of-year features are 2D (sin and cos)
+        self.total_embedding_dim = 2  # sin and cos of day of year
         if n_lead_times > 1:
             self.total_embedding_dim += lead_time_embedding_dim
         
@@ -289,34 +287,33 @@ class UNet(nn.Module):
         # Apply affine transformation
         return x * (1 + scale) + shift
     
-    def forward(self, x, lead_time_idx=None, month_idx=None):
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
         """
         Forward pass through U-Net with FiLM conditioning.
-        
+
         Args:
             x: Input tensor [batch_size, input_dim]
             lead_time_idx: Lead time indices [batch_size]
-            month_idx: Month indices [batch_size]
-        
+            day_of_year_features: Day-of-year sin/cos features [batch_size, 2]
+
         Returns:
             Output tensor [batch_size, output_dim]
         """
         batch_size = x.shape[0]
-        
+
         # Reshape input to spatial format
         x = x.view(batch_size, self.n_input_vars, self.height, self.width)
-        
-        # Prepare conditioning vector from embeddings
+
+        # Prepare conditioning vector from features and embeddings
         conditioning_vectors = []
-        
-        if month_idx is not None:
-            month_emb = self.month_embedding(month_idx)
-            conditioning_vectors.append(month_emb)
-        
+
+        if day_of_year_features is not None:
+            conditioning_vectors.append(day_of_year_features)
+
         if self.lead_time_embedding is not None and lead_time_idx is not None:
             lead_time_emb = self.lead_time_embedding(lead_time_idx)
             conditioning_vectors.append(lead_time_emb)
-        
+
         # Concatenate conditioning vectors
         if conditioning_vectors:
             conditioning = torch.cat(conditioning_vectors, dim=1)
@@ -586,21 +583,27 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     lead_time_indices = np.tile(
         np.arange(n_lead_times), n_time
     )
-    
-    # Create month indices
-    month_values = pd.DatetimeIndex(common_times).month.to_numpy() - 1  
-    month_indices = np.repeat(month_values, n_lead_times)
-    
+
+    # Create day-of-year sin/cos features
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
+    # Convert to radians: 2*pi*d/365
+    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
+    day_of_year_sin = np.sin(day_of_year_rad)
+    day_of_year_cos = np.cos(day_of_year_rad)
+    # Stack to create [n_time, 2] array, then repeat for each lead time
+    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
+    day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
+
     # Create time array
     all_times = np.repeat(common_times, n_lead_times)
-    
-    # Remove any samples with NaN 
+
+    # Remove any samples with NaN
     valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
     fc_combined = fc_combined[valid_mask]
     fc_output_combined = fc_output_combined[valid_mask]
     obs_combined = obs_combined[valid_mask]
     lead_time_indices_combined = lead_time_indices[valid_mask]
-    month_indices_combined = month_indices[valid_mask]
+    day_of_year_features_combined = day_of_year_features[valid_mask]
     all_times = all_times[valid_mask]
 
     # Calculate mean forecast error
@@ -626,22 +629,22 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
-    # each sample represents one forecast for one specific lead time and time combination 
-    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined, 
-            month_indices_combined, all_times, forecast_ds.latitude.values, 
-            forecast_ds.longitude.values, n_lat, n_lon, 
+    # each sample represents one forecast for one specific lead time and time combination
+    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
+            day_of_year_features_combined, all_times, forecast_ds.latitude.values,
+            forecast_ds.longitude.values, n_lat, n_lon,
             n_training_vars, n_output_vars, training_mean_forecast_error)
 
 
-def create_dataloader(forecast_data, obs_data, lead_time_indices, month_indices, batch_size):
+def create_dataloader(forecast_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
     """
-    Create a PyTorch DataLoader from forecast, observation data, lead time indices, and month indices.
+    Create a PyTorch DataLoader from forecast, observation data, lead time indices, and day-of-year features.
     """
     dataset = torch.utils.data.TensorDataset(
         torch.from_numpy(forecast_data).float(),
         torch.from_numpy(obs_data).float(),
         torch.from_numpy(lead_time_indices).long(),
-        torch.from_numpy(month_indices).long()
+        torch.from_numpy(day_of_year_features).float()
     )
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
@@ -726,15 +729,15 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         # --- training step ---
         model.train()
         train_loss = 0.0
-        for x_batch, y_batch, lead_time_batch, month_batch in train_loader:
+        for x_batch, y_batch, lead_time_batch, doy_batch in train_loader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-            lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
-            
+            lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+
             optimizer.zero_grad()
-            
-            # Pass lead time and month indices to model
+
+            # Pass lead time and day-of-year features to model
             # Model predicts the error, so add to input forecast
-            pred_error = model(x_batch, lead_time_batch, month_batch) 
+            pred_error = model(x_batch, lead_time_batch, doy_batch)
 
             # some custom loss functions need un-normalized values
             if alternate_loss_fn in {"extreme_heat_loss"}:
@@ -753,16 +756,16 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_batch, y_batch, lead_time_batch, month_batch in valid_loader:
+            for x_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-                lead_time_batch, month_batch = lead_time_batch.to(device), month_batch.to(device)
-                
-                pred_error = model(x_batch, lead_time_batch, month_batch)
+                lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+
+                pred_error = model(x_batch, lead_time_batch, doy_batch)
 
                 if alternate_loss_fn in {"extreme_heat_loss"}:
                     loss = criterion(pred_error, y_batch, std_out, mean_out)
                 else:
-                    preds = x_batch + pred_error  
+                    preds = x_batch + pred_error
                     loss = criterion(preds, y_batch)
 
                 val_loss += loss.item() * x_batch.size(0)
@@ -789,27 +792,27 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     return model, training_time_minutes
 
 
-def apply_correction(model, forecast_data, lead_time_indices, month_indices, device):
+def apply_correction(model, forecast_data, lead_time_indices, day_of_year_features, device):
     """
-    Apply the correction to forecast data with lead times and months.
+    Apply the correction to forecast data with lead times and day-of-year features.
     """
     model.eval()
     corrected_all = []
-    
+
     # Process in batches to handle memory efficiently
-    batch_size = 128 
+    batch_size = 128
     n_samples = forecast_data.shape[0]
-    
+
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             end_idx = min(i + batch_size, n_samples)
             x_batch = torch.from_numpy(forecast_data[i:end_idx]).float().to(device)
             lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
-            month_batch = torch.from_numpy(month_indices[i:end_idx]).long().to(device)
-            predicted_error = model(x_batch, lt_batch, month_batch).cpu().numpy()
-            corrected_batch = x_batch.cpu().numpy() + predicted_error 
+            doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device)
+            predicted_error = model(x_batch, lt_batch, doy_batch).cpu().numpy()
+            corrected_batch = x_batch.cpu().numpy() + predicted_error
             corrected_all.append(corrected_batch)
-    
+
     return np.concatenate(corrected_all, axis=0)
 
 
@@ -922,11 +925,11 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     start_time = time.time()
 
     # Load training data
-    (fc, fc_output, obs, lead_time_indices, month_indices, train_times, lat_u, lon_u, 
+    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
      n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, 
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
                        patch_num=patch_num)
-    
+
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
 
@@ -937,7 +940,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
 
     # normalize target observations using forecasts to be corrected
-    obs_norm = (obs - stats_out['mean']) / stats_out['std'] 
+    obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
     # Split train/validation
     n_train = len(fc)
@@ -945,12 +948,12 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     np.random.shuffle(idx)
     split = int(0.8 * n_train)
     t_idx, v_idx = idx[:split], idx[split:]
-    
-    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx], 
-                                    lead_time_indices[t_idx], month_indices[t_idx], 
+
+    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx],
+                                    lead_time_indices[t_idx], day_of_year_features[t_idx],
                                     batch_size=128)
-    val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx], 
-                                  lead_time_indices[v_idx], month_indices[v_idx], 
+    val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx],
+                                  lead_time_indices[v_idx], day_of_year_features[v_idx],
                                   batch_size=64)
 
     # Initialize model
@@ -988,14 +991,14 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     load_time = time.time()
     # Load test data
-    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_month_indices,
+    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
      test_times, _, _, _, _, _, _, _) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
 
     # Apply correction
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
-    corrected = apply_correction(model, test_fc_norm, test_lead_time_indices, 
-                                test_month_indices, device)
+    corrected = apply_correction(model, test_fc_norm, test_lead_time_indices,
+                                test_day_of_year_features, device)
     corrected = (corrected * stats_out['std']) + stats_out['mean']
 
     # Calculate MSE per lead time and month
