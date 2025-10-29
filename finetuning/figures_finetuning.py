@@ -859,6 +859,7 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
     Common data preparation for all plot types.
     """
     df = pd.read_csv(csv_path)
+
     
     # Filter by subregion
     df = df[df['subregion'] == subregion]
@@ -879,10 +880,9 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
     else:
         raise ValueError(f"Unknown loss_type: {loss_type}")
 
-    
     # Filter by architectures
     df = df[df['architecture'].isin(nn_architectures)]
-    # print number of rows
+
     
     # Filter by model
     df = df[df['model'] == model]
@@ -910,6 +910,12 @@ def _get_color_schemes():
         'cold': '#6495ED',
         'polar': '#ADD8E6'
     }
+
+    topographic_region_colors = {
+        'flat': '#2E7D32',
+        'hilly': '#FFD54F',
+        'mountainous': '#6D4C41'
+    }
     
     model_markers = {
         'pangu': 'o',
@@ -921,7 +927,7 @@ def _get_color_schemes():
         'unet': 'none'
     }
     
-    return region_colors, climate_region_colors, model_markers, architecture_fillstyles
+    return region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles
 
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
@@ -967,7 +973,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     prediction_var = df['variable'].iloc[0]
     
     # Get color schemes
-    region_colors, climate_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -977,6 +983,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
         
@@ -1070,6 +1078,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     for region in regions:
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
         region_handles.append(Line2D([0], [0], color=color, linewidth=3,
@@ -1113,6 +1123,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         
         if any(r in climate_region_colors for r in regions):
             region_type = "climate_zones"
+        elif any(r in topographic_region_colors for r in regions):
+            region_type = "topographic_zones"
         else:
             region_type = "geographic"
         
@@ -1655,6 +1667,7 @@ def main():
     model_list = ["pangu", "ifs", "aifs"]
     geo_regions = ["india", "amazon", "ethiopia", "british_columbia", "usa_south"]
     climate_regions = ["tropical", "arid", "temperate"]
+    topo_regions = ["flat", "hilly", "mountainous"]
     growing_season_flags = [True, False]
     for var in variable_list:
         for model in model_list:
@@ -1668,11 +1681,11 @@ def main():
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
+                    regions=topo_regions,
+                    subregion="2x2",
                     nn_architectures=nn_architectures,
                     growing_season_only=gs_flag,
-                    loss_type="extreme_heat" # options: "rmse", "extreme_heat"
+                    loss_type="rmse" # options: "rmse", "extreme_heat"
                 )
                 # plot_raw_forecast_values(csv_path = stat_path,
                 #     dirs=dirs,

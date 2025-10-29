@@ -139,12 +139,23 @@ def calculate_and_save_statistics(
     if lead_times is None:
         lead_times = [24, 120, 216]
     
-    # Combine all regions with their types (XX issue here)
+    # Combine all regions with their types
     all_regions = []
     for region in geographic_regions:
         all_regions.append({'name': region, 'type': 'geographic', 'bootstrap': False})
+
+    # Classify bootstrap regions by type
+    climate_regions = ['arid', 'temperate', 'tropical']
+    topographic_regions = ['flat', 'hilly', 'mountainous']
+
     for region in bootstrap_regions:
-        all_regions.append({'name': region, 'type': 'climate', 'bootstrap': True})
+        if region in climate_regions:
+            region_type = 'climate'
+        elif region in topographic_regions:
+            region_type = 'topographic'
+        else:
+            region_type = 'climate'  # Default to climate if not recognized
+        all_regions.append({'name': region, 'type': region_type, 'bootstrap': True})
     
     # Storage for all results
     all_results = []
@@ -250,11 +261,6 @@ def calculate_and_save_statistics(
                                     
                                     for idx, file_path in enumerate(files):
                                         ds = load_zarr_cached(file_path)
-                                        if subregion == "6x6":
-                                            print(file_pattern)
-                                            print(len(files))
-                                            print(ds)
-                                            exit()
                                         # Extract data
                                         ground_truth, original, corrected, mean_bias_corrected = extract_forecast_data(
                                             ds, prediction_var, lead_time
@@ -519,7 +525,6 @@ def main():
     geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"]
     # regions that require bootstrapping
     bootstrap_regions=["arid", "tropical", "temperate", "flat", "hilly", "mountainous"]
-    bootstrap_regions=[]
     df = calculate_and_save_statistics(
         dirs=dirs,
         variable_configs=variable_configs,
