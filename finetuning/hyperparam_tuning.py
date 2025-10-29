@@ -219,101 +219,98 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         data_dir = config['data_dir']
         weight = config.get('weight', 1.0)
 
-        try:
-            # Get region grid
-            if hasattr(args, 'lat_vals') and hasattr(args, 'lon_vals'):
-                lat_vals, lon_vals = args.lat_vals, args.lon_vals
-            else:
-                lat_vals, lon_vals = get_region_grid(args)
+        # Get region grid
+        if hasattr(args, 'lat_vals') and hasattr(args, 'lon_vals'):
+            lat_vals, lon_vals = args.lat_vals, args.lon_vals
+        else:
+            lat_vals, lon_vals = get_region_grid(args)
 
-            # Load training data (now returns day_of_year_features instead of month_indices)
-            (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
-             lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
-                load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
+        # Load training data (now returns day_of_year_features instead of month_indices)
+        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
+            lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
+            load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
 
-            # Normalize data
-            stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
-            stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
-            fc_norm = (fc - stats_train['mean']) / stats_train['std']
-            obs_norm = (obs - stats_out['mean']) / stats_out['std']
+        # Normalize data
+        stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
+        stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+        fc_norm = (fc - stats_train['mean']) / stats_train['std']
+        obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-            # Split train/validation
-            n_train = len(fc)
-            idx = np.arange(n_train)
-            np.random.shuffle(idx)
-            split = int(0.8 * n_train)
-            t_idx, v_idx = idx[:split], idx[split:]
+        # Split train/validation
+        n_train = len(fc)
+        idx = np.arange(n_train)
+        np.random.shuffle(idx)
+        split = int(0.8 * n_train)
+        t_idx, v_idx = idx[:split], idx[split:]
 
-            # Adjust batch size based on architecture
-            batch_size = hyperparams['batch_size']
-            if arch == 'unet' and batch_size > 32:
-                batch_size = min(batch_size, 16)  # Reduce for UNet due to memory constraints
+        # Adjust batch size based on architecture
+        batch_size = hyperparams['batch_size']
+        if arch == 'unet' and batch_size > 32:
+            batch_size = min(batch_size, 16)  # Reduce for UNet due to memory constraints
 
-            # Create data loaders
-            train_loader = create_dataloader(
-                fc_norm[t_idx], obs_norm[t_idx],
-                lead_time_indices[t_idx], day_of_year_features[t_idx],
-                batch_size=batch_size
-            )
-            val_loader = create_dataloader(
-                fc_norm[v_idx], obs_norm[v_idx],
-                lead_time_indices[v_idx], day_of_year_features[v_idx],
-                batch_size=batch_size
-            )
+        # Create data loaders
+        train_loader = create_dataloader(
+            fc_norm[t_idx], obs_norm[t_idx],
+            lead_time_indices[t_idx], day_of_year_features[t_idx],
+            batch_size=batch_size
+        )
+        val_loader = create_dataloader(
+            fc_norm[v_idx], obs_norm[v_idx],
+            lead_time_indices[v_idx], day_of_year_features[v_idx],
+            batch_size=batch_size
+        )
 
-            # Initialize model
-            input_dim = n_training_vars * n_lat * n_lon
-            output_dim = n_output_vars * n_lat * n_lon
-            n_lead_times = len(args.lead_time_hours)
+        # Initialize model
+        input_dim = n_training_vars * n_lat * n_lon
+        output_dim = n_output_vars * n_lat * n_lon
+        n_lead_times = len(args.lead_time_hours)
 
-            if arch == 'mlp':
-                model = SimpleMLP(
-                    input_dim=input_dim,
-                    hidden_dim=hyperparams['mlp_hidden_dim'],
-                    output_dim=output_dim,
-                    num_hidden_layers=hyperparams['mlp_layers'],
-                    n_lead_times=n_lead_times,
-                    lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
-                    dropout_rate=hyperparams['dropout_rate']
-                ).to(device)
+        if arch == 'mlp':
+            model = SimpleMLP(
+                input_dim=input_dim,
+                hidden_dim=hyperparams['mlp_hidden_dim'],
+                output_dim=output_dim,
+                num_hidden_layers=hyperparams['mlp_layers'],
+                n_lead_times=n_lead_times,
+                lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
+                dropout_rate=hyperparams['dropout_rate']
+            ).to(device)
 
-            elif arch == 'unet':
-                model = UNet(
-                    input_dim=input_dim,
-                    hidden_dim=hyperparams['unet_hidden_dim'],
-                    output_dim=output_dim,
-                    n_lat=n_lat,
-                    n_lon=n_lon,
-                    n_input_vars=n_training_vars,
-                    n_output_vars=n_output_vars,
-                    n_lead_times=n_lead_times,
-                    lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
-                    dropout_rate=hyperparams['dropout_rate']
-                ).to(device)
+        elif arch == 'unet':
+            model = UNet(
+                input_dim=input_dim,
+                hidden_dim=hyperparams['unet_hidden_dim'],
+                output_dim=output_dim,
+                n_lat=n_lat,
+                n_lon=n_lon,
+                n_input_vars=n_training_vars,
+                n_output_vars=n_output_vars,
+                n_lead_times=n_lead_times,
+                lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
+                dropout_rate=hyperparams['dropout_rate']
+            ).to(device)
 
-            else:
-                raise ValueError(f"Unknown architecture: {arch}")
+        else:
+            raise ValueError(f"Unknown architecture: {arch}")
 
-            # Train model
-            model, val_loss, training_time = train_model_with_hyperparams(
-                model, train_loader, val_loader, hyperparams, device
-            )
+        # Train model
+        model, val_loss, training_time = train_model_with_hyperparams(
+            model, train_loader, val_loader, hyperparams, device
+        )
 
-            # Store results
-            region_key = f"{args.region}_{args.subregion}_{'_'.join(map(str, args.lead_time_hours))}h_{arch}"
-            region_losses[region_key] = val_loss
+        # Store results
+        region_key = f"{args.region}_{args.subregion}_{'_'.join(map(str, args.lead_time_hours))}h_{arch}"
+        region_losses[region_key] = val_loss
 
-            # Add to weighted average
-            total_weighted_loss += val_loss * weight
-            total_weight += weight
+        # Add to weighted average
+        total_weighted_loss += val_loss * weight
+        total_weight += weight
 
-            if verbose:
-                print(f"Region {region_key}: val_loss = {val_loss:.6f}")
+        if verbose:
+            print(f"Region {region_key}: val_loss = {val_loss:.6f}")
                 
-        except Exception as e:
-            print(f"Error evaluating region {args.region} with {arch}: {str(e)}")
             # Return a high loss for failed evaluations
-            return {'loss': 1e10, 'status': STATUS_OK, 'error': str(e)}
+            return {'loss': 1e10, 'status': STATUS_OK}
     
     # Calculate weighted average loss
     avg_loss = total_weighted_loss / total_weight if total_weight > 0 else 1e10
