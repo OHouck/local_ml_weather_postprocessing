@@ -139,7 +139,7 @@ def calculate_and_save_statistics(
     if lead_times is None:
         lead_times = [24, 120, 216]
     
-    # Combine all regions with their types
+    # Combine all regions with their types 
     all_regions = []
     for region in geographic_regions:
         all_regions.append({'name': region, 'type': 'geographic', 'bootstrap': False})
@@ -147,7 +147,6 @@ def calculate_and_save_statistics(
     # Classify bootstrap regions by type
     climate_regions = ['arid', 'temperate', 'tropical']
     topographic_regions = ['flat', 'hilly', 'mountainous']
-
     for region in bootstrap_regions:
         if region in climate_regions:
             region_type = 'climate'

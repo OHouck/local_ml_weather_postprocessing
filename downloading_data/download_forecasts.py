@@ -345,7 +345,7 @@ def main():
     print(f"  numcodecs: {numcodecs.__version__}")
     print(f"  dask: {dask.__version__}")
 
-    years = [2018, 2019, 2020, 2021, 2022]
+    years = [2019, 2020, 2022]
     # model = 'pangu'
     model = "ifs"
     # Start timing

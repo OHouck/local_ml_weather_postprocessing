@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  27 OCT 2025 17:19
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  30 OCT 2025 10:32
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -596,7 +596,8 @@ LaTeX Font Info:    Overwriting math alphabet `\mathbbmss' in version `bold'
 File: l3backend-pdftex.def 2023-01-16 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count342
 \l__pdf_internal_box=\box76
-) (./eee_phd_11-20205.aux)
+)
+No file eee_phd_11-20205.aux.
 \openout1 = `eee_phd_11-20205.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 33.
@@ -617,7 +618,6 @@ LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 33.
 LaTeX Font Info:    ... okay on input line 33.
 LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 33.
 LaTeX Font Info:    ... okay on input line 33.
-
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
 *geometry* verbose mode - [ preamble ] result:
@@ -672,7 +672,6 @@ Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 48
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 ))
 Package hyperref Info: Link coloring OFF on input line 33.
- (./eee_phd_11-20205.out) (./eee_phd_11-20205.out)
 \@outlinefile=\write5
 \openout5 = `eee_phd_11-20205.out'.
 
@@ -740,23 +739,34 @@ Dictionary: translator-theorem-dictionary, Language: English
 )
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: End \AtBeginDocument code.
- (./eee_phd_11-20205.nav) [1
+ (./eee_phd_11-20205.nav) [1{/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map}
 
-{/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map}]
-LaTeX Font Info:    Trying to load font information for U+msa on input line 48.
+]
+LaTeX Font Info:    Trying to load font information for U+msa on input line 59.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 48.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 59.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Trying to load font information for OT1+mathkerncmss on input line 48.
+LaTeX Font Info:    Trying to load font information for OT1+mathkerncmss on input line 59.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/sansmathaccent/ot1mathkerncmss.fd
 File: ot1mathkerncmss.fd 2020/01/31 Fontinst v1.933 font definitions for OT1/mathkerncmss.
-) [2
+)
+<reference_pics/ECMWF_supercomputer.png, id=74, 580.1675pt x 443.6575pt>
+File: reference_pics/ECMWF_supercomputer.png Graphic file (type png)
+<use reference_pics/ECMWF_supercomputer.png>
+Package pdftex.def Info: reference_pics/ECMWF_supercomputer.png  used on input line 59.
+(pdftex.def)             Requested size: 151.3706pt x 115.7544pt.
+ [2
 
-] [3
+ <./reference_pics/ECMWF_supercomputer.png>]
+File: reference_pics/ECMWF_supercomputer.png Graphic file (type png)
+<use reference_pics/ECMWF_supercomputer.png>
+Package pdftex.def Info: reference_pics/ECMWF_supercomputer.png  used on input line 59.
+(pdftex.def)             Requested size: 151.3706pt x 115.7544pt.
+ [3
 
 ] [4
 
@@ -764,45 +774,357 @@ File: ot1mathkerncmss.fd 2020/01/31 Fontinst v1.933 font definitions for OT1/mat
 
 ] [6
 
-]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png, id=172, 867.24pt x 433.62pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png  used on input line 90.
-(pdftex.def)             Requested size: 318.67209pt x 159.33855pt.
+] [7
 
-Overfull \vbox (0.13304pt too high) detected at line 90
+] [8
+
+]
+
+LaTeX Warning: File `climate_zones_with_patches.png' not found on input line 134.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:134: Package pdftex.def Error: File `climate_zones_with_patches.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.134 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `topo_zones_with_patches.png' not found on input line 134.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:134: Package pdftex.def Error: File `topo_zones_with_patches.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.134 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (504.64342pt too high) detected at line 134
  []
 
-[7
+[9
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/climate_zones_with_patches.png>]
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png, id=201, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png  used on input line 107.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png, id=202, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png Graphic file (type png)
-<use /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png>
-Package pdftex.def Info: /Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png  used on input line 107.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
- [8
+]
 
- </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png> </Users/ohouck/OneDrive - The University of Chicago/ai_weather_ag/figures//finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png>]
-</Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png, id=230, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png  used on input line 124.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png, id=231, 1004.553pt x 571.1739pt>
-File: /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png Graphic file (type png)
-<use /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png  used on input line 124.
-(pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
- [9
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png' not found on input line 151.
 
- </Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png> </Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/figures/finetuning/pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png>]
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:151: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.151 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png' not found on input line 151.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:151: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.151 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Overfull \vbox (28.79881pt too high) detected at line 151
+ []
+
+[10
+
+]
+
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png' not found on input line 183.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png' not found on input line 183.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package subcaption Error: subfigure outside float.
+
+See the subcaption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `subcaption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package caption Error: \setcaptionsubtype outside float.
+
+See the caption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `caption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_nn_mlp_bootstrap.png' not found on input line 183.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_nn_mlp_bootstrap.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package caption Error: \caption outside float.
+
+See the caption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `caption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package subcaption Error: subfigure outside float.
+
+See the subcaption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `subcaption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package caption Error: \setcaptionsubtype outside float.
+
+See the caption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `caption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_nn_mlp_bootstrap.png' not found on input line 183.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package pdftex.def Error: File `pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_nn_mlp_bootstrap.png' not found: using draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Package caption Error: \caption outside float.
+
+See the caption package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+If you do not understand this error, please take a closer look
+at the documentation of the `caption' package, especially the
+section about errors.
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: LaTeX Error: \begin{frame} on input line 183 ended by \end{center}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: LaTeX Error: \begin{beamer@framepauses} on input line 183 ended by \end{figure}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: LaTeX Error: \begin{beamer@frameslide} on input line 183 ended by \end{beamer@framepauses}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Missing } inserted.
+<inserted text> 
+                }
+l.183 \end{frame}
+                 
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Too many }'s.
+\endbeamer@frameslide ...amer@framepauses}\egroup 
+                                                  \ifx \beamer@frametitle \@...
+l.183 \end{frame}
+                 
+You've closed more groups than you opened.
+Such booboos are generally harmless, so keep going.
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Undefined control sequence.
+\endbeamer@frameslide ...box \else \beamer@zoomer 
+                                                  \fi \beamer@undolabels \be...
+l.183 \end{frame}
+                 
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: LaTeX Error: \begin{document} ended by \end{beamer@frameslide}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.183 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:183: Extra \endgroup.
+<recently read> \endgroup 
+                          
+l.183 \end{frame}
+                 
+Things are pretty mixed up, but I think the worst is over.
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+ [11
+
+]
+Overfull \vbox (427.54884pt too high) has occurred while \output is active []
+
+ [12] [13
+
+]
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:232: Missing $ inserted.
+<inserted text> 
+                $
+l.232 \end{frame}
+                 
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-20205.tex:232: Missing $ inserted.
+<inserted text> 
+                $
+l.232 \end{frame}
+                 
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+[14
+
+] [15
+
+
+]
 \tf@nav=\write6
 \openout6 = `eee_phd_11-20205.nav'.
 
@@ -813,22 +1135,28 @@ Package pdftex.def Info: /Users/ohouck/Library/CloudStorage/OneDrive-TheUniversi
 \openout8 = `eee_phd_11-20205.snm'.
 
  (./eee_phd_11-20205.aux)
-Package rerunfilecheck Info: File `eee_phd_11-20205.out' has not changed.
-(rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
+
+Package rerunfilecheck Warning: File `eee_phd_11-20205.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `eee_phd_11-20205.out':
+(rerunfilecheck)             Before: <no file>
+(rerunfilecheck)             After:  A397E2F8CFD72BF140CF5A41F679CD18;421.
  ) 
 Here is how much of TeX's memory you used:
- 23448 strings out of 476025
- 467801 string characters out of 5790016
- 1862388 words of memory out of 5000000
- 43395 multiletter control sequences out of 15000+600000
- 523725 words of font info for 73 fonts, out of 8000000 for 9000
+ 23771 strings out of 476025
+ 491710 string characters out of 5790016
+ 1869388 words of memory out of 5000000
+ 43682 multiletter control sequences out of 15000+600000
+ 523599 words of font info for 73 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 128i,15n,122p,429b,661s stack positions out of 10000i,1000n,20000p,200000b,200000s
-</usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb>
-Output written on eee_phd_11-20205.pdf (9 pages, 1731056 bytes).
+ 128i,19n,122p,429b,768s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb>
+Output written on eee_phd_11-20205.pdf (15 pages, 1471234 bytes).
 PDF statistics:
- 292 PDF objects out of 1000 (max. 8388607)
- 250 compressed objects within 3 object streams
- 19 named destinations out of 1000 (max. 500000)
- 68 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 647 PDF objects out of 1000 (max. 8388607)
+ 585 compressed objects within 6 object streams
+ 37 named destinations out of 1000 (max. 500000)
+ 48 words of extra memory for PDF output out of 10000 (max. 10000000)
 
