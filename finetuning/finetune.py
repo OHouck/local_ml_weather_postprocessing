@@ -42,11 +42,16 @@ import torch.optim as optim
 import copy
 import time
 
+
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
+
+# print(f"NumPy version: {np.__version__}")
+# print(f"PyTorch version: {torch.__version__}")
+# print(f"PyTorch built with NumPy: {torch.from_numpy(np.array([1.0])).numpy()}") # test numpy interoperability, have had issues with version mismatches before
 
 # Map the new region strings to Koppen‐Geiger codes:
 CLIMATE_ZONE_MAP = {
@@ -585,7 +590,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Create time array
     all_times = np.repeat(common_times, n_lead_times)
     # Create day-of-year sin/cos features
-    day_of_year = pd.DatetimeIndex(all_times).dayofyear.to_numpy() # XX maybe should use common_times here?
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy() # XX maybe should use all_times? I don't think so but flagging
     # Convert to radians: 2*pi*d/365
     day_of_year_rad = 2 * np.pi * day_of_year / 365.0
     day_of_year_sin = np.sin(day_of_year_rad)
@@ -626,14 +631,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
-    # print length of combined data
-    print("fc_combined shape:", fc_combined.shape)
-    print("fc_output_combined shape:", fc_output_combined.shape)
-    print("obs_combined shape:", obs_combined.shape)
-    print("lead_time_indices_combined shape:", lead_time_indices_combined.shape)
-    print("day_of_year_features_combined shape:", day_of_year_features_combined.shape)
-
-    exit()
 
     # each sample represents one forecast for one specific lead time and time combination
     return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,

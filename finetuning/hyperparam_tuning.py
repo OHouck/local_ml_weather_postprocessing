@@ -51,12 +51,12 @@ def create_mlp_search_space():
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-6), high=np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [16, 32, 64, 128]),
-        'num_epochs': hp.choice('num_epochs', [100, 200, 300, 400, 500]),
+        'num_epochs': hp.choice('num_epochs', [50, 100, 250, 500, 750]),
 
         # Cosine annealing parameters
-        'T_0': hp.choice('T_0', [5, 10, 15, 20, 30]),
-        'T_mult': hp.choice('T_mult', [1, 2, 3]),
-        'eta_min': hp.loguniform('eta_min', low=np.log(1e-8), high=np.log(1e-5)),
+        'T_0': hp.choice('T_0', [5, 10, 15, 20, 30]), # number of epochs for the first restart
+        'T_mult': hp.choice('T_mult', [1, 2, 3]), # factor to increase T_0 after each restart
+        'eta_min': hp.loguniform('eta_min', low=np.log(1e-8), high=np.log(1e-5)), # minimum learning rate
 
         # Embedding dimensions
         'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
@@ -83,7 +83,7 @@ def create_unet_search_space():
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', low=np.log(1e-6), high=np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [4, 8, 16, 32]),  # Smaller batches for UNet due to memory
-        'num_epochs': hp.choice('num_epochs', [100, 200, 300, 400, 500]),
+        'num_epochs': hp.choice('num_epochs', [50, 75, 100, 300, 500]),
 
         # Cosine annealing parameters
         'T_0': hp.choice('T_0', [5, 10, 15, 20, 30]),
@@ -552,7 +552,7 @@ if __name__ == "__main__":
     mlp_results = optimize_hyperparameters(
         config_list=config_list,
         architecture="mlp",
-        max_evals=1,
+        max_evals=100,
         output_dir="hyperopt_results_mlp",
         device=device,
         random_seed=42
