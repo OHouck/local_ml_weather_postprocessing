@@ -21,7 +21,7 @@ def main():
     os.makedirs(download_path, exist_ok=True)
     
     # Generate all dates in 2022
-    dates = pd.date_range(start='2022-01-01', end='2022-12-31', freq='D')
+    dates = pd.date_range(start='2020-01-01', end='2020-12-31', freq='D')
     
     print(f"Total days to process: {len(dates)}")
     print("=" * 60)

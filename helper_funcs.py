@@ -8,7 +8,7 @@ def setup_directories():
     nodename = socket.gethostname()
     if nodename == "oMac.local":
         root = os.path.expanduser(f"/Users/ohouck/globus/forecast_data")
-    elif nodename == "midway3-amd2.rcc.local" or nodename == "midway3-amd1.rcc.local" or nodename == "midway3-login3.rcc.local":
+    elif nodename == "midway3-amd2.rcc.local" or nodename == "midway3-amd1.rcc.local" or nodename == "midway3-login3.rcc.local" or nodename == "midway3-login4.rcc.local":
         root = os.path.expanduser("/project/jfranke/ozma/forecast_data")
 
     else:

@@ -54,30 +54,6 @@ def download_aurora_data(day):
     else:
         print(f"Atmospheric file for {day} already exists, skipping.")
     
-    # Download the static variables from era5 (only once)
-    file = Path(download_path) / "static.nc"
-    if not file.exists():
-        c = cdsapi.Client()
-        c.retrieve(
-            "reanalysis-era5-single-levels",
-            {
-                "product_type": "reanalysis",
-                "variable": [
-                    "geopotential",
-                    "land_sea_mask",
-                    "soil_type",
-                    "standard_deviation_of_orography",
-                ],
-                "year": "2023",
-                "month": "01",
-                "day": "01",
-                "time": "00:00",
-                "format": "netcdf",
-            },
-            os.path.join(download_path, "era5_static.nc"),
-        )
-        print("Static variables downloaded!")
-
 if __name__ == "__main__":
     # Can be called with command line argument or default
     if len(sys.argv) > 1:
