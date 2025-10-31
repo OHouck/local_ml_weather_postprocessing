@@ -69,16 +69,13 @@ TOPO_ZONE_MAP = {
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
-                n_lead_times=1, lead_time_embedding_dim=8, month_embedding_dim=16,
-                dropout_rate=0.0):
+                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.0):
         super(SimpleMLP, self).__init__()
 
         # Lead time embedding
         self.n_lead_times = n_lead_times
         self.lead_time_embedding = None
 
-        # Day-of-year features (sin/cos) - 2 features instead of month embedding
-        # month_embedding_dim parameter kept for backward compatibility but not used
 
         # Calculate actual input dimension
         actual_input_dim = input_dim + 2  # +2 for sin and cos of day of year
@@ -123,8 +120,7 @@ class UNet(nn.Module):
     
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
                  n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
-                 n_lead_times=1, lead_time_embedding_dim=16, month_embedding_dim=16,
-                 dropout_rate=0.1):
+                 n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1):
         """
         Initialize U-Net with FiLM conditioning.
 
@@ -136,7 +132,6 @@ class UNet(nn.Module):
             n_input_vars, n_output_vars: Number of input/output variables
             n_lead_times: Number of distinct lead times
             lead_time_embedding_dim: Dimension of lead time embedding
-            month_embedding_dim: Kept for backward compatibility but not used (now using day-of-year sin/cos)
             dropout_rate: Dropout rate for conv blocks
         """
         super(UNet, self).__init__()
@@ -544,7 +539,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
     forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
     
-    # Select lead times and common time range
+    # Select lead times and common time range, this prevents off by one errors 
+    # from lining up forecasts for days on the edges of the time range
     common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
     common_times = np.intersect1d(common_times, time_values_np)
     forecast_ds = forecast_ds.sel(time=common_times)
@@ -562,6 +558,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     forecast_stacked = forecast_ds[args.training_vars].stack(
         sample=['time', 'prediction_timedelta']
     ).to_array()
+
     
     forecast_output_stacked = forecast_ds[args.output_vars].stack(
         sample=['time', 'prediction_timedelta']
@@ -578,14 +575,17 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
     fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
     obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+
     
     # Create lead time indices
     lead_time_indices = np.tile(
         np.arange(n_lead_times), n_time
     )
 
+    # Create time array
+    all_times = np.repeat(common_times, n_lead_times)
     # Create day-of-year sin/cos features
-    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
+    day_of_year = pd.DatetimeIndex(all_times).dayofyear.to_numpy() # XX maybe should use common_times here?
     # Convert to radians: 2*pi*d/365
     day_of_year_rad = 2 * np.pi * day_of_year / 365.0
     day_of_year_sin = np.sin(day_of_year_rad)
@@ -593,9 +593,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Stack to create [n_time, 2] array, then repeat for each lead time
     day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
     day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
-
-    # Create time array
-    all_times = np.repeat(common_times, n_lead_times)
 
     # Remove any samples with NaN
     valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
@@ -629,6 +626,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
+    # print length of combined data
+    print("fc_combined shape:", fc_combined.shape)
+    print("fc_output_combined shape:", fc_output_combined.shape)
+    print("obs_combined shape:", obs_combined.shape)
+    print("lead_time_indices_combined shape:", lead_time_indices_combined.shape)
+    print("day_of_year_features_combined shape:", day_of_year_features_combined.shape)
+
+    exit()
+
     # each sample represents one forecast for one specific lead time and time combination
     return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
             day_of_year_features_combined, all_times, forecast_ds.latitude.values,
@@ -1008,7 +1014,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                           num_hidden_layers= 2,
                           n_lead_times=n_lead_times,
                           lead_time_embedding_dim=4,
-                          month_embedding_dim=16,
                           dropout_rate =0.1097725 
                           ).to(device)
 
