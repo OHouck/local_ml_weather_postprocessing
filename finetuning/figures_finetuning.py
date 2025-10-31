@@ -977,9 +977,15 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
-    
+
+    # Calculate bar width and positions
+    n_regions = len(regions)
+    n_architectures = len(nn_architectures)
+    n_groups_per_leadtime = n_regions * n_architectures
+    bar_width = 0.8 / n_groups_per_leadtime
+
     # Plot each region/architecture combination
-    for region in regions:
+    for region_idx, region in enumerate(regions):
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
@@ -987,21 +993,23 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             color = topographic_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
-        
+
         region_df = df[df['region'] == region]
-        
-        for arch in nn_architectures:
+
+        for arch_idx, arch in enumerate(nn_architectures):
             arch_df = region_df[region_df['architecture'] == arch]
-            
+
             if len(arch_df) == 0:
                 continue
-            
+
             # Sort by lead time
             arch_df = arch_df.sort_values('lead_time')
-            
+
             # Get styles
-            marker = model_markers.get(model, 'o')
             fillstyle = architecture_fillstyles.get(arch, 'full')
+
+            # Calculate alpha based on architecture (for visual distinction)
+            alpha = 0.9 if fillstyle == 'full' else 0.6
 
             if loss_type == "rmse":
                 outcome_str = "rmse_pct_improvement"
@@ -1009,31 +1017,43 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                 outcome_str = "rmse_pct_improvement_extreme_heat"
             else:
                 raise ValueError(f"Unknown loss_type: {loss_type}")
-            
-            # Plot neural network correction
+
+            # Plot neural network correction as bars
             if outcome_str in arch_df.columns:
-                x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
                 y_values = arch_df[outcome_str].values
 
-                
-                ax.plot(x_pos, y_values,
-                       marker=marker,
-                       fillstyle=fillstyle,
-                       linestyle='-',
-                       color=color,
-                       linewidth=2.5,
-                       markersize=15,
-                       alpha=0.75,
-                       zorder=3)
-                
-                # Add confidence intervals if available
+                # Calculate x positions for this region/arch combination
+                group_offset = (region_idx * n_architectures + arch_idx) * bar_width
+                x_pos = np.arange(len(lead_times)) + group_offset - (n_groups_per_leadtime * bar_width) / 2 + bar_width / 2
+
+                # Use hatching pattern for unet to distinguish from mlp
+                hatch = None if fillstyle == 'full' else '//'
+
+                bars = ax.bar(x_pos, y_values,
+                             width=bar_width,
+                             color=color,
+                             alpha=alpha,
+                             edgecolor='black',
+                             linewidth=0.5,
+                             hatch=hatch,
+                             zorder=3)
+
+                # Add error bars if confidence intervals are available
                 if f'{outcome_str}_ci_lower' in arch_df.columns:
                     ci_lower = arch_df[f'{outcome_str}_ci_lower'].values
                     ci_upper = arch_df[f'{outcome_str}_ci_upper'].values
-                    ax.fill_between(x_pos, ci_lower, ci_upper,
-                                   color=color,
-                                   alpha=0.1,
-                                   zorder=1)
+                    # Calculate error bar lengths
+                    yerr_lower = y_values - ci_lower
+                    yerr_upper = ci_upper - y_values
+                    ax.errorbar(x_pos, y_values,
+                               yerr=[yerr_lower, yerr_upper],
+                               fmt='none',
+                               ecolor='black',
+                               elinewidth=1,
+                               capsize=3,
+                               capthick=1,
+                               alpha=0.7,
+                               zorder=4)
     
     # Set axes
     ax.set_ylim(-28, 35)
@@ -1681,11 +1701,11 @@ def main():
                     dirs=dirs,
                     variable=var,
                     model=model,
-                    regions=topo_regions,
-                    subregion="2x2",
+                    regions=geo_regions,
+                    subregion="6x6",
                     nn_architectures=nn_architectures,
                     growing_season_only=gs_flag,
-                    loss_type="rmse" # options: "rmse", "extreme_heat"
+                    loss_type="extreme_heat" # options: "rmse", "extreme_heat"
                 )
                 # plot_raw_forecast_values(csv_path = stat_path,
                 #     dirs=dirs,
