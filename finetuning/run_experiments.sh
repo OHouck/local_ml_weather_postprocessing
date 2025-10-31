@@ -39,9 +39,9 @@ python3 finetuning/finetune.py \
     --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
-    --train_start="2018-01-01" --train_end="2021-12-31" \
-    --test_start="2022-01-01" --test_end="2022-12-31" \
-    --model_name="pangu" \
+    --train_start="2021-01-01" --train_end="2023-12-31" \
+    --test_start="2024-01-01" --test_end="2024-12-31" \
+    --model_name="aifs" \
     --region="india" \
     --subregion="6x6" \
     --lead_time_hours 120 \

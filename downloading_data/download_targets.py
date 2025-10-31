@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 import psutil
 import os
+import gc
 import warnings
 import pandas as pd
 import xarray as xr
@@ -15,14 +16,6 @@ warnings.filterwarnings('ignore')
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
-
-# import ssl
-# import certifi
-# # Set environment variables to use certifi's certificate bundle
-# os.environ['SSL_CERT_FILE'] = certifi.where()
-# os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-# Create SSL context
-# ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 
 def print_time_and_memory(step_name, start_time):
@@ -183,11 +176,11 @@ def download_data(data_name, year, dirs):
         ]
     
     # test XX
-    time_range = [f'{year}-01-01', f'{year}-01-31']
+    time_range = [f'{year}-01-01', f'{year}-12-31']
     
     # Output paths XX
-    output_path_surface = os.path.join(dirs['raw'], f"{data_name}_{year}_test.zarr")
-    output_path_atmos = os.path.join(dirs["raw"], f"{data_name}_{year}_atmospheric_test.zarr")
+    output_path_surface = os.path.join(dirs['raw'], f"{data_name}_{year}.zarr")
+    output_path_atmos = os.path.join(dirs["raw"], f"{data_name}_{year}_atmospheric.zarr")
     
     start_time = print_time_and_memory("Parameter setup", start_time)
     
@@ -199,7 +192,7 @@ def download_data(data_name, year, dirs):
             ds = xr.open_zarr(
                 'gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3',
                 consolidated=True,
-                storage_options={"token": "annon"}
+                storage_options={"token": "anon"}
             )
             ds = ds.rename({'total_precipitation': 'total_precipitation_6hr'})
 
@@ -208,7 +201,7 @@ def download_data(data_name, year, dirs):
             ds = xr.open_zarr(
                 "gs://weatherbench2/datasets/hres_t0/2016-2022-6h-1440x721.zarr",
                 consolidated=True,
-                storage_options={"token": "annon"}
+                storage_options={"token": "anon"}
             )
         else:
             raise ValueError(f"Unknown dataset name: {data_name}")
@@ -477,8 +470,8 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    years = [2018]
-    data_source = 'hres_t0'  # hres_t0 or era5
+    years = [2019, 2023]
+    data_source = 'era5'  # hres_t0 or era5
     dirs = setup_directories()
     
     # Try the download
