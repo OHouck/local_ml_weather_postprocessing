@@ -1,0 +1,10 @@
+/var/spool/slurm/d/job38793076/slurm_script: line 13: .venv/bin/activate: No such file or directory
+/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/hyperopt/atpe.py:19: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+Traceback (most recent call last):
+  File "/project/jfranke/ozma/code/ai_weather_ag/finetuning/hyperparam_tuning.py", line 531, in <module>
+    dirs = setup_directories()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/helper_funcs.py", line 15, in setup_directories
+    raise Exception(f"Unknown environment, Please specify the root directory. "
+Exception: Unknown environment, Please specify the root directory. Nodename found: midway3-0283.rcc.local

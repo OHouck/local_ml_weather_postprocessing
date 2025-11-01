@@ -1,0 +1,2 @@
+RTNETLINK answers: Network is unreachable
+/var/spool/slurm/d/job38791197/slurm_script: line 18: marimo: command not found
