@@ -182,14 +182,25 @@ class UNet(nn.Module):
         self.final_conv = nn.Conv2d(self.encoder_channels[0], self.n_output_vars, kernel_size=1)
         
     def _calculate_num_levels(self):
-        """Calculate maximum number of pooling levels based on spatial dimensions."""
+        """
+        Calculate maximum number of pooling levels based on spatial dimensions.
+
+        Determines how many downsampling operations can be performed while maintaining
+        a minimum spatial dimension of 4x4 at the bottleneck. Caps at 5 levels to
+        prevent overly deep networks.
+
+        Returns:
+            int: Number of encoder/decoder levels (between 1 and 5)
+        """
         min_spatial_dim = min(self.height, self.width)
         max_pools = 0
         current_dim = min_spatial_dim
-        while current_dim >= 4:  # Need at least 4x4 to pool down to 2x2
+        # Need at least 4x4 to pool down to 2x2
+        while current_dim >= 4:
             max_pools += 1
             current_dim = current_dim // 2
-        return min(max_pools + 1, 5)  # Cap at 5 levels to avoid too deep networks
+        # Cap at 5 levels to avoid too deep networks
+        return min(max_pools + 1, 5)
     
     def _make_conv_block(self, in_channels, out_channels):
         """Create a convolutional block with two conv layers, batch norm, and dropout."""
