@@ -470,7 +470,7 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    years = [2019, 2023]
+    years = [2023]
     data_source = 'era5'  # hres_t0 or era5
     dirs = setup_directories()
     
