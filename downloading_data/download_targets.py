@@ -167,15 +167,14 @@ def download_data(data_name, year, dirs):
             '10m_v_component_of_wind',
             'mean_sea_level_pressure',
         ]
-        atmos_vars = [
-            "temperature",
-            "u_component_of_wind",
-            "v_component_of_wind",
-            "specific_humidity",
-            "geopotential",
-        ]
+        # atmos_vars = [
+        #     "temperature",
+        #     "u_component_of_wind",
+        #     "v_component_of_wind",
+        #     "specific_humidity",
+        #     "geopotential",
+        # ]
     
-    # test XX
     time_range = [f'{year}-01-01', f'{year}-12-31']
     
     # Output paths XX
@@ -470,8 +469,8 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    years = [2023]
-    data_source = 'era5'  # hres_t0 or era5
+    years = [2018, 2019, 2021]
+    data_source = 'hres_t0'  # hres_t0 or era5
     dirs = setup_directories()
     
     # Try the download
