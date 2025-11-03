@@ -1,7 +1,7 @@
 
 import xarray as xr
 import zarr
-path = "/Users/ohouck/globus/forecast_data/raw/pangu_2019.zarr"
+path = "/Users/ohouck/globus/forecast_data/raw/aifs_2021.zarr"
 
 #print versions of xarray and zarr
 print("xarray version:", xr.__version__)

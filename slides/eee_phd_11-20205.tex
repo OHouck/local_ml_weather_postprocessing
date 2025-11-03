@@ -21,8 +21,7 @@
 \usepackage{subcaption}
 \usepackage{caption}
 
-% Set the path for figures
-\graphicspath{{/Users/ohouck/globas/forecast_data/figures/}}
+\graphicspath{{./reference_pics/}{/Users/ohouck/globus/forecast_data/figures/}}
 
 \title{Tailoring Machine Learning Weather Predictions for Local Impacts}
 \author{\textbf{Ozma Houck, James Franke}}
@@ -51,7 +50,7 @@
             \vspace{0.5cm}
             \begin{figure}
                 \centering
-                \includegraphics<1-2>[width=\linewidth]{reference_pics/ECMWF_supercomputer.png}
+                \includegraphics<1-2>[width=\linewidth]{ECMWF_supercomputer.png}
                 \caption*{\small ECMWF Supercomputer}
             \end{figure}
         \end{column}
@@ -70,7 +69,7 @@
         \item \textbf{The Rub}: All global weather models (NWP or ML) are trained to optimize overall global accuracy.
         \begin{itemize}
             \item A temperature error in Greenland is treated the same as a temperature error in Chicago!
-            \item The ML models might be cheap to train, but they are extremely expensive to train!
+            \item The ML models might be cheap to run, but they are extremely expensive to train!
         \end{itemize}
      \item \textbf{Potential Solution}: Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest.
     \end{itemize}
@@ -81,7 +80,7 @@
     \begin{itemize}
         \item Just as ML tools can be used to post-process models just as they have been used to build them. 
         \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle.
-        \item \textbf{Contribution 2} show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.
+        \item \textbf{Contribution 2}: show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.
     \end{itemize}
 \end{frame}
 
@@ -90,8 +89,8 @@
 \begin{frame}{Previous Post-Processing Papers Focused on Narrow Geographic Areas or Use Expensive Models}
     \begin{itemize}
         \item Rasp 2018: Use neural network to post-process IFS forecasts in Germany. Use Neural network to train mean and standard deviation of temperature deviations. 
-        \item han 2021 so how CNNs can be used to correct IFS on Gridded ERA5 data over China
-        \item Trotta 2025 show that NWP and ML models can be post-processed in similar ways. Use process based model used by Australian Meterological Office
+        \item Han 2021: show how CNNs can be used to correct IFS on Gridded ERA5 data over China
+        \item Trotta 2025: show that NWP and ML models can be post-processed in similar ways. Use process based model used by Australian Meterological Office
     \end{itemize}
 
 \end{frame}
@@ -134,65 +133,112 @@
 \end{frame}
 
 \begin{frame}{See Greater Improvements for Longer Lead Times and for Wind Speed}
-\begin{figure}[ht]
-    \centering
-    \begin{subfigure}[t]{0.48\textwidth}
+    \begin{figure}
         \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_nn_mlp.png}
-        \caption{2m Temperature: Pangu (ML Model)}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[t]{0.48\textwidth}
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png}
+            \caption{2m Temperature: Pangu (ML Model)}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png}
+            \caption{Wind Speed: Pangu (ML Model)}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Slightly Better Performance for UNet vs MLP}
+    \begin{figure}
         \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_nn_mlp.png}
-        \caption{Wind Speed: Pangu (ML Model)}
-    \end{subfigure}
-\end{figure}
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png}
+            \caption{2m Temperature: Pangu (ML Model)}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png}
+            \caption{Wind Speed: Pangu (ML Model) using UNet}
+        \end{subfigure}
+    \end{figure}
 \end{frame}
 
 \begin{frame}{Climate Zones}
-\begin{figure}[ht]
-    \centering
-    \begin{subfigure}[t]{0.48\textwidth}
+    \begin{figure}
         \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_nn_mlp_bootstrap.png}
-        \caption{2m Temperature: Pangu}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_nn_mlp_bootstrap.png}
-        \caption{Wind Speed: Pangu}
-    \end{subfigure}
-\end{figure}
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png}
+            \caption{2m Temperature: Pangu}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[t]{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png}
+            \caption{Wind Speed: Pangu}
+        \end{subfigure}
+    \end{figure}
+\end{frame}
 
 \begin{frame}{Topographic Zones}
+\begin{figure}
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_nn_mlp_bootstrap.png}
+        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png}
         \caption{2m Temperature: Pangu}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_nn_mlp_bootstrap.png}
+        \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png}
         \caption{Wind Speed: Pangu}
     \end{subfigure}
 \end{figure}
 \end{frame}
 
 \section{Custom Loss Functions}
+
 \begin{frame}{All Determinstic Forecasts Trained with MSE, All Ensemble Models Trained with CRPS}
     \begin{itemize}
         \item Know that under-prediction errors of extreme temperatures have a disproportionate impact on mortality rates.
         \item Temperature errors around freezing point have outsized impacts on agriculture 
         \item Wind speed errors during high wind events have larger impacts on wind power generation than errors during calm periods.
     \end{itemize}
-    \textbf{Question:} If we know the damage function of different types of errors, can we use custom loss functions to meaningful improve accuracy for these impactful errors while still maintaining overall accuracy?
+    \textbf{Question:} If we know the damage function of different types of errors, can we use custom loss functions to meaningfully improve accuracy for these impactful errors while still maintaining overall accuracy?
 \end{frame}
 
-\section{}
+\begin{frame}{Version 0: Damage Weighted MSE Loss Function}
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{mortal_errors_fig.png}
+        \caption*{\small Mortality errors figure}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Able to improve performance based on damage weighted MSE}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \vspace{0.5cm}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png}
+                \caption*{\small Extreme heat trained model}
+            \end{figure}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \vspace{0.5cm}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_og_rmse_mlp.png}
+                \caption*{\small Standard MSE trained model}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
 
 \section{Appendix}
 \begin{frame}[allowframebreaks]{Training Details}
@@ -209,7 +255,7 @@
     \textbf{UNet Details:}
     \begin{itemize}
         \item Starting hidden dimension 128 (XX what does this mean)
-        \item dropout_rate $\sim 0.1$
+        \item dropout\_rate $\sim 0.1$
         \item 16 dimensional lead time embeddings for 3 lead times.
     \end{itemize}
 
@@ -232,5 +278,3 @@
 \end{frame}
 
 \end{document}
-
-

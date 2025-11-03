@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1755267976 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1755267977 2
-  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1755267975 4679 dc6e55553b4ac37786aa84e72177efe8 ""
+["pdflatex"] 1762117502 "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" "scratch.pdf" "scratch" 1762117504 2
+  "/Users/ohouck/vc/ai_weather_ag/slides/scratch.tex" 1762117459 4694 bdbd8237870eee7a20231bf5c24b86cd ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -206,9 +206,9 @@
   "finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
   "finetuning/pangu/lead_time/multi_region/6x6/leadtime_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_ifs_nn_mlp.png" 0 -1 0 ""
   "finetuning/pangu/subregion/subregion_rmse_improvement_lt_240.png" 0 -1 0 ""
-  "scratch.aux" 1755267977 1547 7075b362146159c73e27b62c75efb664 "pdflatex"
+  "scratch.aux" 1762117503 1547 7075b362146159c73e27b62c75efb664 "pdflatex"
   "scratch.nav" 1754497194 989 cfdfccab7ca7481eacb03f6399af2e2c ""
-  "scratch.tex" 1755267975 4679 dc6e55553b4ac37786aa84e72177efe8 ""
+  "scratch.tex" 1762117459 4694 bdbd8237870eee7a20231bf5c24b86cd ""
   (generated)
   "scratch.aux"
   "scratch.log"

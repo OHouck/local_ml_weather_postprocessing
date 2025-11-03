@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  15 AUG 2025 09:26
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  2 NOV 2025 15:05
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -601,7 +601,8 @@ LaTeX Font Info:    Overwriting math alphabet `\mathbbmss' in version `bold'
 File: l3backend-pdftex.def 2023-01-16 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count343
 \l__pdf_internal_box=\box76
-) (./scratch.aux)
+)
+No file scratch.aux.
 \openout1 = `scratch.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 35.
@@ -622,7 +623,6 @@ LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 35.
 LaTeX Font Info:    ... okay on input line 35.
 LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 35.
 LaTeX Font Info:    ... okay on input line 35.
-
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
 *geometry* verbose mode - [ preamble ] result:
@@ -925,8 +925,8 @@ l.120 \end{frame}
 
  
 Here is how much of TeX's memory you used:
- 23673 strings out of 476025
- 490585 string characters out of 5790016
+ 23671 strings out of 476025
+ 490701 string characters out of 5790016
  1863388 words of memory out of 5000000
  43610 multiletter control sequences out of 15000+600000
  520110 words of font info for 60 fonts, out of 8000000 for 9000

@@ -854,7 +854,7 @@ def _create_latex_table_from_df(df, prediction_var, nn_architecture, subregion,
     print(f"Table title: Summary Statistics for {variable_name}")
 
 def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures, 
-                       model, growing_season_only = False, loss_type="rmse"):
+                       model, growing_season_only = False, loss_fn="mse"):
     """
     Common data preparation for all plot types.
     """
@@ -873,13 +873,9 @@ def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures,
     else:
         regions = df['region'].unique().tolist()
     
-    if loss_type == "rmse":
-        df = df[df['loss_fn'] == 'mse']
-    elif loss_type == "extreme_heat":
-        df = df[df['loss_fn'] == 'extreme_heat_loss']
-    else:
-        raise ValueError(f"Unknown loss_type: {loss_type}")
-
+    print(loss_fn)
+    df = df[df['loss_fn'] == loss_fn]
+    
     # Filter by architectures
     df = df[df['architecture'].isin(nn_architectures)]
 
@@ -899,6 +895,7 @@ def _get_color_schemes():
         'india': '#E69F00',
         'usa_south': '#56B4E9',
         'british_columbia': '#009E73',
+        'corn_belt': '#90EE90', 
         'amazon': '#CC79A7',
         'ethiopia': '#D55E00',
     }
@@ -931,9 +928,9 @@ def _get_color_schemes():
 
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
-                         regions=None, subregion="4x4", 
+                         regions=None, subregion="6x6", 
                          nn_architectures=["mlp"], growing_season_only=False,
-                         loss_type="rmse", save_path=None):
+                         loss_trained_on="mse", evaluation_loss = "rmse", save_path=None):
     """
     Generate RMSE percentage improvement plots from pre-calculated statistics.
     
@@ -955,18 +952,30 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         List of architectures to include: ["mlp"], ["unet"], or both
     growing_season_only : bool
         Whether to use results on model trained only on growing season
-    loss_type : str
-        Loss type to filter for (default: "rmse")
+    loss_trained_on: str
+        Loss function used to train the model: "mse", "extreme_heat"
+    evaluation_loss: str
+        Loss function used for evaluation/plotting: "rmse", "extreme_heat",
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
+    # choose loss function used to train model
+    if loss_trained_on == "mse":
+        loss_fn = "mse"
+    elif loss_trained_on == "extreme_heat":
+        loss_fn = "extreme_heat_loss"
+    else:
+        raise ValueError(f"Unknown loss_trained_on: {loss_trained_on}")
+
     # Prepare data
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
-                                    nn_architectures, model, growing_season_only)
+                                    nn_architectures, model, growing_season_only,
+                                    loss_fn=loss_fn)
     
     if len(df) == 0:
         print(f"No data found for specified filters")
         return
+    
     
     # Get unique values for plotting
     lead_times = sorted(df['lead_time'].unique())
@@ -1011,12 +1020,11 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             # Calculate alpha based on architecture (for visual distinction)
             alpha = 0.9 if fillstyle == 'full' else 0.6
 
-            if loss_type == "rmse":
+            # metric on which to plot improvement
+            if evaluation_loss == "rmse":
                 outcome_str = "rmse_pct_improvement"
-            elif loss_type == "extreme_heat":
+            elif evaluation_loss == "extreme_heat":
                 outcome_str = "rmse_pct_improvement_extreme_heat"
-            else:
-                raise ValueError(f"Unknown loss_type: {loss_type}")
 
             # Plot neural network correction as bars
             if outcome_str in arch_df.columns:
@@ -1056,13 +1064,13 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                                zorder=4)
     
     # Set axes
-    ax.set_ylim(-28, 35)
-    if loss_type == "rmse":
+    ax.set_ylim(-15, 35)
+    if evaluation_loss == "rmse":
         ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
-    elif loss_type == "extreme_heat":
+    elif evaluation_loss == "extreme_heat":
         ax.set_ylabel("RMSE Improvement for Extreme Heat (%)", fontsize=20)
     else:
-        raise ValueError(f"Unknown loss_type: {loss_type}")
+        raise ValueError(f"Unknown evaluation_loss: {evaluation_loss}")
 
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     
@@ -1076,12 +1084,12 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     regions_str = ", ".join(regions)
     is_bootstrap = df['bootstrap'].iloc[0] if 'bootstrap' in df.columns else False
 
-    if loss_type == "rmse": 
+    if evaluation_loss == "rmse":
         title_main = f"RMSE Improvement for {prediction_var.replace('_', ' ').title()} ({arch_str})"
-    elif loss_type == "extreme_heat":
+    elif evaluation_loss == "extreme_heat":
         title_main = f"RMSE Improvement for Extreme Heat {prediction_var.replace('_', ' ').title()} ({arch_str})"
     else:
-        raise ValueError(f"Unknown loss_type: {loss_type}")
+        raise ValueError(f"Unknown evaluation_loss: {evaluation_loss}")
 
     if is_bootstrap:
         title_main += " (with 95% CI)"
@@ -1154,10 +1162,14 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             grow_flag = "_growing_season"
         else:
             grow_flag = ""
-        if loss_type == "rmse":
+        if loss_trained_on == "mse" and evaluation_loss == "rmse":
             model_str = model
-        elif loss_type == "extreme_heat":
+        elif loss_trained_on == "extreme_heat" and evaluation_loss == "extreme_heat":
             model_str = f"{model}_extreme_heat"
+        elif loss_trained_on == "extreme_heat" and evaluation_loss == "rmse":   
+            model_str = f"{model}_extreme_heat_train_rmse_eval"
+        elif loss_trained_on == "mse" and evaluation_loss == "extreme_heat":
+            model_str = f"{model}_mse_train_extreme_heat_eval"
         
         fname = (f"leadtime_rmse_improvement_{prediction_var}_trainedwith_{training_vars}_"
                 f"{region_type}_{model_str}_{arch_suffix}{bootstrap_suffix}{grow_flag}.png")
@@ -1199,7 +1211,6 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     # Prepare data
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
                                     nn_architectures, model, growing_season_only=growing_season_only)
-    
     if len(df) == 0:
         print(f"No data found for specified filters")
         return
@@ -1683,12 +1694,12 @@ def main():
     stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
 
     nn_architectures = ["mlp"]
-    variable_list = ["2m_temperature", "10m_wind_speed", "total_precipitation"]
-    model_list = ["pangu", "ifs", "aifs"]
-    geo_regions = ["india", "amazon", "ethiopia", "british_columbia", "usa_south"]
+    variable_list = ["2m_temperature"]
+    model_list = ["pangu", "ifs"]
+    geo_regions = ["india", "amazon", "ethiopia", "usa_south"]
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
-    growing_season_flags = [True, False]
+    growing_season_flags = [False]
     for var in variable_list:
         for model in model_list:
             for gs_flag in growing_season_flags:
@@ -1705,7 +1716,8 @@ def main():
                     subregion="6x6",
                     nn_architectures=nn_architectures,
                     growing_season_only=gs_flag,
-                    loss_type="extreme_heat" # options: "rmse", "extreme_heat"
+                    loss_trained_on="extreme_heat",
+                    evaluation_loss="rmse"
                 )
                 # plot_raw_forecast_values(csv_path = stat_path,
                 #     dirs=dirs,

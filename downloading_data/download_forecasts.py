@@ -158,7 +158,7 @@ def download_data_by_year(model, year, subset, available_vars, start_time, clien
 
     # Output path
     # output_path = os.path.expanduser(f"/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/{model}_{year}.zarr")
-    output_path = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/{model}_{year}.zarr")
+    output_path = os.path.expanduser(f"/Users/ohouck/globus/forecast_data/raw/{model}_{year}.zarr")
     # output_path = os.path.expanduser(f"/Volumes/wd_external_hd/forecast_data/{model}_{year}.zarr")
 
     time_range = [f'{year}-01-01', f'{year}-12-31'] 
@@ -346,7 +346,7 @@ def main():
     print(f"  dask: {dask.__version__}")
 
     # do 2018 and 2019 next
-    years = [2020,2021, 2022]
+    years = [2019, 2020]
     model = 'pangu'
     # model = "ifs"
     # Start timing
