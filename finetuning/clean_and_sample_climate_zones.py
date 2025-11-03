@@ -529,15 +529,15 @@ def main():
     india_bounds = {"lat0": 22 - buffer, "lat1": 22 + buffer, "lon0": 77 - buffer + 180, "lon1": 77 + buffer + 180}
     usa_south_bounds = {"lat0": 35 - buffer, "lat1": 35 + buffer, "lon0": -100 - buffer + 180, "lon1": -100 + buffer + 180}
     amazon_bounds = {"lat0": -5 - buffer, "lat1": -5 + buffer, "lon0": -65 - buffer + 180, "lon1": -65 + buffer + 180}
-    british_columbia_bounds = {"lat0": 53 - buffer + 0.25, "lat1": 53 + buffer, "lon0": -125 - buffer + 180, "lon1": -125 + buffer + 180}
     ethiopia_bounds = {"lat0": 9 - buffer, "lat1": 9 + buffer, "lon0": 39 - buffer + 180, "lon1": 39 + buffer + 180}
+    corn_belt_bounds = {"lat0": 41 - buffer, "lat1": 41 + buffer, "lon0": -90 - buffer + 180, "lon1": -90 + buffer + 180}
 
 
     manual_regions = [
         {"name": "India", "bounds": india_bounds},
         {"name": "USA South", "bounds": usa_south_bounds}, 
         {"name": "Amazon", "bounds": amazon_bounds},
-        {"name": "British Columbia", "bounds": british_columbia_bounds},
+        {"name": "Corn Belt", "bounds": corn_belt_bounds},
         {"name": "Ethiopia", "bounds": ethiopia_bounds},
     ]
         

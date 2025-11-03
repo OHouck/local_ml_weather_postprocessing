@@ -64,6 +64,7 @@ dependencies = [
         "locket",
         "loguru",
         "lxml",
+        "marimo>=0.17.6",
         "markupsafe",
         "matplotlib",
         "microsoft-aurora",

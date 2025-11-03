@@ -1,0 +1,18 @@
+{
+  "hyperparams": {
+    "T_0": 5,
+    "T_mult": 1,
+    "batch_size": 128,
+    "dropout_rate": 0.3253692595542943,
+    "eta_min": 1.1587921235978893e-07,
+    "lead_time_embedding_dim": 32,
+    "learning_rate": 1.318109029901234e-05,
+    "mlp_hidden_dim": 512,
+    "mlp_layers": 4,
+    "num_epochs": 750,
+    "weight_decay": 0.0006089277234470452
+  },
+  "loss": 10000000000.0,
+  "region_losses": {},
+  "architecture": "mlp"
+}

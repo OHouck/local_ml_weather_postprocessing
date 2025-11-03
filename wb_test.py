@@ -9,7 +9,7 @@ Purpose: create and save auora weather forecasts for specificed dates, leadtimes
 from pathlib import Path
 import fsspec
 import xarray as xr
-import cdsapi
+import gcsfs
 import sys
 import os
 

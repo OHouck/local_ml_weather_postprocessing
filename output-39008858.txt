@@ -1,0 +1,111 @@
+
+        Create or edit notebooks in your browser 📝
+
+        ➜  URL: http://10.50.251.26:20375?access_token=KkVzdsIcosiOgN7VEmRTPg
+
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/applications.py", line 107, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 219, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/sessions.py", line 85, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+  File "/home/ohouck/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 202, in dispatch
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 250, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/authentication.py", line 48, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 239, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 133, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  [Previous line repeated 1 more time]
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 462, in handle
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 75, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/router.py", line 83, in wrapper_func
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/authentication.py", line 70, in async_wrapper
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/endpoints/assets.py", line 85, in index
+  File "/home/ohouck/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 1058, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ohouck/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_static/index.html'
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/responses.py", line 349, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/anyio/to_thread.py", line 56, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2485, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 976, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_static/favicon.ico'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/applications.py", line 107, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 219, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/sessions.py", line 85, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 191, in __call__
+  File "/home/ohouck/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 193, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 202, in dispatch
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 168, in call_next
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/base.py", line 144, in coro
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 250, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/authentication.py", line 48, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/auth.py", line 239, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 133, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_server/api/middleware.py", line 424, in __call__
+  [Previous line repeated 1 more time]
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 462, in handle
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/starlette/responses.py", line 352, in __call__
+RuntimeError: File at path /project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/marimo/_static/favicon.ico does not exist.
+slurmstepd: error: *** JOB 39008858 ON midway3-0282 CANCELLED AT 2025-11-03T09:53:15 ***

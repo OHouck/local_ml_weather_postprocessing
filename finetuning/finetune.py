@@ -432,6 +432,9 @@ def get_region_grid(args):
     elif args.region == "ethiopia":
         lat0, lat1 = 4, 14
         lon0, lon1 = 34, 44
+    elif args.region == "corn_belt":
+        lat0, lat1 = 36, 46
+        lon0, lon1 = -95 + 360, -85 + 360
     elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
