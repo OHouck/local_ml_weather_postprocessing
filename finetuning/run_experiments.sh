@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --exclusive
-#SBATCH --job-name=mlp_finetune
+#SBATCH --job-name=run_experiments
 #SBATCH --account=pi-jfranke
 #SBATCH --output=run_experiments-%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --time=4:00:00
+#SBATCH --mem=32G
+#SBATCH --time=6:00:00
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1 
 # lat must be between -90 and 90
@@ -24,7 +25,8 @@ echo "Training mode: $TRAIN_MODE"
     # --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
     # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
 
-regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
+# regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
+regions=("amazon" "usa_south" "corn_belt")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
@@ -67,11 +69,20 @@ for region in "${regions[@]}"; do
                                 train_end="2023-12-31"
                                 test_start="2024-01-01"
                                 test_end="2024-12-31"
+                                
+                                # only current aifs variables are total_precipitation and 2m_temperature
+                                if [[ "$variable" != "total_precipitation" && "$variable" != "2m_temperature" ]]; then
+                                    continue
+                                fi
                             else
                                 train_start="2018-01-01"
                                 train_end="2021-12-31"
                                 test_start="2022-01-01"
                                 test_end="2022-12-31"
+                                # aifs is the only model with precipitation currently
+                                if [[ "$variable" == "total_precipitation" ]]; then
+                                    continue
+                                fi
                             fi
                             
                             # Build base command
@@ -94,7 +105,10 @@ for region in "${regions[@]}"; do
                             fi
 
                             if [[ "$loss_function" == "extreme_heat_loss" ]]; then
-                                cmd="$cmd --alternate_loss_fn=\"$loss_function\""
+                                # only both doing this for 2m_temperature and for geographic regions
+                                if [[ "$variable" == "2m_temperature" && "$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt" ]]; then
+                                    cmd="$cmd --alternate_loss_fn=\"$loss_function\""
+                                fi
                             fi
                             
                             # Add bootstrap flag if region is in bootstrap_regions

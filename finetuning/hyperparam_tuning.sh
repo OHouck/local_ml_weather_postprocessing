@@ -12,5 +12,5 @@
 module load python/3.11.9
 source .venv/bin/activate
 
-uv run finetuning/run_experiments.sh 
+uv run finetuning/hyperparam_tuning.py 
  
