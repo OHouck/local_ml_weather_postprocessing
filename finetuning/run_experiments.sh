@@ -1,4 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/bash
+#SBATCH --exclusive
+#SBATCH --job-name=mlp_finetune
+#SBATCH --account=pi-jfranke
+#SBATCH --output=run_experiments-%J.txt
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --time=4:00:00
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1 
 # lat must be between -90 and 90
 # lon must be between 0 and 360 (0 is at prime meridian)
 #
@@ -15,7 +24,7 @@ echo "Training mode: $TRAIN_MODE"
     # --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
     # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
 
-regions=("ethiopia" "india" "amazon" "usa_south")
+regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
@@ -34,7 +43,7 @@ bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
         # Skip if subregion is 2x2 and region is india, ethiopia, amazon, or usa_south
-        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south") ]]; then
+        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south") || "$region" == "corn_belt" ]]; then
             continue
         fi
         
