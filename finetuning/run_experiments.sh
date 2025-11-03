@@ -18,25 +18,25 @@ source .venv/bin/activate
 TRAIN_MODE=simultaneous
 # TRAIN_MODE=simulataneous
 echo "Training mode: $TRAIN_MODE"
-    # # midway
-    # --data_dir="/project/jfranke/ozma/forecast_data/raw/" \
-    # --output_dir="/project/jfranke/ozma/forecast_data/finetuning_output/" \
-    # # laptop
-    # --data_dir="/Users/ohouck/globus/forecast_data/raw/" \
-    # --output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/" \
+# laptop
+data_dir="/Users/ohouck/globus/forecast_data/raw/"
+output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 
-# regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
-regions=("amazon" "usa_south" "corn_belt")
+# midway
+# data_dir="/project/jfranke/ozma/forecast_data/raw/"
+# output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+
+regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
-regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
+# regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp" "unet")
-variables=("2m_temperature" "10m_wind_speed" "total_precipitation")
-subregions=("2x2" "6x6")
-model_names=("pangu" "ifs" "aifs")
+variables=("2m_temperature" "10m_wind_speed")
+subregions=("6x6")
+model_names=("pangu")
 loss_functions=("mse" "extreme_heat_loss")
 
 # Define bootstrap regions
@@ -87,8 +87,8 @@ for region in "${regions[@]}"; do
                             
                             # Build base command
                             cmd="python3 finetuning/finetune.py \
-                                --data_dir=\"/project/jfranke/ozma/forecast_data/raw/\" \
-                                --output_dir=\"/project/jfranke/ozma/forecast_data/fine_tuning_output/\" \
+                                --data_dir=\"$data_dir\" \
+                                --output_dir=\"$output_dir\" \
                                 --training_vars \"$variable\" \
                                 --output_vars \"$variable\" \
                                 --train_start=\"$train_start\" --train_end=\"$train_end\" \

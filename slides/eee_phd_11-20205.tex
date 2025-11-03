@@ -111,6 +111,7 @@
     \end{itemize}
 % button to go to appendix slide with training details
 \hyperlink{TrainingDetails}{\beamerbutton{Training Details}}
+\hyperlink{Neural Net Background}{\beamerbutton{Neural Net Background}}
 \end{frame}
     
 
@@ -276,5 +277,49 @@
         \end{itemize}
         \hyperlink{FineTuning}{\beamerbutton{Back to Main Presentation}}
 \end{frame}
+\begin{frame}[allowframebreaks]{Neural Network Background}
+    \hypertarget{Neural Net Background}{} % target for \hyperlink
+
+    \begin{columns}[T]
+        \begin{column}{0.58\textwidth}
+            \textbf{Multi Layer Perceptron (MLP):}
+            \begin{itemize}
+                \item A type of feedforward neural network consisting of multiple layers of nodes.
+                \item Each node applies a linear transformation followed by a non-linear activation function (e.g., ReLU).
+                \item Does not explicitly account for spatial structure in the input data.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.38\textwidth}
+            \vspace{0.5cm}
+            \begin{figure}
+                \centering
+                \includegraphics<1-2>[width=\linewidth]{mlp_explained.png}
+                \caption*{\small graphic from sharpsight.ai}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    \end{column}
+    \begin{columns}[T]
+        \begin{column}{0.58\textwidth}
+            \textbf{UNet:}
+            \begin{itemize}
+                \item A convolutional neural network architecture designed for image segmentation tasks.
+                \item Consists of an encoder (downsampling path) and a decoder (upsampling path) with skip connections.
+                \item Effective for spatial data, capturing local patterns and context.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.38\textwidth}
+            \vspace{0.5cm}
+            \begin{figure}
+                \centering
+                \includegraphics<1-2>[width=\linewidth]{unet_explained.png}
+               \caption*{\small graphic from Han et al. 2021}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    \end{column}
+
+
+    \hyperlink{FineTuning}{\beamerbutton{Back to Main Presentation}}
 
 \end{document}
