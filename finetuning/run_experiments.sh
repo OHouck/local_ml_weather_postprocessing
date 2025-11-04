@@ -26,18 +26,17 @@ output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 # data_dir="/project/jfranke/ozma/forecast_data/raw/"
 # output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
 
-regions=("ethiopia" "india" "amazon" "usa_south" "corn_belt")
+regions=("corn_belt" "usa_south")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 all_lead_times=(24 120 216)
-nn_architectures=("mlp" "unet")
+nn_architectures=("unet")
 variables=("2m_temperature" "10m_wind_speed")
-subregions=("6x6")
 model_names=("pangu")
-loss_functions=("mse" "extreme_heat_loss")
+loss_functions=("mse")
 
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
@@ -45,7 +44,7 @@ bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
         # Skip if subregion is 2x2 and region is india, ethiopia, amazon, or usa_south
-        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south") || "$region" == "corn_belt" ]]; then
+        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
             continue
         fi
         
@@ -106,7 +105,7 @@ for region in "${regions[@]}"; do
 
                             if [[ "$loss_function" == "extreme_heat_loss" ]]; then
                                 # only both doing this for 2m_temperature and for geographic regions
-                                if [[ "$variable" == "2m_temperature" && "$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt" ]]; then
+                                if [[ "$variable" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
                                     cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                                 fi
                             fi

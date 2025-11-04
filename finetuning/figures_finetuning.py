@@ -971,6 +971,15 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
                                     nn_architectures, model, growing_season_only,
                                     loss_fn=loss_fn)
+    # metric on which to plot improvement
+    if evaluation_loss == "rmse":
+        outcome_str = "rmse_pct_improvement"
+    elif evaluation_loss == "extreme_heat":
+        outcome_str = "rmse_pct_improvement_extreme_heat"
+
+   # helpful debug print 
+    # cols_to_keep = ['region', 'lead_time', 'architecture', outcome_str, 'subregion', 'model', 'output_vars', "loss_fn", "growing_season_only"] 
+    # print(df[cols_to_keep])
     
     if len(df) == 0:
         print(f"No data found for specified filters")
@@ -1020,11 +1029,6 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             # Calculate alpha based on architecture (for visual distinction)
             alpha = 0.9 if fillstyle == 'full' else 0.6
 
-            # metric on which to plot improvement
-            if evaluation_loss == "rmse":
-                outcome_str = "rmse_pct_improvement"
-            elif evaluation_loss == "extreme_heat":
-                outcome_str = "rmse_pct_improvement_extreme_heat"
 
             # Plot neural network correction as bars
             if outcome_str in arch_df.columns:
@@ -1220,7 +1224,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     prediction_var = df['variable'].iloc[0]
     
     # Get color schemes
-    region_colors, climate_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -1487,7 +1491,7 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     prediction_var = df['variable'].iloc[0]
     
     # Get color schemes
-    region_colors, climate_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -1694,9 +1698,9 @@ def main():
     stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
 
     nn_architectures = ["mlp"]
-    variable_list = ["2m_temperature"]
+    variable_list = ["2m_temperature", "10m_wind_speed"]
     model_list = ["pangu", "ifs"]
-    geo_regions = ["india", "amazon", "ethiopia", "usa_south"]
+    geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
     growing_season_flags = [False]
@@ -1716,27 +1720,27 @@ def main():
                     subregion="6x6",
                     nn_architectures=nn_architectures,
                     growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat",
+                    loss_trained_on="mse",
                     evaluation_loss="rmse"
                 )
-                # plot_raw_forecast_values(csv_path = stat_path,
-                #     dirs=dirs,
-                #     variable=var,
-                #     model=model,
-                #     regions=climate_regions,
-                #     subregion="2x2",
-                #     nn_architectures=nn_architectures,
-                #     growing_season_only=gs_flag
-                # )
-                # plot_error_cutoff(csv_path = stat_path,
-                #     dirs=dirs,
-                #     variable=var,
-                #     model=model,
-                #     regions=climate_regions,
-                #     subregion="2x2",
-                #     nn_architectures=nn_architectures,
-                #     growing_season_only=gs_flag
-                # )
+                plot_raw_forecast_values(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=geo_regions,
+                    subregion="6x6",
+                    nn_architectures=nn_architectures,
+                    growing_season_only=gs_flag
+                )
+                plot_error_cutoff(csv_path = stat_path,
+                    dirs=dirs,
+                    variable=var,
+                    model=model,
+                    regions=geo_regions,
+                    subregion="6x6",
+                    nn_architectures=nn_architectures,
+                    growing_season_only=gs_flag
+                )
     exit()
     for var in variable_list:
         for model in model_list:

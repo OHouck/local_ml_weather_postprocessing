@@ -521,7 +521,7 @@ def main():
 
     loss_function_list = ['mse', 'extreme_heat_loss']
 
-    geographic_regions=["india", "ethiopia", "amazon", "british_columbia", "usa_south"]
+    geographic_regions=["india", "ethiopia", "amazon", "corn_belt", "usa_south"]
     # regions that require bootstrapping
     bootstrap_regions=["arid", "tropical", "temperate", "flat", "hilly", "mountainous"]
     df = calculate_and_save_statistics(

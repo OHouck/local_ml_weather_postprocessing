@@ -66,12 +66,12 @@
         
     \pause
     \begin{itemize}
-        \item \textbf{The Rub}: All global weather models (NWP or ML) are trained to optimize overall global accuracy.
+        \item \textbf{The Problem:} All global weather models (NWP or ML) are trained to optimize overall global accuracy.
         \begin{itemize}
             \item A temperature error in Greenland is treated the same as a temperature error in Chicago!
             \item The ML models might be cheap to run, but they are extremely expensive to train!
         \end{itemize}
-     \item \textbf{Potential Solution}: Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest.
+     \item \textbf{Potential Solution:} Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest. 
     \end{itemize}
 \end{frame}
 
@@ -80,7 +80,8 @@
     \begin{itemize}
         \item Just as ML tools can be used to post-process models just as they have been used to build them. 
         \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle.
-        \item \textbf{Contribution 2}: show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.
+        \item \textbf{Contribution 2}: show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.(In Progress)
+        \item \textbf{Contribution 3}: Using agriculture as a test case, demonstrate how damage functions can be estimated and incorporated as custom loss functions when post-processing. (In Progress)
     \end{itemize}
 \end{frame}
 
@@ -126,7 +127,14 @@
         \centering
         \includegraphics[width=0.8\linewidth]{climate_zones_with_patches.png}
     \end{figure}
-
+\end{frame}
+\begin{frame}{Start by Manually Looking at Five Regions of Interest}
+    \begin{itemize}
+        \item Manually choose a few regions with a variety of climates and land terrains. 
+        \item Sample from different climate zones (arid, temperate, tropical). 
+        \item Sample from different topographic zones (coastal, mountainous, flat).
+    \end{itemize}
+    
     \begin{figure}
         \centering
         \includegraphics[width=0.8\linewidth]{topo_zones_with_patches.png}
@@ -221,24 +229,25 @@
 \end{frame}
 
 \begin{frame}{Able to improve performance based on damage weighted MSE}
-    \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \vspace{0.5cm}
-            \begin{figure}
-                \centering
-                \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png}
-                \caption*{\small Extreme heat trained model}
-            \end{figure}
-        \end{column}
-        \begin{column}{0.48\textwidth}
-            \vspace{0.5cm}
-            \begin{figure}
-                \centering
-                \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_og_rmse_mlp.png}
-                \caption*{\small Standard MSE trained model}
-            \end{figure}
-        \end{column}
-    \end{columns}
+    NEED TO RERUN FIX THESE MODELS
+    % \begin{columns}[T]
+    %     \begin{column}{0.48\textwidth}
+    %         \vspace{0.5cm}
+    %         \begin{figure}
+    %             \centering
+    %             \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png}
+    %             \caption*{\small Extreme heat trained model}
+    %         \end{figure}
+    %     \end{column}
+    %     \begin{column}{0.48\textwidth}
+    %         \vspace{0.5cm}
+    %         \begin{figure}
+    %             \centering
+    %             \includegraphics[width=\linewidth]{pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png}
+    %             \caption*{\small Standard MSE trained model}
+    %         \end{figure}
+    %     \end{column}
+    % \end{columns}
 \end{frame}
 
 \section{Appendix}
@@ -255,7 +264,7 @@
 
     \textbf{UNet Details:}
     \begin{itemize}
-        \item Starting hidden dimension 128 (XX what does this mean)
+        \item Starting hidden dimension starts at 128 and goes up to 512
         \item dropout\_rate $\sim 0.1$
         \item 16 dimensional lead time embeddings for 3 lead times.
     \end{itemize}
@@ -277,6 +286,7 @@
         \end{itemize}
         \hyperlink{FineTuning}{\beamerbutton{Back to Main Presentation}}
 \end{frame}
+
 \begin{frame}[allowframebreaks]{Neural Network Background}
     \hypertarget{Neural Net Background}{} % target for \hyperlink
 
@@ -298,7 +308,7 @@
             \end{figure}
         \end{column}
     \end{columns}
-    \end{column}
+    
     \begin{columns}[T]
         \begin{column}{0.58\textwidth}
             \textbf{UNet:}
@@ -317,9 +327,8 @@
             \end{figure}
         \end{column}
     \end{columns}
-    \end{column}
-
 
     \hyperlink{FineTuning}{\beamerbutton{Back to Main Presentation}}
+\end{frame}
 
 \end{document}
