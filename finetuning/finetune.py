@@ -686,18 +686,17 @@ def extreme_heat_loss(preds, targets, std_out, mean_out):
     targets: (batch_size, n_features) in normalized units
     """
 
-    raw_errors = targets - preds
-
     # un-normalize 
     preds = preds * std_out + mean_out
     targets = targets * std_out + mean_out
 
-    # convert to celsius for easier thresholding 
+    # convert to Celsius from Kelvin for easier thresholding 
     targets_c = targets - 273.15
     preds_c = preds - 273.15
     errors = targets_c - preds_c
     squared_errors = errors**2
     weights = torch.ones_like(errors)
+
     weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2
     weights += (targets_c > 30) * (errors < 0).float() * 10 
 
@@ -780,12 +779,14 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
             # Model predicts the error, so add to input forecast
             pred_error = model(x_batch, lead_time_batch, doy_batch)
 
+            # Add predicted error to input forecast to get final prediction
+            preds = x_batch + pred_error
+
             # some custom loss functions need un-normalized values
             if alternate_loss_fn in {"extreme_heat_loss"}:
-                loss = criterion(pred_error, y_batch, std_out, mean_out)
+                loss = criterion(preds, y_batch, std_out, mean_out)
 
             else:
-                preds = x_batch + pred_error
                 loss = criterion(preds, y_batch)
 
             loss.backward()
@@ -803,10 +804,12 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
 
                 pred_error = model(x_batch, lead_time_batch, doy_batch)
 
+                # Add predicted error to input forecast to get final prediction
+                preds = x_batch + pred_error
+
                 if alternate_loss_fn in {"extreme_heat_loss"}:
-                    loss = criterion(pred_error, y_batch, std_out, mean_out)
+                    loss = criterion(preds, y_batch, std_out, mean_out)
                 else:
-                    preds = x_batch + pred_error
                     loss = criterion(preds, y_batch)
 
                 val_loss += loss.item() * x_batch.size(0)
@@ -1017,6 +1020,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         model = UNet(input_dim, 32, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
                      n_lead_times=n_lead_times).to(device)
+        num_epochs = 200
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
@@ -1027,10 +1031,11 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                           lead_time_embedding_dim=4,
                           dropout_rate =0.1097725 
                           ).to(device)
+        num_epochs = 100
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=500, lr=4.673747105982307e-05,
+                                                epochs=num_epochs, lr=4.673747105982307e-05,
                                                 device=device,
                                                 weight_decay=2.8276153644203165e-06,
                                                 patience=1000, min_delta=0.000286450816778278, # set patience high to disable early stopping

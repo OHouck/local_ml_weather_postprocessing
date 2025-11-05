@@ -309,9 +309,6 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         if verbose:
             print(f"Region {region_key}: val_loss = {val_loss:.6f}")
                 
-            # Return a high loss for failed evaluations
-            return {'loss': 1e10, 'status': STATUS_OK}
-    
     # Calculate weighted average loss
     avg_loss = total_weighted_loss / total_weight if total_weight > 0 else 1e10
     
@@ -324,53 +321,55 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     }
 
 
-def optimize_hyperparameters(config_list: List[Dict[str, Any]], 
+def optimize_hyperparameters(config_list: List[Dict[str, Any]],
                            architecture: str,
                            max_evals: int = 100,
                            output_dir: str = None,
                            device: torch.device = None,
-                           random_seed: int = 42) -> Dict[str, Any]:
+                           random_seed: int = 42,
+                           resume: bool = False) -> Dict[str, Any]:
     """
     Optimize hyperparameters for a specific architecture (MLP or UNet).
-    
+
     Args:
         config_list: List of configurations
         architecture: 'mlp' or 'unet'
-        max_evals: Maximum number of evaluations
+        max_evals: Maximum number of evaluations (total, including resumed trials)
         output_dir: Directory to save results
         device: torch device (if None, will auto-detect)
         random_seed: Random seed for reproducibility
-        
+        resume: If True, load previous trials from output_dir and continue optimization
+
     Returns:
         dict: Best hyperparameters and optimization results
     """
     # Validate architecture
     if architecture not in ['mlp', 'unet']:
         raise ValueError(f"Architecture must be 'mlp' or 'unet', got: {architecture}")
-    
+
     # Set random seeds
     np.random.seed(random_seed)
     torch.manual_seed(random_seed)
-    
+
     # Setup device
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else
                             'mps' if torch.backends.mps.is_available() else
                             'cpu')
     print(f"Using device: {device}")
-    
+
     # Create output directory
     if output_dir is None:
         output_dir = f"hyperopt_results_{architecture}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Define objective function for hyperopt
     def objective(hyperparams):
         """Objective function to minimize."""
         print(f"\nEvaluating {architecture.upper()} hyperparameters: {hyperparams}")
-        result = evaluate_hyperparameters(hyperparams, config_list, device, 
+        result = evaluate_hyperparameters(hyperparams, config_list, device,
                                         architecture=architecture, verbose=True)
-        
+
         # Save intermediate results
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         result_file = os.path.join(output_dir, f'eval_{timestamp}.json')
@@ -381,9 +380,9 @@ def optimize_hyperparameters(config_list: List[Dict[str, Any]],
                 'region_losses': result.get('region_losses', {}),
                 'architecture': architecture
             }, f, indent=2)
-        
+
         return result
-    
+
     # Create architecture-specific search space
     if architecture == 'mlp':
         search_space = create_mlp_search_space()
@@ -391,10 +390,46 @@ def optimize_hyperparameters(config_list: List[Dict[str, Any]],
         search_space = create_unet_search_space()
     else:
         raise ValueError(f"Unknown architecture: {architecture}")
-    
-    # Run optimization
-    trials = Trials()
-    
+
+    # Load or initialize trials
+    trials_file = os.path.join(output_dir, f'trials_{architecture}.pkl')
+
+    if resume and os.path.exists(trials_file):
+        # Load existing trials
+        print(f"Resuming optimization from {trials_file}")
+        with open(trials_file, 'rb') as f:
+            trials = pickle.load(f)
+        n_previous = len(trials.trials)
+        print(f"Loaded {n_previous} previous trials")
+        print(f"Will run {max_evals - n_previous} additional evaluations")
+
+        if n_previous >= max_evals:
+            print(f"Already completed {n_previous} evaluations (>= max_evals={max_evals})")
+            print("No additional evaluations needed. Loading best results...")
+
+            # Just extract and return the best results
+            best_trial_idx = np.argmin([t['result']['loss'] for t in trials.trials])
+            best_trial = trials.trials[best_trial_idx]
+
+            # Get best hyperparameters
+            best_hyperparams = space_eval(search_space, best_trial['misc']['vals'])
+
+            results = {
+                'architecture': architecture,
+                'best_hyperparams': best_hyperparams,
+                'best_loss': best_trial['result']['loss'],
+                'best_region_losses': best_trial['result'].get('region_losses', {}),
+                'n_evaluations': len(trials.trials),
+                'all_trials': trials.trials
+            }
+
+            return results
+    else:
+        # Start fresh
+        trials = Trials()
+        if resume:
+            print(f"No previous trials found at {trials_file}, starting fresh")
+
     # minimize objective function using hyperopt
     best = hyperopt.fmin(
         fn=objective,
@@ -512,7 +547,22 @@ if __name__ == "__main__":
         subregion = '6x6',
         ground_truth_source = 'era5',
         lead_time_hours = [24, 120, 216],
-        growing_season_only = True
+        growing_season_only = False 
+    )
+    pangu_extreme_heat_args = SimpleNamespace(
+        model_name="pangu",
+        training_vars=["2m_temperature"],
+        output_vars=["2m_temperature"],
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        region = 'india',
+        subregion = '6x6',
+        ground_truth_source = 'era5',
+        lead_time_hours = [24, 120, 216],
+        growing_season_only = False,
+        alternative_loss_fn = 'extreme_heat_loss'
     )
     aifs_args = SimpleNamespace(
         model_name="aifs",
@@ -540,6 +590,11 @@ if __name__ == "__main__":
         'weight': 1.0  # Optional, defaults to 1.0 if not specified
     },
     {
+        'args': pangu_extreme_heat_args,
+        'data_dir': data_dir,
+        'weight': 1.0
+    },
+    {
         'args': aifs_args,
         'data_dir': data_dir,
         'weight': 1.0
@@ -550,13 +605,17 @@ if __name__ == "__main__":
                           'mps' if torch.backends.mps.is_available() else
                           'cpu')
 
+    # Example: Run 35 evaluations
+    # To resume and add more evaluations, set resume=True and increase max_evals
+    # e.g., first run with max_evals=20, then run again with max_evals=50 and resume=True
     mlp_results = optimize_hyperparameters(
         config_list=config_list,
         architecture="mlp",
-        max_evals=100,
+        max_evals=35, # total trainings = max_evals * len(config_list)
         output_dir="hyperopt_results_mlp",
         device=device,
-        random_seed=42
+        random_seed=42,
+        resume=True  # Set to True to continue from previous runs
     )
     print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
 

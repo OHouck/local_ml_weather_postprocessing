@@ -1000,7 +1000,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     n_regions = len(regions)
     n_architectures = len(nn_architectures)
     n_groups_per_leadtime = n_regions * n_architectures
-    bar_width = 0.8 / n_groups_per_leadtime
+    bar_width = 0.6 / n_groups_per_leadtime
 
     # Plot each region/architecture combination
     for region_idx, region in enumerate(regions):
@@ -1050,6 +1050,20 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                              hatch=hatch,
                              zorder=3)
 
+                # Add lighter, thinner bar for mean bias correction improvement (only for RMSE evaluation)
+                if evaluation_loss == "rmse" and 'pct_improvement_mean_corrected' in arch_df.columns:
+                    mean_corrected_values = arch_df['pct_improvement_mean_corrected'].values
+                    # Make the bar thinner (60% of original width) and lighter
+                    mean_bar_width = bar_width * 0.6
+                    ax.bar(x_pos, mean_corrected_values,
+                          width=mean_bar_width,
+                          color=color,
+                          alpha=alpha * 0.4,  # Lighter by reducing alpha
+                          edgecolor='black',
+                          linewidth=0.3,
+                          hatch=hatch,
+                          zorder=4)
+
                 # Add error bars if confidence intervals are available
                 if f'{outcome_str}_ci_lower' in arch_df.columns:
                     ci_lower = arch_df[f'{outcome_str}_ci_lower'].values
@@ -1065,7 +1079,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                                capsize=3,
                                capthick=1,
                                alpha=0.7,
-                               zorder=4)
+                               zorder=5)
     
     # Set axes
     ax.set_ylim(-15, 35)
@@ -1138,7 +1152,17 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             ax.get_legend().get_frame().set_facecolor('white')
             ax.get_legend().get_frame().set_alpha(0.95)
             ax.get_legend().get_frame().set_edgecolor('gray')
-    
+
+    # Add annotation explaining the transparent bars (only for RMSE evaluation)
+    if evaluation_loss == "rmse":
+        annotation_text = "Note: Lighter inner bars show improvement from simple mean debiasing"
+        ax.text(0.02, 0.98, annotation_text,
+               transform=ax.transAxes,
+               fontsize=11,
+               verticalalignment='top',
+               bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow',
+                        edgecolor='gray', alpha=0.8))
+
     # Remove spines
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -1166,6 +1190,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             grow_flag = "_growing_season"
         else:
             grow_flag = ""
+
         if loss_trained_on == "mse" and evaluation_loss == "rmse":
             model_str = model
         elif loss_trained_on == "extreme_heat" and evaluation_loss == "extreme_heat":
@@ -1186,8 +1211,9 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
 
 
 def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
-                            regions=None, subregion="4x4",
-                            nn_architectures=["mlp"], growing_season_only = False, save_path=None):
+                            regions=None, subregion="6x6",
+                            nn_architectures=["mlp"], growing_season_only = False, 
+                            loss_trained_on="mse",save_path=None):
     """
     Plot raw forecast values as deviations from ground truth mean.
     
@@ -1209,12 +1235,23 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         List of architectures to include: ["mlp"], ["unet"], or both
     growing_season_only : bool
         Whether to use results on model trained only on growing season
+    loss_trained_on: str
+        Loss function used to train the model: "mse", "extreme_heat"
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
+    # choose loss function used to train model
+    if loss_trained_on == "mse":
+        loss_fn = "mse"
+    elif loss_trained_on == "extreme_heat":
+        loss_fn = "extreme_heat_loss"
+    else:
+        raise ValueError(f"Unknown loss_trained_on: {loss_trained_on}")
+
     # Prepare data
-    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
-                                    nn_architectures, model, growing_season_only=growing_season_only)
+    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
+                                    nn_architectures, model, growing_season_only,
+                                    loss_fn=loss_fn)
     if len(df) == 0:
         print(f"No data found for specified filters")
         return
@@ -1228,43 +1265,49 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
-    
+
+    # Calculate bar width and positions
+    n_regions = len(regions)
+    n_architectures = len(nn_architectures)
+    n_groups_per_leadtime = n_regions * n_architectures * 2  # 2 for original and corrected
+    bar_width = 0.6 / n_groups_per_leadtime
+    region_gap = bar_width * 0.25  # Small gap between regions
+
     # Track which forecast types we've added to legend
-    legend_added = {'ground_truth': False, 'original': False, 'corrected': False}
-    
+    legend_added = {'original': False, 'corrected': False}
+
     # Store mean values for annotation
     region_means = {}
-    
-    for region in regions:
+
+    for region_idx, region in enumerate(regions):
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
-        
+
         region_df = df[df['region'] == region]
-        
-        for arch in nn_architectures:
+
+        for arch_idx, arch in enumerate(nn_architectures):
             arch_df = region_df[region_df['architecture'] == arch]
-            
+
             if len(arch_df) == 0:
                 continue
-            
+
             # Sort by lead time
             arch_df = arch_df.sort_values('lead_time')
-            
+
             # Get styles
-            marker = model_markers.get(model, 'o')
             fillstyle = architecture_fillstyles.get(arch, 'full')
-            
-            x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
-            
+            alpha = 0.9 if fillstyle == 'full' else 0.6
+            hatch = None if fillstyle == 'full' else '//'
+
             # Calculate overall mean of ground truth for this region/model/arch
             if 'ground_truth_mean' in arch_df.columns:
                 ground_truth_values = arch_df['ground_truth_mean'].values
                 if not np.all(np.isnan(ground_truth_values)):
                     overall_gt_mean = np.nanmean(ground_truth_values)
-                    
+
                     # Store mean for annotation
                     region_key = f"{region}_{model}_{arch}"
                     if variable == '2m_temperature':
@@ -1275,46 +1318,52 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                         region_means[region_key] = (region, overall_gt_mean, 'mm')
                     else:
                         region_means[region_key] = (region, overall_gt_mean, '')
-                    
-                    # Plot original forecast raw errors 
+
+                    # Plot original forecast raw errors as bars
                     if 'mean_original_forecast' in arch_df.columns:
                         y_values = arch_df['mean_original_forecast'].values
                         if not np.all(np.isnan(y_values)):
-                            y_values_error = y_values - ground_truth_values 
-                            
+                            y_values_error = y_values - ground_truth_values
+
                             label = 'Original Forecast Error' if not legend_added['original'] else None
                             if label:
                                 legend_added['original'] = True
-                            
-                            ax.plot(x_pos, y_values_error,
-                                   marker=marker,
-                                   fillstyle=fillstyle,
-                                   linestyle='--',
+
+                            # Calculate x positions for original bars with region gaps
+                            group_offset = (region_idx * n_architectures * 2 + arch_idx * 2) * bar_width + region_idx * region_gap
+                            x_pos = np.arange(len(lead_times)) + group_offset - (n_groups_per_leadtime * bar_width + (n_regions - 1) * region_gap) / 2 + bar_width / 2
+
+                            ax.bar(x_pos, y_values_error,
+                                   width=bar_width,
                                    color=color,
-                                   linewidth=2,
-                                   markersize=12,
-                                   alpha=0.6,
+                                   alpha=alpha * 0.6,
+                                   edgecolor='black',
+                                   linewidth=0.5,
+                                   hatch=hatch,
                                    label=label,
                                    zorder=2)
-                    
-                    # Plot corrected forecast deviations
+
+                    # Plot corrected forecast deviations as bars
                     if 'mean_corrected_forecast' in arch_df.columns:
                         y_values = arch_df['mean_corrected_forecast'].values
                         if not np.all(np.isnan(y_values)):
                             y_values_dev = y_values - ground_truth_values
-                            
+
                             label = 'Corrected Forecast Error' if not legend_added['corrected'] else None
                             if label:
                                 legend_added['corrected'] = True
-                            
-                            ax.plot(x_pos, y_values_dev,
-                                   marker=marker,
-                                   fillstyle=fillstyle,
-                                   linestyle='-',
+
+                            # Calculate x positions for corrected bars (offset from original) with region gaps
+                            group_offset = (region_idx * n_architectures * 2 + arch_idx * 2 + 1) * bar_width + region_idx * region_gap
+                            x_pos = np.arange(len(lead_times)) + group_offset - (n_groups_per_leadtime * bar_width + (n_regions - 1) * region_gap) / 2 + bar_width / 2
+
+                            ax.bar(x_pos, y_values_dev,
+                                   width=bar_width,
                                    color=color,
-                                   linewidth=2.5,
-                                   markersize=15,
-                                   alpha=0.75,
+                                   alpha=alpha,
+                                   edgecolor='black',
+                                   linewidth=0.5,
+                                   hatch=hatch,
                                    label=label,
                                    zorder=3)
     
@@ -1378,20 +1427,15 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     ax.tick_params(axis='both', labelsize=20)
     
     # Create legends
+    from matplotlib.patches import Patch
     forecast_handles = []
-    if legend_added['ground_truth']:
-        forecast_handles.append(Line2D([0], [0], color='gray', marker='s', 
-                                      linestyle=':', linewidth=2, markersize=10,
-                                      label='Ground Truth'))
     if legend_added['original']:
-        forecast_handles.append(Line2D([0], [0], color='gray', marker='o',
-                                      linestyle='--', linewidth=2, markersize=12,
-                                      label='Original Forecast'))
+        forecast_handles.append(Patch(facecolor='gray', edgecolor='black',
+                                      alpha=0.6, label='Original Forecast Error'))
     if legend_added['corrected']:
-        forecast_handles.append(Line2D([0], [0], color='gray', marker='o',
-                                      linestyle='-', linewidth=2.5, markersize=15,
-                                      label='Corrected Forecast'))
-    
+        forecast_handles.append(Patch(facecolor='gray', edgecolor='black',
+                                      alpha=0.9, label='Corrected Forecast Error'))
+
     legend1 = ax.legend(handles=forecast_handles, title="Forecast Type",
                        loc='lower left', bbox_to_anchor=(0.2,0), fontsize=12)
     
@@ -1440,9 +1484,15 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         else:
             grow_flag = ""
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
-        
+
+        if loss_trained_on == "mse":
+            model_str = model
+        elif loss_trained_on == "extreme_heat":
+            model_str = f"{model}_extreme_heat"
+
         fname = (f"leadtime_raw_values_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}{grow_flag}.png")
+                f"{region_type}_{model_str}_{arch_suffix}{grow_flag}.png")
+        
         save_path = os.path.join(out_folder, fname)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1453,7 +1503,8 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
 
 def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
                      regions=None, subregion="4x4",
-                     nn_architectures=["mlp"], save_path=None, growing_season_only=False):
+                     nn_architectures=["mlp"], save_path=None, 
+                     loss_trained_on="mse", growing_season_only=False):
     """
     Plot percentage of forecasts exceeding error threshold.
     
@@ -1475,12 +1526,22 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
         List of architectures to include: ["mlp"], ["unet"], or both
     growing_season_only : bool
         Whether to use results on model trained only on growing season
+    loss_trained_on: str
+        Loss function used to train the model: "mse", "extreme_heat"
     save_path : str
         Custom save path. If None, auto-generates based on parameters
     """
+    if loss_trained_on == "mse":
+        loss_fn = "mse"
+    elif loss_trained_on == "extreme_heat":
+        loss_fn = "extreme_heat_loss"
+    else:
+        raise ValueError(f"Unknown loss_trained_on: {loss_trained_on}")
+
     # Prepare data
-    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
-                                    nn_architectures, model, growing_season_only=growing_season_only)
+    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
+                                    nn_architectures, model, growing_season_only,
+                                    loss_fn=loss_fn)
     
     if len(df) == 0:
         print(f"No data found for specified filters")
@@ -1495,7 +1556,14 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
-    
+
+    # Calculate bar width and positions
+    n_regions = len(regions)
+    n_architectures = len(nn_architectures)
+    n_groups_per_leadtime = n_regions * n_architectures * 2  # 2 for original and corrected
+    bar_width = 0.6 / n_groups_per_leadtime
+    region_gap = bar_width * 0.25  # Small gap between regions
+
     # Extract error cutoff information if available
     error_cutoff_value = None
     error_cutoff_units = None
@@ -1506,72 +1574,77 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
             if len(parts) >= 2:
                 error_cutoff_value = parts[0].replace('>', '')
                 error_cutoff_units = ' '.join(parts[1:])
-    
+
     # Track if we've plotted anything
-    has_data = False
-    
-    for region in regions:
+    legend_added = {'original': False, 'corrected': False}
+
+    for region_idx, region in enumerate(regions):
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
-        
+
         region_df = df[df['region'] == region]
-        
-        for arch in nn_architectures:
+
+        for arch_idx, arch in enumerate(nn_architectures):
             arch_df = region_df[region_df['architecture'] == arch]
-            
+
             if len(arch_df) == 0:
                 continue
-            
+
             # Sort by lead time
             arch_df = arch_df.sort_values('lead_time')
-            
+
             # Get styles
-            marker = model_markers.get(model, 'o')
             fillstyle = architecture_fillstyles.get(arch, 'full')
-            
-            # Create label only for the first plot of each type
-            label_original = None
-            label_corrected = None
-            if not has_data:
-                label_original = 'Original'
-                label_corrected = 'Corrected'
-                has_data = True
-            
-            # Plot original error rate (dashed line)
+            alpha = 0.9 if fillstyle == 'full' else 0.6
+            hatch = None if fillstyle == 'full' else '//'
+
+            # Plot original error rate as bars
             if 'pct_error_cutoff_original' in arch_df.columns:
-                x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
                 y_values = arch_df['pct_error_cutoff_original'].values
-                
+
                 if not np.all(np.isnan(y_values)):
-                    ax.plot(x_pos, y_values,
-                           marker=marker,
-                           fillstyle=fillstyle,
-                           linestyle='--',
+                    label = 'Original' if not legend_added['original'] else None
+                    if label:
+                        legend_added['original'] = True
+
+                    # Calculate x positions for original bars with region gaps
+                    group_offset = (region_idx * n_architectures * 2 + arch_idx * 2) * bar_width + region_idx * region_gap
+                    x_pos = np.arange(len(lead_times)) + group_offset - (n_groups_per_leadtime * bar_width + (n_regions - 1) * region_gap) / 2 + bar_width / 2
+
+                    ax.bar(x_pos, y_values,
+                           width=bar_width,
                            color=color,
-                           linewidth=2,
-                           markersize=12,
-                           alpha=0.6,
-                           label=label_original,
+                           alpha=alpha * 0.6,
+                           edgecolor='black',
+                           linewidth=0.5,
+                           hatch=hatch,
+                           label=label,
                            zorder=2)
-            
-            # Plot corrected error rate (solid line)
+
+            # Plot corrected error rate as bars
             if 'pct_error_cutoff_corrected' in arch_df.columns:
-                x_pos = [lead_times.index(lt) for lt in arch_df['lead_time']]
                 y_values = arch_df['pct_error_cutoff_corrected'].values
-                
+
                 if not np.all(np.isnan(y_values)):
-                    ax.plot(x_pos, y_values,
-                           marker=marker,
-                           fillstyle=fillstyle,
-                           linestyle='-',
+                    label = 'Corrected' if not legend_added['corrected'] else None
+                    if label:
+                        legend_added['corrected'] = True
+
+                    # Calculate x positions for corrected bars (offset from original) with region gaps
+                    group_offset = (region_idx * n_architectures * 2 + arch_idx * 2 + 1) * bar_width + region_idx * region_gap
+                    x_pos = np.arange(len(lead_times)) + group_offset - (n_groups_per_leadtime * bar_width + (n_regions - 1) * region_gap) / 2 + bar_width / 2
+
+                    ax.bar(x_pos, y_values,
+                           width=bar_width,
                            color=color,
-                           linewidth=2.5,
-                           markersize=15,
-                           alpha=0.75,
-                           label=label_corrected,
+                           alpha=alpha,
+                           edgecolor='black',
+                           linewidth=0.5,
+                           hatch=hatch,
+                           label=label,
                            zorder=3)
     
     # Set y-axis
@@ -1624,19 +1697,18 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
         arch_handles.append(Line2D([0], [0], color='black', marker='o',
                                   fillstyle=fillstyle, markersize=15,
                                   linestyle='none', label=arch.upper()))
-    
-    line_handles = [
-        Line2D([0], [0], color='gray', linestyle='--', linewidth=2,
-              label='Original', alpha=0.6),
-        Line2D([0], [0], color='gray', linestyle='-', linewidth=2.5,
-              label='Corrected', alpha=0.75)
+
+    from matplotlib.patches import Patch
+    bar_handles = [
+        Patch(facecolor='gray', edgecolor='black', alpha=0.6, label='Original'),
+        Patch(facecolor='gray', edgecolor='black', alpha=0.9, label='Corrected')
     ]
-    
+
     # Position legends
     legend1 = ax.legend(handles=region_handles, title="Region",
                        loc='upper left', bbox_to_anchor=(0, 0.85), fontsize=12)
-    
-    legend2 = ax.legend(handles=line_handles, title="Forecast Type",
+
+    legend2 = ax.legend(handles=bar_handles, title="Forecast Type",
                        loc='upper left', bbox_to_anchor=(0, 0.6), fontsize=12)
     
     if len(nn_architectures) > 1:
@@ -1681,9 +1753,14 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
             grow_flag = ""
         
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
-        
+
+        if loss_trained_on == "mse":
+            model_str = model
+        elif loss_trained_on == "extreme_heat":
+            model_str = f"{model}_extreme_heat"
+
         fname = (f"leadtime_error_cutoff_{prediction_var}_trainedwith_{training_vars}_"
-                f"{region_type}_{model}_{arch_suffix}{grow_flag}.png")
+                f"{region_type}_{model_str}_{arch_suffix}{grow_flag}.png")
         save_path = os.path.join(out_folder, fname)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1695,11 +1772,11 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 def main():
     dirs = setup_directories()
 
-    stat_path = "/Users/ohouck/globus/forecast_data/processed/forecast_improvement_stats.csv"
+    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
 
     nn_architectures = ["mlp"]
-    variable_list = ["2m_temperature", "10m_wind_speed"]
-    model_list = ["pangu", "ifs"]
+    variable_list = ["2m_temperature"]
+    model_list = ["pangu"]
     geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
@@ -1720,8 +1797,8 @@ def main():
                     subregion="6x6",
                     nn_architectures=nn_architectures,
                     growing_season_only=gs_flag,
-                    loss_trained_on="mse",
-                    evaluation_loss="rmse"
+                    loss_trained_on="extreme_heat",
+                    evaluation_loss="extreme_heat"
                 )
                 plot_raw_forecast_values(csv_path = stat_path,
                     dirs=dirs,
@@ -1730,7 +1807,8 @@ def main():
                     regions=geo_regions,
                     subregion="6x6",
                     nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
+                    growing_season_only=gs_flag,
+                    loss_trained_on="extreme_heat"
                 )
                 plot_error_cutoff(csv_path = stat_path,
                     dirs=dirs,
@@ -1739,7 +1817,8 @@ def main():
                     regions=geo_regions,
                     subregion="6x6",
                     nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
+                    growing_season_only=gs_flag,
+                    loss_trained_on="extreme_heat"
                 )
     exit()
     for var in variable_list:

@@ -156,6 +156,7 @@ def calculate_and_save_statistics(
             region_type = 'climate'  # Default to climate if not recognized
         all_regions.append({'name': region, 'type': region_type, 'bootstrap': True})
     
+    
     # Storage for all results
     all_results = []
 
@@ -242,9 +243,7 @@ def calculate_and_save_statistics(
                                     else:
                                         file_pattern = os.path.join(dirs['input'], 
                                             generate_output_path(args))
-                                    
                                     files = glob.glob(file_pattern)
-
                                     
                                     if not files:
                                         print(f"No files found for {prediction_var} {model} {arch} {region} {subregion} {lead_time}h")
