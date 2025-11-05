@@ -32,7 +32,7 @@ all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 variables=("2m_temperature")
 model_names=("pangu")
-loss_functions=("mlp")
+loss_functions=("mse")
 
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")

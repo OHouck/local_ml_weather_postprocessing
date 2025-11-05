@@ -700,16 +700,16 @@ def extreme_heat_loss(preds, targets, std_out, mean_out):
     weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2
     weights += (targets_c > 30) * (errors < 0).float() * 10 
 
-    weights = weights / weights.sum()  # sum to 1 for interpretability
+    weights = weights / weights.sum()  # sum to 1 for interpretability with MSE
     weighted_mse = (weights * squared_errors).sum()
 
     return weighted_mse
 
 
 def train_model(model, train_loader, valid_loader, epochs, lr, device,
-                weight_decay=0, patience=0, min_delta=9.8e-05,
-                stats_out=None, alternate_loss_fn=None, use_cosine_annealing=True,
-                T_0=10, T_mult=2, eta_min=1e-7):
+                weight_decay=0, 
+                stats_out=None, alternate_loss_fn=None, 
+                T_0=10, T_mult=3, eta_min=1e-7):
     """
     Train the model over multiple epochs with early stopping.
 
@@ -721,11 +721,8 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         lr: Initial learning rate
         device: Device to train on (cpu/cuda)
         weight_decay: L2 regularization weight
-        patience: Early stopping patience (epochs without improvement)
-        min_delta: Minimum change in validation loss to qualify as improvement
         stats_out: Statistics for denormalizing outputs (for custom losses)
         alternate_loss_fn: Name of custom loss function to use
-        use_cosine_annealing: Whether to use cosine annealing LR scheduler
         T_0: Number of epochs for first restart cycle (cosine annealing)
         T_mult: Factor to increase T_0 after each restart (cosine annealing)
         eta_min: Minimum learning rate (cosine annealing)
@@ -753,10 +750,9 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                            weight_decay=weight_decay)
 
     # Add cosine annealing with warm restarts scheduler
-    if use_cosine_annealing:
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min
-        )
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min
+    )
 
     best_val_loss = float('inf')
     epochs_without_improvement = 0
@@ -816,23 +812,10 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         val_loss /= len(valid_loader.dataset)
 
         # --- learning rate scheduling ---
-        if use_cosine_annealing:
-            scheduler.step()
-
-        # --- early stopping check ---
-        if val_loss + min_delta < best_val_loss:
-            best_val_loss = val_loss
-            best_model_wts = copy.deepcopy(model.state_dict())
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= patience:
-                print(f"→ Early stopping at epoch {epoch}. "
-                      f"No improvement in {patience} epochs.")
-                break
+        scheduler.step()
 
         # Print progress every 10 epochs (optional, shows LR changes)
-        if epoch % 10 == 0 and use_cosine_annealing:
+        if epoch % 10 == 0:
             current_lr = optimizer.param_groups[0]['lr']
             print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, "
                   f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}")
@@ -854,7 +837,7 @@ def apply_correction(model, forecast_data, lead_time_indices, day_of_year_featur
     corrected_all = []
 
     # Process in batches to handle memory efficiently
-    batch_size = 128
+    batch_size = 64 
     n_samples = forecast_data.shape[0]
 
     with torch.no_grad():
@@ -1005,7 +988,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                    batch_size=128)
+                                    batch_size=64)
     val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
                                   batch_size=64)
@@ -1024,27 +1007,25 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 1024,
+                          hidden_dim = 128,
                           output_dim = output_dim, 
-                          num_hidden_layers= 2,
+                          num_hidden_layers= 4,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=4,
-                          dropout_rate =0.1097725 
+                          lead_time_embedding_dim=16,
+                          dropout_rate=0.354511078130387
                           ).to(device)
         num_epochs = 100
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=num_epochs, lr=4.673747105982307e-05,
+                                                epochs=num_epochs, lr=.0054228,
                                                 device=device,
-                                                weight_decay=2.8276153644203165e-06,
-                                                patience=1000, min_delta=0.000286450816778278, # set patience high to disable early stopping
+                                                weight_decay=0.0016682916195136595,
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn=args.alternate_loss_fn,
-                                                use_cosine_annealing=True,
-                                                T_0=15,  # First restart after 15 epochs
-                                                T_mult=2,  # Double cycle length after each restart
-                                                eta_min=1e-7  # Minimum learning rate
+                                                T_0=5,  # First restart after 5 epochs
+                                                T_mult=2,  
+                                                eta_min=6.074182526100606e-06  # Minimum learning rate
                                                 )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
