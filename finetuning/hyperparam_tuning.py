@@ -589,16 +589,6 @@ if __name__ == "__main__":
         'data_dir': data_dir,
         'weight': 1.0  # Optional, defaults to 1.0 if not specified
     },
-    {
-        'args': pangu_extreme_heat_args,
-        'data_dir': data_dir,
-        'weight': 1.0
-    },
-    {
-        'args': aifs_args,
-        'data_dir': data_dir,
-        'weight': 1.0
-    }
 ]
 
     device = torch.device('cuda' if torch.cuda.is_available() else
@@ -611,11 +601,11 @@ if __name__ == "__main__":
     mlp_results = optimize_hyperparameters(
         config_list=config_list,
         architecture="mlp",
-        max_evals=35, # total trainings = max_evals * len(config_list)
-        output_dir="hyperopt_results_mlp",
+        max_evals=100, # total trainings = max_evals * len(config_list)
+        output_dir="hyperopt_results_mlp_2m_temp",
         device=device,
         random_seed=42,
-        resume=True  # Set to True to continue from previous runs
+        resume=False # Set to True to continue from previous runs
     )
     print(f"MLP best loss: {mlp_results['best_loss']:.6f}")
 
