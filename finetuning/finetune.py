@@ -837,7 +837,7 @@ def apply_correction(model, forecast_data, lead_time_indices, day_of_year_featur
     corrected_all = []
 
     # Process in batches to handle memory efficiently
-    batch_size = 64 
+    batch_size = 128
     n_samples = forecast_data.shape[0]
 
     with torch.no_grad():
@@ -988,10 +988,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                    batch_size=64)
+                                    batch_size=128)
     val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                  batch_size=64)
+                                  batch_size=128)
 
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon
@@ -1007,26 +1007,26 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
         model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 128,
+                          hidden_dim = 1024,
                           output_dim = output_dim, 
                           num_hidden_layers= 4,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=16,
-                          dropout_rate=0.354511078130387
+                          lead_time_embedding_dim=4,
+                          dropout_rate=0.2477893381
                           ).to(device)
-        num_epochs = 100
+        num_epochs = 750
 
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=num_epochs, lr=.0054228,
+                                                epochs=num_epochs, lr=8.669714431623457e-06,
                                                 device=device,
-                                                weight_decay=0.0016682916195136595,
+                                                weight_decay=5.210913466175803e-06,
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn=args.alternate_loss_fn,
                                                 T_0=5,  # First restart after 5 epochs
-                                                T_mult=2,  
-                                                eta_min=6.074182526100606e-06  # Minimum learning rate
-                                                )
+                                                T_mult=3,  
+                                                eta_min=1.4365296743890787e-07
+                                              )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     load_time = time.time()
