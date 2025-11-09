@@ -414,6 +414,19 @@ def parse_args():
     parser.add_argument('--growing_season_only', action='store_true',
                         help='Filter data to growing season days only')
     parser.add_argument('--alternate_loss_fn', type=str, default=None, choices=['quantile_loss', 'extreme_heat_loss'])
+
+    # Architecture-specific parameters
+    parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
+                        help='Hidden dimension for MLP')
+    parser.add_argument('--mlp_num_layers', type=int, default=4,
+                        help='Number of hidden layers for MLP')
+    parser.add_argument('--mlp_dropout', type=float, default=0.2477893381,
+                        help='Dropout rate for MLP')
+    parser.add_argument('--unet_hidden_dim', type=int, default=32,
+                        help='Base hidden dimension for UNet')
+    parser.add_argument('--unet_dropout', type=float, default=0.1,
+                        help='Dropout rate for UNet')
+
     return parser.parse_args()
 
 # ------------------------------
@@ -1015,19 +1028,24 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
         print(f"Using UNet with {n_lead_times} lead times and month encoding")
-        model = UNet(input_dim, 32, output_dim, n_lat=n_lat, n_lon=n_lon,
+        print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
+        print(f"  UNet dropout: {args.unet_dropout}")
+        model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                     n_lead_times=n_lead_times).to(device)
+                     n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
         num_epochs = 200
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
-        model = SimpleMLP(input_dim = input_dim, 
-                          hidden_dim = 1024,
-                          output_dim = output_dim, 
-                          num_hidden_layers= 4,
+        print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
+        print(f"  MLP num_layers: {args.mlp_num_layers}")
+        print(f"  MLP dropout: {args.mlp_dropout}")
+        model = SimpleMLP(input_dim = input_dim,
+                          hidden_dim = args.mlp_hidden_dim,
+                          output_dim = output_dim,
+                          num_hidden_layers= args.mlp_num_layers,
                           n_lead_times=n_lead_times,
                           lead_time_embedding_dim=4,
-                          dropout_rate=0.2477893381
+                          dropout_rate=args.mlp_dropout
                           ).to(device)
         num_epochs = 750
 
