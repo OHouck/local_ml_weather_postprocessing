@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """
-Author: Ozma Houck 
+Author: Ozma Houck
 Filename: finetune/finetune.py
 
 # Purpose: use a simple MLP to post-process weather forecasts trained on
-specific regions and variables. Call this script from command line or with 
-1_run_experiments.sh script. 
+specific regions and variables. Call this script from command line or with
+1_run_experiments.sh script.
 
 # Modified to support multiple lead times training
 
+# NEW: Dynamic data loading - the script now automatically checks if the required
+# data exists in the data_dir. If not, it downloads the data on-the-fly from
+# weatherbench2 using the prepare_forecasts_and_targets module. This eliminates
+# the need to pre-download large global datasets and allows testing different
+# lead times and variables without manual data management.
+
 # example call
-python3 finetuning/1_finetune.py \
-    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/ \
-    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
+python3 finetuning/finetune.py \
+    --data_dir="~/ai_weather_ag/data/raw/" \
+    --output_dir="~/ai_weather_ag/data/fine_tuning_output" \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
     --train_start="2018-01-01" --train_end="2021-12-31" \
@@ -48,6 +54,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
+
+# Import dynamic data loading functions
+sys.path.insert(0, str(Path(__file__).parent))
+from prepare_forecasts_and_targets import prepare_data_for_finetuning
 
 # print(f"NumPy version: {np.__version__}")
 # print(f"PyTorch version: {torch.__version__}")
@@ -1081,7 +1091,7 @@ def main():
 
     # Parse command line arguments
     args = parse_args()
-    
+
     # Prepare output dir and base path
     args.output_dir = os.path.expanduser(args.output_dir)
     args.data_dir = os.path.expanduser(args.data_dir)
@@ -1098,6 +1108,24 @@ def main():
 
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
+
+    # Prepare data: check if exists, download if necessary
+    print("\nPreparing data for finetuning...")
+    prepare_data_for_finetuning(
+        data_dir=args.data_dir,
+        model_name=args.model_name,
+        ground_truth_source=args.ground_truth_source,
+        training_vars=args.training_vars,
+        output_vars=args.output_vars,
+        train_start=args.train_start,
+        train_end=args.train_end,
+        test_start=args.test_start,
+        test_end=args.test_end,
+        lead_time_hours=args.lead_time_hours,
+        region_lat=region_lat,
+        region_lon=region_lon
+    )
+    print("Data preparation complete. Proceeding with finetuning...\n")
 
     # Decide if we're in a climate‐zone region or a geographic one
     if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
