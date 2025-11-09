@@ -472,9 +472,10 @@ def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
 
-def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source):
+def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source, region):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
+    Uses new file organization: root_dir/data_source/data_source_region_year.zarr
     """
 
     min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
@@ -482,11 +483,12 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
 
     file_paths = []
     for year in range(min_year, max_year + 1):
-        
+
         if data_source == "imd":
-            file_pattern = f"IMD_0p25deg/data_{year}.nc" 
+            file_pattern = f"IMD_0p25deg/data_{year}.nc"
         else:
-            file_pattern = f"{data_source}_{year}.zarr" 
+            # New file organization: data_source/data_source_region_year.zarr
+            file_pattern = f"{data_source}/{data_source}_{region}_{year}.zarr"
 
         file_paths.append(os.path.join(root_dir, file_pattern))
     
@@ -550,9 +552,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         target = args.ground_truth_source
     
     # Load datasets
-    forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
+    forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
     forecast_ds = forecast_ds.rename({'valid_time': 'time'})
-    obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
+    obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
     
     # Create wind speed if needed
     if "10m_wind_speed" in args.training_vars:
@@ -1118,6 +1120,7 @@ def main():
         data_dir=args.data_dir,
         model_name=args.model_name,
         ground_truth_source=args.ground_truth_source,
+        region=args.region,
         training_vars=args.training_vars,
         output_vars=args.output_vars,
         train_start=args.train_start,

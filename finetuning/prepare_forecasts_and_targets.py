@@ -5,9 +5,12 @@ Filename: finetuning/prepare_forecasts_and_targets.py
 
 Purpose: Dynamically load forecast and target data on-the-fly for finetuning.
 Checks if data exists locally, and if not, downloads it from weatherbench2.
+Supports atmospheric variables at specific pressure levels.
+Organizes data by region: data_dir/model/model_region_year.zarr
 """
 
 import os
+import re
 import time
 import warnings
 from datetime import datetime
@@ -32,6 +35,159 @@ def print_time_and_memory(step_name, start_time):
     return time.time()
 
 
+def parse_atmospheric_variable(var_name):
+    """
+    Parse atmospheric variable names to extract variable and pressure level.
+
+    Examples:
+        'temperature_1000hPa' -> ('temperature', 1000)
+        '2m_temperature' -> ('2m_temperature', None)
+        'geopotential_500hPa' -> ('geopotential', 500)
+
+    Parameters:
+    -----------
+    var_name : str
+        Variable name, possibly with pressure level suffix
+
+    Returns:
+    --------
+    tuple : (base_var_name, pressure_level)
+        base_var_name : str - Variable name without pressure suffix
+        pressure_level : int or None - Pressure level in hPa, or None if surface variable
+    """
+    # Pattern to match variables like "temperature_1000hPa"
+    pattern = r'^(.+)_(\d+)hPa$'
+    match = re.match(pattern, var_name)
+
+    if match:
+        base_var = match.group(1)
+        pressure = int(match.group(2))
+        return base_var, pressure
+    else:
+        return var_name, None
+
+
+def get_data_path(data_dir, data_source, region, year):
+    """
+    Get the file path for a specific data source, region, and year.
+
+    Parameters:
+    -----------
+    data_dir : str
+        Base data directory
+    data_source : str
+        Data source name (e.g., 'pangu', 'era5')
+    region : str
+        Region name (e.g., 'odisha', 'usa_south')
+    year : int
+        Year
+
+    Returns:
+    --------
+    str : Path to data file
+    """
+    data_dir = os.path.expanduser(data_dir)
+    model_dir = os.path.join(data_dir, data_source)
+    os.makedirs(model_dir, exist_ok=True)
+
+    filename = f"{data_source}_{region}_{year}.zarr"
+    return os.path.join(model_dir, filename)
+
+
+def check_variables_in_dataset(file_path, required_vars):
+    """
+    Check which required variables are present in a dataset.
+
+    Parameters:
+    -----------
+    file_path : str
+        Path to zarr dataset
+    required_vars : list
+        List of required variable names (may include atmospheric vars like 'temperature_500hPa')
+
+    Returns:
+    --------
+    tuple : (present_vars, missing_vars)
+        present_vars : list - Variables that exist in the dataset
+        missing_vars : list - Variables that are missing
+    """
+    try:
+        ds = xr.open_zarr(file_path)
+
+        present_vars = []
+        missing_vars = []
+
+        for var in required_vars:
+            # Skip computed variables
+            if var == "10m_wind_speed":
+                present_vars.append(var)
+                continue
+
+            base_var, pressure_level = parse_atmospheric_variable(var)
+
+            if base_var not in ds.data_vars:
+                missing_vars.append(var)
+            elif pressure_level is not None:
+                # Check if pressure level exists
+                if 'level' in ds[base_var].dims:
+                    available_levels = ds[base_var].level.values
+                    if pressure_level not in available_levels:
+                        missing_vars.append(var)
+                    else:
+                        present_vars.append(var)
+                else:
+                    missing_vars.append(var)
+            else:
+                present_vars.append(var)
+
+        ds.close()
+        return present_vars, missing_vars
+
+    except Exception as e:
+        print(f"  Error checking variables in {file_path}: {e}")
+        return [], required_vars
+
+
+def check_data_exists(data_dir, data_source, region, years, variables):
+    """
+    Check if data files exist for the given parameters and contain required variables.
+
+    Parameters:
+    -----------
+    data_dir : str
+        Directory where data is stored
+    data_source : str
+        Name of data source (e.g., 'pangu', 'era5', 'hres_t0')
+    region : str
+        Region name
+    years : list
+        List of years to check
+    variables : list
+        List of variables to check (including atmospheric vars like 'temperature_500hPa')
+
+    Returns:
+    --------
+    dict : {year: {'exists': bool, 'missing_vars': list}}
+    """
+    data_dir = os.path.expanduser(data_dir)
+    status = {}
+
+    for year in years:
+        file_path = get_data_path(data_dir, data_source, region, year)
+
+        if not os.path.exists(file_path):
+            status[year] = {'exists': False, 'missing_vars': variables}
+        else:
+            present_vars, missing_vars = check_variables_in_dataset(file_path, variables)
+            status[year] = {
+                'exists': True,
+                'missing_vars': missing_vars,
+                'present_vars': present_vars
+            }
+
+    return status
+
+
 def convert_init_to_valid_time(ds):
     """
     Convert a dataset from init_time dimension to valid_time dimension.
@@ -45,7 +201,6 @@ def convert_init_to_valid_time(ds):
     --------
     xarray.Dataset
         Dataset with dimensions (valid_time, prediction_timedelta, latitude, longitude)
-        where valid_time = init_time + prediction_timedelta
     """
     lead_times = np.unique(ds.prediction_timedelta.values)
 
@@ -60,62 +215,68 @@ def convert_init_to_valid_time(ds):
     # Combine all lead times into a single dataset
     combined_ds = xr.concat(converted_lead_times, dim='prediction_timedelta')
     combined_ds = combined_ds.sortby('valid_time')
-    combined_ds = combined_ds.transpose("valid_time", "prediction_timedelta", "latitude", "longitude")
+
+    # Determine dimensions based on what's present
+    dims = ['valid_time', 'prediction_timedelta']
+    if 'level' in combined_ds.dims:
+        dims.append('level')
+    dims.extend(['latitude', 'longitude'])
+
+    combined_ds = combined_ds.transpose(*dims)
 
     return combined_ds
 
 
-def check_data_exists(data_dir, data_source, years, variables):
+def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
     """
-    Check if data files exist for the given parameters.
+    Merge new variables into an existing dataset.
 
     Parameters:
     -----------
-    data_dir : str
-        Directory where data is stored
-    data_source : str
-        Name of data source (e.g., 'pangu', 'era5', 'hres_t0')
-    years : list
-        List of years to check
-    variables : list
-        List of variables to check
+    existing_path : str
+        Path to existing zarr dataset
+    new_ds : xr.Dataset
+        Dataset containing new variables
+    variables_to_merge : list
+        List of variable names to merge
 
     Returns:
     --------
-    tuple : (all_exist, missing_years)
-        all_exist : bool - True if all data exists
-        missing_years : list - List of years with missing data
+    xr.Dataset : Merged dataset
     """
-    data_dir = os.path.expanduser(data_dir)
-    missing_years = []
+    print(f"    Merging {len(variables_to_merge)} variables into existing dataset...")
 
-    for year in years:
-        file_path = os.path.join(data_dir, f"{data_source}_{year}.zarr")
+    # Load existing dataset
+    existing_ds = xr.open_zarr(existing_path)
 
-        if not os.path.exists(file_path):
-            missing_years.append(year)
-            continue
+    # Extract only the variables we want to add from new_ds
+    vars_to_add = {}
+    for var in variables_to_merge:
+        base_var, pressure_level = parse_atmospheric_variable(var)
 
-        # Check if the file has the required variables
-        try:
-            ds = xr.open_zarr(file_path)
-            missing_vars = [v for v in variables if v not in ds.data_vars and v != "10m_wind_speed"]
-            if missing_vars:
-                print(f"  Warning: {file_path} missing variables: {missing_vars}")
-                missing_years.append(year)
-            ds.close()
-        except Exception as e:
-            print(f"  Error checking {file_path}: {e}")
-            missing_years.append(year)
+        if base_var in new_ds.data_vars:
+            if pressure_level is not None and 'level' in new_ds[base_var].dims:
+                # Select specific pressure level
+                vars_to_add[var] = new_ds[base_var].sel(level=pressure_level)
+            else:
+                vars_to_add[base_var] = new_ds[base_var]
 
-    all_exist = len(missing_years) == 0
-    return all_exist, missing_years
+    # Create new dataset with added variables
+    new_vars_ds = xr.Dataset(vars_to_add)
+
+    # Merge with existing
+    merged_ds = xr.merge([existing_ds, new_vars_ds])
+
+    existing_ds.close()
+
+    return merged_ds
 
 
-def download_forecast_data(data_dir, model_name, years, variables, lead_time_hours,
+def download_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
                            region_lat=None, region_lon=None, use_dask_client=True):
     """
     Download forecast data from weatherbench2 for the given parameters.
+    Supports atmospheric variables at specific pressure levels.
 
     Parameters:
     -----------
@@ -123,10 +284,12 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
         Directory to save data
     model_name : str
         Name of forecast model (e.g., 'pangu', 'ifs', 'aifs')
+    region : str
+        Region name for file organization
     years : list
         List of years to download
     variables : list
-        List of variables to download
+        List of variables to download (may include 'temperature_500hPa' etc.)
     lead_time_hours : list
         List of lead times in hours
     region_lat : np.ndarray, optional
@@ -141,14 +304,34 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
     list : Paths to downloaded files
     """
     data_dir = os.path.expanduser(data_dir)
-    os.makedirs(data_dir, exist_ok=True)
 
-    print(f"\nDownloading {model_name} forecast data...")
+    print(f"\nDownloading {model_name} forecast data for region '{region}'...")
     print(f"  Years: {years}")
     print(f"  Variables: {variables}")
     print(f"  Lead times: {lead_time_hours} hours")
 
     start_time = time.time()
+
+    # Parse variables to separate surface and atmospheric
+    surface_vars = []
+    atmospheric_vars = {}  # {base_var: set of pressure levels}
+
+    for var in variables:
+        if var == "10m_wind_speed":
+            continue  # Computed variable
+
+        base_var, pressure_level = parse_atmospheric_variable(var)
+
+        if pressure_level is not None:
+            if base_var not in atmospheric_vars:
+                atmospheric_vars[base_var] = set()
+            atmospheric_vars[base_var].add(pressure_level)
+        else:
+            surface_vars.append(base_var)
+
+    print(f"  Surface variables: {surface_vars}")
+    if atmospheric_vars:
+        print(f"  Atmospheric variables: {atmospheric_vars}")
 
     # Set up Dask client if requested
     client = None
@@ -190,13 +373,18 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
             ds = ds.rename({'time': 'init_time'})
 
         print(f"  Dataset opened successfully")
+        print(f"  Available variables: {list(ds.data_vars)[:10]}...")
+        if 'level' in ds.dims:
+            print(f"  Available pressure levels: {ds.level.values}")
         start_time = print_time_and_memory("Dataset opened", start_time)
 
-        # Select variables
-        available_vars = [v for v in variables if v in ds.data_vars]
-        if len(available_vars) < len(variables):
-            missing = set(variables) - set(available_vars)
-            print(f"  Warning: Variables not found: {missing}")
+        # Check which variables are available
+        all_vars_to_download = list(set(surface_vars + list(atmospheric_vars.keys())))
+        available_vars = [v for v in all_vars_to_download if v in ds.data_vars]
+
+        if len(available_vars) < len(all_vars_to_download):
+            missing = set(all_vars_to_download) - set(available_vars)
+            print(f"  Warning: Variables not found in remote dataset: {missing}")
 
         # Select lead times
         lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
@@ -205,14 +393,21 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
 
         # Download year by year
         for year in years:
-            output_path = os.path.join(data_dir, f"{model_name}_{year}.zarr")
+            output_path = get_data_path(data_dir, model_name, region, year)
 
-            if os.path.exists(output_path):
-                print(f"\n  Skipping {year}: file already exists")
+            # Check if we need to download or update this file
+            status = check_data_exists(data_dir, model_name, region, [year], variables)
+            year_status = status[year]
+
+            if year_status['exists'] and not year_status['missing_vars']:
+                print(f"\n  Skipping {year}: all variables already exist")
                 downloaded_files.append(output_path)
                 continue
 
+            vars_to_download = year_status['missing_vars'] if year_status['exists'] else variables
             print(f"\n  Processing year {year}...")
+            print(f"    Variables to download: {vars_to_download}")
+
             time_range = [f'{year}-01-01', f'{year}-12-31']
 
             # Select subset
@@ -230,6 +425,15 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
             if region_lat is not None and region_lon is not None:
                 subset = subset.sel(latitude=region_lat, longitude=region_lon)
 
+            # Select specific pressure levels for atmospheric variables
+            if atmospheric_vars and 'level' in subset.dims:
+                all_levels_needed = set()
+                for base_var, levels in atmospheric_vars.items():
+                    all_levels_needed.update(levels)
+
+                # Only select the pressure levels we need
+                subset = subset.sel(level=sorted(list(all_levels_needed)))
+
             # Convert to valid_time
             subset = convert_init_to_valid_time(subset)
             subset = subset.rename({'valid_time': 'time'})
@@ -245,17 +449,33 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
                 'longitude': len(subset.longitude)
             }
 
+            if 'level' in subset.dims:
+                chunk_dict['level'] = len(subset.level)
+
             subset_rechunked = subset.chunk(chunk_dict)
 
-            # Save to zarr
-            print(f"    Saving to {output_path}...")
-            with ProgressBar():
-                subset_rechunked.to_zarr(
+            # Save or merge
+            if year_status['exists'] and year_status['missing_vars']:
+                # Merge with existing dataset
+                merged_ds = merge_variables_into_dataset(
                     output_path,
-                    mode='w',
-                    consolidated=True,
-                    zarr_version=2
+                    subset_rechunked,
+                    vars_to_download
                 )
+
+                print(f"    Saving merged dataset to {output_path}...")
+                with ProgressBar():
+                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+            else:
+                # Save new dataset
+                print(f"    Saving to {output_path}...")
+                with ProgressBar():
+                    subset_rechunked.to_zarr(
+                        output_path,
+                        mode='w',
+                        consolidated=True,
+                        zarr_version=2
+                    )
 
             downloaded_files.append(output_path)
             print(f"    Saved successfully")
@@ -270,10 +490,11 @@ def download_forecast_data(data_dir, model_name, years, variables, lead_time_hou
     return downloaded_files
 
 
-def download_target_data(data_dir, model_name, ground_truth_source, years, variables,
+def download_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
                         region_lat=None, region_lon=None, use_dask_client=True):
     """
     Download target/observation data for the given parameters.
+    Supports atmospheric variables at specific pressure levels.
 
     Parameters:
     -----------
@@ -283,10 +504,12 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
         Name of forecast model (used to determine default ground truth)
     ground_truth_source : str
         Name of ground truth source (e.g., 'era5', 'hres_t0', or empty string for default)
+    region : str
+        Region name for file organization
     years : list
         List of years to download
     variables : list
-        List of variables to download
+        List of variables to download (may include 'temperature_500hPa' etc.)
     region_lat : np.ndarray, optional
         Latitude values for regional subset
     region_lon : np.ndarray, optional
@@ -299,7 +522,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
     list : Paths to downloaded files
     """
     data_dir = os.path.expanduser(data_dir)
-    os.makedirs(data_dir, exist_ok=True)
 
     # Determine target dataset
     if ground_truth_source == "":
@@ -314,11 +536,32 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
     else:
         target = ground_truth_source
 
-    print(f"\nDownloading {target} target data...")
+    print(f"\nDownloading {target} target data for region '{region}'...")
     print(f"  Years: {years}")
     print(f"  Variables: {variables}")
 
     start_time = time.time()
+
+    # Parse variables to separate surface and atmospheric
+    surface_vars = []
+    atmospheric_vars = {}  # {base_var: set of pressure levels}
+
+    for var in variables:
+        if var == "10m_wind_speed":
+            continue  # Computed variable
+
+        base_var, pressure_level = parse_atmospheric_variable(var)
+
+        if pressure_level is not None:
+            if base_var not in atmospheric_vars:
+                atmospheric_vars[base_var] = set()
+            atmospheric_vars[base_var].add(pressure_level)
+        else:
+            surface_vars.append(base_var)
+
+    print(f"  Surface variables: {surface_vars}")
+    if atmospheric_vars:
+        print(f"  Atmospheric variables: {atmospheric_vars}")
 
     # Set up Dask client if requested
     client = None
@@ -356,26 +599,38 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
             raise ValueError(f"Unknown target: {target}")
 
         print(f"  Dataset opened successfully")
+        print(f"  Available variables: {list(ds.data_vars)[:10]}...")
+        if 'level' in ds.dims:
+            print(f"  Available pressure levels: {ds.level.values}")
         start_time = print_time_and_memory("Dataset opened", start_time)
 
-        # Select variables
-        available_vars = [v for v in variables if v in ds.data_vars]
-        if len(available_vars) < len(variables):
-            missing = set(variables) - set(available_vars)
-            print(f"  Warning: Variables not found: {missing}")
+        # Check which variables are available
+        all_vars_to_download = list(set(surface_vars + list(atmospheric_vars.keys())))
+        available_vars = [v for v in all_vars_to_download if v in ds.data_vars]
+
+        if len(available_vars) < len(all_vars_to_download):
+            missing = set(all_vars_to_download) - set(available_vars)
+            print(f"  Warning: Variables not found in remote dataset: {missing}")
 
         downloaded_files = []
 
         # Download year by year
         for year in years:
-            output_path = os.path.join(data_dir, f"{target}_{year}.zarr")
+            output_path = get_data_path(data_dir, target, region, year)
 
-            if os.path.exists(output_path):
-                print(f"\n  Skipping {year}: file already exists")
+            # Check if we need to download or update this file
+            status = check_data_exists(data_dir, target, region, [year], variables)
+            year_status = status[year]
+
+            if year_status['exists'] and not year_status['missing_vars']:
+                print(f"\n  Skipping {year}: all variables already exist")
                 downloaded_files.append(output_path)
                 continue
 
+            vars_to_download = year_status['missing_vars'] if year_status['exists'] else variables
             print(f"\n  Processing year {year}...")
+            print(f"    Variables to download: {vars_to_download}")
+
             time_range = [f'{year}-01-01', f'{year}-12-31']
 
             # Select subset
@@ -386,6 +641,14 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
             # Apply regional subset if provided
             if region_lat is not None and region_lon is not None:
                 subset = subset.sel(latitude=region_lat, longitude=region_lon)
+
+            # Select specific pressure levels for atmospheric variables
+            if atmospheric_vars and 'level' in subset.dims:
+                all_levels_needed = set()
+                for base_var, levels in atmospheric_vars.items():
+                    all_levels_needed.update(levels)
+
+                subset = subset.sel(level=sorted(list(all_levels_needed)))
 
             # Handle precipitation conversion if needed
             if 'total_precipitation_6hr' in available_vars:
@@ -406,8 +669,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
                 # Update subset
                 subset = subset.drop_vars('total_precipitation_6hr')
                 subset["total_precipitation"] = total_precipitation
-                available_vars = [v if v != 'total_precipitation_6hr' else 'total_precipitation'
-                                for v in available_vars]
 
             # Filter for specific hours (0, 6, 12 for flexibility)
             subset = subset.sel(time=subset.time.dt.hour.isin([0, 6, 12]))
@@ -422,17 +683,33 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
                 'longitude': len(subset.longitude)
             }
 
+            if 'level' in subset.dims:
+                chunk_dict['level'] = len(subset.level)
+
             subset_rechunked = subset.chunk(chunk_dict)
 
-            # Save to zarr
-            print(f"    Saving to {output_path}...")
-            with ProgressBar():
-                subset_rechunked.to_zarr(
+            # Save or merge
+            if year_status['exists'] and year_status['missing_vars']:
+                # Merge with existing dataset
+                merged_ds = merge_variables_into_dataset(
                     output_path,
-                    mode='w',
-                    consolidated=True,
-                    zarr_version=2
+                    subset_rechunked,
+                    vars_to_download
                 )
+
+                print(f"    Saving merged dataset to {output_path}...")
+                with ProgressBar():
+                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+            else:
+                # Save new dataset
+                print(f"    Saving to {output_path}...")
+                with ProgressBar():
+                    subset_rechunked.to_zarr(
+                        output_path,
+                        mode='w',
+                        consolidated=True,
+                        zarr_version=2
+                    )
 
             downloaded_files.append(output_path)
             print(f"    Saved successfully")
@@ -447,13 +724,14 @@ def download_target_data(data_dir, model_name, ground_truth_source, years, varia
     return downloaded_files
 
 
-def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source,
+def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, region,
                                 training_vars, output_vars, train_start, train_end,
                                 test_start, test_end, lead_time_hours,
                                 region_lat=None, region_lon=None):
     """
     Main function to prepare forecast and target data for finetuning.
     Checks if data exists, and downloads if necessary.
+    Supports atmospheric variables at specific pressure levels.
 
     Parameters:
     -----------
@@ -463,8 +741,10 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source,
         Name of forecast model
     ground_truth_source : str
         Name of ground truth source (empty string for default)
+    region : str
+        Region name for file organization
     training_vars : list
-        List of training variables
+        List of training variables (may include 'temperature_500hPa' etc.)
     output_vars : list
         List of output variables
     train_start : str
@@ -497,7 +777,8 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source,
     test_years = list(range(int(test_start[:4]), int(test_end[:4]) + 1))
     all_years = sorted(set(train_years + test_years))
 
-    print(f"\nYears needed: {all_years}")
+    print(f"\nRegion: {region}")
+    print(f"Years needed: {all_years}")
     print(f"  Training: {train_years}")
     print(f"  Testing: {test_years}")
 
@@ -521,30 +802,46 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source,
 
     # Check forecast data
     print(f"\nChecking {model_name} forecast data...")
-    fc_exists, fc_missing = check_data_exists(data_dir, model_name, all_years, forecast_vars)
+    fc_status = check_data_exists(data_dir, model_name, region, all_years, forecast_vars)
 
-    if fc_exists:
-        print(f"  ✓ All forecast data exists")
+    years_to_download = []
+    for year, status in fc_status.items():
+        if not status['exists'] or status['missing_vars']:
+            years_to_download.append(year)
+            if status['exists']:
+                print(f"  Year {year}: missing variables {status['missing_vars']}")
+            else:
+                print(f"  Year {year}: file does not exist")
+
+    if not years_to_download:
+        print(f"  ✓ All forecast data exists with required variables")
     else:
-        print(f"  ✗ Missing forecast data for years: {fc_missing}")
-        print(f"  Downloading missing data...")
+        print(f"  Downloading/updating forecast data for years: {years_to_download}")
         download_forecast_data(
-            data_dir, model_name, fc_missing, forecast_vars,
+            data_dir, model_name, region, years_to_download, forecast_vars,
             lead_time_hours, region_lat, region_lon, use_dask_client=True
         )
 
     # Check target data
     print(f"\nChecking {target} target data...")
     target_vars = [v for v in output_vars if v != "10m_wind_speed"]
-    tgt_exists, tgt_missing = check_data_exists(data_dir, target, all_years, target_vars)
+    tgt_status = check_data_exists(data_dir, target, region, all_years, target_vars)
 
-    if tgt_exists:
-        print(f"  ✓ All target data exists")
+    years_to_download = []
+    for year, status in tgt_status.items():
+        if not status['exists'] or status['missing_vars']:
+            years_to_download.append(year)
+            if status['exists']:
+                print(f"  Year {year}: missing variables {status['missing_vars']}")
+            else:
+                print(f"  Year {year}: file does not exist")
+
+    if not years_to_download:
+        print(f"  ✓ All target data exists with required variables")
     else:
-        print(f"  ✗ Missing target data for years: {tgt_missing}")
-        print(f"  Downloading missing data...")
+        print(f"  Downloading/updating target data for years: {years_to_download}")
         download_target_data(
-            data_dir, model_name, ground_truth_source, tgt_missing,
+            data_dir, model_name, ground_truth_source, region, years_to_download,
             target_vars, region_lat, region_lon, use_dask_client=True
         )
 
@@ -555,6 +852,7 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source,
     return {
         'status': 'success',
         'data_dir': data_dir,
+        'region': region,
         'forecast_source': model_name,
         'target_source': target,
         'years': all_years
