@@ -67,6 +67,52 @@ def parse_atmospheric_variable(var_name):
         return var_name, None
 
 
+def flatten_atmospheric_variables(ds, atmospheric_vars):
+    """
+    Flatten atmospheric variables with level dimension into separate variables.
+
+    For example, if ds has variable 'temperature' with levels [1000, 850, 500],
+    this will create variables 'temperature_1000hPa', 'temperature_850hPa', 'temperature_500hPa'.
+
+    Parameters:
+    -----------
+    ds : xr.Dataset
+        Dataset with atmospheric variables that have a 'level' dimension
+    atmospheric_vars : dict
+        Dictionary mapping base variable names to sets of pressure levels
+        e.g., {'temperature': {1000, 850}, 'geopotential': {500}}
+
+    Returns:
+    --------
+    xr.Dataset
+        Dataset with flattened atmospheric variables (no level dimension)
+    """
+    if not atmospheric_vars or 'level' not in ds.dims:
+        return ds
+
+    # Start with surface variables (those without level dimension)
+    surface_vars = [v for v in ds.data_vars if 'level' not in ds[v].dims]
+    result_ds = ds[surface_vars] if surface_vars else xr.Dataset()
+
+    # Flatten atmospheric variables
+    for base_var, levels in atmospheric_vars.items():
+        if base_var not in ds.data_vars:
+            continue
+
+        for level in sorted(levels):
+            try:
+                # Select this pressure level
+                var_data = ds[base_var].sel(level=level)
+                # Create new variable name
+                new_var_name = f"{base_var}_{level}hPa"
+                # Add to result dataset
+                result_ds[new_var_name] = var_data
+            except (KeyError, ValueError) as e:
+                print(f"    Warning: Could not extract {base_var} at level {level}: {e}")
+
+    return result_ds
+
+
 def get_data_path(data_dir, data_source, region, year):
     """
     Get the file path for a specific data source, region, and year.
@@ -123,22 +169,12 @@ def check_variables_in_dataset(file_path, required_vars):
                 present_vars.append(var)
                 continue
 
-            base_var, pressure_level = parse_atmospheric_variable(var)
-
-            if base_var not in ds.data_vars:
-                missing_vars.append(var)
-            elif pressure_level is not None:
-                # Check if pressure level exists
-                if 'level' in ds[base_var].dims:
-                    available_levels = ds[base_var].level.values
-                    if pressure_level not in available_levels:
-                        missing_vars.append(var)
-                    else:
-                        present_vars.append(var)
-                else:
-                    missing_vars.append(var)
-            else:
+            # After flattening, atmospheric variables are stored with their full name
+            # (e.g., 'temperature_1000hPa' not 'temperature' with level dimension)
+            if var in ds.data_vars:
                 present_vars.append(var)
+            else:
+                missing_vars.append(var)
 
         ds.close()
         return present_vars, missing_vars
@@ -454,12 +490,25 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
 
             subset_rechunked = subset.chunk(chunk_dict)
 
+            # Flatten atmospheric variables before saving
+            print(f"    Flattening atmospheric variables...")
+            subset_flattened = flatten_atmospheric_variables(subset_rechunked, atmospheric_vars)
+
+            # Rechunk the flattened dataset
+            flat_chunk_dict = {
+                'time': time_chunk,
+                'prediction_timedelta': len(subset_flattened.prediction_timedelta),
+                'latitude': len(subset_flattened.latitude),
+                'longitude': len(subset_flattened.longitude)
+            }
+            subset_flattened = subset_flattened.chunk(flat_chunk_dict)
+
             # Save or merge
             if year_status['exists'] and year_status['missing_vars']:
                 # Merge with existing dataset
                 merged_ds = merge_variables_into_dataset(
                     output_path,
-                    subset_rechunked,
+                    subset_flattened,
                     vars_to_download
                 )
 
@@ -470,7 +519,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                 # Save new dataset
                 print(f"    Saving to {output_path}...")
                 with ProgressBar():
-                    subset_rechunked.to_zarr(
+                    subset_flattened.to_zarr(
                         output_path,
                         mode='w',
                         consolidated=True,
@@ -688,12 +737,24 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
 
             subset_rechunked = subset.chunk(chunk_dict)
 
+            # Flatten atmospheric variables before saving
+            print(f"    Flattening atmospheric variables...")
+            subset_flattened = flatten_atmospheric_variables(subset_rechunked, atmospheric_vars)
+
+            # Rechunk the flattened dataset
+            flat_chunk_dict = {
+                'time': time_chunk,
+                'latitude': len(subset_flattened.latitude),
+                'longitude': len(subset_flattened.longitude)
+            }
+            subset_flattened = subset_flattened.chunk(flat_chunk_dict)
+
             # Save or merge
             if year_status['exists'] and year_status['missing_vars']:
                 # Merge with existing dataset
                 merged_ds = merge_variables_into_dataset(
                     output_path,
-                    subset_rechunked,
+                    subset_flattened,
                     vars_to_download
                 )
 
@@ -704,7 +765,7 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                 # Save new dataset
                 print(f"    Saving to {output_path}...")
                 with ProgressBar():
-                    subset_rechunked.to_zarr(
+                    subset_flattened.to_zarr(
                         output_path,
                         mode='w',
                         consolidated=True,
