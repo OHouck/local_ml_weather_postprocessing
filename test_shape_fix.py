@@ -161,6 +161,38 @@ def test_dataloader_and_shapes():
         print(f"  ✓ Tensor addition successful!")
         break
 
+    # Test apply_correction function
+    print(f"\nTesting apply_correction function...")
+    from finetune import apply_correction
+
+    # Create test data
+    test_forecast_input = np.random.randn(n_samples, input_features).astype(np.float32)
+    test_forecast_output = np.random.randn(n_samples, output_features).astype(np.float32)
+    test_lead_time_indices = np.random.randint(0, n_lead_times, n_samples)
+    test_day_of_year = np.random.randn(n_samples, 2).astype(np.float32)
+
+    # Test with MLP
+    device = torch.device('cpu')
+    corrected = apply_correction(
+        mlp_model,
+        test_forecast_input,
+        test_forecast_output,
+        test_lead_time_indices,
+        test_day_of_year,
+        device
+    )
+
+    print(f"  test_forecast_input shape: {test_forecast_input.shape}")
+    print(f"  test_forecast_output shape: {test_forecast_output.shape}")
+    print(f"  corrected shape: {corrected.shape}")
+
+    # Verify corrected shape matches forecast output shape
+    assert corrected.shape == test_forecast_output.shape, \
+        f"Expected corrected shape {test_forecast_output.shape}, got {corrected.shape}"
+
+    print(f"  ✓ apply_correction works correctly!")
+    print(f"  ✓ Corrected output shape matches forecast output shape")
+
     print(f"\n" + "="*70)
     print("ALL TESTS PASSED! ✓")
     print("="*70)
@@ -170,6 +202,7 @@ def test_dataloader_and_shapes():
     print("  • Model outputs correction (1 var × 24×24 = 576 features)")
     print("  • Correction is added to forecast outputs (576 features)")
     print("  • Final prediction matches observation shape (576 features)")
+    print("  • apply_correction function handles shapes correctly")
     print()
 
 
