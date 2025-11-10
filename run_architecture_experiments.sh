@@ -30,13 +30,13 @@ REGION=india
 SUBREGION=6x6
 MODEL=pangu
 
-# Training period (1 year for reasonable training)
-TRAIN_START=2020-01-01
+# Training period (2 year for reasonable training)
+TRAIN_START=2019-01-01
 TRAIN_END=2020-12-31
 
-# Test period (6 months for faster evaluation)
+# Test period (1 month for faster evaluation)
 TEST_START=2021-01-01
-TEST_END=2021-06-30
+TEST_END=2021-12-31
 
 # Variables
 TRAINING_VARS="2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa"

@@ -80,7 +80,7 @@ TOPO_ZONE_MAP = {
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
 # ------------------------------
-# Simple MLP definition with lead time and month encoding
+# Simple MLP definition with cosine/sine day-of-year features and lead time embedding
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
