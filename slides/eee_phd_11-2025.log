@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  10 NOV 2025 13:46
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  10 NOV 2025 16:53
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -592,32 +592,38 @@ LaTeX Font Info:    Overwriting math alphabet `\mathbbm' in version `bold'
 (Font)                  U/bbm/m/n --> U/bbm/bx/n on input line 33.
 LaTeX Font Info:    Overwriting math alphabet `\mathbbmss' in version `bold'
 (Font)                  U/bbmss/m/n --> U/bbmss/bx/n on input line 35.
+) (/usr/local/texlive/2023/texmf-dist/tex/latex/natbib/natbib.sty
+Package: natbib 2010/09/13 8.31b (PWD, AO)
+\bibhang=\skip65
+\bibsep=\skip66
+LaTeX Info: Redefining \cite on input line 694.
+\c@NAT@ctr=\count342
 ) (/usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
 File: l3backend-pdftex.def 2023-01-16 L3 backend support: PDF output (pdfTeX)
-\l__color_backend_stack_int=\count342
+\l__color_backend_stack_int=\count343
 \l__pdf_internal_box=\box76
-) (./eee_phd_11-2025.aux)
+)
+No file eee_phd_11-2025.aux.
 \openout1 = `eee_phd_11-2025.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 32.
-LaTeX Font Info:    ... okay on input line 32.
-
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 36.
+LaTeX Font Info:    ... okay on input line 36.
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
 *geometry* verbose mode - [ preamble ] result:
@@ -654,77 +660,82 @@ LaTeX Font Info:    ... okay on input line 32.
 
 (/usr/local/texlive/2023/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
-\scratchcounter=\count343
+\scratchcounter=\count344
 \scratchdimen=\dimen315
 \scratchbox=\box77
-\nofMPsegments=\count344
-\nofMParguments=\count345
+\nofMPsegments=\count345
+\nofMParguments=\count346
 \everyMPshowfont=\toks45
-\MPscratchCnt=\count346
+\MPscratchCnt=\count347
 \MPscratchDim=\dimen316
-\MPnumerator=\count347
-\makeMPintoPDFobject=\count348
+\MPnumerator=\count348
+\makeMPintoPDFobject=\count349
 \everyMPtoPDFconversion=\toks46
 ) (/usr/local/texlive/2023/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
 Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+ (/usr/local/texlive/2023/texmf-dist/tex/latex/grfext/grfext.sty
+Package: grfext 2019/12/03 v1.3 Manage graphics extensions (HO)
+)
 Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 485.
+Package grfext Info: Graphics extension search list:
+(grfext)             [.pdf,.png,.jpg,.mps,.jpeg,.jbig2,.jb2,.PDF,.PNG,.JPG,.JPEG,.JBIG2,.JB2,.eps]
+(grfext)             \AppendGraphicsExtensions on input line 504.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 ))
-Package hyperref Info: Link coloring OFF on input line 32.
- (./eee_phd_11-2025.out) (./eee_phd_11-2025.out)
+Package hyperref Info: Link coloring OFF on input line 36.
 \@outlinefile=\write5
 \openout5 = `eee_phd_11-2025.out'.
 
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  OT1/cmr/m/n --> OT1/cmss/m/n on input line 32.
+(Font)                  OT1/cmr/m/n --> OT1/cmss/m/n on input line 36.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 32.
+(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 36.
 \symnumbers=\mathgroup6
 \sympureletters=\mathgroup7
 LaTeX Font Info:    Overwriting math alphabet `\mathrm' in version `normal'
-(Font)                  OT1/cmss/m/n --> OT1/cmr/m/n on input line 32.
-LaTeX Font Info:    Redeclaring math alphabet \mathbf on input line 32.
+(Font)                  OT1/cmss/m/n --> OT1/cmr/m/n on input line 36.
+LaTeX Font Info:    Redeclaring math alphabet \mathbf on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
-(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 32.
+(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `bold'
-(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 32.
-LaTeX Font Info:    Redeclaring math alphabet \mathsf on input line 32.
+(Font)                  OT1/cmr/bx/n --> OT1/cmss/b/n on input line 36.
+LaTeX Font Info:    Redeclaring math alphabet \mathsf on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> OT1/cmss/m/n on input line 32.
+(Font)                  OT1/cmss/m/n --> OT1/cmss/m/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> OT1/cmss/m/n on input line 32.
-LaTeX Font Info:    Redeclaring math alphabet \mathit on input line 32.
+(Font)                  OT1/cmss/bx/n --> OT1/cmss/m/n on input line 36.
+LaTeX Font Info:    Redeclaring math alphabet \mathit on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
-(Font)                  OT1/cmr/m/it --> OT1/cmss/m/it on input line 32.
+(Font)                  OT1/cmr/m/it --> OT1/cmss/m/it on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  OT1/cmr/bx/it --> OT1/cmss/m/it on input line 32.
-LaTeX Font Info:    Redeclaring math alphabet \mathtt on input line 32.
+(Font)                  OT1/cmr/bx/it --> OT1/cmss/m/it on input line 36.
+LaTeX Font Info:    Redeclaring math alphabet \mathtt on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> OT1/cmtt/m/n on input line 32.
+(Font)                  OT1/cmtt/m/n --> OT1/cmtt/m/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> OT1/cmtt/m/n on input line 32.
+(Font)                  OT1/cmtt/m/n --> OT1/cmtt/m/n on input line 36.
 LaTeX Font Info:    Overwriting symbol font `numbers' in version `bold'
-(Font)                  OT1/cmss/m/n --> OT1/cmss/b/n on input line 32.
+(Font)                  OT1/cmss/m/n --> OT1/cmss/b/n on input line 36.
 LaTeX Font Info:    Overwriting symbol font `pureletters' in version `bold'
-(Font)                  OT1/cmss/m/it --> OT1/cmss/b/it on input line 32.
+(Font)                  OT1/cmss/m/it --> OT1/cmss/b/it on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathrm' in version `bold'
-(Font)                  OT1/cmss/b/n --> OT1/cmr/b/n on input line 32.
+(Font)                  OT1/cmss/b/n --> OT1/cmr/b/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `bold'
-(Font)                  OT1/cmss/b/n --> OT1/cmss/b/n on input line 32.
+(Font)                  OT1/cmss/b/n --> OT1/cmss/b/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/m/n --> OT1/cmss/b/n on input line 32.
+(Font)                  OT1/cmss/m/n --> OT1/cmss/b/n on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  OT1/cmss/m/it --> OT1/cmss/b/it on input line 32.
+(Font)                  OT1/cmss/m/it --> OT1/cmss/b/it on input line 36.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> OT1/cmtt/b/n on input line 32.
-LaTeX Font Info:    Redeclaring symbol font `pureletters' on input line 32.
+(Font)                  OT1/cmtt/m/n --> OT1/cmtt/b/n on input line 36.
+LaTeX Font Info:    Redeclaring symbol font `pureletters' on input line 36.
 LaTeX Font Info:    Overwriting symbol font `pureletters' in version `normal'
-(Font)                  OT1/cmss/m/it --> OT1/mathkerncmss/m/sl on input line 32.
+(Font)                  OT1/cmss/m/it --> OT1/mathkerncmss/m/sl on input line 36.
 LaTeX Font Info:    Overwriting symbol font `pureletters' in version `bold'
-(Font)                  OT1/cmss/b/it --> OT1/mathkerncmss/m/sl on input line 32.
+(Font)                  OT1/cmss/b/it --> OT1/mathkerncmss/m/sl on input line 36.
 LaTeX Font Info:    Overwriting symbol font `pureletters' in version `bold'
-(Font)                  OT1/mathkerncmss/m/sl --> OT1/mathkerncmss/bx/sl on input line 32.
+(Font)                  OT1/mathkerncmss/m/sl --> OT1/mathkerncmss/bx/sl on input line 36.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-basic-dictionary-English.dict
 Dictionary: translator-basic-dictionary, Language: English 
 ) (/usr/local/texlive/2023/texmf-dist/tex/latex/translator/translator-bibliography-dictionary-English.dict
@@ -743,29 +754,29 @@ Package caption Info: End \AtBeginDocument code.
  (./eee_phd_11-2025.nav) [1{/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map}
 
 ]
-LaTeX Font Info:    Trying to load font information for U+msa on input line 60.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 64.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 60.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 64.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Trying to load font information for OT1+mathkerncmss on input line 60.
+LaTeX Font Info:    Trying to load font information for OT1+mathkerncmss on input line 64.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/sansmathaccent/ot1mathkerncmss.fd
 File: ot1mathkerncmss.fd 2020/01/31 Fontinst v1.933 font definitions for OT1/mathkerncmss.
 )
-<./reference_pics//ECMWF_supercomputer.png, id=148, 580.1675pt x 443.6575pt>
+<./reference_pics//ECMWF_supercomputer.png, id=135, 580.1675pt x 443.6575pt>
 File: ./reference_pics//ECMWF_supercomputer.png Graphic file (type png)
 <use ./reference_pics//ECMWF_supercomputer.png>
-Package pdftex.def Info: ./reference_pics//ECMWF_supercomputer.png  used on input line 60.
+Package pdftex.def Info: ./reference_pics//ECMWF_supercomputer.png  used on input line 64.
 (pdftex.def)             Requested size: 151.3706pt x 115.7544pt.
  [2
 
  <./reference_pics//ECMWF_supercomputer.png>]
 File: ./reference_pics//ECMWF_supercomputer.png Graphic file (type png)
 <use ./reference_pics//ECMWF_supercomputer.png>
-Package pdftex.def Info: ./reference_pics//ECMWF_supercomputer.png  used on input line 60.
+Package pdftex.def Info: ./reference_pics//ECMWF_supercomputer.png  used on input line 64.
 (pdftex.def)             Requested size: 151.3706pt x 115.7544pt.
  [3
 
@@ -780,52 +791,52 @@ Package pdftex.def Info: ./reference_pics//ECMWF_supercomputer.png  used on inpu
 ] [8
 
 ]
-</Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png, id=557, 867.24pt x 433.62pt>
+</Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png, id=553, 867.24pt x 433.62pt>
 File: /Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png  used on input line 141.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png  used on input line 144.
 (pdftex.def)             Requested size: 318.67209pt x 159.33855pt.
 
-Overfull \vbox (17.4631pt too high) detected at line 141
+Overfull \vbox (17.4631pt too high) detected at line 144
  []
 
 [9
 
  </Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png>]
-</Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png, id=616, 867.24pt x 433.62pt>
+</Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png, id=613, 867.24pt x 433.62pt>
 File: /Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png  used on input line 153.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png  used on input line 156.
 (pdftex.def)             Requested size: 318.67209pt x 159.33855pt.
 
-Overfull \vbox (17.4631pt too high) detected at line 153
+Overfull \vbox (17.4631pt too high) detected at line 156
  []
 
 [10
 
  </Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=674, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=672, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 170.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 173.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=675, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=673, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 170.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 173.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [11
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>]
-</Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png, id=736, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png, id=735, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png  used on input line 187.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png  used on input line 190.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png, id=737, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png, id=736, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png  used on input line 187.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png  used on input line 190.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [12
 
@@ -833,162 +844,197 @@ Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//ifs/lead_ti
 </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png, id=796, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png  used on input line 204.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png  used on input line 207.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
 </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png, id=797, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png  used on input line 204.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png  used on input line 207.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [13
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_unet.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=858, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=859, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 223.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 226.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=859, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=860, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 223.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 226.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [14
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=918, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png, id=921, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 240.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 243.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-LaTeX Font Info:    Trying to load font information for TS1+cmss on input line 240.
+LaTeX Font Info:    Trying to load font information for TS1+cmss on input line 243.
  (/usr/local/texlive/2023/texmf-dist/tex/latex/base/ts1cmss.fd
 File: ts1cmss.fd 2022/07/10 v2.5l Standard LaTeX font definitions
 )
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=919, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png, id=922, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 240.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png  used on input line 243.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [15
 
 {/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc} </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_10m_wind_speed_trainedwith_10m_wind_speed_geographic_pangu_mlp.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png, id=980, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png, id=983, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png  used on input line 257.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png  used on input line 260.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png, id=981, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png, id=984, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png  used on input line 257.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png  used on input line 260.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [16
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_climate_zones_pangu_mlp_bootstrap.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_climate_zones_pangu_mlp_bootstrap.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png, id=1041, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png, id=1045, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png  used on input line 274.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png  used on input line 277.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png, id=1042, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png, id=1046, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png  used on input line 274.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png  used on input line 277.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [17
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_topographic_zones_pangu_mlp_bootstrap.png> </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/2x2/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_topographic_zones_pangu_mlp_bootstrap.png>] [18
 
 ]
-<./reference_pics//mortal_errors_fig.png, id=1158, 895.345pt x 545.03625pt>
+<./reference_pics//mortal_errors_fig.png, id=1165, 895.345pt x 545.03625pt>
 File: ./reference_pics//mortal_errors_fig.png Graphic file (type png)
 <use ./reference_pics//mortal_errors_fig.png>
-Package pdftex.def Info: ./reference_pics//mortal_errors_fig.png  used on input line 293.
+Package pdftex.def Info: ./reference_pics//mortal_errors_fig.png  used on input line 297.
 (pdftex.def)             Requested size: 239.00558pt x 145.49013pt.
  [19
 
  <./reference_pics//mortal_errors_fig.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1217, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1225, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 314.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 318.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 314.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 318.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [20
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>]
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 335.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 339.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png, id=1276, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png, id=1285, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png  used on input line 335.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png  used on input line 339.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [21
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_train_rmse_eval_mlp.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1334, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1345, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 356.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 360.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 356.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 360.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [22
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_raw_values_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>]
-</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1393, 1004.553pt x 571.1739pt>
+</Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png, id=1404, 1004.553pt x 571.1739pt>
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 372.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png  used on input line 376.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
 File: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png Graphic file (type png)
 <use /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png>
-Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 372.
+Package pdftex.def Info: /Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png  used on input line 376.
 (pdftex.def)             Requested size: 191.20082pt x 108.70718pt.
  [23
 
  </Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_error_cutoff_2m_temperature_trainedwith_2m_temperature_geographic_pangu_extreme_heat_mlp.png>] [24
 
 ]
-Overfull \vbox (143.11606pt too high) detected at line 415
+Overfull \vbox (143.11606pt too high) detected at line 419
  []
 
 [25
 
 ] [26
 
-] [27
+]
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex:432: LaTeX Error: Environment singlespace undefined.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.432 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+(./eee_phd_11-2025.bbl
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\translate ' on input line 4.
+
+)
+
+/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex:432: LaTeX Error: \begin{beamer@framepauses} on input line 432 ended by \end{singlespace}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.432 \end{frame}
+                 
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+[27
 
 ] [28
-
 
 ] [29
 
 
+] [30
+
+
 ]
-<./reference_pics//mlp_explained.png, id=1799, 962.59625pt x 702.625pt>
+<./reference_pics//mlp_explained.png, id=1882, 962.59625pt x 702.625pt>
 File: ./reference_pics//mlp_explained.png Graphic file (type png)
 <use ./reference_pics//mlp_explained.png>
-Package pdftex.def Info: ./reference_pics//mlp_explained.png  used on input line 486.
+Package pdftex.def Info: ./reference_pics//mlp_explained.png  used on input line 495.
 (pdftex.def)             Requested size: 151.3706pt x 110.48175pt.
- [30
+ [31
 
  <./reference_pics//mlp_explained.png>]
-<./reference_pics//unet_explained.png, id=1858, 810.02625pt x 619.31375pt>
+<./reference_pics//unet_explained.png, id=1942, 810.02625pt x 619.31375pt>
 File: ./reference_pics//unet_explained.png Graphic file (type png)
 <use ./reference_pics//unet_explained.png>
-Package pdftex.def Info: ./reference_pics//unet_explained.png  used on input line 509.
+Package pdftex.def Info: ./reference_pics//unet_explained.png  used on input line 518.
 (pdftex.def)             Requested size: 151.3706pt x 115.72414pt.
- [31
+ [32
 
  <./reference_pics//unet_explained.png>]
 \tf@nav=\write6
@@ -1000,23 +1046,37 @@ Package pdftex.def Info: ./reference_pics//unet_explained.png  used on input lin
 \tf@snm=\write8
 \openout8 = `eee_phd_11-2025.snm'.
 
- (./eee_phd_11-2025.aux)
-Package rerunfilecheck Info: File `eee_phd_11-2025.out' has not changed.
-(rerunfilecheck)             Checksum: 59EE079330020D53ACA4136F937F6DA5;479.
+ (./eee_phd_11-2025.aux
+
+Package natbib Warning: Citation(s) may have changed.
+(natbib)                Rerun to get citations correct.
+
+)
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+Package rerunfilecheck Warning: File `eee_phd_11-2025.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `eee_phd_11-2025.out':
+(rerunfilecheck)             Before: <no file>
+(rerunfilecheck)             After:  A65AA92F1FD4C8727005B3FC24F59817;572.
  ) 
 Here is how much of TeX's memory you used:
- 23821 strings out of 476025
- 492311 string characters out of 5790016
+ 24232 strings out of 476025
+ 498575 string characters out of 5790016
  1883388 words of memory out of 5000000
- 43689 multiletter control sequences out of 15000+600000
- 524114 words of font info for 74 fonts, out of 8000000 for 9000
+ 44087 multiletter control sequences out of 15000+600000
+ 524470 words of font info for 75 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  128i,19n,122p,428b,768s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb>
-Output written on eee_phd_11-2025.pdf (31 pages, 7938891 bytes).
+Output written on eee_phd_11-2025.pdf (32 pages, 8335867 bytes).
 PDF statistics:
- 1980 PDF objects out of 2073 (max. 8388607)
- 1822 compressed objects within 19 object streams
- 71 named destinations out of 1000 (max. 500000)
- 195 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 2068 PDF objects out of 2073 (max. 8388607)
+ 1906 compressed objects within 20 object streams
+ 78 named destinations out of 1000 (max. 500000)
+ 163 words of extra memory for PDF output out of 10000 (max. 10000000)
 

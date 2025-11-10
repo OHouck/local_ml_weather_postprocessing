@@ -1,0 +1,18 @@
+\ifx\undefined\bysame
+\newcommand{\bysame}{\leavevmode\hbox to\leftmargin{\hrulefill\,\,}}
+\fi
+\begin{thebibliography}{xx}
+
+\harvarditem[B{\"u}lte et al.]{B{\"u}lte, Horat, Quinting and Lerch}{2025}{bulteUncertaintyQuantificationDatadriven2025}
+{\bf B{\"u}lte, Christopher, Nina Horat, Julian Quinting, and Sebastian Lerch}, ``Uncertainty Quantification for Data-Driven Weather Models,'' {\it Artificial Intelligence for the Earth Systems}, March 2025.
+
+\harvarditem[Schlenker and Roberts]{Schlenker and Roberts}{2009}{schlenkerNonlinearTemperatureEffects2009}
+{\bf Schlenker, Wolfram and Michael~J. Roberts}, ``Nonlinear Temperature Effects Indicate Severe Damages to {{U}}.{{S}}. Crop Yields under Climate Change,'' {\it Proceedings of the National Academy of Sciences}, September 2009, {\it 106} (37), 15594--15598.
+
+\harvarditem[Shrader et al.]{Shrader, Bakkensen and Lemoine}{2023}{shraderFatalErrorsMortality2023}
+{\bf Shrader, Jeffrey, Laura Bakkensen, and Derek Lemoine}, ``Fatal {{Errors}}: {{The Mortality Value}} of {{Accurate Weather Forecasts}},'' Technical Report w31361, National Bureau of Economic Research, Cambridge, MA June 2023.
+
+\harvarditem[Weber and Woerman]{Weber and Woerman}{2024}{weberIntermittencyUncertaintyImpacts2024}
+{\bf Weber, Paige and Matt Woerman}, ``Intermittency or {{Uncertainty}}? {{Impacts}} of {{Renewable Energy}} in {{Electricity Markets}},'' {\it Journal of the Association of Environmental and Resource Economists}, November 2024, {\it 11} (6), 1351--1385.
+
+\end{thebibliography}

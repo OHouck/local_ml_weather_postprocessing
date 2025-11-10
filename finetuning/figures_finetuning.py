@@ -1139,7 +1139,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                                   linestyle='none', label=arch.upper()))
     
     legend1 = ax.legend(handles=region_handles, title="Region",
-                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
+                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=16, title_fontsize=16)
     
     if len(nn_architectures) > 1:
         legend2 = ax.legend(handles=arch_handles, title="Architecture",
@@ -1158,7 +1158,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         annotation_text = "Note: Lighter inner bars show improvement from simple mean debiasing"
         ax.text(0.02, 0.98, annotation_text,
                transform=ax.transAxes,
-               fontsize=11,
+               fontsize=16,
                verticalalignment='top',
                bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow',
                         edgecolor='gray', alpha=0.8))
@@ -1382,29 +1382,29 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     # Add annotations for mean values
     if region_means:
         annotation_lines = ["Ground Truth Means:"]
-        
+
         region_annotations = {}
         for key, (region, mean_val, units) in region_means.items():
             if region not in region_annotations:
                 region_annotations[region] = []
             region_annotations[region].append((mean_val, units))
-        
+
         for region in sorted(region_annotations.keys()):
             values = region_annotations[region]
             avg_mean = np.mean([v[0] for v in values])
             units = values[0][1]
-            
+
             if variable == '2m_temperature':
                 annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.1f}°{units}")
             else:
                 annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.2f} {units}")
-        
+
         annotation_text = '\n'.join(annotation_lines)
-        ax.text(0.02, 0.48, annotation_text,
+        ax.text(0.22, 0.35, annotation_text,
                transform=ax.transAxes,
                fontsize=11,
                verticalalignment='top',
-               bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+               bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
                         edgecolor='gray', alpha=0.9),
                family='monospace')
     
@@ -1437,7 +1437,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                       alpha=0.9, label='Corrected Forecast Error'))
 
     legend1 = ax.legend(handles=forecast_handles, title="Forecast Type",
-                       loc='lower left', bbox_to_anchor=(0.2,0), fontsize=12)
+                       loc='lower left', bbox_to_anchor=(0.2, 0), fontsize=12)
     
     # Region legend
     region_handles = []
@@ -1450,7 +1450,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                     label=region.replace('_', ' ').title()))
     
     legend2 = ax.legend(handles=region_handles, title="Region",
-                       loc='lower left', bbox_to_anchor=(0, 0), fontsize=12)
+                       loc='lower left', bbox_to_anchor=(0, 0), fontsize=16, title_fontsize=16)
     
     ax.add_artist(legend1)
     ax.add_artist(legend2)
@@ -1706,10 +1706,10 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
     # Position legends
     legend1 = ax.legend(handles=region_handles, title="Region",
-                       loc='upper left', bbox_to_anchor=(0, 0.85), fontsize=12)
+                       loc='upper left', bbox_to_anchor=(0, 0.85), fontsize=16, title_fontsize=16)
 
     legend2 = ax.legend(handles=bar_handles, title="Forecast Type",
-                       loc='upper left', bbox_to_anchor=(0, 0.6), fontsize=12)
+                       loc='upper left', bbox_to_anchor=(0, 0.50), fontsize=12)
     
     if len(nn_architectures) > 1:
         legend3 = ax.legend(handles=arch_handles, title="Architecture",
@@ -1774,9 +1774,9 @@ def main():
 
     stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
 
-    nn_architectures = ["mlp"]
-    variable_list = ["2m_temperature"]
-    model_list = ["pangu"]
+    nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
+    variable_list = ["2m_temperature", "10m_wind_speed"]
+    model_list = ["ifs", "pangu"]
     geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
@@ -1784,42 +1784,48 @@ def main():
     for var in variable_list:
         for model in model_list:
             for gs_flag in growing_season_flags:
+                for regions in [geo_regions, climate_regions, topo_regions]:
+                    if regions == climate_regions or regions == topo_regions:
+                        subregion = "2x2"
+                    elif regions == geo_regions:
+                        subregion = "6x6"
+                    for loss_train_on in ["mse", "extreme_heat"]:
+                        if model == "aifs" and not gs_flag:
+                            # aifs results are only for growing season
+                            continue
 
-                if model == "aifs" and not gs_flag:
-                    # aifs results are only for growing season
-                    continue
-
-                plot_rmse_improvement(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat",
-                    evaluation_loss="extreme_heat"
-                )
-                plot_raw_forecast_values(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat"
-                )
-                plot_error_cutoff(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat"
-                )
+                        for evaluation_loss in ["rmse", "extreme_heat"]:
+                            plot_rmse_improvement(csv_path = stat_path,
+                                dirs=dirs,
+                                variable=var,
+                                model=model,
+                                regions=regions,
+                                subregion=subregion,
+                                nn_architectures=nn_architectures,
+                                growing_season_only=gs_flag,
+                                loss_trained_on=loss_train_on,
+                                evaluation_loss=evaluation_loss
+                            )
+                        plot_raw_forecast_values(csv_path = stat_path,
+                            dirs=dirs,
+                            variable=var,
+                            model=model,
+                            regions=regions,
+                            subregion=subregion,
+                            nn_architectures=nn_architectures,
+                            growing_season_only=gs_flag,
+                            loss_trained_on=loss_train_on
+                        )
+                        plot_error_cutoff(csv_path = stat_path,
+                            dirs=dirs,
+                            variable=var,
+                            model=model,
+                            regions=regions,
+                            subregion=subregion,
+                            nn_architectures=nn_architectures,
+                            growing_season_only=gs_flag,
+                            loss_trained_on=loss_train_on
+                        )
     exit()
     for var in variable_list:
         for model in model_list:

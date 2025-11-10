@@ -29,6 +29,10 @@
 
 \usepackage{bbm}
 
+
+\usepackage[round]{natbib}
+\bibliographystyle{aer}
+
 \begin{document}
 
 \maketitle
@@ -45,7 +49,7 @@
                     \item Ex: Best global weather model created by European Centre for Medium-Range Weather Forecasts (ECMWF) requires a supercomputer.
                 \end{itemize}
                 \item<2-> Beginning in 2022, several machine learning (ML) based weather models have been created that have rivaled or exceeded the accuracy of traditional models.
-                \item<2-> Critically, these models can be run on a personal laptop.
+                \item<2-> Instead of requiring a supercomputer, these models can be run on a personal laptop.
             \end{itemize}
         \end{column}
         \begin{column}{0.38\textwidth}
@@ -61,34 +65,34 @@
 
 \begin{frame}{Increased Accessibility of Weather Predictions Opens New Opportunities}
     \begin{itemize}
-        \item Individual countries and smaller organizations can now run their own weather models instead of relying on large government agencies.
         \item Global models are more accurate in some areas than others.
         \item Different groups prioritize accuracy for different weather variables.
+        \item Low compute requirements for creating ML weather forecasts offer the potential to help democratize access to accurate weather predictions.
     \end{itemize}
         
     \pause
     \begin{itemize}
-        \item \textbf{The Problem:} All global weather models (NWP or ML) are trained to optimize overall global accuracy.
+        \item \textbf{The Problem:} All global weather models (NWP and ML) are trained to optimize overall global accuracy.
         \begin{itemize}
             \item A temperature error in Greenland is treated the same as a temperature error in Chicago!
             \item The ML models might be cheap to run, but they are extremely expensive to train!
         \end{itemize}
-     \item \textbf{Potential Solution:} Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest. 
+     \item \textbf{Potential Solution:} Post-process (fine-tune) global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest. 
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Accurate weather forecasts matter and that post-processing can work}
+\begin{frame}{Accurate weather forecasts matter and post-processing can improve accuracy}
     \textbf{Why Accurate Weather Forecasts Matter:}
     \begin{itemize}
-        \item Accurate temperature forecasts reduce heat mortality (Shrader et al. 2023)
-        \item Monsoon onset forecasts can help farmers adjust planting dates (Burlig et al. 2025)
-        \item Renewable forecast errors increase electricity prices and thermal generator start-ups (Weber and Woerman 2024)
+        \item Accurate temperature forecasts reduce heat mortality. (Shraeder et al. 2023)
+        \item Renewable forecast errors increase electricity prices and thermal generator start-ups. (Weber and Woerman 2024)
+        \item Monsoon onset forecasts can help farmers adjust planting dates. (Burlig et al. 2025)
     \end{itemize}
 
     \textbf{Prior Work on Post-Processing Weather Forecasts:}
     \begin{itemize}
-        \item Neural networks can be used to post-process NWP models (Rasp  and Lerch 2018).
-        \item CNNs can be used to correct NWP models on gridded data (Han et al. 2021). 
+        \item Neural networks can be used to post-process NWP models. (Rasp and Lerch 2018)
+        \item CNNs can be used to correct NWP models on gridded data. (Han et al. 2021) 
         \item NWP and ML models can be post-processed in similar process-based model (Trotta et al. 2025). 
     \end{itemize}
 \end{frame}
@@ -96,8 +100,7 @@
 \begin{frame}{How to Post-Process Weather Model Outputs? What Outputs Matter Most?}
 
     \begin{itemize}
-        \item ML tools can be used to post-process models just as they have been used to build them. 
-        \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle.
+        \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle. (Main Results Today)t
         \item \textbf{Contribution 2}: Show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.(In Progress)
         \item \textbf{Contribution 3}: Using agriculture as a test case, demonstrate how damage functions can be estimated and incorporated as custom loss functions when post-processing. (In Progress)
     \end{itemize}
@@ -273,6 +276,7 @@
 \end{figure}
 \end{frame}
 
+
 \section{Custom Loss Functions}
 
 \begin{frame}{All Deterministic Forecasts Trained with MSE, All Ensemble Models Trained with CRPS}
@@ -381,7 +385,7 @@
 
 \begin{frame}{How to estimate damage functions}
     \begin{itemize}
-        \item Previously extended Roberts Schlenker 2009 style climate damage approach to estimate damage functions on corn yields in the US
+        \item Previously extended Schlenker and Roberts (2009) style climate damage approach to estimate damage functions on corn yields in the US
         \item Using non-parametric quantile regression forest to estimate damage functions based on larger set of weather and agronomic variables
     \end{itemize}
     \begin{table}[htbp]
@@ -419,7 +423,12 @@ Max VPD (July) & 0.17 \\
         \item Need to more thoroughly review which weather shocks can be adapted to.
         \item Promising possibilities are precipitation at planting and harvesting, and late frosts during planting season.
     \end{itemize}
+\end{frame}
 
+\begin{frame}{Bibliography}
+    \begin{singlespace}
+    \bibliography{post_processing_ml_forecasts}
+    \end{singlespace}
 \end{frame}
 
 \section{Appendix}
