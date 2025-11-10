@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1762361844 "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" "eee_phd_11-2025.pdf" "eee_phd_11-2025" 1762361856 0
+["pdflatex"] 1762803962 "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" "eee_phd_11-2025.pdf" "eee_phd_11-2025" 1762803974 0
   "/Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png" 1762209514 199997 2e6935f648ba3fb6ac2c4786713436a4 ""
   "/Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png" 1762291736 264556 c2d51977e0d0e004e9e37c8c386f3f58 ""
   "/Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png" 1762291735 260891 d1f48fbb432d82b00c8f2ab7bc69765d ""
@@ -20,7 +20,7 @@
   "/Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png" 1762291734 265563 f156306dbcacc768bb4358639662c4f0 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png" 1762291519 317638 c8069e63a3d1e4e38b89cafea5cb686e ""
   "/Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png" 1762209514 227140 93846000f2491bbfe60d347633a717db ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" 1762361836 22944 c7400cae357365c7656acdb34a4fc8c4 ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" 1762803962 22944 f00eac96f55df0e46aa90b822cad1b5b ""
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcss0900.tfm" 1136768653 1536 ba0169ee8bc017972775b933313cbbb0 ""
@@ -232,10 +232,10 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "eee_phd_11-2025.aux" 1762361856 5869 53ba62f555f618c46971a0da582cb4b4 "pdflatex"
-  "eee_phd_11-2025.nav" 1762361856 3521 3b7b03e1b034cdf551915bcaed19ece0 "pdflatex"
-  "eee_phd_11-2025.out" 1762361856 479 59ee079330020d53aca4136f937f6da5 "pdflatex"
-  "eee_phd_11-2025.tex" 1762361836 22944 c7400cae357365c7656acdb34a4fc8c4 ""
+  "eee_phd_11-2025.aux" 1762803974 5869 53ba62f555f618c46971a0da582cb4b4 "pdflatex"
+  "eee_phd_11-2025.nav" 1762803974 3521 3b7b03e1b034cdf551915bcaed19ece0 "pdflatex"
+  "eee_phd_11-2025.out" 1762803974 479 59ee079330020d53aca4136f937f6da5 "pdflatex"
+  "eee_phd_11-2025.tex" 1762803962 22944 f00eac96f55df0e46aa90b822cad1b5b ""
   "reference_pics//ECMWF_supercomputer.png" 1761601199 1323366 9682ba4c8c63da152b444a86e44aea8c ""
   "reference_pics//mlp_explained.png" 1762210522 631969 1c448cb9cc1d7067dca15e09645a079d ""
   "reference_pics//mortal_errors_fig.png" 1762296561 176247 8aac1f3d5fdff5a83be10196df87872c ""
