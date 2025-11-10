@@ -899,25 +899,50 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     return model, training_time_minutes
 
 
-def apply_correction(model, forecast_data, lead_time_indices, day_of_year_features, device):
+def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device):
     """
     Apply the correction to forecast data with lead times and day-of-year features.
+
+    Parameters:
+    -----------
+    model : torch.nn.Module
+        Trained model that predicts corrections
+    forecast_input_data : np.ndarray
+        Normalized forecast inputs (all training variables) - shape (n_samples, n_training_vars * n_lat * n_lon)
+    forecast_output_data : np.ndarray
+        Normalized forecast outputs (output variables to be corrected) - shape (n_samples, n_output_vars * n_lat * n_lon)
+    lead_time_indices : np.ndarray
+        Lead time indices for each sample
+    day_of_year_features : np.ndarray
+        Day of year sin/cos features
+    device : torch.device
+        Device to run model on
+
+    Returns:
+    --------
+    np.ndarray
+        Corrected forecast outputs (in normalized space)
     """
     model.eval()
     corrected_all = []
 
     # Process in batches to handle memory efficiently
     batch_size = 128
-    n_samples = forecast_data.shape[0]
+    n_samples = forecast_input_data.shape[0]
 
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             end_idx = min(i + batch_size, n_samples)
-            x_batch = torch.from_numpy(forecast_data[i:end_idx]).float().to(device)
+            fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device)
+            fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device)
             lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
             doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device)
-            predicted_error = model(x_batch, lt_batch, doy_batch).cpu().numpy()
-            corrected_batch = x_batch.cpu().numpy() + predicted_error
+
+            # Model takes forecast inputs and predicts correction for forecast outputs
+            predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
+
+            # Add correction to forecast outputs (not inputs!)
+            corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
             corrected_all.append(corrected_batch)
 
     return np.concatenate(corrected_all, axis=0)
@@ -1111,10 +1136,15 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
      test_times, _, _, _, _, _, _, _) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
 
-    # Apply correction
+    # Normalize test data
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
-    corrected = apply_correction(model, test_fc_norm, test_lead_time_indices,
-                                test_day_of_year_features, device)
+    test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
+
+    # Apply correction (pass both inputs and outputs)
+    corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                test_lead_time_indices, test_day_of_year_features, device)
+
+    # Denormalize corrected outputs
     corrected = (corrected * stats_out['std']) + stats_out['mean']
 
     # Calculate MSE per lead time and month
