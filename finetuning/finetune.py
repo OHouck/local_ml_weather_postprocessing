@@ -489,6 +489,9 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
     Uses new file organization: root_dir/data_source/data_source_region_year.zarr
+
+    Updated to handle overlapping time coordinates across years by loading individually
+    and concatenating with proper sorting.
     """
 
     min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
@@ -504,26 +507,45 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
             file_pattern = f"{data_source}/{data_source}_{region}_{year}.zarr"
 
         file_paths.append(os.path.join(root_dir, file_pattern))
-    
+
     if len(file_paths) == 0:
         raise ValueError(f"No files found matching pattern: {file_pattern}")
 
-    # aifs has different variable names so rename them when loading
-    preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+    # Load datasets individually to handle overlapping time coordinates
+    datasets = []
 
-    if data_source == "imd":
-        preprocess_fn = lambda ds: ds.rename({'TIME': 'time','LONGITUDE': 'longitude', 
-                            'LATITUDE': 'latitude', 'RAINFALL':'total_precipitation'}
-                            ).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
-    forecast_ds = xr.open_mfdataset(
-        file_paths,
-        combine="by_coords",
-        preprocess=preprocess_fn,
-        decode_timedelta=True,
-        engine="zarr",
-    )
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Required data file not found: {file_path}")
 
-    return(forecast_ds)
+        # Load individual file
+        if data_source == "imd":
+            ds = xr.open_dataset(file_path)
+            ds = ds.rename({
+                'TIME': 'time',
+                'LONGITUDE': 'longitude',
+                'LATITUDE': 'latitude',
+                'RAINFALL': 'total_precipitation'
+            })
+        else:
+            ds = xr.open_zarr(file_path)
+
+        # Select spatial subset
+        ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
+        datasets.append(ds)
+
+    # Concatenate along time dimension, allowing overlaps
+    # This will handle the case where forecast valid_times extend across year boundaries
+    forecast_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+
+    # Sort by time to ensure monotonic order
+    forecast_ds = forecast_ds.sortby('time')
+
+    # Remove any duplicate time steps (keeping first occurrence)
+    _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+    forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+    return forecast_ds
 
 def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,):
     """
@@ -566,7 +588,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     
     # Load datasets
     forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
-    forecast_ds = forecast_ds.rename({'valid_time': 'time'})
+    # Data already has 'time' dimension (renamed during download in prepare_forecasts_and_targets.py)
     obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
     
     # Create wind speed if needed
