@@ -45,7 +45,7 @@
                     \item Ex: Best global weather model created by European Centre for Medium-Range Weather Forecasts (ECMWF) requires a supercomputer.
                 \end{itemize}
                 \item<2-> Beginning in 2022, several machine learning (ML) based weather models have been created that have rivaled or exceeded the accuracy of traditional models.
-                \item<2-> Critically, these models can be run on a personal laptop.
+                \item<2-> Instead of requiring a supercomputer, these models can be run on a personal laptop.
             \end{itemize}
         \end{column}
         \begin{column}{0.38\textwidth}
@@ -61,28 +61,28 @@
 
 \begin{frame}{Increased Accessibility of Weather Predictions Opens New Opportunities}
     \begin{itemize}
-        \item Individual countries and smaller organizations can now run their own weather models instead of relying on large government agencies.
         \item Global models are more accurate in some areas than others.
         \item Different groups prioritize accuracy for different weather variables.
+        \item Low compute requirements for creating ML weather forecasts offer the potential to help democratize access to accurate weather predictions.
     \end{itemize}
         
     \pause
     \begin{itemize}
-        \item \textbf{The Problem:} All global weather models (NWP or ML) are trained to optimize overall global accuracy.
+        \item \textbf{The Problem:} All global weather models (NWP and ML) are trained to optimize overall global accuracy.
         \begin{itemize}
             \item A temperature error in Greenland is treated the same as a temperature error in Chicago!
             \item The ML models might be cheap to run, but they are extremely expensive to train!
         \end{itemize}
-     \item \textbf{Potential Solution:} Post-process global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest. 
+     \item \textbf{Potential Solution:} Post-process (fine-tune) global model outputs with a small, localized model to improve accuracy for specific regions and weather variables of interest. 
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Accurate weather forecasts matter and that post-processing can work}
+\begin{frame}{Accurate weather forecasts matter and post-processing can improve accuracy}
     \textbf{Why Accurate Weather Forecasts Matter:}
     \begin{itemize}
         \item Accurate temperature forecasts reduce heat mortality (Shrader et al. 2023)
-        \item Monsoon onset forecasts can help farmers adjust planting dates (Burlig et al. 2025)
         \item Renewable forecast errors increase electricity prices and thermal generator start-ups (Weber and Woerman 2024)
+        \item Monsoon onset forecasts can help farmers adjust planting dates (Burlig et al. 2025)
     \end{itemize}
 
     \textbf{Prior Work on Post-Processing Weather Forecasts:}
