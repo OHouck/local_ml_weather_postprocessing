@@ -703,12 +703,28 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             n_training_vars, n_output_vars, training_mean_forecast_error)
 
 
-def create_dataloader(forecast_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
+def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
     """
-    Create a PyTorch DataLoader from forecast, observation data, lead time indices, and day-of-year features.
+    Create a PyTorch DataLoader from forecast input/output, observation data, lead time indices, and day-of-year features.
+
+    Parameters:
+    -----------
+    forecast_input_data : np.ndarray
+        Forecast inputs (all training variables) - shape (n_samples, n_training_vars * n_lat * n_lon)
+    forecast_output_data : np.ndarray
+        Forecast outputs (output variables to be corrected) - shape (n_samples, n_output_vars * n_lat * n_lon)
+    obs_data : np.ndarray
+        Ground truth observations - shape (n_samples, n_output_vars * n_lat * n_lon)
+    lead_time_indices : np.ndarray
+        Lead time indices for each sample
+    day_of_year_features : np.ndarray
+        Day of year sin/cos features
+    batch_size : int
+        Batch size for DataLoader
     """
     dataset = torch.utils.data.TensorDataset(
-        torch.from_numpy(forecast_data).float(),
+        torch.from_numpy(forecast_input_data).float(),
+        torch.from_numpy(forecast_output_data).float(),
         torch.from_numpy(obs_data).float(),
         torch.from_numpy(lead_time_indices).long(),
         torch.from_numpy(day_of_year_features).float()
@@ -815,18 +831,20 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         # --- training step ---
         model.train()
         train_loss = 0.0
-        for x_batch, y_batch, lead_time_batch, doy_batch in train_loader:
-            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device)
+            fc_output_batch = fc_output_batch.to(device)
+            y_batch = y_batch.to(device)
             lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
 
             optimizer.zero_grad()
 
-            # Pass lead time and day-of-year features to model
-            # Model predicts the error, so add to input forecast
-            pred_error = model(x_batch, lead_time_batch, doy_batch)
+            # Pass forecast inputs, lead time, and day-of-year features to model
+            # Model predicts the error/correction to apply to forecast outputs
+            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
 
-            # Add predicted error to input forecast to get final prediction
-            preds = x_batch + pred_error
+            # Add predicted error to forecast outputs to get final corrected prediction
+            preds = fc_output_batch + pred_error
 
             # some custom loss functions need un-normalized values
             if alternate_loss_fn in {"extreme_heat_loss"}:
@@ -837,28 +855,30 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
 
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * x_batch.size(0)
+            train_loss += loss.item() * fc_output_batch.size(0)
         train_loss /= len(train_loader.dataset)
 
         # --- validation step ---
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
-                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                fc_input_batch = fc_input_batch.to(device)
+                fc_output_batch = fc_output_batch.to(device)
+                y_batch = y_batch.to(device)
                 lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
 
-                pred_error = model(x_batch, lead_time_batch, doy_batch)
+                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
 
-                # Add predicted error to input forecast to get final prediction
-                preds = x_batch + pred_error
+                # Add predicted error to forecast outputs to get final corrected prediction
+                preds = fc_output_batch + pred_error
 
                 if alternate_loss_fn in {"extreme_heat_loss"}:
                     loss = criterion(preds, y_batch, std_out, mean_out)
                 else:
                     loss = criterion(preds, y_batch)
 
-                val_loss += loss.item() * x_batch.size(0)
+                val_loss += loss.item() * fc_output_batch.size(0)
         val_loss /= len(valid_loader.dataset)
 
         # --- learning rate scheduling ---
@@ -1025,6 +1045,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
 
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
+    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
 
     # normalize target observations using forecasts to be corrected
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
@@ -1036,10 +1057,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     split = int(0.8 * n_train)
     t_idx, v_idx = idx[:split], idx[split:]
 
-    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx],
+    train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
                                     batch_size=128)
-    val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx],
+    val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
                                   batch_size=128)
 
