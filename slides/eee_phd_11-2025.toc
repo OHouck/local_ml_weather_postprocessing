@@ -1,4 +1,0 @@
-\beamer@sectionintoc {1}{Background}{2}{0}{1}
-\beamer@sectionintoc {2}{How to Post-Process?}{8}{0}{2}
-\beamer@sectionintoc {3}{Custom Loss Functions}{18}{0}{3}
-\beamer@sectionintoc {5}{Appendix}{28}{0}{4}
