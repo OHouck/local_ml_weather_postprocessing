@@ -267,14 +267,16 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
     """
     Merge new variables into an existing dataset.
 
+    Handles flattened atmospheric variables (e.g., 'temperature_1000hPa').
+
     Parameters:
     -----------
     existing_path : str
         Path to existing zarr dataset
     new_ds : xr.Dataset
-        Dataset containing new variables
+        Dataset containing new variables (already flattened)
     variables_to_merge : list
-        List of variable names to merge
+        List of variable names to merge (e.g., ['temperature_1000hPa', 'geopotential_500hPa'])
 
     Returns:
     --------
@@ -286,16 +288,22 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
     existing_ds = xr.open_zarr(existing_path)
 
     # Extract only the variables we want to add from new_ds
+    # Note: new_ds already has flattened atmospheric variables
     vars_to_add = {}
     for var in variables_to_merge:
-        base_var, pressure_level = parse_atmospheric_variable(var)
+        if var == "10m_wind_speed":
+            continue  # Computed variable
 
-        if base_var in new_ds.data_vars:
-            if pressure_level is not None and 'level' in new_ds[base_var].dims:
-                # Select specific pressure level
-                vars_to_add[var] = new_ds[base_var].sel(level=pressure_level)
-            else:
-                vars_to_add[base_var] = new_ds[base_var]
+        # The variable should already be in new_ds with its full name (flattened)
+        if var in new_ds.data_vars:
+            vars_to_add[var] = new_ds[var]
+        else:
+            print(f"      Warning: Variable '{var}' not found in new dataset, skipping")
+
+    if not vars_to_add:
+        print(f"      Warning: No variables to merge!")
+        existing_ds.close()
+        return existing_ds
 
     # Create new dataset with added variables
     new_vars_ds = xr.Dataset(vars_to_add)
@@ -305,6 +313,7 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
 
     existing_ds.close()
 
+    print(f"      Successfully merged {len(vars_to_add)} variables")
     return merged_ds
 
 
@@ -444,10 +453,37 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
             print(f"\n  Processing year {year}...")
             print(f"    Variables to download: {vars_to_download}")
 
+            # Determine which base variables we need for this year
+            year_surface_vars = []
+            year_atmospheric_vars = {}  # {base_var: set of pressure levels}
+
+            for var in vars_to_download:
+                if var == "10m_wind_speed":
+                    continue
+
+                base_var, pressure_level = parse_atmospheric_variable(var)
+
+                if pressure_level is not None:
+                    if base_var not in year_atmospheric_vars:
+                        year_atmospheric_vars[base_var] = set()
+                    year_atmospheric_vars[base_var].add(pressure_level)
+                else:
+                    year_surface_vars.append(base_var)
+
+            # Select only the base variables needed for this year
+            year_base_vars = list(set(year_surface_vars + list(year_atmospheric_vars.keys())))
+            year_available_vars = [v for v in year_base_vars if v in ds.data_vars]
+
+            if not year_available_vars:
+                print(f"    Warning: No variables available in remote dataset for {vars_to_download}")
+                continue
+
+            print(f"    Downloading base variables: {year_available_vars}")
+
             time_range = [f'{year}-01-01', f'{year}-12-31']
 
-            # Select subset
-            subset = ds[available_vars].sel(
+            # Select subset - only variables needed for THIS year
+            subset = ds[year_available_vars].sel(
                 prediction_timedelta=lead_times_td
             )
 
@@ -461,13 +497,13 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
             if region_lat is not None and region_lon is not None:
                 subset = subset.sel(latitude=region_lat, longitude=region_lon)
 
-            # Select specific pressure levels for atmospheric variables
-            if atmospheric_vars and 'level' in subset.dims:
+            # Select specific pressure levels for atmospheric variables (for this year only)
+            if year_atmospheric_vars and 'level' in subset.dims:
                 all_levels_needed = set()
-                for base_var, levels in atmospheric_vars.items():
+                for base_var, levels in year_atmospheric_vars.items():
                     all_levels_needed.update(levels)
 
-                # Only select the pressure levels we need
+                # Only select the pressure levels we need for this year
                 subset = subset.sel(level=sorted(list(all_levels_needed)))
 
             # Convert to valid_time
@@ -490,9 +526,9 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
 
             subset_rechunked = subset.chunk(chunk_dict)
 
-            # Flatten atmospheric variables before saving
+            # Flatten atmospheric variables before saving (only for this year)
             print(f"    Flattening atmospheric variables...")
-            subset_flattened = flatten_atmospheric_variables(subset_rechunked, atmospheric_vars)
+            subset_flattened = flatten_atmospheric_variables(subset_rechunked, year_atmospheric_vars)
 
             # Rechunk the flattened dataset
             flat_chunk_dict = {
@@ -680,10 +716,37 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             print(f"\n  Processing year {year}...")
             print(f"    Variables to download: {vars_to_download}")
 
+            # Determine which base variables we need for this year
+            year_surface_vars = []
+            year_atmospheric_vars = {}  # {base_var: set of pressure levels}
+
+            for var in vars_to_download:
+                if var == "10m_wind_speed":
+                    continue
+
+                base_var, pressure_level = parse_atmospheric_variable(var)
+
+                if pressure_level is not None:
+                    if base_var not in year_atmospheric_vars:
+                        year_atmospheric_vars[base_var] = set()
+                    year_atmospheric_vars[base_var].add(pressure_level)
+                else:
+                    year_surface_vars.append(base_var)
+
+            # Select only the base variables needed for this year
+            year_base_vars = list(set(year_surface_vars + list(year_atmospheric_vars.keys())))
+            year_available_vars = [v for v in year_base_vars if v in ds.data_vars]
+
+            if not year_available_vars:
+                print(f"    Warning: No variables available in remote dataset for {vars_to_download}")
+                continue
+
+            print(f"    Downloading base variables: {year_available_vars}")
+
             time_range = [f'{year}-01-01', f'{year}-12-31']
 
-            # Select subset
-            subset = ds[available_vars].sel(
+            # Select subset - only variables needed for THIS year
+            subset = ds[year_available_vars].sel(
                 time=slice(time_range[0], time_range[1])
             )
 
@@ -691,16 +754,16 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             if region_lat is not None and region_lon is not None:
                 subset = subset.sel(latitude=region_lat, longitude=region_lon)
 
-            # Select specific pressure levels for atmospheric variables
-            if atmospheric_vars and 'level' in subset.dims:
+            # Select specific pressure levels for atmospheric variables (for this year only)
+            if year_atmospheric_vars and 'level' in subset.dims:
                 all_levels_needed = set()
-                for base_var, levels in atmospheric_vars.items():
+                for base_var, levels in year_atmospheric_vars.items():
                     all_levels_needed.update(levels)
 
                 subset = subset.sel(level=sorted(list(all_levels_needed)))
 
             # Handle precipitation conversion if needed
-            if 'total_precipitation_6hr' in available_vars:
+            if 'total_precipitation_6hr' in year_available_vars:
                 six_hour_precip = subset['total_precipitation_6hr']
 
                 # Shift time coordinate forward by 6 hours
@@ -737,9 +800,9 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
 
             subset_rechunked = subset.chunk(chunk_dict)
 
-            # Flatten atmospheric variables before saving
+            # Flatten atmospheric variables before saving (only for this year)
             print(f"    Flattening atmospheric variables...")
-            subset_flattened = flatten_atmospheric_variables(subset_rechunked, atmospheric_vars)
+            subset_flattened = flatten_atmospheric_variables(subset_rechunked, year_atmospheric_vars)
 
             # Rechunk the flattened dataset
             flat_chunk_dict = {
