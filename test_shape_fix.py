@@ -131,6 +131,8 @@ def test_dataloader_and_shapes():
         output_dim=output_features,
         n_lat=n_lat,
         n_lon=n_lon,
+        n_input_vars=n_training_vars,
+        n_output_vars=n_output_vars,
         n_lead_times=n_lead_times,
         dropout_rate=0.1
     )
