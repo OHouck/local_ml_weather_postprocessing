@@ -861,6 +861,10 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     # Remove wind_speed as it's computed, not downloaded
     forecast_vars = [v for v in all_forecast_vars if v != "10m_wind_speed"]
 
+    # if wind_speed is in all_forecast_vars, then add 10m_u_component and 10m_v_component
+    if "10m_wind_speed" in all_forecast_vars:
+        forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
+
     # Check forecast data
     print(f"\nChecking {model_name} forecast data...")
     fc_status = check_data_exists(data_dir, model_name, region, all_years, forecast_vars)
