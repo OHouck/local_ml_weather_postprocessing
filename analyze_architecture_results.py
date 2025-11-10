@@ -275,7 +275,6 @@ def create_comparison_report(results_dict):
 def create_json_summary(results_dict):
     """Create a JSON summary of results"""
     summary = {
-        'timestamp': str(Path.ctime(Path.home())),
         'experiments': {}
     }
 
@@ -297,8 +296,8 @@ def create_json_summary(results_dict):
 def main():
     """Main analysis function"""
 
-    log_dir = os.path.expanduser('~/ai_weather_ag/data/architecture_experiments/logs')
-    output_dir = os.path.expanduser('~/ai_weather_ag/data/architecture_experiments')
+    log_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments/logs')
+    output_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments')
 
     print("=" * 80)
     print("ANALYZING ARCHITECTURE EXPERIMENT RESULTS")

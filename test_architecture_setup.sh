@@ -15,7 +15,7 @@ MODEL=pangu
 ARCHITECTURE=mlp
 
 # Very short period for quick test (1 week training, 2 days testing)
-TRAIN_START=2020-01-01
+TRAIN_START=2018-01-01
 TRAIN_END=2020-01-07
 TEST_START=2020-01-08
 TEST_END=2020-01-10
