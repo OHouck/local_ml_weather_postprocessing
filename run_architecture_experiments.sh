@@ -24,8 +24,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DATA_DIR=~/ai_weather_ag/data/raw
-OUTPUT_DIR=~/ai_weather_ag/data/architecture_experiments
+DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
+OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
 REGION=india
 SUBREGION=6x6
 MODEL=pangu
