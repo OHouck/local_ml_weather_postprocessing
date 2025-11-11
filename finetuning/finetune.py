@@ -1270,6 +1270,14 @@ def main():
     USE_LEGACY_GLOBAL_DATA = False  # <-- EDIT THIS FLAG
     # ========================================================================
 
+    # ========================================================================
+    # SKIP DATA PREPARATION FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
+    # ========================================================================
+    # Set to True to skip data downloading/preparation (assumes data already exists)
+    # Set to False to check for data and download if needed (recommended)
+    SKIP_DATA_PREPARATION = False  # <-- EDIT THIS FLAG
+    # ========================================================================
+
     dirs = setup_directories()
 
     # Parse command line arguments
@@ -1293,13 +1301,17 @@ def main():
     nlat_patch, nlon_patch = get_patch_shape(args)
 
     # ========================================================================
-    # LEGACY: Skip data preparation if using legacy global data
-    # TO REMOVE: Remove this if/else block when legacy mode removed
+    # LEGACY/SKIP FLAGS: Conditionally skip data preparation
+    # TO REMOVE: Remove this entire if/elif/else block when flags removed
     # ========================================================================
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
         print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
         print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
+    elif SKIP_DATA_PREPARATION:
+        print("\n[SKIP MODE] Skipping data preparation - assuming data already exists")
+        print(f"  Expected files: {args.data_dir}/{args.model_name}/{args.model_name}_{args.region}_YEAR.zarr")
+        print(f"  e.g., {args.data_dir}/pangu/pangu_{args.region}_2019.zarr\n")
     else:
         # Prepare data: check if exists, download if necessary
         print("\nPreparing data for finetuning...")
@@ -1320,7 +1332,7 @@ def main():
         )
         print("Data preparation complete. Proceeding with finetuning...\n")
     # ========================================================================
-    # END LEGACY
+    # END LEGACY/SKIP FLAGS
     # ========================================================================
 
     # Decide if we're in a climate‐zone region or a geographic one
