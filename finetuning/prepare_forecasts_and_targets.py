@@ -866,13 +866,315 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
     return downloaded_files
 
 
+# ============================================================================
+# DATA LOADING FUNCTIONS
+# ============================================================================
+
+# ============================================================================
+# LEGACY DATA LOADING - REMOVE THIS FUNCTION WHEN NO LONGER NEEDED
+# ============================================================================
+def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, root_dir, data_source):
+    """
+    LEGACY: Loads global yearly data files and subsets to region of interest.
+
+    File format: root_dir/data_source/data_source_year.zarr
+    Example: ~/data/pangu/pangu_2018.zarr, ~/data/era5/era5_2019.zarr
+
+    This function loads global data files and subsets them spatially.
+    TO REMOVE: Delete this entire function when legacy data is no longer needed.
+    """
+    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
+
+    file_paths = []
+    for year in range(min_year, max_year + 1):
+        # Legacy format: data_source/data_source_year.zarr (no region in filename)
+        file_pattern = f"{data_source}/{data_source}_{year}.zarr"
+        file_paths.append(os.path.join(root_dir, file_pattern))
+
+    if len(file_paths) == 0:
+        raise ValueError(f"No files found matching pattern: {file_pattern}")
+
+    # Load datasets individually to handle overlapping time coordinates
+    datasets = []
+
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Required data file not found: {file_path}")
+
+        # Load global zarr file
+        ds = xr.open_zarr(file_path)
+
+        # Select spatial subset (this is the key difference from new loading)
+        ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
+        datasets.append(ds)
+
+    # Concatenate along time dimension, allowing overlaps
+    forecast_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+
+    # Sort by time to ensure monotonic order
+    forecast_ds = forecast_ds.sortby('time')
+
+    # Remove any duplicate time steps (keeping first occurrence)
+    _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+    forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+    return forecast_ds
+# ============================================================================
+# END LEGACY DATA LOADING
+# ============================================================================
+
+
+def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source, region):
+    """
+    Finds all files in the subfolders of root_dir matching file_pattern and combines them.
+    Uses new file organization: root_dir/data_source/data_source_region_year.zarr
+
+    Updated to handle overlapping time coordinates across years by loading individually
+    and concatenating with proper sorting.
+    """
+
+    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
+
+    file_paths = []
+    for year in range(min_year, max_year + 1):
+
+        if data_source == "imd":
+            file_pattern = f"IMD_0p25deg/data_{year}.nc"
+        else:
+            # New file organization: data_source/data_source_region_year.zarr
+            file_pattern = f"{data_source}/{data_source}_{region}_{year}.zarr"
+
+        file_paths.append(os.path.join(root_dir, file_pattern))
+
+    if len(file_paths) == 0:
+        raise ValueError(f"No files found matching pattern: {file_pattern}")
+
+    # Load datasets individually to handle overlapping time coordinates
+    datasets = []
+
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Required data file not found: {file_path}")
+
+        # Load individual file
+        if data_source == "imd":
+            ds = xr.open_dataset(file_path)
+            ds = ds.rename({
+                'TIME': 'time',
+                'LONGITUDE': 'longitude',
+                'LATITUDE': 'latitude',
+                'RAINFALL': 'total_precipitation'
+            })
+        else:
+            ds = xr.open_zarr(file_path)
+
+        # Select spatial subset
+        ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
+        datasets.append(ds)
+
+    # Concatenate along time dimension, allowing overlaps
+    # This will handle the case where forecast valid_times extend across year boundaries
+    forecast_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+
+    # Sort by time to ensure monotonic order
+    forecast_ds = forecast_ds.sortby('time')
+
+    # Remove any duplicate time steps (keeping first occurrence)
+    _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+    forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+    return forecast_ds
+
+
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None, use_legacy_global_data=False):
+    """
+    Vectorized version that processes all data at once without loops.
+    More memory intensive but faster for reasonable data sizes.
+
+    Parameters:
+    -----------
+    use_legacy_global_data : bool
+        If True, load from global yearly files (e.g., pangu_2018.zarr)
+        If False, load from region-specific files (e.g., pangu_india_2018.zarr)
+    """
+    if train:
+        ver_str = "train"
+    else:
+        ver_str = "test"
+
+    time_start = getattr(args, f"{ver_str}_start")
+    time_end = getattr(args, f"{ver_str}_end")
+
+    # Create time range
+    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+
+    # only keep growing season dates: 3-15 to 10-31
+    if args.growing_season_only:
+        time_values= time_values[
+            ((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15)) &
+            ((time_values.month <= 10)))
+        ]
+
+    time_values_np = time_values.to_numpy()
+
+    # Define target dataset name
+    if args.ground_truth_source == "":
+        if args.model_name == "pangu":
+            target = "era5"
+        elif args.model_name == "ifs":
+            target = "hres_t0"
+        elif args.model_name == "aifs":
+            target = "era5"
+        else:
+            raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
+    else:
+        # For now only IMD is supported as alternative ground truth
+        target = args.ground_truth_source
+
+    # ========================================================================
+    # LEGACY: Load datasets using appropriate method based on flag
+    # TO REMOVE: Remove this entire if/else block when legacy data not needed
+    # ========================================================================
+    if use_legacy_global_data:
+        # Legacy: Load global files and subset spatially
+        print(f"  [LEGACY MODE] Loading global yearly data files...")
+        forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, args.model_name)
+        obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, target)
+    else:
+        # New: Load region-specific files (already subsetted)
+        forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
+        obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
+    # ========================================================================
+    # END LEGACY
+    # ========================================================================
+
+    # Create wind speed if needed
+    if "10m_wind_speed" in args.training_vars:
+        forecast_ds["10m_wind_speed"] = np.sqrt(
+            forecast_ds["10m_u_component_of_wind"]**2 +
+            forecast_ds["10m_v_component_of_wind"]**2
+        )
+
+    if "10m_wind_speed" in args.output_vars:
+        obs_ds["10m_wind_speed"] = np.sqrt(
+            obs_ds["10m_u_component_of_wind"]**2 +
+            obs_ds["10m_v_component_of_wind"]**2
+        )
+
+    # Convert lead times to timedelta and select
+    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+
+    # Select lead times and common time range, this prevents off by one errors
+    # from lining up forecasts for days on the edges of the time range
+    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
+    common_times = np.intersect1d(common_times, time_values_np)
+    forecast_ds = forecast_ds.sel(time=common_times)
+    obs_ds = obs_ds.sel(time=common_times)
+
+    # Get dimensions
+    n_time = len(common_times)
+    n_lead_times = len(lead_times_td)
+    n_lat = len(forecast_ds.latitude)
+    n_lon = len(forecast_ds.longitude)
+    n_training_vars = len(args.training_vars)
+    n_output_vars = len(args.output_vars)
+
+    # Stack all dimensions except variables
+    forecast_stacked = forecast_ds[args.training_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+
+    forecast_output_stacked = forecast_ds[args.output_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    # For observations, we need to repeat for each lead time
+    obs_repeated = obs_ds[args.output_vars].expand_dims(
+        prediction_timedelta=lead_times_td
+    ).stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    # Transpose and reshape to (n_samples, n_features)
+    fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
+    fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+    obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+
+
+    # Create lead time indices
+    lead_time_indices = np.tile(
+        np.arange(n_lead_times), n_time
+    )
+
+    # Create time array
+    all_times = np.repeat(common_times, n_lead_times)
+    # Create day-of-year sin/cos features
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy() # XX maybe should use all_times? I don't think so but flagging
+    # Convert to radians: 2*pi*d/365
+    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
+    day_of_year_sin = np.sin(day_of_year_rad)
+    day_of_year_cos = np.cos(day_of_year_rad)
+    # Stack to create [n_time, 2] array, then repeat for each lead time
+    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
+    day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
+
+    # Remove any samples with NaN
+    valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
+    fc_combined = fc_combined[valid_mask]
+    fc_output_combined = fc_output_combined[valid_mask]
+    obs_combined = obs_combined[valid_mask]
+    lead_time_indices_combined = lead_time_indices[valid_mask]
+    day_of_year_features_combined = day_of_year_features[valid_mask]
+    all_times = all_times[valid_mask]
+
+    # Calculate mean forecast error
+    training_mean_forecast_error = {}
+
+    for lt_idx, lead_time_hours in enumerate(args.lead_time_hours):
+        mask = lead_time_indices_combined == lt_idx
+        if not np.any(mask):
+            continue
+
+        fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+        obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+
+        # # FORCE COMPUTATION if these are dask arrays
+        # if hasattr(fc_output_lt, 'compute'):
+        #     fc_output_lt = fc_output_lt.compute()
+        # if hasattr(obs_lt, 'compute'):
+        #     obs_lt = obs_lt.compute()
+
+
+        mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
+
+        for var_idx, var_name in enumerate(args.output_vars):
+            key = f"{var_name}_lt{lead_time_hours}h"
+            training_mean_forecast_error[key] = mean_error[var_idx]
+
+    # each sample represents one forecast for one specific lead time and time combination
+    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
+            day_of_year_features_combined, all_times, forecast_ds.latitude.values,
+            forecast_ds.longitude.values, n_lat, n_lon,
+            n_training_vars, n_output_vars, training_mean_forecast_error)
+
+
+# ============================================================================
+# DATA PREPARATION AND LOADING ORCHESTRATION
+# ============================================================================
+
 def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, region,
                                 training_vars, output_vars, train_start, train_end,
                                 test_start, test_end, lead_time_hours,
-                                region_lat=None, region_lon=None, skip_download=False):
+                                region_lat=None, region_lon=None, skip_download=False,
+                                growing_season_only=False, use_legacy_global_data=False):
     """
     Main function to prepare forecast and target data for finetuning.
-    Checks if data exists, and downloads if necessary (unless skip_download=True).
+    Checks if data exists, downloads if necessary (unless skip_download=True),
+    and loads the data for training and testing.
     Supports atmospheric variables at specific pressure levels.
 
     Parameters:
@@ -905,10 +1207,19 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
         Longitude values for regional subset
     skip_download : bool, optional
         If True, check for data but skip downloading if missing (default: False)
+    growing_season_only : bool, optional
+        If True, only keep growing season dates (3-15 to 10-31) (default: False)
+    use_legacy_global_data : bool, optional
+        If True, load from global yearly files instead of region-specific (default: False)
 
     Returns:
     --------
-    dict : Dictionary with status and paths
+    dict : Dictionary containing train and test data with keys:
+        'train': tuple of training data (fc, fc_output, obs, lead_time_indices,
+                 day_of_year_features, times, lat, lon, n_lat, n_lon,
+                 n_training_vars, n_output_vars, mean_forecast_error)
+        'test': tuple of test data (same structure as train)
+        'metadata': dict with data_dir, region, forecast_source, target_source, years
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -1007,11 +1318,54 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     print("DATA PREPARATION COMPLETE")
     print("="*70)
 
+    # ========================================================================
+    # LOAD DATA FOR TRAINING AND TESTING
+    # ========================================================================
+    print("\nLoading data for finetuning...")
+
+    # Create args-like object for load_forecasts
+    class Args:
+        pass
+
+    args = Args()
+    args.model_name = model_name
+    args.ground_truth_source = ground_truth_source
+    args.region = region
+    args.training_vars = training_vars
+    args.output_vars = output_vars
+    args.train_start = train_start
+    args.train_end = train_end
+    args.test_start = test_start
+    args.test_end = test_end
+    args.lead_time_hours = lead_time_hours
+    args.growing_season_only = growing_season_only
+
+    # Load training data
+    print("\n  Loading training data...")
+    train_data = load_forecasts(
+        data_dir, args, region_lat, region_lon, train=True,
+        use_legacy_global_data=use_legacy_global_data
+    )
+
+    # Load test data
+    print("\n  Loading test data...")
+    test_data = load_forecasts(
+        data_dir, args, region_lat, region_lon, train=False,
+        use_legacy_global_data=use_legacy_global_data
+    )
+
+    print("\n" + "="*70)
+    print("DATA LOADING COMPLETE")
+    print("="*70)
+
     return {
-        'status': 'success',
-        'data_dir': data_dir,
-        'region': region,
-        'forecast_source': model_name,
-        'target_source': target,
-        'years': all_years
+        'train': train_data,
+        'test': test_data,
+        'metadata': {
+            'data_dir': data_dir,
+            'region': region,
+            'forecast_source': model_name,
+            'target_source': target,
+            'years': all_years
+        }
     }
