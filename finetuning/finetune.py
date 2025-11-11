@@ -1037,7 +1037,9 @@ def main():
     # Determine if we need to load data now or later (for climate/topo/bootstrap regions)
     is_climate_or_topo = args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP
     will_bootstrap = args.bootstrap
-    should_load_data_now = not (is_climate_or_topo or will_bootstrap)
+    # Don't load data if: climate/topo (each patch loads own subset), bootstrap (each sample loads own),
+    # or SKIP_DOWNLOAD (data not saved, so can't load)
+    should_load_data_now = not (is_climate_or_topo or will_bootstrap or SKIP_DOWNLOAD)
 
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
@@ -1048,6 +1050,14 @@ def main():
         # Prepare data: check if exists, download if necessary (unless skip_download=True)
         if SKIP_DOWNLOAD:
             print("\n[SKIP DOWNLOAD MODE] Checking data but will not download if missing...")
+            if not should_load_data_now:
+                print("  NOTE: Data will not be loaded (either not saved or will be loaded per-patch)")
+            else:
+                print("  WARNING: SKIP_DOWNLOAD=True means data is not saved locally.")
+                print("  Training cannot proceed because files won't exist to load from.")
+                print("  To run training, set SKIP_DOWNLOAD=False in main() to save data locally.")
+                import sys
+                sys.exit(1)
         else:
             print("\nPreparing data for finetuning...")
 
