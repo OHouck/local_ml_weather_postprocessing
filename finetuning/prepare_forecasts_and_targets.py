@@ -318,7 +318,7 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
 
 
 def download_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
-                           region_lat=None, region_lon=None, use_dask_client=True):
+                           region_lat=None, region_lon=None, use_dask_client=True, skip_save=False):
     """
     Download forecast data from weatherbench2 for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -343,6 +343,8 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         Longitude values for regional subset
     use_dask_client : bool
         Whether to use dask client for parallel processing
+    skip_save : bool
+        If True, pull data from weatherbench but skip saving to disk
 
     Returns:
     --------
@@ -548,22 +550,29 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                     vars_to_download
                 )
 
-                print(f"    Saving merged dataset to {output_path}...")
-                with ProgressBar():
-                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+                if not skip_save:
+                    print(f"    Saving merged dataset to {output_path}...")
+                    with ProgressBar():
+                        merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+                else:
+                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
             else:
                 # Save new dataset
-                print(f"    Saving to {output_path}...")
-                with ProgressBar():
-                    subset_flattened.to_zarr(
-                        output_path,
-                        mode='w',
-                        consolidated=True,
-                        zarr_version=2
-                    )
+                if not skip_save:
+                    print(f"    Saving to {output_path}...")
+                    with ProgressBar():
+                        subset_flattened.to_zarr(
+                            output_path,
+                            mode='w',
+                            consolidated=True,
+                            zarr_version=2
+                        )
+                else:
+                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
 
-            downloaded_files.append(output_path)
-            print(f"    Saved successfully")
+            if not skip_save:
+                downloaded_files.append(output_path)
+                print(f"    Saved successfully")
 
         print(f"\nForecast data download complete!")
 
@@ -576,7 +585,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
 
 
 def download_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
-                        region_lat=None, region_lon=None, use_dask_client=True):
+                        region_lat=None, region_lon=None, use_dask_client=True, skip_save=False):
     """
     Download target/observation data for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -601,6 +610,8 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
         Longitude values for regional subset
     use_dask_client : bool
         Whether to use dask client for parallel processing
+    skip_save : bool
+        If True, pull data from weatherbench but skip saving to disk
 
     Returns:
     --------
@@ -821,22 +832,29 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                     vars_to_download
                 )
 
-                print(f"    Saving merged dataset to {output_path}...")
-                with ProgressBar():
-                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+                if not skip_save:
+                    print(f"    Saving merged dataset to {output_path}...")
+                    with ProgressBar():
+                        merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
+                else:
+                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
             else:
                 # Save new dataset
-                print(f"    Saving to {output_path}...")
-                with ProgressBar():
-                    subset_flattened.to_zarr(
-                        output_path,
-                        mode='w',
-                        consolidated=True,
-                        zarr_version=2
-                    )
+                if not skip_save:
+                    print(f"    Saving to {output_path}...")
+                    with ProgressBar():
+                        subset_flattened.to_zarr(
+                            output_path,
+                            mode='w',
+                            consolidated=True,
+                            zarr_version=2
+                        )
+                else:
+                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
 
-            downloaded_files.append(output_path)
-            print(f"    Saved successfully")
+            if not skip_save:
+                downloaded_files.append(output_path)
+                print(f"    Saved successfully")
 
         print(f"\nTarget data download complete!")
 
@@ -851,10 +869,10 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
 def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, region,
                                 training_vars, output_vars, train_start, train_end,
                                 test_start, test_end, lead_time_hours,
-                                region_lat=None, region_lon=None):
+                                region_lat=None, region_lon=None, skip_download=False):
     """
     Main function to prepare forecast and target data for finetuning.
-    Checks if data exists, and downloads if necessary.
+    Checks if data exists, and downloads if necessary (unless skip_download=True).
     Supports atmospheric variables at specific pressure levels.
 
     Parameters:
@@ -885,6 +903,8 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
         Latitude values for regional subset
     region_lon : np.ndarray, optional
         Longitude values for regional subset
+    skip_download : bool, optional
+        If True, check for data but skip downloading if missing (default: False)
 
     Returns:
     --------
@@ -944,10 +964,15 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     if not years_to_download:
         print(f"  ✓ All forecast data exists with required variables")
     else:
-        print(f"  Downloading/updating forecast data for years: {years_to_download}")
+        if skip_download:
+            print(f"  ⚠ Missing forecast data for years: {years_to_download}")
+            print(f"  [SKIP DOWNLOAD] Pulling data from weatherbench but NOT saving locally")
+        else:
+            print(f"  Downloading/updating forecast data for years: {years_to_download}")
         download_forecast_data(
             data_dir, model_name, region, years_to_download, forecast_vars,
-            lead_time_hours, region_lat, region_lon, use_dask_client=True
+            lead_time_hours, region_lat, region_lon, use_dask_client=True,
+            skip_save=skip_download
         )
 
     # Check target data
@@ -967,10 +992,15 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     if not years_to_download:
         print(f"  ✓ All target data exists with required variables")
     else:
-        print(f"  Downloading/updating target data for years: {years_to_download}")
+        if skip_download:
+            print(f"  ⚠ Missing target data for years: {years_to_download}")
+            print(f"  [SKIP DOWNLOAD] Pulling data from weatherbench but NOT saving locally")
+        else:
+            print(f"  Downloading/updating target data for years: {years_to_download}")
         download_target_data(
             data_dir, model_name, ground_truth_source, region, years_to_download,
-            target_vars, region_lat, region_lon, use_dask_client=True
+            target_vars, region_lat, region_lon, use_dask_client=True,
+            skip_save=skip_download
         )
 
     print("\n" + "="*70)

@@ -48,10 +48,10 @@ These files should contain **global data** (not region-specific). The script wil
 
 ---
 
-## Flag 2: SKIP_DATA_PREPARATION
+## Flag 2: SKIP_DOWNLOAD
 
 ### Purpose
-Skip data downloading/checking entirely and assume data already exists.
+Check for required data but skip saving it locally if missing (still pulls from weatherbench).
 
 ### Location
 `finetuning/finetune.py` at the start of `main()` (around line 1278)
@@ -59,7 +59,7 @@ Skip data downloading/checking entirely and assume data already exists.
 ### Usage
 
 ```python
-SKIP_DATA_PREPARATION = True  # <-- Set to True to enable
+SKIP_DOWNLOAD = True  # <-- Set to True to enable
 ```
 
 ### File Format Expected
@@ -77,28 +77,28 @@ These files should contain **region-specific data** (already subsetted to your r
 
 ### When to Use
 
-- You've already downloaded all the data you need
-- You want to run multiple training experiments without re-checking data
-- You're iterating quickly and know the data exists
-- You want to save time by skipping the data preparation step
+- You want to verify data availability without actually downloading
+- You're testing the data preparation pipeline
+- You want to see what data would be downloaded without committing storage
+- You're checking for missing data or variables
 
 ### What Happens
 
-- **Data preparation is skipped** - No download or checking
-- **Region-specific files are loaded** - Reads `{model}_{region}_{year}.zarr` files
-- **No spatial subsetting needed** - Data is already region-specific
-- **Training proceeds normally** - Rest of pipeline works the same
+- **Data checking still runs** - Verifies what files and variables exist
+- **Missing data is pulled from weatherbench** - Downloads/processes data in memory
+- **Data is NOT saved to disk** - Skips the `.to_zarr()` save step
+- **Training will use existing files** - Only pre-existing region-specific files are available for training
 
 ---
 
 ## Flag Behavior Summary
 
-| Flag Combination | Data Preparation | Files Loaded | Spatial Subsetting |
-|-----------------|------------------|--------------|-------------------|
-| Both False (default) | ✓ Runs | Region-specific | Not needed |
-| LEGACY = True | ✗ Skipped | Global yearly | ✓ Required |
-| SKIP = True | ✗ Skipped | Region-specific | Not needed |
-| Both True | ✗ Skipped | Global yearly | ✓ Required |
+| Flag Combination | Data Checking | Data Downloading | Files Saved | Files Loaded | Spatial Subsetting |
+|-----------------|---------------|------------------|-------------|--------------|-------------------|
+| Both False (default) | ✓ Runs | ✓ If needed | ✓ Yes | Region-specific | Not needed |
+| LEGACY = True | ✗ Skipped | ✗ Skipped | N/A | Global yearly | ✓ Required |
+| SKIP_DOWNLOAD = True | ✓ Runs | ✓ But not saved | ✗ No | Existing only | Not needed |
+| Both True | ✗ Skipped | ✗ Skipped | N/A | Global yearly | ✓ Required |
 
 **Note:** If both flags are True, USE_LEGACY_GLOBAL_DATA takes precedence.
 
@@ -130,9 +130,9 @@ USE_LEGACY_GLOBAL_DATA = False
 # ========================================================================
 
 # ========================================================================
-# SKIP DATA PREPARATION FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
+# SKIP DOWNLOAD FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
 # ========================================================================
-SKIP_DATA_PREPARATION = False
+SKIP_DOWNLOAD = False
 # ========================================================================
 ```
 
@@ -194,7 +194,45 @@ def load_combined_dataset_legacy_global(...):
 # ============================================================================
 ```
 
-### Step 5: Update load_forecasts()
+### Step 5: Remove skip_save Parameter from Download Functions
+
+In `prepare_forecasts_and_targets.py`, remove the `skip_save` parameter from both download functions:
+
+**In download_forecast_data() signature (line ~320):**
+```python
+# Before
+def download_forecast_data(..., skip_save=False):
+
+# After
+def download_forecast_data(...):
+```
+
+**In download_target_data() signature (line ~580):**
+```python
+# Before
+def download_target_data(..., skip_save=False):
+
+# After
+def download_target_data(...):
+```
+
+**Remove conditional save logic** in both functions - always save data:
+```python
+# Delete this:
+if not skip_save:
+    print(f"    Saving to {output_path}...")
+    with ProgressBar():
+        subset_flattened.to_zarr(...)
+else:
+    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
+
+# Replace with:
+print(f"    Saving to {output_path}...")
+with ProgressBar():
+    subset_flattened.to_zarr(...)
+```
+
+### Step 6: Update load_forecasts()
 
 Remove the `use_legacy_global_data` parameter and if/else logic:
 
@@ -231,7 +269,7 @@ forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data
 obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
 ```
 
-### Step 6: Update run_subregion_experiment()
+### Step 7: Update run_subregion_experiment()
 
 Remove the `use_legacy_global_data` parameter:
 
@@ -253,15 +291,15 @@ load_forecasts(..., use_legacy_global_data=use_legacy_global_data)
 load_forecasts(...)
 ```
 
-### Step 7: Remove Parameter from All Calls
+### Step 8: Remove Parameter from All Calls
 
 Remove `use_legacy_global_data=USE_LEGACY_GLOBAL_DATA` from all calls to `run_subregion_experiment()` (3 locations in main(), around lines 1364, 1378, 1388).
 
-### Step 8: Delete This README
+### Step 9: Delete This README
 
 Delete `DATA_LOADING_FLAGS_README.md`
 
-### Step 9: Test
+### Step 10: Test
 
 Run your experiments to ensure everything works with automatic data preparation.
 
@@ -272,19 +310,19 @@ Run your experiments to ensure everything works with automatic data preparation.
 ### To Use Legacy Global Data
 ```python
 USE_LEGACY_GLOBAL_DATA = True
-SKIP_DATA_PREPARATION = False  # Not needed, but okay to leave as False
+SKIP_DOWNLOAD = False  # Not needed, but okay to leave as False
 ```
 
-### To Skip Data Preparation
+### To Check Data But Skip Saving
 ```python
 USE_LEGACY_GLOBAL_DATA = False
-SKIP_DATA_PREPARATION = True
+SKIP_DOWNLOAD = True
 ```
 
 ### Normal Operation (Automatic Data Management)
 ```python
 USE_LEGACY_GLOBAL_DATA = False  # Default
-SKIP_DATA_PREPARATION = False   # Default
+SKIP_DOWNLOAD = False           # Default
 ```
 
 All flag code is clearly marked with comment boundaries for easy identification and removal.

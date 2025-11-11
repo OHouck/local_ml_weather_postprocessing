@@ -1271,11 +1271,11 @@ def main():
     # ========================================================================
 
     # ========================================================================
-    # SKIP DATA PREPARATION FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
+    # SKIP DOWNLOAD FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
     # ========================================================================
-    # Set to True to skip data downloading/preparation (assumes data already exists)
-    # Set to False to check for data and download if needed (recommended)
-    SKIP_DATA_PREPARATION = False  # <-- EDIT THIS FLAG
+    # Set to True to check for data but skip downloading/saving if missing
+    # Set to False to automatically download missing data (recommended)
+    SKIP_DOWNLOAD = False  # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
@@ -1301,20 +1301,20 @@ def main():
     nlat_patch, nlon_patch = get_patch_shape(args)
 
     # ========================================================================
-    # LEGACY/SKIP FLAGS: Conditionally skip data preparation
-    # TO REMOVE: Remove this entire if/elif/else block when flags removed
+    # LEGACY/SKIP FLAGS: Conditionally handle data preparation
+    # TO REMOVE: Remove this entire if/else block when flags removed
     # ========================================================================
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
         print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
         print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
-    elif SKIP_DATA_PREPARATION:
-        print("\n[SKIP MODE] Skipping data preparation - assuming data already exists")
-        print(f"  Expected files: {args.data_dir}/{args.model_name}/{args.model_name}_{args.region}_YEAR.zarr")
-        print(f"  e.g., {args.data_dir}/pangu/pangu_{args.region}_2019.zarr\n")
     else:
-        # Prepare data: check if exists, download if necessary
-        print("\nPreparing data for finetuning...")
+        # Prepare data: check if exists, download if necessary (unless skip_download=True)
+        if SKIP_DOWNLOAD:
+            print("\n[SKIP DOWNLOAD MODE] Checking data but will not download if missing...")
+        else:
+            print("\nPreparing data for finetuning...")
+
         prepare_data_for_finetuning(
             data_dir=args.data_dir,
             model_name=args.model_name,
@@ -1328,7 +1328,8 @@ def main():
             test_end=args.test_end,
             lead_time_hours=args.lead_time_hours,
             region_lat=region_lat,
-            region_lon=region_lon
+            region_lon=region_lon,
+            skip_download=SKIP_DOWNLOAD
         )
         print("Data preparation complete. Proceeding with finetuning...\n")
     # ========================================================================
