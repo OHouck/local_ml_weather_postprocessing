@@ -84,7 +84,7 @@
 \begin{frame}{Accurate weather forecasts matter and post-processing can improve accuracy}
     \textbf{Why Accurate Weather Forecasts Matter:}
     \begin{itemize}
-        \item Accurate temperature forecasts reduce heat mortality. (Shraeder et al. 2023)
+        \item Accurate temperature forecasts reduce heat mortality. (Shrader et al. 2023)
         \item Renewable forecast errors increase electricity prices and thermal generator start-ups. (Weber and Woerman 2024)
         \item Monsoon onset forecasts can help farmers adjust planting dates. (Burlig et al. 2025)
     \end{itemize}
@@ -93,14 +93,14 @@
     \begin{itemize}
         \item Neural networks can be used to post-process NWP models. (Rasp and Lerch 2018)
         \item CNNs can be used to correct NWP models on gridded data. (Han et al. 2021) 
-        \item NWP and ML models can be post-processed in similar process-based model (Trotta et al. 2025). 
+        \item NWP and ML models can be post-processed in a similar process-based model (Trotta et al. 2025). 
     \end{itemize}
 \end{frame}
 
 \begin{frame}{How to Post-Process Weather Model Outputs? What Outputs Matter Most?}
 
     \begin{itemize}
-        \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models. Additionally, show where these simple models perform well, and where they struggle. (Main Results Today)t
+        \item \textbf{Contribution 1}: Demonstrate that a simple low-compute neural network model can meaningfully improve the accuracy of both traditional and ML weather models and show where these simple models perform well, and where they struggle. (Main Results Today)
         \item \textbf{Contribution 2}: Show that post-processing using alternative loss functions can lead to greater improvements for specific weather variables of interest.(In Progress)
         \item \textbf{Contribution 3}: Using agriculture as a test case, demonstrate how damage functions can be estimated and incorporated as custom loss functions when post-processing. (In Progress)
     \end{itemize}
@@ -120,7 +120,7 @@
 
     \textbf{Model:}
     \begin{itemize}
-        \item Train a small neural network for a specific variable in a specific region.
+        \item Train a post-processing neural network for a specific variable in a specific region.
         \item Loss Function: Mean Squared Error (MSE)
         \item Test simple multi-layer perceptron (MLP) and convolution based UNET architectures.
     \end{itemize}
@@ -206,7 +206,7 @@
     \end{figure}
 \end{frame}
 
-\begin{frame}{Post-processing is lessening systematic biases in forecasts}
+\begin{frame}{Post-processing lessens systematic biases in forecasts}
     
     Over correcting temperature bias in India.
     \begin{figure}
@@ -281,8 +281,8 @@
 
 \begin{frame}{All Deterministic Forecasts Trained with MSE, All Ensemble Models Trained with CRPS}
     \begin{itemize}
-        \item Know that under-prediction errors of extreme temperatures have a disproportionate impact on mortality rates.
-        \item Temperature errors around freezing point have outsized impacts on agriculture 
+        \item Under-prediction errors of extreme temperatures have a disproportionate impact on mortality rates.
+        \item Temperature errors around freezing point have outsized impacts on agriculture.
         \item Wind speed errors during high wind events have larger impacts on wind power generation than errors during calm periods.
     \end{itemize}
     \textbf{Question:} If we know the damage function of different types of errors, can we use custom loss functions to meaningfully improve accuracy for these impactful errors while still maintaining overall accuracy?
@@ -377,16 +377,34 @@
 
 \begin{frame}{Next Steps for Custom Loss Functions}
     \begin{itemize}
-        \item Extend custom loss functionality to weight errors based on when they occur
+        \item Extend custom loss functionality to weight errors based on when in the year they occur
         \item Evaluate loss on weather events not directly predicted (e.g. multiple days in a row with high temps above 35C)
         \item Add functionality for discrete prediction, rain vs no rain, frost vs no frost
     \end{itemize}
 \end{frame}
 
-\begin{frame}{How to estimate damage functions}
+\section{Estimating Damage Functions from Data}
+
+\begin{frame}{Which weather outcome to focus on?}
+    Weather phenomena should:
     \begin{itemize}
-        \item Previously extended Schlenker and Roberts (2009) style climate damage approach to estimate damage functions on corn yields in the US
-        \item Using non-parametric quantile regression forest to estimate damage functions based on larger set of weather and agronomic variables
+        \item Have measurable economic or human impact
+        \item Be adaptable to given a forecast
+        \item Be currently not well forecasted by global models
+        \item Type of loss function that can be improved with post-processing (use results from previous section)
+    \end{itemize}
+    Current Front Runners:
+    \begin{itemize}
+        \item Number of Extreme Heat Days in a Row (Mortality outcome)
+        \item Unforecasted precipitation during harvest season (yield outcome in corn belt) 
+        \item Unforecasted late frosts during planting season
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Thinking about how previous work can be useful here}
+    \begin{itemize}
+        \item Previously extended Schlenker and Roberts (2009) style climate-damage approach to estimate damage functions on corn yields in the US
+        \item Used quantile regression forest to estimate the effect of many weather and agronomic variables on the distribution of corn yields. 
     \end{itemize}
     \begin{table}[htbp]
 \centering
@@ -420,9 +438,16 @@ Max VPD (July) & 0.17 \\
 
 \begin{frame}{However, without irrigation, difficult to adapt to heat wave}
     \begin{itemize}
-        \item Need to more thoroughly review which weather shocks can be adapted to.
-        \item Promising possibilities are precipitation at planting and harvesting, and late frosts during planting season.
+        \item Need to more thoroughly review which weather shocks can be adapted to
+        \item Unsure how much irrigation is able to mitigate heat stress during extreme heat events
+        \item How much lead time is needed to make use of irrigation? 
     \end{itemize}
+\end{frame}
+
+\begin{frame}{Thank you!}
+
+    \textbf{Email:} ohouck@uchicago.edu
+
 \end{frame}
 
 \begin{frame}{Bibliography}
