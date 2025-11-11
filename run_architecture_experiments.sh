@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 # Configuration
 DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
 OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
-REGION=india
+REGION=usa_south
 SUBREGION=6x6
 MODEL=pangu
 
@@ -41,7 +41,7 @@ TEST_END=2022-12-31
 # Variables
 TRAINING_VARS="2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa"
 OUTPUT_VARS="2m_temperature"
-LEAD_TIMES="24 72 144"
+LEAD_TIMES="24 120 216"
 
 # Create output directory
 mkdir -p ${OUTPUT_DIR}
