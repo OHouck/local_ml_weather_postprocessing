@@ -833,7 +833,8 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     print(f"Forecasts saved to {output_path}")
 
 
-def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
+def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device,
+                             patch_num=None, use_legacy_global_data=False, data_bundle=None):
     """
     Run experiment with multiple lead times and month encoding.
 
@@ -841,14 +842,24 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     -----------
     use_legacy_global_data : bool
         If True, load from global yearly files. If False, use region-specific files.
+    data_bundle : dict, optional
+        Pre-loaded data bundle from prepare_data_for_finetuning(). If None, will load data internally.
     """
     start_time = time.time()
 
-    # Load training data
-    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
-     n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
-                       patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
+    # Load or use pre-loaded training data
+    if data_bundle is not None and data_bundle['train'] is not None:
+        # Use pre-loaded data
+        print("Using pre-loaded data bundle...")
+        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
+         n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = data_bundle['train']
+    else:
+        # Load data for this specific spatial subset
+        print(f"Loading data for lat range ({lat_vals.min()}, {lat_vals.max()}) and lon range ({lon_vals.min()}, {lon_vals.max()})...")
+        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
+         n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
+            load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
+                           patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
 
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
@@ -919,11 +930,19 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     load_time = time.time()
-    # Load test data
-    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
-     test_times, _, _, _, _, _, _, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num,
-                       use_legacy_global_data=use_legacy_global_data)
+    # Load or use pre-loaded test data
+    if data_bundle is not None and data_bundle['test'] is not None:
+        # Use pre-loaded test data
+        print("Using pre-loaded test data from bundle...")
+        (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
+         test_times, _, _, _, _, _, _, _) = data_bundle['test']
+    else:
+        # Load test data for this specific spatial subset
+        print(f"Loading test data for spatial subset...")
+        (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
+         test_times, _, _, _, _, _, _, _) = \
+            load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num,
+                           use_legacy_global_data=use_legacy_global_data)
 
     # Normalize test data
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
@@ -1014,10 +1033,17 @@ def main():
     # LEGACY/SKIP FLAGS: Conditionally handle data preparation
     # TO REMOVE: Remove this entire if/else block when flags removed
     # ========================================================================
+
+    # Determine if we need to load data now or later (for climate/topo/bootstrap regions)
+    is_climate_or_topo = args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP
+    will_bootstrap = args.bootstrap
+    should_load_data_now = not (is_climate_or_topo or will_bootstrap)
+
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
         print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
         print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
+        data_bundle = None
     else:
         # Prepare data: check if exists, download if necessary (unless skip_download=True)
         if SKIP_DOWNLOAD:
@@ -1041,15 +1067,16 @@ def main():
             region_lon=region_lon,
             skip_download=SKIP_DOWNLOAD,
             growing_season_only=args.growing_season_only,
-            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA
+            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
+            load_data=should_load_data_now  # Only load data if NOT doing climate/topo/bootstrap
         )
-        print("Data preparation and loading complete. Proceeding with finetuning...\n")
+        print("Data preparation complete. Proceeding with finetuning...\n")
     # ========================================================================
     # END LEGACY/SKIP FLAGS
     # ========================================================================
 
     # Decide if we're in a climate‐zone region or a geographic one
-    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+    if is_climate_or_topo:
         
         if args.region in CLIMATE_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
@@ -1083,10 +1110,12 @@ def main():
                 print(f"Skipping already existing output: {out_path}")
                 continue
 
+            # For climate/topo patches, each patch loads its own spatial subset
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,
                 args, os.path.expanduser(args.data_dir), device, patch_num=idx,
-                use_legacy_global_data=USE_LEGACY_GLOBAL_DATA
+                use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
+                data_bundle=None  # Load data for each patch separately
             )
 
     elif args.bootstrap:
@@ -1098,11 +1127,14 @@ def main():
             lon_vals = region_lon[sj:sj+nlon_patch + 1]
             out_path = base_path.replace('.zarr', f'_bs{i+1}.zarr')
             print(f"Running bootstrap sample {i+1}/{args.bootstrap}")
+            # For bootstrap samples, each sample loads its own spatial subset
             run_subregion_experiment(lat_vals, lon_vals, out_path, args,
                                      os.path.expanduser(args.data_dir), device,
-                                     use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
+                                     use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
+                                     data_bundle=None  # Load data for each bootstrap sample separately
+                                    )
     else:
-        # Central patch
+        # Central patch - use pre-loaded data if available
         ci = (len(region_lat) - nlat_patch) // 2
         cj = (len(region_lon) - nlon_patch) // 2
         lat_vals = region_lat[ci:ci+nlat_patch]
@@ -1110,7 +1142,9 @@ def main():
 
         run_subregion_experiment(lat_vals, lon_vals, base_path, args,
                                  os.path.expanduser(args.data_dir), device,
-                                 use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
+                                 use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
+                                 data_bundle=data_bundle  # Use pre-loaded data for normal regions
+                                )
 
 
 if __name__ == "__main__":

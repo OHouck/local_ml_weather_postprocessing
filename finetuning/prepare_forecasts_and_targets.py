@@ -1170,11 +1170,12 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
                                 training_vars, output_vars, train_start, train_end,
                                 test_start, test_end, lead_time_hours,
                                 region_lat=None, region_lon=None, skip_download=False,
-                                growing_season_only=False, use_legacy_global_data=False):
+                                growing_season_only=False, use_legacy_global_data=False,
+                                load_data=True):
     """
     Main function to prepare forecast and target data for finetuning.
     Checks if data exists, downloads if necessary (unless skip_download=True),
-    and loads the data for training and testing.
+    and optionally loads the data for training and testing.
     Supports atmospheric variables at specific pressure levels.
 
     Parameters:
@@ -1211,14 +1212,14 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
         If True, only keep growing season dates (3-15 to 10-31) (default: False)
     use_legacy_global_data : bool, optional
         If True, load from global yearly files instead of region-specific (default: False)
+    load_data : bool, optional
+        If True, load and return data. If False, only download/check data (default: True)
 
     Returns:
     --------
     dict : Dictionary containing train and test data with keys:
-        'train': tuple of training data (fc, fc_output, obs, lead_time_indices,
-                 day_of_year_features, times, lat, lon, n_lat, n_lon,
-                 n_training_vars, n_output_vars, mean_forecast_error)
-        'test': tuple of test data (same structure as train)
+        'train': tuple of training data (or None if load_data=False)
+        'test': tuple of test data (or None if load_data=False)
         'metadata': dict with data_dir, region, forecast_source, target_source, years
     """
     data_dir = os.path.expanduser(data_dir)
@@ -1319,44 +1320,49 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     print("="*70)
 
     # ========================================================================
-    # LOAD DATA FOR TRAINING AND TESTING
+    # LOAD DATA FOR TRAINING AND TESTING (optional)
     # ========================================================================
-    print("\nLoading data for finetuning...")
+    if load_data:
+        print("\nLoading data for finetuning...")
 
-    # Create args-like object for load_forecasts
-    class Args:
-        pass
+        # Create args-like object for load_forecasts
+        class Args:
+            pass
 
-    args = Args()
-    args.model_name = model_name
-    args.ground_truth_source = ground_truth_source
-    args.region = region
-    args.training_vars = training_vars
-    args.output_vars = output_vars
-    args.train_start = train_start
-    args.train_end = train_end
-    args.test_start = test_start
-    args.test_end = test_end
-    args.lead_time_hours = lead_time_hours
-    args.growing_season_only = growing_season_only
+        args = Args()
+        args.model_name = model_name
+        args.ground_truth_source = ground_truth_source
+        args.region = region
+        args.training_vars = training_vars
+        args.output_vars = output_vars
+        args.train_start = train_start
+        args.train_end = train_end
+        args.test_start = test_start
+        args.test_end = test_end
+        args.lead_time_hours = lead_time_hours
+        args.growing_season_only = growing_season_only
 
-    # Load training data
-    print("\n  Loading training data...")
-    train_data = load_forecasts(
-        data_dir, args, region_lat, region_lon, train=True,
-        use_legacy_global_data=use_legacy_global_data
-    )
+        # Load training data
+        print("\n  Loading training data...")
+        train_data = load_forecasts(
+            data_dir, args, region_lat, region_lon, train=True,
+            use_legacy_global_data=use_legacy_global_data
+        )
 
-    # Load test data
-    print("\n  Loading test data...")
-    test_data = load_forecasts(
-        data_dir, args, region_lat, region_lon, train=False,
-        use_legacy_global_data=use_legacy_global_data
-    )
+        # Load test data
+        print("\n  Loading test data...")
+        test_data = load_forecasts(
+            data_dir, args, region_lat, region_lon, train=False,
+            use_legacy_global_data=use_legacy_global_data
+        )
 
-    print("\n" + "="*70)
-    print("DATA LOADING COMPLETE")
-    print("="*70)
+        print("\n" + "="*70)
+        print("DATA LOADING COMPLETE")
+        print("="*70)
+    else:
+        train_data = None
+        test_data = None
+        print("\n[SKIP DATA LOADING] Data preparation complete. Data will be loaded later.")
 
     return {
         'train': train_data,
