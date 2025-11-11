@@ -485,6 +485,61 @@ def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
 
+# ============================================================================
+# LEGACY DATA LOADING - REMOVE THIS FUNCTION WHEN NO LONGER NEEDED
+# ============================================================================
+def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, root_dir, data_source):
+    """
+    LEGACY: Loads global yearly data files and subsets to region of interest.
+
+    File format: root_dir/data_source/data_source_year.zarr
+    Example: ~/data/pangu/pangu_2018.zarr, ~/data/era5/era5_2019.zarr
+
+    This function loads global data files and subsets them spatially.
+    TO REMOVE: Delete this entire function when legacy data is no longer needed.
+    """
+    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
+
+    file_paths = []
+    for year in range(min_year, max_year + 1):
+        # Legacy format: data_source/data_source_year.zarr (no region in filename)
+        file_pattern = f"{data_source}/{data_source}_{year}.zarr"
+        file_paths.append(os.path.join(root_dir, file_pattern))
+
+    if len(file_paths) == 0:
+        raise ValueError(f"No files found matching pattern: {file_pattern}")
+
+    # Load datasets individually to handle overlapping time coordinates
+    datasets = []
+
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Required data file not found: {file_path}")
+
+        # Load global zarr file
+        ds = xr.open_zarr(file_path)
+
+        # Select spatial subset (this is the key difference from new loading)
+        ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
+        datasets.append(ds)
+
+    # Concatenate along time dimension, allowing overlaps
+    forecast_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+
+    # Sort by time to ensure monotonic order
+    forecast_ds = forecast_ds.sortby('time')
+
+    # Remove any duplicate time steps (keeping first occurrence)
+    _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+    forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+    return forecast_ds
+# ============================================================================
+# END LEGACY DATA LOADING
+# ============================================================================
+
+
 def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source, region):
     """
     Finds all files in the subfolders of root_dir matching file_pattern and combines them.
@@ -547,10 +602,16 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
 
     return forecast_ds
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,):
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None, use_legacy_global_data=False):
     """
     Vectorized version that processes all data at once without loops.
     More memory intensive but faster for reasonable data sizes.
+
+    Parameters:
+    -----------
+    use_legacy_global_data : bool
+        If True, load from global yearly files (e.g., pangu_2018.zarr)
+        If False, load from region-specific files (e.g., pangu_india_2018.zarr)
     """
     if train:
         ver_str = "train"
@@ -559,7 +620,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     time_start = getattr(args, f"{ver_str}_start")
     time_end = getattr(args, f"{ver_str}_end")
-    
+
     # Create time range
     time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
 
@@ -582,14 +643,26 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             target = "era5"
         else:
             raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
-    else: 
+    else:
         # For now only IMD is supported as alternative ground truth
         target = args.ground_truth_source
-    
-    # Load datasets
-    forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
-    # Data already has 'time' dimension (renamed during download in prepare_forecasts_and_targets.py)
-    obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
+
+    # ========================================================================
+    # LEGACY: Load datasets using appropriate method based on flag
+    # TO REMOVE: Remove this entire if/else block when legacy data not needed
+    # ========================================================================
+    if use_legacy_global_data:
+        # Legacy: Load global files and subset spatially
+        print(f"  [LEGACY MODE] Loading global yearly data files...")
+        forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, args.model_name)
+        obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, target)
+    else:
+        # New: Load region-specific files (already subsetted)
+        forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
+        obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
+    # ========================================================================
+    # END LEGACY
+    # ========================================================================
     
     # Create wind speed if needed
     if "10m_wind_speed" in args.training_vars:
@@ -1050,9 +1123,14 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     print(f"Forecasts saved to {output_path}")
 
 
-def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None):
+def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
     """
     Run experiment with multiple lead times and month encoding.
+
+    Parameters:
+    -----------
+    use_legacy_global_data : bool
+        If True, load from global yearly files. If False, use region-specific files.
     """
     start_time = time.time()
 
@@ -1060,7 +1138,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
      n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
-                       patch_num=patch_num)
+                       patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
 
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
@@ -1134,7 +1212,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Load test data
     (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
      test_times, _, _, _, _, _, _, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num,
+                       use_legacy_global_data=use_legacy_global_data)
 
     # Normalize test data
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
@@ -1183,6 +1262,14 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
 
 def main():
+    # ========================================================================
+    # LEGACY DATA LOADING FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
+    # ========================================================================
+    # Set to True to use legacy global yearly data files (e.g., pangu_2018.zarr)
+    # Set to False to use new region-specific files (e.g., pangu_india_2018.zarr)
+    USE_LEGACY_GLOBAL_DATA = False  # <-- EDIT THIS FLAG
+    # ========================================================================
+
     dirs = setup_directories()
 
     # Parse command line arguments
@@ -1205,24 +1292,36 @@ def main():
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # Prepare data: check if exists, download if necessary
-    print("\nPreparing data for finetuning...")
-    prepare_data_for_finetuning(
-        data_dir=args.data_dir,
-        model_name=args.model_name,
-        ground_truth_source=args.ground_truth_source,
-        region=args.region,
-        training_vars=args.training_vars,
-        output_vars=args.output_vars,
-        train_start=args.train_start,
-        train_end=args.train_end,
-        test_start=args.test_start,
-        test_end=args.test_end,
-        lead_time_hours=args.lead_time_hours,
-        region_lat=region_lat,
-        region_lon=region_lon
-    )
-    print("Data preparation complete. Proceeding with finetuning...\n")
+    # ========================================================================
+    # LEGACY: Skip data preparation if using legacy global data
+    # TO REMOVE: Remove this if/else block when legacy mode removed
+    # ========================================================================
+    if USE_LEGACY_GLOBAL_DATA:
+        print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
+        print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
+        print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
+    else:
+        # Prepare data: check if exists, download if necessary
+        print("\nPreparing data for finetuning...")
+        prepare_data_for_finetuning(
+            data_dir=args.data_dir,
+            model_name=args.model_name,
+            ground_truth_source=args.ground_truth_source,
+            region=args.region,
+            training_vars=args.training_vars,
+            output_vars=args.output_vars,
+            train_start=args.train_start,
+            train_end=args.train_end,
+            test_start=args.test_start,
+            test_end=args.test_end,
+            lead_time_hours=args.lead_time_hours,
+            region_lat=region_lat,
+            region_lon=region_lon
+        )
+        print("Data preparation complete. Proceeding with finetuning...\n")
+    # ========================================================================
+    # END LEGACY
+    # ========================================================================
 
     # Decide if we're in a climate‐zone region or a geographic one
     if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
@@ -1261,7 +1360,8 @@ def main():
 
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,
-                args, os.path.expanduser(args.data_dir), device, patch_num=idx
+                args, os.path.expanduser(args.data_dir), device, patch_num=idx,
+                use_legacy_global_data=USE_LEGACY_GLOBAL_DATA
             )
 
     elif args.bootstrap:
@@ -1274,7 +1374,8 @@ def main():
             out_path = base_path.replace('.zarr', f'_bs{i+1}.zarr')
             print(f"Running bootstrap sample {i+1}/{args.bootstrap}")
             run_subregion_experiment(lat_vals, lon_vals, out_path, args,
-                                     os.path.expanduser(args.data_dir), device)
+                                     os.path.expanduser(args.data_dir), device,
+                                     use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
     else:
         # Central patch
         ci = (len(region_lat) - nlat_patch) // 2
@@ -1283,7 +1384,8 @@ def main():
         lon_vals = region_lon[cj:cj+nlon_patch]
 
         run_subregion_experiment(lat_vals, lon_vals, base_path, args,
-                                 os.path.expanduser(args.data_dir), device)
+                                 os.path.expanduser(args.data_dir), device,
+                                 use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
 
 
 if __name__ == "__main__":
