@@ -360,6 +360,30 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
     print(f"  Variables: {variables}")
     print(f"  Lead times: {lead_time_hours} hours")
 
+    # Early check: see if all requested years already exist with all variables
+    # This avoids starting dask client and opening remote dataset unnecessarily
+    all_exist = True
+    for year in years:
+        status = check_data_exists(data_dir, model_name, region, [year], variables)
+        year_status = status[year]
+        if not (year_status['exists'] and not year_status['missing_vars']):
+            all_exist = False
+            break
+
+    if all_exist:
+        print(f"  All years already exist with required variables. Skipping download.")
+        # Return file paths for existing data
+        if return_datasets:
+            # If datasets are requested, load them and return
+            datasets = []
+            for year in years:
+                output_path = get_data_path(data_dir, model_name, region, year)
+                ds = xr.open_zarr(output_path)
+                datasets.append(ds)
+            return datasets
+        else:
+            return [get_data_path(data_dir, model_name, region, year) for year in years]
+
     start_time = time.time()
 
     # Parse variables to separate surface and atmospheric
@@ -652,6 +676,30 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
     print(f"\nDownloading {target} target data for region '{region}'...")
     print(f"  Years: {years}")
     print(f"  Variables: {variables}")
+
+    # Early check: see if all requested years already exist with all variables
+    # This avoids starting dask client and opening remote dataset unnecessarily
+    all_exist = True
+    for year in years:
+        status = check_data_exists(data_dir, target, region, [year], variables)
+        year_status = status[year]
+        if not (year_status['exists'] and not year_status['missing_vars']):
+            all_exist = False
+            break
+
+    if all_exist:
+        print(f"  All years already exist with required variables. Skipping download.")
+        # Return file paths for existing data
+        if return_datasets:
+            # If datasets are requested, load them and return
+            datasets = []
+            for year in years:
+                output_path = get_data_path(data_dir, target, region, year)
+                ds = xr.open_zarr(output_path)
+                datasets.append(ds)
+            return datasets
+        else:
+            return [get_data_path(data_dir, target, region, year) for year in years]
 
     start_time = time.time()
 
