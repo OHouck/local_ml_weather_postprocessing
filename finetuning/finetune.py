@@ -1007,7 +1007,7 @@ def main():
     # ========================================================================
     # Set to True to check for data but skip downloading/saving if missing
     # Set to False to automatically download missing data (recommended)
-    SKIP_DOWNLOAD = False  # <-- EDIT THIS FLAG
+    SKIP_DOWNLOAD = True # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
@@ -1073,7 +1073,6 @@ def main():
 
     elif will_bootstrap:
         # Generate random spatial subsets for bootstrap
-        import random
         spatial_subsets = []
         for i in range(args.bootstrap):
             si = random.randint(0, len(region_lat) - nlat_patch)

@@ -1293,6 +1293,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             data_dir, args.model_name, args.region, years_needed, forecast_vars,
             args.lead_time_hours, lat_values, lon_values, skip_save=skip_download
         )
+        print(f"  Forecast data loaded successfully")
+        print(forecast_ds)
 
         target_vars = [v for v in args.output_vars if v != "10m_wind_speed"]
         obs_ds = load_or_pull_target_data(

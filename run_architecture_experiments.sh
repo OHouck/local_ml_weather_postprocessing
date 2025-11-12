@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 # Configuration
 DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
 OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
-REGION=usa_south
+REGION=corn_belt
 SUBREGION=6x6
 MODEL=pangu
 
