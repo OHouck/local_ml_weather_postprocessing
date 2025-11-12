@@ -1290,6 +1290,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         if "10m_wind_speed" in args.training_vars:
             forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
 
+        print("  Loading forecast data...")
         forecast_ds = load_or_pull_forecast_data(
             data_dir, args.model_name, args.region, years_needed, forecast_vars,
             args.lead_time_hours, lat_values, lon_values, skip_save=skip_download
@@ -1297,6 +1298,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         print(f"  Forecast data loaded successfully")
         print(forecast_ds)
 
+        print("  Loading observation data...")
         target_vars = [v for v in args.output_vars if v != "10m_wind_speed"]
         obs_ds = load_or_pull_target_data(
             data_dir, args.model_name, args.ground_truth_source, args.region,
@@ -1304,6 +1306,32 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         )
         print(f"  Target data loaded successfully")
         print(obs_ds)
+
+        # If data was pulled (not loaded from disk), it's a dask array - load into memory for faster processing
+        # Check if data is dask-backed by looking at the first variable
+        first_forecast_var = list(forecast_ds.data_vars)[0]
+        if hasattr(forecast_ds[first_forecast_var].data, 'compute'):
+            print("  Data is dask-backed (pulled from weatherbench). Loading into memory for faster processing...")
+            import dask
+            # Rechunk for optimal memory layout before computing
+            optimal_chunks = {
+                'time': len(forecast_ds.time) // 4,  # Split time into 4 chunks for parallel loading
+                'latitude': len(forecast_ds.latitude),
+                'longitude': len(forecast_ds.longitude)
+            }
+            if 'prediction_timedelta' in forecast_ds.dims:
+                optimal_chunks['prediction_timedelta'] = len(forecast_ds.prediction_timedelta)
+
+            forecast_ds = forecast_ds.chunk(optimal_chunks)
+            obs_ds = obs_ds.chunk({
+                'time': len(obs_ds.time) // 4,
+                'latitude': len(obs_ds.latitude),
+                'longitude': len(obs_ds.longitude)
+            })
+
+            # Compute both datasets in parallel
+            forecast_ds, obs_ds = dask.compute(forecast_ds, obs_ds)
+            print("  Data loaded into memory successfully")
     # ========================================================================
     # END LEGACY
     # ========================================================================
@@ -1358,6 +1386,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     print(f"    Forecast output stacked: {forecast_output_stacked.shape}")
 
     # For observations, we need to repeat for each lead time
+    print("  Stacking and reshaping data arrays...")
     obs_repeated = obs_ds[args.output_vars].expand_dims(
         prediction_timedelta=lead_times_td
     ).stack(
@@ -1365,9 +1394,25 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     ).to_array()
 
     # Transpose and reshape to (n_samples, n_features)
-    fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
-    fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
-    obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+    # Check if any of the arrays are dask-backed and compute together if so
+    if hasattr(forecast_stacked.data, 'compute'):
+        print("  Computing dask arrays (this may take a moment)...")
+        import dask
+        # Compute all three arrays together for efficiency
+        fc_vals, fc_out_vals, obs_vals = dask.compute(
+            forecast_stacked.values.T,
+            forecast_output_stacked.values.T,
+            obs_repeated.values.T
+        )
+        fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
+        fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
+        obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
+        print("  Arrays computed and reshaped successfully")
+    else:
+        # Data already in memory, just reshape
+        fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
+        fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+        obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
 
     print("  Data shapes after stacking:")
     print(f"    Forecast combined: {fc_combined.shape}")
