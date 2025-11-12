@@ -1091,6 +1091,7 @@ def load_or_pull_target_data(data_dir, model_name, ground_truth_source, region, 
 
     combined_ds = xr.concat(datasets, dim='time', combine_attrs='override')
     combined_ds = combined_ds.sortby('time')
+    print("created combined_ds")
 
     # Remove duplicates
     _, unique_indices = np.unique(combined_ds.time.values, return_index=True)
@@ -1301,6 +1302,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             data_dir, args.model_name, args.ground_truth_source, args.region,
             years_needed, target_vars, lat_values, lon_values, skip_save=skip_download
         )
+        print(f"  Target data loaded successfully")
+        print(obs_ds)
     # ========================================================================
     # END LEGACY
     # ========================================================================
@@ -1317,6 +1320,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             obs_ds["10m_u_component_of_wind"]**2 +
             obs_ds["10m_v_component_of_wind"]**2
         )
+    print("created wind speed if needed")
 
     # Convert lead times to timedelta and select
     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
@@ -1328,6 +1332,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     common_times = np.intersect1d(common_times, time_values_np)
     forecast_ds = forecast_ds.sel(time=common_times)
     obs_ds = obs_ds.sel(time=common_times)
+
+    print("Filtered to common times")
 
     # Get dimensions
     n_time = len(common_times)
@@ -1347,6 +1353,10 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         sample=['time', 'prediction_timedelta']
     ).to_array()
 
+    print("  Data shapes after stacking:")
+    print(f"    Forecast stacked: {forecast_stacked.shape}")
+    print(f"    Forecast output stacked: {forecast_output_stacked.shape}")
+
     # For observations, we need to repeat for each lead time
     obs_repeated = obs_ds[args.output_vars].expand_dims(
         prediction_timedelta=lead_times_td
@@ -1359,6 +1369,10 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
     obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
 
+    print("  Data shapes after stacking:")
+    print(f"    Forecast combined: {fc_combined.shape}")
+    print(f"    Forecast output combined: {fc_output_combined.shape}")
+    print(f"    Observations combined: {obs_combined.shape}")
 
     # Create lead time indices
     lead_time_indices = np.tile(
@@ -1386,6 +1400,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     day_of_year_features_combined = day_of_year_features[valid_mask]
     all_times = all_times[valid_mask]
 
+    print("applied mask")
+
     # Calculate mean forecast error
     training_mean_forecast_error = {}
 
@@ -1397,12 +1413,12 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
         obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
 
+        # print("force compute if dask arrays")
         # # FORCE COMPUTATION if these are dask arrays
         # if hasattr(fc_output_lt, 'compute'):
         #     fc_output_lt = fc_output_lt.compute()
         # if hasattr(obs_lt, 'compute'):
         #     obs_lt = obs_lt.compute()
-
 
         mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
 

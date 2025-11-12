@@ -116,7 +116,7 @@ run_experiment \
     "Deep MLP: 6 layers × 1024 neurons" \
     "mlp" \
     "--mlp_hidden_dim=1024 --mlp_num_layers=6 --mlp_dropout=0.25"
-
+exit 0
 # ----------------------------------------------------------------------------
 # Experiment 2: MLP_Wide
 # Wide MLP with 3 hidden layers, 2048 neurons each
