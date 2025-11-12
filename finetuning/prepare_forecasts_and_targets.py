@@ -318,7 +318,8 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
 
 
 def download_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
-                           region_lat=None, region_lon=None, use_dask_client=True, skip_save=False):
+                           region_lat=None, region_lon=None, use_dask_client=True, skip_save=False,
+                           return_datasets=False):
     """
     Download forecast data from weatherbench2 for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -345,10 +346,12 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         Whether to use dask client for parallel processing
     skip_save : bool
         If True, pull data from weatherbench but skip saving to disk
+    return_datasets : bool
+        If True, return list of xarray Datasets instead of file paths
 
     Returns:
     --------
-    list : Paths to downloaded files
+    list : Paths to downloaded files (if return_datasets=False) or xarray Datasets (if return_datasets=True)
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -437,6 +440,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
 
         downloaded_files = []
+        downloaded_datasets = []
 
         # Download year by year
         for year in years:
@@ -549,6 +553,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                     subset_flattened,
                     vars_to_download
                 )
+                final_ds = merged_ds
 
                 if not skip_save:
                     print(f"    Saving merged dataset to {output_path}...")
@@ -558,6 +563,8 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                     print(f"    [SKIP SAVE] Data pulled but not saved to disk")
             else:
                 # Save new dataset
+                final_ds = subset_flattened
+
                 if not skip_save:
                     print(f"    Saving to {output_path}...")
                     with ProgressBar():
@@ -570,6 +577,10 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                 else:
                     print(f"    [SKIP SAVE] Data pulled but not saved to disk")
 
+            # Collect datasets if requested
+            if return_datasets:
+                downloaded_datasets.append(final_ds)
+
             if not skip_save:
                 downloaded_files.append(output_path)
                 print(f"    Saved successfully")
@@ -581,11 +592,15 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
             client.close()
             print("\nDask client closed")
 
-    return downloaded_files
+    if return_datasets:
+        return downloaded_datasets
+    else:
+        return downloaded_files
 
 
 def download_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
-                        region_lat=None, region_lon=None, use_dask_client=True, skip_save=False):
+                        region_lat=None, region_lon=None, use_dask_client=True, skip_save=False,
+                        return_datasets=False):
     """
     Download target/observation data for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -612,10 +627,12 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
         Whether to use dask client for parallel processing
     skip_save : bool
         If True, pull data from weatherbench but skip saving to disk
+    return_datasets : bool
+        If True, return list of xarray Datasets instead of file paths
 
     Returns:
     --------
-    list : Paths to downloaded files
+    list : Paths to downloaded files (if return_datasets=False) or xarray Datasets (if return_datasets=True)
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -709,6 +726,7 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             print(f"  Warning: Variables not found in remote dataset: {missing}")
 
         downloaded_files = []
+        downloaded_datasets = []
 
         # Download year by year
         for year in years:
@@ -831,6 +849,7 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                     subset_flattened,
                     vars_to_download
                 )
+                final_ds = merged_ds
 
                 if not skip_save:
                     print(f"    Saving merged dataset to {output_path}...")
@@ -840,6 +859,8 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                     print(f"    [SKIP SAVE] Data pulled but not saved to disk")
             else:
                 # Save new dataset
+                final_ds = subset_flattened
+
                 if not skip_save:
                     print(f"    Saving to {output_path}...")
                     with ProgressBar():
@@ -852,6 +873,10 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                 else:
                     print(f"    [SKIP SAVE] Data pulled but not saved to disk")
 
+            # Collect datasets if requested
+            if return_datasets:
+                downloaded_datasets.append(final_ds)
+
             if not skip_save:
                 downloaded_files.append(output_path)
                 print(f"    Saved successfully")
@@ -863,7 +888,167 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             client.close()
             print("\nDask client closed")
 
-    return downloaded_files
+    if return_datasets:
+        return downloaded_datasets
+    else:
+        return downloaded_files
+
+
+# ============================================================================
+# COMPREHENSIVE DATA LOADING/PULLING FUNCTION
+# ============================================================================
+
+def load_or_pull_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
+                                region_lat=None, region_lon=None, skip_save=False):
+    """
+    Load forecast data from local files if they exist, or pull from weatherbench if missing.
+    Optionally save pulled data to disk if skip_save=False.
+
+    Returns the combined xarray Dataset for all years.
+    """
+    data_dir = os.path.expanduser(data_dir)
+
+    print(f"\nLoading/pulling {model_name} forecast data for region '{region}'...")
+    print(f"  Years: {years}")
+    print(f"  Variables: {variables}")
+    print(f"  Lead times: {lead_time_hours} hours")
+
+    # Check which years exist locally and which need to be pulled
+    years_to_load = []
+    years_to_pull = []
+
+    for year in years:
+        output_path = get_data_path(data_dir, model_name, region, year)
+        status = check_data_exists(data_dir, model_name, region, [year], variables)
+        year_status = status[year]
+
+        if year_status['exists'] and not year_status['missing_vars']:
+            years_to_load.append(year)
+        else:
+            years_to_pull.append(year)
+
+    if years_to_load:
+        print(f"  Loading from local files: {years_to_load}")
+    if years_to_pull:
+        if skip_save:
+            print(f"  Pulling from weatherbench (not saving): {years_to_pull}")
+        else:
+            print(f"  Pulling from weatherbench and saving: {years_to_pull}")
+
+    datasets = []
+
+    # Load from local files
+    for year in years_to_load:
+        output_path = get_data_path(data_dir, model_name, region, year)
+        print(f"    Loading {year} from {output_path}")
+        ds = xr.open_zarr(output_path)
+        # Select required lead times
+        lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
+        ds = ds.sel(prediction_timedelta=lead_times_td)
+        datasets.append(ds)
+
+    # Pull from weatherbench for missing years
+    if years_to_pull:
+        pulled_datasets = download_forecast_data(
+            data_dir, model_name, region, years_to_pull, variables,
+            lead_time_hours, region_lat, region_lon, use_dask_client=True,
+            skip_save=skip_save, return_datasets=True
+        )
+        datasets.extend(pulled_datasets)
+
+    # Combine all datasets
+    if not datasets:
+        raise ValueError(f"No data available for {model_name} in {region} for years {years}")
+
+    combined_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+    combined_ds = combined_ds.sortby('time')
+
+    # Remove duplicates
+    _, unique_indices = np.unique(combined_ds.time.values, return_index=True)
+    combined_ds = combined_ds.isel(time=sorted(unique_indices))
+
+    return combined_ds
+
+
+def load_or_pull_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
+                             region_lat=None, region_lon=None, skip_save=False):
+    """
+    Load target data from local files if they exist, or pull from weatherbench if missing.
+    Optionally save pulled data to disk if skip_save=False.
+
+    Returns the combined xarray Dataset for all years.
+    """
+    data_dir = os.path.expanduser(data_dir)
+
+    # Determine target dataset
+    if ground_truth_source == "":
+        if model_name == "pangu":
+            target = "era5"
+        elif model_name == "ifs":
+            target = "hres_t0"
+        elif model_name == "aifs":
+            target = "era5"
+        else:
+            raise ValueError(f"Unknown model_name '{model_name}' and no ground_truth_source provided")
+    else:
+        target = ground_truth_source
+
+    print(f"\nLoading/pulling {target} target data for region '{region}'...")
+    print(f"  Years: {years}")
+    print(f"  Variables: {variables}")
+
+    # Check which years exist locally and which need to be pulled
+    years_to_load = []
+    years_to_pull = []
+
+    for year in years:
+        output_path = get_data_path(data_dir, target, region, year)
+        status = check_data_exists(data_dir, target, region, [year], variables)
+        year_status = status[year]
+
+        if year_status['exists'] and not year_status['missing_vars']:
+            years_to_load.append(year)
+        else:
+            years_to_pull.append(year)
+
+    if years_to_load:
+        print(f"  Loading from local files: {years_to_load}")
+    if years_to_pull:
+        if skip_save:
+            print(f"  Pulling from weatherbench (not saving): {years_to_pull}")
+        else:
+            print(f"  Pulling from weatherbench and saving: {years_to_pull}")
+
+    datasets = []
+
+    # Load from local files
+    for year in years_to_load:
+        output_path = get_data_path(data_dir, target, region, year)
+        print(f"    Loading {year} from {output_path}")
+        ds = xr.open_zarr(output_path)
+        datasets.append(ds)
+
+    # Pull from weatherbench for missing years
+    if years_to_pull:
+        pulled_datasets = download_target_data(
+            data_dir, model_name, ground_truth_source, region, years_to_pull,
+            variables, region_lat, region_lon, use_dask_client=True,
+            skip_save=skip_save, return_datasets=True
+        )
+        datasets.extend(pulled_datasets)
+
+    # Combine all datasets
+    if not datasets:
+        raise ValueError(f"No data available for {target} in {region} for years {years}")
+
+    combined_ds = xr.concat(datasets, dim='time', combine_attrs='override')
+    combined_ds = combined_ds.sortby('time')
+
+    # Remove duplicates
+    _, unique_indices = np.unique(combined_ds.time.values, return_index=True)
+    combined_ds = combined_ds.isel(time=sorted(unique_indices))
+
+    return combined_ds
 
 
 # ============================================================================
@@ -988,7 +1173,8 @@ def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_so
     return forecast_ds
 
 
-def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None, use_legacy_global_data=False):
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,
+                   use_legacy_global_data=False, skip_download=False):
     """
     Vectorized version that processes all data at once without loops.
     More memory intensive but faster for reasonable data sizes.
@@ -998,6 +1184,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     use_legacy_global_data : bool
         If True, load from global yearly files (e.g., pangu_2018.zarr)
         If False, load from region-specific files (e.g., pangu_india_2018.zarr)
+    skip_download : bool
+        If True, pull from weatherbench but don't save. If False, save pulled data.
     """
     if train:
         ver_str = "train"
@@ -1033,6 +1221,11 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # For now only IMD is supported as alternative ground truth
         target = args.ground_truth_source
 
+    # Determine years needed
+    min_year = min(time_values_np).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values_np).astype('datetime64[Y]').astype(int) + 1970
+    years_needed = list(range(min_year, max_year + 1))
+
     # ========================================================================
     # LEGACY: Load datasets using appropriate method based on flag
     # TO REMOVE: Remove this entire if/else block when legacy data not needed
@@ -1043,9 +1236,21 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, args.model_name)
         obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, target)
     else:
-        # New: Load region-specific files (already subsetted)
-        forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name, args.region)
-        obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target, args.region)
+        # New: Load from local files or pull from weatherbench
+        forecast_vars = [v for v in args.training_vars if v != "10m_wind_speed"]
+        if "10m_wind_speed" in args.training_vars:
+            forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
+
+        forecast_ds = load_or_pull_forecast_data(
+            data_dir, args.model_name, args.region, years_needed, forecast_vars,
+            args.lead_time_hours, lat_values, lon_values, skip_save=skip_download
+        )
+
+        target_vars = [v for v in args.output_vars if v != "10m_wind_speed"]
+        obs_ds = load_or_pull_target_data(
+            data_dir, args.model_name, args.ground_truth_source, args.region,
+            years_needed, target_vars, lat_values, lon_values, skip_save=skip_download
+        )
     # ========================================================================
     # END LEGACY
     # ========================================================================
@@ -1171,7 +1376,7 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
                                 test_start, test_end, lead_time_hours,
                                 region_lat=None, region_lon=None, skip_download=False,
                                 growing_season_only=False, use_legacy_global_data=False,
-                                load_data=True):
+                                load_data=True, spatial_subsets=None):
     """
     Main function to prepare forecast and target data for finetuning.
     Checks if data exists, downloads if necessary (unless skip_download=True),
@@ -1214,13 +1419,21 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
         If True, load from global yearly files instead of region-specific (default: False)
     load_data : bool, optional
         If True, load and return data. If False, only download/check data (default: True)
+    spatial_subsets : list of dict, optional
+        List of spatial subsets for patches/bootstrap. Each dict should contain:
+        - 'lat_vals': np.ndarray of latitude values
+        - 'lon_vals': np.ndarray of longitude values
+        - 'id': identifier for the subset (e.g., patch number or bootstrap sample number)
+        If None, uses region_lat and region_lon for a single region (default: None)
 
     Returns:
     --------
-    dict : Dictionary containing train and test data with keys:
-        'train': tuple of training data (or None if load_data=False)
-        'test': tuple of test data (or None if load_data=False)
-        'metadata': dict with data_dir, region, forecast_source, target_source, years
+    dict or list of dict :
+        If spatial_subsets is None: Dictionary containing train and test data with keys:
+            'train': tuple of training data (or None if load_data=False)
+            'test': tuple of test data (or None if load_data=False)
+            'metadata': dict with data_dir, region, forecast_source, target_source, years
+        If spatial_subsets is provided: List of dictionaries (one per subset) with same structure
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -1251,80 +1464,13 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
     else:
         target = ground_truth_source
 
-    # Combine training and output vars (may overlap)
-    all_forecast_vars = list(set(training_vars + output_vars))
-    # Remove wind_speed as it's computed, not downloaded
-    forecast_vars = [v for v in all_forecast_vars if v != "10m_wind_speed"]
-
-    # if wind_speed is in all_forecast_vars, then add 10m_u_component and 10m_v_component
-    if "10m_wind_speed" in all_forecast_vars:
-        forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
-
-    # Check forecast data
-    print(f"\nChecking {model_name} forecast data...")
-    fc_status = check_data_exists(data_dir, model_name, region, all_years, forecast_vars)
-
-    years_to_download = []
-    for year, status in fc_status.items():
-        if not status['exists'] or status['missing_vars']:
-            years_to_download.append(year)
-            if status['exists']:
-                print(f"  Year {year}: missing variables {status['missing_vars']}")
-            else:
-                print(f"  Year {year}: file does not exist")
-
-    if not years_to_download:
-        print(f"  ✓ All forecast data exists with required variables")
-    else:
-        if skip_download:
-            print(f"  ⚠ Missing forecast data for years: {years_to_download}")
-            print(f"  [SKIP DOWNLOAD] Pulling data from weatherbench but NOT saving locally")
-        else:
-            print(f"  Downloading/updating forecast data for years: {years_to_download}")
-        download_forecast_data(
-            data_dir, model_name, region, years_to_download, forecast_vars,
-            lead_time_hours, region_lat, region_lon, use_dask_client=True,
-            skip_save=skip_download
-        )
-
-    # Check target data
-    print(f"\nChecking {target} target data...")
-    target_vars = [v for v in output_vars if v != "10m_wind_speed"]
-    tgt_status = check_data_exists(data_dir, target, region, all_years, target_vars)
-
-    years_to_download = []
-    for year, status in tgt_status.items():
-        if not status['exists'] or status['missing_vars']:
-            years_to_download.append(year)
-            if status['exists']:
-                print(f"  Year {year}: missing variables {status['missing_vars']}")
-            else:
-                print(f"  Year {year}: file does not exist")
-
-    if not years_to_download:
-        print(f"  ✓ All target data exists with required variables")
-    else:
-        if skip_download:
-            print(f"  ⚠ Missing target data for years: {years_to_download}")
-            print(f"  [SKIP DOWNLOAD] Pulling data from weatherbench but NOT saving locally")
-        else:
-            print(f"  Downloading/updating target data for years: {years_to_download}")
-        download_target_data(
-            data_dir, model_name, ground_truth_source, region, years_to_download,
-            target_vars, region_lat, region_lon, use_dask_client=True,
-            skip_save=skip_download
-        )
-
-    print("\n" + "="*70)
-    print("DATA PREPARATION COMPLETE")
-    print("="*70)
+    # Note: Data checking, loading, and downloading is now handled by load_forecasts()
+    # which will check for local files and pull from weatherbench as needed
 
     # ========================================================================
     # LOAD DATA FOR TRAINING AND TESTING (optional)
     # ========================================================================
     if load_data:
-        print("\nLoading data for finetuning...")
-
         # Create args-like object for load_forecasts
         class Args:
             pass
@@ -1342,36 +1488,117 @@ def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, regio
         args.lead_time_hours = lead_time_hours
         args.growing_season_only = growing_season_only
 
-        # Load training data
-        print("\n  Loading training data...")
-        train_data = load_forecasts(
-            data_dir, args, region_lat, region_lon, train=True,
-            use_legacy_global_data=use_legacy_global_data
-        )
+        if spatial_subsets is None:
+            # Single region case
+            print("\nLoading data for finetuning...")
 
-        # Load test data
-        print("\n  Loading test data...")
-        test_data = load_forecasts(
-            data_dir, args, region_lat, region_lon, train=False,
-            use_legacy_global_data=use_legacy_global_data
-        )
+            # Load training data
+            print("\n  Loading training data...")
+            train_data = load_forecasts(
+                data_dir, args, region_lat, region_lon, train=True,
+                use_legacy_global_data=use_legacy_global_data,
+                skip_download=skip_download
+            )
 
-        print("\n" + "="*70)
-        print("DATA LOADING COMPLETE")
-        print("="*70)
+            # Load test data
+            print("\n  Loading test data...")
+            test_data = load_forecasts(
+                data_dir, args, region_lat, region_lon, train=False,
+                use_legacy_global_data=use_legacy_global_data,
+                skip_download=skip_download
+            )
+
+            print("\n" + "="*70)
+            print("DATA LOADING COMPLETE")
+            print("="*70)
+
+            return {
+                'train': train_data,
+                'test': test_data,
+                'metadata': {
+                    'data_dir': data_dir,
+                    'region': region,
+                    'forecast_source': model_name,
+                    'target_source': target,
+                    'years': all_years
+                }
+            }
+        else:
+            # Multiple spatial subsets case (patches/bootstrap)
+            print(f"\nLoading data for {len(spatial_subsets)} spatial subsets...")
+            data_bundles = []
+
+            for i, subset in enumerate(spatial_subsets):
+                subset_id = subset['id']
+                lat_vals = subset['lat_vals']
+                lon_vals = subset['lon_vals']
+
+                print(f"\n  [{i+1}/{len(spatial_subsets)}] Loading data for subset {subset_id}...")
+                print(f"    Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
+                print(f"    Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
+
+                # Load training data for this subset
+                print(f"    Loading training data...")
+                train_data = load_forecasts(
+                    data_dir, args, lat_vals, lon_vals, train=True,
+                    patch_num=subset_id,
+                    use_legacy_global_data=use_legacy_global_data,
+                    skip_download=skip_download
+                )
+
+                # Load test data for this subset
+                print(f"    Loading test data...")
+                test_data = load_forecasts(
+                    data_dir, args, lat_vals, lon_vals, train=False,
+                    patch_num=subset_id,
+                    use_legacy_global_data=use_legacy_global_data,
+                    skip_download=skip_download
+                )
+
+                data_bundles.append({
+                    'train': train_data,
+                    'test': test_data,
+                    'metadata': {
+                        'data_dir': data_dir,
+                        'region': region,
+                        'forecast_source': model_name,
+                        'target_source': target,
+                        'years': all_years,
+                        'subset_id': subset_id
+                    }
+                })
+
+            print("\n" + "="*70)
+            print(f"DATA LOADING COMPLETE - {len(data_bundles)} subsets loaded")
+            print("="*70)
+
+            return data_bundles
     else:
-        train_data = None
-        test_data = None
         print("\n[SKIP DATA LOADING] Data preparation complete. Data will be loaded later.")
 
-    return {
-        'train': train_data,
-        'test': test_data,
-        'metadata': {
-            'data_dir': data_dir,
-            'region': region,
-            'forecast_source': model_name,
-            'target_source': target,
-            'years': all_years
-        }
-    }
+        if spatial_subsets is None:
+            return {
+                'train': None,
+                'test': None,
+                'metadata': {
+                    'data_dir': data_dir,
+                    'region': region,
+                    'forecast_source': model_name,
+                    'target_source': target,
+                    'years': all_years
+                }
+            }
+        else:
+            # Return list of bundles with None data
+            return [{
+                'train': None,
+                'test': None,
+                'metadata': {
+                    'data_dir': data_dir,
+                    'region': region,
+                    'forecast_source': model_name,
+                    'target_source': target,
+                    'years': all_years,
+                    'subset_id': subset['id']
+                }
+            } for subset in spatial_subsets]
