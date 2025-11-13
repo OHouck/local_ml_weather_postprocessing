@@ -1,5 +1,17 @@
 # Fdb version 4
+<<<<<<< HEAD
 ["pdflatex"] 1762815788 "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" "eee_phd_11-2025.pdf" "eee_phd_11-2025" 1762815800 0
+=======
+["bibtex eee_phd_11-2025"] 1762879910 "eee_phd_11-2025.aux" "eee_phd_11-2025.bbl" "eee_phd_11-2025" 1762976261 2
+  "./post_processing_ml_forecasts.bib" 1762976248 44727 b04fe8fa3a53016303d183329c5e62ca ""
+  "/usr/local/texlive/2023/texmf-dist/bibtex/bst/economic/aer.bst" 1389482635 26812 2ae6e48450a8c17a93d98067b7084a7a ""
+  "eee_phd_11-2025.aux" 1762976260 6664 188e6b163662d9729d268f52154733ea "pdflatex"
+  (generated)
+  "eee_phd_11-2025.bbl"
+  "eee_phd_11-2025.blg"
+  (rewritten before read)
+["pdflatex"] 1762976248 "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" "eee_phd_11-2025.pdf" "eee_phd_11-2025" 1762976261 2
+>>>>>>> 401ad925a82d9fa181e781a9adaf9f57e3c6643b
   "/Users/ohouck/globus/forecast_data/figures//climate_zones_with_patches.png" 1762209514 199997 2e6935f648ba3fb6ac2c4786713436a4 ""
   "/Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_10m_wind_speed_trainedwith_10m_wind_speed_geographic_ifs_mlp.png" 1762808702 286324 9e8d196b48ee11ab3629d789e4ebb862 ""
   "/Users/ohouck/globus/forecast_data/figures//ifs/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_ifs_mlp.png" 1762808700 282468 89261e7942a6138c74eab4ea79e56569 ""
@@ -20,7 +32,11 @@
   "/Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_mlp.png" 1762808701 287931 a6747c8564d6ae59b4c8b3a9cbf37124 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/lead_time/multi_region/6x6/leadtime_rmse_improvement_2m_temperature_trainedwith_2m_temperature_geographic_pangu_unet.png" 1762808726 339508 ffbee887b015421a35cb77f3a932e2cd ""
   "/Users/ohouck/globus/forecast_data/figures//topo_zones_with_patches.png" 1762209514 227140 93846000f2491bbfe60d347633a717db ""
+<<<<<<< HEAD
   "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" 1762815788 22996 75a446fd66be8751f5d92f556a608608 ""
+=======
+  "/Users/ohouck/vc/ai_weather_ag/slides/eee_phd_11-2025.tex" 1762976248 24006 4d8b77dd2eb62625a4860cf1e0f157c3 ""
+>>>>>>> 401ad925a82d9fa181e781a9adaf9f57e3c6643b
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcss0900.tfm" 1136768653 1536 ba0169ee8bc017972775b933313cbbb0 ""
@@ -194,6 +210,7 @@
   "/usr/local/texlive/2023/texmf-dist/tex/latex/graphics/keyval.sty" 1654720880 2671 7e67d78d9b88c845599a85b2d41f2e39 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/graphics/mathcolor.ltx" 1667332637 2885 9c645d672ae17285bba324998918efd8 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/graphics/trig.sty" 1654720880 4023 293ea1c16429fc0c4cf605f4da1791a9 ""
+  "/usr/local/texlive/2023/texmf-dist/tex/latex/grfext/grfext.sty" 1575499774 7133 b94bbacbee6e4fdccdc7f810b2aec370 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/hycolor/hycolor.sty" 1580250785 17914 4c28a13fc3d975e6e81c9bea1d697276 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/hyperref/hpdftex.def" 1675889938 48272 99ede602a8ace626d8ed02f058a4bf8e ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/hyperref/hyperref.sty" 1675889938 223129 4edf043af471f3251c66e432cfa22987 ""
@@ -208,6 +225,7 @@
   "/usr/local/texlive/2023/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def" 1673989714 30429 213676d4c7327a21d91ddaed900e7b81 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg" 1279039959 678 4792914a8f45be57bb98413425e4c7af ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/letltxmacro/letltxmacro.sty" 1575499565 5766 13a9e8766c47f30327caf893ece86ac8 ""
+  "/usr/local/texlive/2023/texmf-dist/tex/latex/natbib/natbib.sty" 1291685959 45456 1c8843383c0bd05870c45fa0ebea6cc2 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/basiclayer/pgfcore.sty" 1673816307 373 00b204b1d7d095b892ad31a7494b0373 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/math/pgfmath.sty" 1601326656 306 c56a323ca5bf9242f54474ced10fca71 ""
   "/usr/local/texlive/2023/texmf-dist/tex/latex/pgf/systemlayer/pgfsys.sty" 1601326656 443 8c872229db56122037e86bcda49e14f3 ""
@@ -232,10 +250,18 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
+<<<<<<< HEAD
   "eee_phd_11-2025.aux" 1762815800 5869 53ba62f555f618c46971a0da582cb4b4 "pdflatex"
   "eee_phd_11-2025.nav" 1762815800 3521 3b7b03e1b034cdf551915bcaed19ece0 "pdflatex"
   "eee_phd_11-2025.out" 1762815800 479 59ee079330020d53aca4136f937f6da5 "pdflatex"
   "eee_phd_11-2025.tex" 1762815788 22996 75a446fd66be8751f5d92f556a608608 ""
+=======
+  "eee_phd_11-2025.aux" 1762976260 6664 188e6b163662d9729d268f52154733ea "pdflatex"
+  "eee_phd_11-2025.bbl" 1762976248 0 d41d8cd98f00b204e9800998ecf8427e "bibtex eee_phd_11-2025"
+  "eee_phd_11-2025.nav" 1762976260 4008 084b8d90177502bd845d1996c757a2c4 "pdflatex"
+  "eee_phd_11-2025.out" 1762976260 719 bddf4bff955ec5d8c625086a725fd5b6 "pdflatex"
+  "eee_phd_11-2025.tex" 1762976248 24006 4d8b77dd2eb62625a4860cf1e0f157c3 ""
+>>>>>>> 401ad925a82d9fa181e781a9adaf9f57e3c6643b
   "reference_pics//ECMWF_supercomputer.png" 1761601199 1323366 9682ba4c8c63da152b444a86e44aea8c ""
   "reference_pics//mlp_explained.png" 1762210522 631969 1c448cb9cc1d7067dca15e09645a079d ""
   "reference_pics//mortal_errors_fig.png" 1762296561 176247 8aac1f3d5fdff5a83be10196df87872c ""

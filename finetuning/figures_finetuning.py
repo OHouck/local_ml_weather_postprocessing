@@ -16,7 +16,8 @@ import cartopy.feature as cfeature
 from types import SimpleNamespace
 from functools import lru_cache
 
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, Normalize
+from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
 
@@ -28,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
+from finetuning.process_forecasts import calculate_rmse
 
 #######################
 # Utility Functions
@@ -52,7 +54,12 @@ def extract_forecast_data(ds, prediction_var, lead_time):
 
 def calculate_rmse(predictions, ground_truth):
     """Calculate RMSE between predictions and ground truth."""
-    return float(np.sqrt(((predictions - ground_truth) ** 2).mean().values))
+    # Handle both numpy arrays and xarray DataArrays
+    if hasattr(predictions, 'values'):
+        predictions = predictions.values
+    if hasattr(ground_truth, 'values'):
+        ground_truth = ground_truth.values
+    return float(np.sqrt(((predictions - ground_truth) ** 2).mean()))
 
 
 def calculate_improvement_percentage(rmse_original, rmse_corrected):
@@ -60,6 +67,351 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     if rmse_original == 0:
         return 0
     return (rmse_original - rmse_corrected) / rmse_original * 100
+
+
+def map_global_improvements(
+    dirs,
+    model="pangu",
+    variable="10m_wind_speed",
+    zone_types=None,
+    save_dir=None,
+    map_type="improvement"
+):
+    """
+    Create global maps showing RMSE metrics for all post-processed patches.
+    Generates 3 separate maps, one for each lead time (24h, 120h, 216h).
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    model : str
+        Model to use: "pangu" or "ifs"
+    variable : str
+        Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
+    zone_types : list, optional
+        List of zone types to include. If None, uses all available zones:
+        ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    map_type : str, optional
+        Type of map to create: "improvement" (percent improvement),
+        "original" (original RMSE), or "corrected" (corrected RMSE).
+        Default is "improvement".
+
+    Returns
+    -------
+    figs : dict
+        Dictionary of created figures keyed by lead time
+    """
+
+    # Default zone types
+    if zone_types is None:
+        zone_types = ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+
+    # Lead times to process
+    lead_times = [24, 120, 216]
+
+    # Base directory for the model
+    base_dir = os.path.join(dirs["raw"], "..", "processed", "finetuning_output", model)
+
+    # Determine what metric to display
+    metric_name = {
+        "improvement": "improvements",
+        "original": "original RMSE",
+        "corrected": "corrected RMSE"
+    }.get(map_type, "improvements")
+
+    print(f"\nMapping global {metric_name} for {model.upper()} - {variable}")
+    print(f"Map type: {map_type}")
+    print(f"Searching in: {base_dir}")
+    print(f"Zone types: {zone_types}")
+    print(f"Lead times: {lead_times}")
+
+    # Collect patch data for each lead time
+    all_patch_data = {lt: [] for lt in lead_times}
+
+    for zone_type in zone_types:
+        zone_dir = os.path.join(base_dir, zone_type)
+
+        if not os.path.exists(zone_dir):
+            print(f"Warning: Directory not found: {zone_dir}")
+            continue
+
+        # Find all zarr files for this variable in this zone
+        pattern = os.path.join(zone_dir, f"*{variable}*.zarr")
+        zarr_files = glob.glob(pattern)
+
+        print(f"\nProcessing {zone_type}: found {len(zarr_files)} files")
+
+        for zarr_file in zarr_files:
+            try:
+                # Load dataset
+                ds = xr.open_zarr(zarr_file, consolidated=False)
+
+                # Get spatial bounds
+                lat_min = float(ds.latitude.min())
+                lat_max = float(ds.latitude.max())
+                lon_min = float(ds.longitude.min())
+                lon_max = float(ds.longitude.max())
+
+                # Convert longitude to 0-360 if needed
+                if lon_min < 0:
+                    lon_min = lon_min + 360
+                if lon_max < 0:
+                    lon_max = lon_max + 360
+
+                # Process each lead time
+                for lead_time in lead_times:
+                    var_suffix = f"_lt{lead_time}h"
+
+                    ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                    original = ds[f"{variable}_original{var_suffix}"]
+                    corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+                    # Flatten arrays and remove NaNs
+                    gt_flat = ground_truth.values.flatten()
+                    orig_flat = original.values.flatten()
+                    corr_flat = corrected.values.flatten()
+
+                    # Remove NaN values
+                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                    gt_flat = gt_flat[mask]
+                    orig_flat = orig_flat[mask]
+                    corr_flat = corr_flat[mask]
+
+                    # Calculate RMSE
+                    rmse_original = calculate_rmse(orig_flat, gt_flat)
+                    rmse_corrected = calculate_rmse(corr_flat, gt_flat)
+                    pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
+
+                    # Store patch data for this lead time
+                    all_patch_data[lead_time].append({
+                        'lat_min': lat_min,
+                        'lat_max': lat_max,
+                        'lon_min': lon_min,
+                        'lon_max': lon_max,
+                        'improvement': pct_improvement,
+                        'zone_type': zone_type,
+                        'rmse_original': rmse_original,
+                        'rmse_corrected': rmse_corrected
+                    })
+
+            except Exception as e:
+                print(f"  Error processing {os.path.basename(zarr_file)}: {e}")
+                continue
+
+    # Check if we have data
+    if all(len(all_patch_data[lt]) == 0 for lt in lead_times):
+        print("No patch data found for any lead time!")
+        return None
+
+    # Print summary for each lead time
+    for lt in lead_times:
+        if all_patch_data[lt]:
+            if map_type == "improvement":
+                values = [p['improvement'] for p in all_patch_data[lt]]
+                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+                print(f"  Improvement range: {min(values):.1f}% to {max(values):.1f}%")
+            elif map_type == "original":
+                values = [p['rmse_original'] for p in all_patch_data[lt]]
+                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+                print(f"  Original RMSE range: {min(values):.3f} to {max(values):.3f}")
+            elif map_type == "corrected":
+                values = [p['rmse_corrected'] for p in all_patch_data[lt]]
+                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+                print(f"  Corrected RMSE range: {min(values):.3f} to {max(values):.3f}")
+
+    # Create maps for each lead time
+    figs = {}
+
+    # Determine output directory
+    if save_dir is None:
+        out_folder = os.path.join(dirs["fig"], model, "global_maps")
+    else:
+        out_folder = save_dir
+    os.makedirs(out_folder, exist_ok=True)
+
+    # Create a separate map for each lead time
+    for lead_time in lead_times:
+        patch_data = all_patch_data[lead_time]
+
+        if not patch_data:
+            print(f"\nSkipping lead time {lead_time}h - no data available")
+            continue
+
+        print(f"\nCreating map for lead time {lead_time}h...")
+
+        # Create the map
+        fig = plt.figure(figsize=(16, 10))
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+
+        # Set global extent
+        ax.set_global()
+
+        # Add map features
+        ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.3, zorder=0)
+        ax.add_feature(cfeature.OCEAN, facecolor='white', zorder=0)
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.5, edgecolor='black', zorder=2)
+        ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.3, edgecolor='gray', zorder=2)
+
+        # Extract values based on map type
+        if map_type == "improvement":
+            values = [p['improvement'] for p in patch_data]
+            value_key = 'improvement'
+        elif map_type == "original":
+            values = [p['rmse_original'] for p in patch_data]
+            value_key = 'rmse_original'
+        elif map_type == "corrected":
+            values = [p['rmse_corrected'] for p in patch_data]
+            value_key = 'rmse_corrected'
+        else:
+            raise ValueError(f"Invalid map_type: {map_type}. Must be 'improvement', 'original', or 'corrected'.")
+
+        vmin = min(values)
+        vmax = max(values)
+
+        # Create colormap based on map type
+        if map_type == "improvement":
+            # For improvements, center at 0 with asymmetric bounds
+            # Handle cases where all values are on one side of 0
+            if vmin >= 0:
+                # All improvements are positive - use regular norm from 0 to vmax
+                norm = plt.Normalize(vmin=0, vmax=vmax)
+            elif vmax <= 0:
+                # All improvements are negative - use regular norm from vmin to 0
+                norm = plt.Normalize(vmin=vmin, vmax=0)
+            else:
+                # Values span both sides of 0 - use TwoSlopeNorm for asymmetric centering
+                norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+            cmap = plt.cm.RdBu  # Red for negative (worse), Blue for positive (better)
+        else:
+            # For RMSE values, use sequential colormap (lower is better)
+            norm = plt.Normalize(vmin=vmin, vmax=vmax)
+            cmap = plt.cm.YlOrRd  # Yellow (low error) to Red (high error)
+
+        # Plot each patch as a colored rectangle
+        for patch in patch_data:
+            lat_min = patch['lat_min']
+            lat_max = patch['lat_max']
+            lon_min = patch['lon_min']
+            lon_max = patch['lon_max']
+            value = patch[value_key]
+
+            # Get color for this value
+            color = cmap(norm(value))
+
+            # Calculate width and height
+            width = lon_max - lon_min
+            height = lat_max - lat_min
+
+            # Add rectangle
+            rect = Rectangle(
+                (lon_min, lat_min),
+                width,
+                height,
+                facecolor=color,
+                edgecolor='black',
+                linewidth=0.3,
+                alpha=0.8,
+                transform=ccrs.PlateCarree(),
+                zorder=1
+            )
+            ax.add_patch(rect)
+
+        # Add gridlines
+        gl = ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False,
+                          linewidth=0.5, alpha=0.5, linestyle='--', zorder=3)
+        gl.top_labels = False
+        gl.right_labels = False
+        gl.xlabel_style = {'size': 10}
+        gl.ylabel_style = {'size': 10}
+
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, orientation='horizontal', pad=0.05, shrink=0.6)
+
+        # Set colorbar label based on map type
+        if map_type == "improvement":
+            cbar.set_label('RMSE Improvement (%)', fontsize=14, weight='bold')
+        elif map_type == "original":
+            cbar.set_label('Original Forecast RMSE', fontsize=14, weight='bold')
+        elif map_type == "corrected":
+            cbar.set_label('Corrected Forecast RMSE', fontsize=14, weight='bold')
+        cbar.ax.tick_params(labelsize=12)
+
+        # Add title
+        if map_type == "improvement":
+            title_main = f"Global RMSE Improvement Map"
+        elif map_type == "original":
+            title_main = f"Global Original Forecast Error Map"
+        elif map_type == "corrected":
+            title_main = f"Global Corrected Forecast Error Map"
+
+        title_parts = [
+            title_main,
+            f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
+            f"N = {len(patch_data)} patches"
+        ]
+        ax.set_title('\n'.join(title_parts), fontsize=16, weight='bold', pad=20)
+
+        # Add statistics box
+        mean_val = np.mean(values)
+        median_val = np.median(values)
+        std_val = np.std(values)
+
+        if map_type == "improvement":
+            stats_text = (
+                f"Mean: {mean_val:.1f}%\n"
+                f"Median: {median_val:.1f}%\n"
+                f"Std: {std_val:.1f}%"
+            )
+        else:
+            stats_text = (
+                f"Mean: {mean_val:.3f}\n"
+                f"Median: {median_val:.3f}\n"
+                f"Std: {std_val:.3f}"
+            )
+
+        ax.text(0.02, 0.98, stats_text,
+                transform=ax.transAxes,
+                fontsize=12,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
+                         edgecolor='black', alpha=0.8),
+                family='monospace',
+                zorder=10)
+
+        plt.tight_layout()
+
+        # Save figure
+        zones_str = "_".join(zone_types)
+        if map_type == "improvement":
+            fname = f"global_improvement_map_{variable}_{model}_lt{lead_time}.png"
+        elif map_type == "original":
+            fname = f"global_original_rmse_map_{variable}_{model}_lt{lead_time}.png"
+        elif map_type == "corrected":
+            fname = f"global_corrected_rmse_map_{variable}_{model}_lt{lead_time}.png"
+
+        save_path = os.path.join(out_folder, fname)
+
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {save_path}")
+
+        # Store figure
+        figs[lead_time] = fig
+
+        # Close to free memory
+        plt.close(fig)
+
+    map_type_str = {
+        "improvement": "improvement",
+        "original": "original RMSE",
+        "corrected": "corrected RMSE"
+    }.get(map_type, map_type)
+    print(f"\nAll {len(figs)} global {map_type_str} maps created successfully!")
+    return figs
 
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
@@ -1139,7 +1491,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
                                   linestyle='none', label=arch.upper()))
     
     legend1 = ax.legend(handles=region_handles, title="Region",
-                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=12)
+                       loc='lower right', bbox_to_anchor=(1, 0), fontsize=16, title_fontsize=16)
     
     if len(nn_architectures) > 1:
         legend2 = ax.legend(handles=arch_handles, title="Architecture",
@@ -1158,7 +1510,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
         annotation_text = "Note: Lighter inner bars show improvement from simple mean debiasing"
         ax.text(0.02, 0.98, annotation_text,
                transform=ax.transAxes,
-               fontsize=11,
+               fontsize=16,
                verticalalignment='top',
                bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow',
                         edgecolor='gray', alpha=0.8))
@@ -1382,29 +1734,29 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     # Add annotations for mean values
     if region_means:
         annotation_lines = ["Ground Truth Means:"]
-        
+
         region_annotations = {}
         for key, (region, mean_val, units) in region_means.items():
             if region not in region_annotations:
                 region_annotations[region] = []
             region_annotations[region].append((mean_val, units))
-        
+
         for region in sorted(region_annotations.keys()):
             values = region_annotations[region]
             avg_mean = np.mean([v[0] for v in values])
             units = values[0][1]
-            
+
             if variable == '2m_temperature':
                 annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.1f}°{units}")
             else:
                 annotation_lines.append(f"  {region.replace('_', ' ').title()}: {avg_mean:.2f} {units}")
-        
+
         annotation_text = '\n'.join(annotation_lines)
-        ax.text(0.02, 0.48, annotation_text,
+        ax.text(0.22, 0.35, annotation_text,
                transform=ax.transAxes,
                fontsize=11,
                verticalalignment='top',
-               bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+               bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
                         edgecolor='gray', alpha=0.9),
                family='monospace')
     
@@ -1437,7 +1789,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                       alpha=0.9, label='Corrected Forecast Error'))
 
     legend1 = ax.legend(handles=forecast_handles, title="Forecast Type",
-                       loc='lower left', bbox_to_anchor=(0.2,0), fontsize=12)
+                       loc='lower left', bbox_to_anchor=(0.2, 0), fontsize=12)
     
     # Region legend
     region_handles = []
@@ -1450,7 +1802,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                     label=region.replace('_', ' ').title()))
     
     legend2 = ax.legend(handles=region_handles, title="Region",
-                       loc='lower left', bbox_to_anchor=(0, 0), fontsize=12)
+                       loc='lower left', bbox_to_anchor=(0, 0), fontsize=16, title_fontsize=16)
     
     ax.add_artist(legend1)
     ax.add_artist(legend2)
@@ -1706,10 +2058,10 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
     # Position legends
     legend1 = ax.legend(handles=region_handles, title="Region",
-                       loc='upper left', bbox_to_anchor=(0, 0.85), fontsize=12)
+                       loc='upper left', bbox_to_anchor=(0, 0.85), fontsize=16, title_fontsize=16)
 
     legend2 = ax.legend(handles=bar_handles, title="Forecast Type",
-                       loc='upper left', bbox_to_anchor=(0, 0.6), fontsize=12)
+                       loc='upper left', bbox_to_anchor=(0, 0.50), fontsize=12)
     
     if len(nn_architectures) > 1:
         legend3 = ax.legend(handles=arch_handles, title="Architecture",
@@ -1772,11 +2124,20 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 def main():
     dirs = setup_directories()
 
+
+
+    for map_type in ["original", "improvement"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            for model in ["ifs", "pangu"]:
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, variable=variable, y_metric=map_type, x_metric="sdor")
+                # map_global_improvements(dirs=dirs, model=model, variable=variable, map_type=map_type)
+    exit()
+
     stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
 
-    nn_architectures = ["mlp"]
-    variable_list = ["2m_temperature"]
-    model_list = ["pangu"]
+    nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
+    variable_list = ["2m_temperature", "10m_wind_speed"]
+    model_list = ["ifs", "pangu"]
     geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
@@ -1784,85 +2145,49 @@ def main():
     for var in variable_list:
         for model in model_list:
             for gs_flag in growing_season_flags:
+                for regions in [geo_regions, climate_regions, topo_regions]:
+                    if regions == climate_regions or regions == topo_regions:
+                        subregion = "2x2"
+                    elif regions == geo_regions:
+                        subregion = "6x6"
+                    for loss_train_on in ["mse", "extreme_heat"]:
+                        if model == "aifs" and not gs_flag:
+                            # aifs results are only for growing season
+                            continue
 
-                if model == "aifs" and not gs_flag:
-                    # aifs results are only for growing season
-                    continue
+                        for evaluation_loss in ["rmse", "extreme_heat"]:
+                            plot_rmse_improvement(csv_path = stat_path,
+                                dirs=dirs,
+                                variable=var,
+                                model=model,
+                                regions=regions,
+                                subregion=subregion,
+                                nn_architectures=nn_architectures,
+                                growing_season_only=gs_flag,
+                                loss_trained_on=loss_train_on,
+                                evaluation_loss=evaluation_loss
+                            )
+                        plot_raw_forecast_values(csv_path = stat_path,
+                            dirs=dirs,
+                            variable=var,
+                            model=model,
+                            regions=regions,
+                            subregion=subregion,
+                            nn_architectures=nn_architectures,
+                            growing_season_only=gs_flag,
+                            loss_trained_on=loss_train_on
+                        )
+                        plot_error_cutoff(csv_path = stat_path,
+                            dirs=dirs,
+                            variable=var,
+                            model=model,
+                            regions=regions,
+                            subregion=subregion,
+                            nn_architectures=nn_architectures,
+                            growing_season_only=gs_flag,
+                            loss_trained_on=loss_train_on
+                        )
 
-                plot_rmse_improvement(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat",
-                    evaluation_loss="extreme_heat"
-                )
-                plot_raw_forecast_values(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat"
-                )
-                plot_error_cutoff(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=geo_regions,
-                    subregion="6x6",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag,
-                    loss_trained_on="extreme_heat"
-                )
-    exit()
-    for var in variable_list:
-        for model in model_list:
-            for gs_flag in growing_season_flags:
-
-                if model == "aifs" and not gs_flag:
-                    # aifs results are only for growing season
-                    continue
-
-                plot_rmse_improvement(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
-                )
-                plot_raw_forecast_values(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
-                )
-                plot_error_cutoff(csv_path = stat_path,
-                    dirs=dirs,
-                    variable=var,
-                    model=model,
-                    regions=["temperate", "arid", "tropical"],
-                    subregion="2x2",
-                    nn_architectures=nn_architectures,
-                    growing_season_only=gs_flag
-                )
-    
-
-
-
-
-
-    
     #=============================================
     # Subregion Comparison Plots
     #=============================================
@@ -1964,6 +2289,304 @@ def main():
         simultaneous=True
     )
         
+
+def plot_scatter_forecast_improvement(
+    dirs,
+    model="pangu",
+    variable="10m_wind_speed",
+    zone_types=None,
+    save_dir=None,
+    x_metric="equator_distance",
+    y_metric="improvement",
+    lead_times=None
+):
+    """
+    Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
+    Each point represents a patch post-processed with its own model.
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    model : str
+        Model to use: "pangu" or "ifs"
+    variable : str
+        Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
+    zone_types : list, optional
+        List of zone types to include. If None, uses all available zones:
+        ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    x_metric : str, optional
+        Metric to plot on x-axis: "equator_distance" (distance from equator in degrees)
+        or "sdor" (standard deviation of orography). Default is "equator_distance".
+    y_metric : str, optional
+        Metric to plot on y-axis: "improvement" (percent improvement in RMSE)
+        or "original" (original forecast RMSE). Default is "improvement".
+    lead_times : list, optional
+        List of lead times to plot. If None, uses [24, 120, 216]
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure
+    """
+
+    # Default zone types
+    if zone_types is None:
+        zone_types = ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+
+    # Default lead times
+    if lead_times is None:
+        lead_times = [24, 120, 216]
+
+    # Base directory for the model
+    base_dir = os.path.join(dirs["raw"], "..", "processed", "finetuning_output", model)
+
+    # Determine axis labels
+    x_label = {
+        "equator_distance": "Distance from Equator (degrees)",
+        "sdor": "Standard Deviation of Orography (m)"
+    }.get(x_metric, "Distance from Equator (degrees)")
+
+    y_label = {
+        "improvement": "RMSE Improvement (%)",
+        "original": "Original Forecast RMSE"
+    }.get(y_metric, "RMSE Improvement (%)")
+
+    print(f"\nCreating forecast improvement scatter plot for {model.upper()} - {variable}")
+    print(f"X-axis metric: {x_metric}")
+    print(f"Y-axis metric: {y_metric}")
+    print(f"Searching in: {base_dir}")
+    print(f"Zone types: {zone_types}")
+    print(f"Lead times: {lead_times}")
+
+    # Load sdor data if needed
+    sdor_da = None
+    if x_metric == "sdor":
+        era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
+        sdor_da = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
+        print(f"Loaded sdor data from {era5_static_path}")
+
+    # Collect patch data for each lead time
+    all_patch_data = {lt: [] for lt in lead_times}
+
+    for zone_type in zone_types:
+        zone_dir = os.path.join(base_dir, zone_type)
+
+        if not os.path.exists(zone_dir):
+            print(f"Warning: Directory not found: {zone_dir}")
+            continue
+
+        # Find all zarr files for this variable in this zone
+        pattern = os.path.join(zone_dir, f"*{variable}*.zarr")
+        zarr_files = glob.glob(pattern)
+
+        print(f"\nProcessing {zone_type}: found {len(zarr_files)} files")
+
+        for zarr_file in zarr_files:
+            try:
+                # Load dataset
+                ds = xr.open_zarr(zarr_file, consolidated=False)
+
+                # Get spatial bounds
+                lat_min = float(ds.latitude.min())
+                lat_max = float(ds.latitude.max())
+                lon_min = float(ds.longitude.min())
+                lon_max = float(ds.longitude.max())
+
+                # Calculate center latitude for distance from equator
+                center_lat = (lat_min + lat_max) / 2
+                distance_from_equator = abs(center_lat)
+
+                # Calculate mean sdor for this patch if needed
+                mean_sdor = None
+                if x_metric == "sdor" and sdor_da is not None:
+                    try:
+                        # Select the patch area from sdor data
+                        patch_sdor = sdor_da.sel(
+                            latitude=slice(lat_min, lat_max),
+                            longitude=slice(lon_min, lon_max)
+                        )
+                        # Calculate mean, ignoring NaN values
+                        mean_sdor = float(patch_sdor.mean())
+                    except Exception as e:
+                        print(f"  Warning: Could not calculate sdor for patch: {e}")
+                        continue
+
+                # Process each lead time
+                for lead_time in lead_times:
+                    var_suffix = f"_lt{lead_time}h"
+
+                    ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                    original = ds[f"{variable}_original{var_suffix}"]
+                    corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+                    # Flatten arrays and remove NaNs
+                    gt_flat = ground_truth.values.flatten()
+                    orig_flat = original.values.flatten()
+                    corr_flat = corrected.values.flatten()
+
+                    # Remove NaN values
+                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                    gt_flat = gt_flat[mask]
+                    orig_flat = orig_flat[mask]
+                    corr_flat = corr_flat[mask]
+
+                    # Calculate RMSE
+                    rmse_original = calculate_rmse(orig_flat, gt_flat)
+                    rmse_corrected = calculate_rmse(corr_flat, gt_flat)
+                    pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
+
+                    # Store patch data for this lead time
+                    all_patch_data[lead_time].append({
+                        'distance_from_equator': distance_from_equator,
+                        'sdor': mean_sdor,
+                        'improvement': pct_improvement,
+                        'rmse_original': rmse_original,
+                        'rmse_corrected': rmse_corrected,
+                        'zone_type': zone_type,
+                        'center_lat': center_lat
+                    })
+
+            except Exception as e:
+                print(f"  Error processing {os.path.basename(zarr_file)}: {e}")
+                continue
+
+    # Check if we have data
+    if all(len(all_patch_data[lt]) == 0 for lt in lead_times):
+        print("No patch data found for any lead time!")
+        return None
+
+    # Print summary for each lead time
+    for lt in lead_times:
+        if all_patch_data[lt]:
+            print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+
+    # Determine output directory
+    if save_dir is None:
+        out_folder = os.path.join(dirs["fig"], model, "scatter_plots")
+    else:
+        out_folder = save_dir
+    os.makedirs(out_folder, exist_ok=True)
+
+    # Create scatter plot
+    fig, axes = plt.subplots(1, len(lead_times), figsize=(6 * len(lead_times), 5))
+    if len(lead_times) == 1:
+        axes = [axes]
+
+    # Color map for hemispheres
+    hemisphere_colors = {
+        'Northern': '#4D96FF',  # Blue
+        'Southern': '#FF6B6B'   # Red
+    }
+
+    for idx, lead_time in enumerate(lead_times):
+        ax = axes[idx]
+        patch_data = all_patch_data[lead_time]
+
+        if not patch_data:
+            print(f"\nSkipping lead time {lead_time}h - no data available")
+            continue
+
+        # Determine x and y values based on metrics
+        if x_metric == "equator_distance":
+            x_values = [p['distance_from_equator'] for p in patch_data]
+        elif x_metric == "sdor":
+            x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
+            # Filter patch_data to only include patches with sdor values
+            patch_data = [p for p in patch_data if p['sdor'] is not None]
+        else:
+            raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
+
+        if y_metric == "improvement":
+            y_values = [p['improvement'] for p in patch_data]
+        elif y_metric == "original":
+            y_values = [p['rmse_original'] for p in patch_data]
+        else:
+            raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
+
+        # Separate patches by hemisphere
+        northern_patches = [p for p in patch_data if p['center_lat'] >= 0]
+        southern_patches = [p for p in patch_data if p['center_lat'] < 0]
+
+        # Plot northern hemisphere patches
+        if northern_patches:
+            if x_metric == "equator_distance":
+                northern_x = [p['distance_from_equator'] for p in northern_patches]
+            else:
+                northern_x = [p['sdor'] for p in northern_patches if p['sdor'] is not None]
+                northern_patches = [p for p in northern_patches if p['sdor'] is not None]
+
+            if y_metric == "improvement":
+                northern_y = [p['improvement'] for p in northern_patches]
+            else:
+                northern_y = [p['rmse_original'] for p in northern_patches]
+
+            if northern_x:  # Only plot if we have data
+                ax.scatter(northern_x, northern_y,
+                          c=hemisphere_colors['Northern'],
+                          label='Northern Hemisphere',
+                          alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+
+        # Plot southern hemisphere patches
+        if southern_patches:
+            if x_metric == "equator_distance":
+                southern_x = [p['distance_from_equator'] for p in southern_patches]
+            else:
+                southern_x = [p['sdor'] for p in southern_patches if p['sdor'] is not None]
+                southern_patches = [p for p in southern_patches if p['sdor'] is not None]
+
+            if y_metric == "improvement":
+                southern_y = [p['improvement'] for p in southern_patches]
+            else:
+                southern_y = [p['rmse_original'] for p in southern_patches]
+
+            if southern_x:  # Only plot if we have data
+                ax.scatter(southern_x, southern_y,
+                          c=hemisphere_colors['Southern'],
+                          label='Southern Hemisphere',
+                          alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+
+        # Add horizontal line at y=0 for improvement plots
+        if y_metric == "improvement":
+            ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+        # Calculate and display correlation
+        if len(x_values) > 1 and len(y_values) > 1:
+            correlation = np.corrcoef(x_values, y_values)[0, 1]
+            ax.text(0.02, 0.98, f'r = {correlation:.3f}',
+                   transform=ax.transAxes, fontsize=10,
+                   verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        # Labels and title
+        ax.set_xlabel(x_label, fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_title(f'Lead Time: {lead_time}h', fontsize=13, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # Add legend only to the first subplot
+        if idx == 0:
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+
+    # Add overall title
+    title = f'{model.upper()} - {variable.replace("_", " ").title()}\n'
+    title += f'{x_label} vs {y_label}'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # Save figure
+    x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
+    y_suffix = y_metric
+    filename = f"scatter_{x_suffix}_{variable}_{y_suffix}.png"
+    save_path = os.path.join(out_folder, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\nSaved scatter plot to: {save_path}")
+
+    return fig
+
 
 if __name__ == "__main__":
     main()
