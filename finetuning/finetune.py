@@ -362,13 +362,28 @@ class UNet(nn.Module):
         for i in range(len(self.upconvs)):
             # Upsample
             x = self.upconvs[i](x)
-            
+
             # Get skip connection
             skip_connection = encoder_outputs[-(i+1)]
-            
+
+            # Handle size mismatches due to odd dimensions in pooling
+            # This can happen when spatial dims aren't perfectly divisible by 2^n
+            if x.shape[2:] != skip_connection.shape[2:]:
+                # Center crop the skip connection to match upsampled size
+                diff_h = skip_connection.shape[2] - x.shape[2]
+                diff_w = skip_connection.shape[3] - x.shape[3]
+
+                # Calculate crop offsets (center crop)
+                h_start = diff_h // 2
+                w_start = diff_w // 2
+                h_end = h_start + x.shape[2]
+                w_end = w_start + x.shape[3]
+
+                skip_connection = skip_connection[:, :, h_start:h_end, w_start:w_end]
+
             # Concatenate with skip connection
             x = torch.cat([x, skip_connection], dim=1)
-            
+
             # Apply decoder convolution
             x = self.decoders[i](x)
         
