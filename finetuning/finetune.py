@@ -389,10 +389,22 @@ class UNet(nn.Module):
         
         # Final 1x1 convolution to get output channels
         x = self.final_conv(x)
-        
+
+        # Pad output back to original spatial dimensions if needed
+        # This handles cases where pooling/upsampling with odd dimensions
+        # results in smaller output than input
+        current_h, current_w = x.shape[2], x.shape[3]
+        if current_h != self.height or current_w != self.width:
+            pad_h = self.height - current_h
+            pad_w = self.width - current_w
+            # Pad symmetrically: (left, right, top, bottom)
+            padding = (pad_w // 2, pad_w - pad_w // 2,
+                      pad_h // 2, pad_h - pad_h // 2)
+            x = F.pad(x, padding, mode='replicate')
+
         # Reshape back to flat output
         x = x.view(batch_size, -1)
-        
+
         return x
 
 # ------------------------------
