@@ -31,6 +31,10 @@ from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
 from finetuning.process_forecasts import calculate_rmse
 
+# Suppress Zarr warnings (e.g., for .DS_Store files)
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='zarr')
+
 #######################
 # Utility Functions
 #######################
@@ -69,17 +73,94 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     return (rmse_original - rmse_corrected) / rmse_original * 100
 
 
+def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_end="2021-12-31",
+                            test_start="2022-01-01", test_end="2022-12-31",
+                            nn_architecture="mlp", subregion="2x2", alternate_loss_fn=None):
+    """
+    Filter zarr files in a zone directory to match specific model configuration.
+
+    This matches the file naming convention from generate_output_path(), which creates files like:
+    train_{training_vars}_test_{output_vars}_dim{subregion}_leadtime_{lead_times}_
+    train{train_start}-{train_end}_test{test_start}-{test_end}_{nn_architecture}[_{alternate_loss_fn}]_{zone_type}_bs{batch_num}.zarr
+
+    Parameters
+    ----------
+    zone_dir : str
+        Path to zone directory containing zarr files
+    variable : str
+        Variable name to search for in filename (e.g., "2m_temperature")
+    train_start : str
+        Training start date (default: "2018-01-01")
+    train_end : str
+        Training end date (default: "2021-12-31")
+    test_start : str
+        Test start date (default: "2022-01-01")
+    test_end : str
+        Test end date (default: "2022-12-31")
+    nn_architecture : str
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str
+        Subregion size pattern (default: "2x2")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
+
+    Returns
+    -------
+    list
+        List of matching zarr file paths
+    """
+    if not os.path.exists(zone_dir):
+        return []
+
+    # Get all zarr files containing the variable
+    all_files = glob.glob(os.path.join(zone_dir, f"*{variable}*.zarr"))
+
+    # Build the pattern to match based on generate_output_path structure
+    # Pattern: train_{var}_test_{var}_dim{subregion}_leadtime_*_train{dates}_test{dates}_{arch}[_{loss}]_{zone}_bs*.zarr
+    dates_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
+    dim_str = f"dim{subregion}"
+
+    # Build architecture string
+    if alternate_loss_fn:
+        arch_str = f"{nn_architecture}_{alternate_loss_fn}"
+    else:
+        arch_str = nn_architecture
+
+    # Filter files that match the model configuration
+    matching_files = []
+    for file_path in all_files:
+        basename = os.path.basename(file_path)
+
+        # Check if file matches the expected pattern
+        if (dates_str in basename and
+            dim_str in basename and
+            f"_{arch_str}_" in basename):
+            matching_files.append(file_path)
+
+    return matching_files
+
+
 def map_global_improvements(
     dirs,
     model="pangu",
     variable="10m_wind_speed",
     zone_types=None,
     save_dir=None,
-    map_type="improvement"
+    map_type="improvement",
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="2x2",
+    alternate_loss_fn=None
 ):
     """
     Create global maps showing RMSE metrics for all post-processed patches.
     Generates 3 separate maps, one for each lead time (24h, 120h, 216h).
+
+    Only processes zarr files that match the specified model configuration to ensure
+    all patches are from the same training/testing setup.
 
     Parameters
     ----------
@@ -98,6 +179,20 @@ def map_global_improvements(
         Type of map to create: "improvement" (percent improvement),
         "original" (original RMSE), or "corrected" (corrected RMSE).
         Default is "improvement".
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "2x2")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
 
     Returns
     -------
@@ -127,6 +222,10 @@ def map_global_improvements(
     print(f"Searching in: {base_dir}")
     print(f"Zone types: {zone_types}")
     print(f"Lead times: {lead_times}")
+    print(f"Model config: {nn_architecture}, subregion={subregion}, "
+          f"train={train_start} to {train_end}, test={test_start} to {test_end}")
+    if alternate_loss_fn:
+        print(f"Alternate loss function: {alternate_loss_fn}")
 
     # Collect patch data for each lead time
     all_patch_data = {lt: [] for lt in lead_times}
@@ -138,11 +237,13 @@ def map_global_improvements(
             print(f"Warning: Directory not found: {zone_dir}")
             continue
 
-        # Find all zarr files for this variable in this zone
-        pattern = os.path.join(zone_dir, f"*{variable}*.zarr")
-        zarr_files = glob.glob(pattern)
+        # Find zarr files matching the model configuration
+        zarr_files = filter_patch_zarr_files(
+            zone_dir, variable, train_start, train_end,
+            test_start, test_end, nn_architecture, subregion, alternate_loss_fn
+        )
 
-        print(f"\nProcessing {zone_type}: found {len(zarr_files)} files")
+        print(f"\nProcessing {zone_type}: found {len(zarr_files)} matching files")
 
         for zarr_file in zarr_files:
             try:
@@ -2125,12 +2226,17 @@ def main():
     dirs = setup_directories()
 
 
-
     for map_type in ["original", "improvement"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             for model in ["ifs", "pangu"]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, variable=variable, y_metric=map_type, x_metric="sdor")
-                # map_global_improvements(dirs=dirs, model=model, variable=variable, map_type=map_type)
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                  variable=variable, y_metric=map_type, 
+                                                  x_metric="equator_distance")
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                  variable=variable, y_metric=map_type, 
+                                                  x_metric="sdor")
+                map_global_improvements(dirs=dirs, model=model, 
+                                        variable=variable, map_type=map_type)
     exit()
 
     stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
@@ -2298,11 +2404,21 @@ def plot_scatter_forecast_improvement(
     save_dir=None,
     x_metric="equator_distance",
     y_metric="improvement",
-    lead_times=None
+    lead_times=None,
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="2x2",
+    alternate_loss_fn=None
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
     Each point represents a patch post-processed with its own model.
+
+    Only processes zarr files that match the specified model configuration to ensure
+    all patches are from the same training/testing setup.
 
     Parameters
     ----------
@@ -2325,6 +2441,20 @@ def plot_scatter_forecast_improvement(
         or "original" (original forecast RMSE). Default is "improvement".
     lead_times : list, optional
         List of lead times to plot. If None, uses [24, 120, 216]
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "2x2")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
 
     Returns
     -------
@@ -2360,6 +2490,10 @@ def plot_scatter_forecast_improvement(
     print(f"Searching in: {base_dir}")
     print(f"Zone types: {zone_types}")
     print(f"Lead times: {lead_times}")
+    print(f"Model config: {nn_architecture}, subregion={subregion}, "
+          f"train={train_start} to {train_end}, test={test_start} to {test_end}")
+    if alternate_loss_fn:
+        print(f"Alternate loss function: {alternate_loss_fn}")
 
     # Load sdor data if needed
     sdor_da = None
@@ -2378,11 +2512,13 @@ def plot_scatter_forecast_improvement(
             print(f"Warning: Directory not found: {zone_dir}")
             continue
 
-        # Find all zarr files for this variable in this zone
-        pattern = os.path.join(zone_dir, f"*{variable}*.zarr")
-        zarr_files = glob.glob(pattern)
+        # Find zarr files matching the model configuration
+        zarr_files = filter_patch_zarr_files(
+            zone_dir, variable, train_start, train_end,
+            test_start, test_end, nn_architecture, subregion, alternate_loss_fn
+        )
 
-        print(f"\nProcessing {zone_type}: found {len(zarr_files)} files")
+        print(f"\nProcessing {zone_type}: found {len(zarr_files)} matching files")
 
         for zarr_file in zarr_files:
             try:
@@ -2403,16 +2539,59 @@ def plot_scatter_forecast_improvement(
                 mean_sdor = None
                 if x_metric == "sdor" and sdor_da is not None:
                     try:
-                        # Select the patch area from sdor data
-                        patch_sdor = sdor_da.sel(
-                            latitude=slice(lat_min, lat_max),
-                            longitude=slice(lon_min, lon_max)
-                        )
+                        # Ensure longitude is in the same coordinate system as sdor data
+                        # Check if sdor uses 0-360 or -180 to 180
+                        sdor_lon_min = float(sdor_da.longitude.min())
+                        sdor_lon_max = float(sdor_da.longitude.max())
+
+                        # Convert patch longitude to match sdor coordinate system
+                        patch_lon_min = lon_min
+                        patch_lon_max = lon_max
+
+                        if sdor_lon_min >= 0 and sdor_lon_max > 180:
+                            # sdor uses 0-360, convert patch coords if needed
+                            if patch_lon_min < 0:
+                                patch_lon_min += 360
+                            if patch_lon_max < 0:
+                                patch_lon_max += 360
+                        else:
+                            # sdor uses -180 to 180, convert patch coords if needed
+                            if patch_lon_min > 180:
+                                patch_lon_min -= 360
+                            if patch_lon_max > 180:
+                                patch_lon_max -= 360
+
+                        # Handle latitude slice order (ERA5 often has descending latitude)
+                        sdor_lat = sdor_da.latitude.values
+                        if sdor_lat[0] > sdor_lat[-1]:
+                            # Descending latitude - use max to min for slice
+                            patch_sdor = sdor_da.sel(
+                                latitude=slice(lat_max, lat_min),
+                                longitude=slice(patch_lon_min, patch_lon_max)
+                            )
+                        else:
+                            # Ascending latitude - use min to max for slice
+                            patch_sdor = sdor_da.sel(
+                                latitude=slice(lat_min, lat_max),
+                                longitude=slice(patch_lon_min, patch_lon_max)
+                            )
+
                         # Calculate mean, ignoring NaN values
-                        mean_sdor = float(patch_sdor.mean())
+                        if patch_sdor.size > 0:
+                            mean_sdor = float(patch_sdor.mean(skipna=True))
+                            # Check if result is NaN
+                            if np.isnan(mean_sdor):
+                                print(f"  Warning: sdor calculation returned NaN for patch at "
+                                      f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
+                                mean_sdor = None
+                        else:
+                            print(f"  Warning: No sdor data found for patch at "
+                                  f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
+                            mean_sdor = None
                     except Exception as e:
-                        print(f"  Warning: Could not calculate sdor for patch: {e}")
-                        continue
+                        print(f"  Warning: Could not calculate sdor for patch at "
+                              f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]: {e}")
+                        mean_sdor = None
 
                 # Process each lead time
                 for lead_time in lead_times:
@@ -2461,7 +2640,13 @@ def plot_scatter_forecast_improvement(
     # Print summary for each lead time
     for lt in lead_times:
         if all_patch_data[lt]:
-            print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+            total_patches = len(all_patch_data[lt])
+            if x_metric == "sdor":
+                patches_with_sdor = sum(1 for p in all_patch_data[lt] if p['sdor'] is not None)
+                print(f"\nLead time {lt}h: {total_patches} patches total, "
+                      f"{patches_with_sdor} with valid sdor values")
+            else:
+                print(f"\nLead time {lt}h: {total_patches} patches")
 
     # Determine output directory
     if save_dir is None:
@@ -2496,6 +2681,9 @@ def plot_scatter_forecast_improvement(
             x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
             # Filter patch_data to only include patches with sdor values
             patch_data = [p for p in patch_data if p['sdor'] is not None]
+            if not patch_data:
+                print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+                continue
         else:
             raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
 
