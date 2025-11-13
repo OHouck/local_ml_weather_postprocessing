@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 """
-Author: Ozma Houck
+Author: Ozma Houck 
 Filename: finetune/finetune.py
 
 # Purpose: use a simple MLP to post-process weather forecasts trained on
-specific regions and variables. Call this script from command line or with
-1_run_experiments.sh script.
+specific regions and variables. Call this script from command line or with 
+1_run_experiments.sh script. 
 
 # Modified to support multiple lead times training
 
-# NEW: Dynamic data loading - the script now automatically checks if the required
-# data exists in the data_dir. If not, it downloads the data on-the-fly from
-# weatherbench2 using the prepare_forecasts_and_targets module. This eliminates
-# the need to pre-download large global datasets and allows testing different
-# lead times and variables without manual data management.
-
 # example call
-python3 finetuning/finetune.py \
-    --data_dir="~/ai_weather_ag/data/raw/" \
-    --output_dir="~/ai_weather_ag/data/fine_tuning_output" \
+python3 finetuning/1_finetune.py \
+    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/ \
+    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
     --train_start="2018-01-01" --train_end="2021-12-31" \
@@ -54,10 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
-
-# Import dynamic data loading functions
-sys.path.insert(0, str(Path(__file__).parent))
-from prepare_forecasts_and_targets import prepare_data_for_finetuning, load_forecasts
+from finetuning.prepare_forecasts_and_targets import load_forecasts
 
 # print(f"NumPy version: {np.__version__}")
 # print(f"PyTorch version: {torch.__version__}")
@@ -80,7 +71,7 @@ TOPO_ZONE_MAP = {
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
 # ------------------------------
-# Simple MLP definition with cosine/sine day-of-year features and lead time embedding
+# Simple MLP definition with lead time and month encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
@@ -371,25 +362,10 @@ class UNet(nn.Module):
         for i in range(len(self.upconvs)):
             # Upsample
             x = self.upconvs[i](x)
-
+            
             # Get skip connection
             skip_connection = encoder_outputs[-(i+1)]
-
-            # Handle size mismatches due to odd dimensions in pooling
-            # This can happen when spatial dims aren't perfectly divisible by 2^n
-            if x.shape[2:] != skip_connection.shape[2:]:
-                # Center crop the skip connection to match upsampled size
-                diff_h = skip_connection.shape[2] - x.shape[2]
-                diff_w = skip_connection.shape[3] - x.shape[3]
-
-                # Calculate crop offsets (center crop)
-                h_start = diff_h // 2
-                w_start = diff_w // 2
-                h_end = h_start + x.shape[2]
-                w_end = w_start + x.shape[3]
-
-                skip_connection = skip_connection[:, :, h_start:h_end, w_start:w_end]
-
+            
             # Concatenate with skip connection
             x = torch.cat([x, skip_connection], dim=1)
             
@@ -430,15 +406,15 @@ def parse_args():
                         help='Filter data to growing season days only')
     parser.add_argument('--alternate_loss_fn', type=str, default=None, choices=['quantile_loss', 'extreme_heat_loss'])
 
-    # Architecture-specific parameters
+    # Architecture hyperparameters
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
                         help='Hidden dimension for MLP')
     parser.add_argument('--mlp_num_layers', type=int, default=4,
                         help='Number of hidden layers for MLP')
     parser.add_argument('--mlp_dropout', type=float, default=0.2477893381,
                         help='Dropout rate for MLP')
-    parser.add_argument('--unet_hidden_dim', type=int, default=32,
-                        help='Base hidden dimension for UNet')
+    parser.add_argument('--unet_hidden_dim', type=int, default=64,
+                        help='Base number of channels for UNet')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
 
@@ -473,9 +449,6 @@ def get_region_grid(args):
     elif args.region == "corn_belt":
         lat0, lat1 = 36, 46
         lon0, lon1 = -95 + 360, -85 + 360
-    elif args.region == "odisha":
-        lat0, lat1 = 18, 22
-        lon0, lon1 = 82, 86
     elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
@@ -500,29 +473,206 @@ def sort_lat_lon(ds):
     # ensure that both lat and lon are sorted ascendingly
     return ds.sortby(['latitude', 'longitude'])
 
-
-def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
+def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source):
     """
-    Create a PyTorch DataLoader from forecast input/output, observation data, lead time indices, and day-of-year features.
+    Finds all files in the subfolders of root_dir matching file_pattern and combines them.
+    """
 
-    Parameters:
-    -----------
-    forecast_input_data : np.ndarray
-        Forecast inputs (all training variables) - shape (n_samples, n_training_vars * n_lat * n_lon)
-    forecast_output_data : np.ndarray
-        Forecast outputs (output variables to be corrected) - shape (n_samples, n_output_vars * n_lat * n_lon)
-    obs_data : np.ndarray
-        Ground truth observations - shape (n_samples, n_output_vars * n_lat * n_lon)
-    lead_time_indices : np.ndarray
-        Lead time indices for each sample
-    day_of_year_features : np.ndarray
-        Day of year sin/cos features
-    batch_size : int
-        Batch size for DataLoader
+    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
+
+    file_paths = []
+    for year in range(min_year, max_year + 1):
+        
+        if data_source == "imd":
+            file_pattern = f"IMD_0p25deg/data_{year}.nc" 
+        else:
+            file_pattern = f"{data_source}_{year}.zarr" 
+
+        file_paths.append(os.path.join(root_dir, file_pattern))
+    
+    if len(file_paths) == 0:
+        raise ValueError(f"No files found matching pattern: {file_pattern}")
+
+    # aifs has different variable names so rename them when loading
+    preprocess_fn = lambda ds: ds.sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+
+    if data_source == "imd":
+        preprocess_fn = lambda ds: ds.rename({'TIME': 'time','LONGITUDE': 'longitude', 
+                            'LATITUDE': 'latitude', 'RAINFALL':'total_precipitation'}
+                            ).sel(latitude = lat_values, longitude = lon_values).sortby('latitude')
+    forecast_ds = xr.open_mfdataset(
+        file_paths,
+        combine="by_coords",
+        preprocess=preprocess_fn,
+        decode_timedelta=True,
+        engine="zarr",
+    )
+
+    return(forecast_ds)
+
+def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,):
+    """
+    Vectorized version that processes all data at once without loops.
+    More memory intensive but faster for reasonable data sizes.
+    """
+    if train:
+        ver_str = "train"
+    else:
+        ver_str = "test"
+
+    time_start = getattr(args, f"{ver_str}_start")
+    time_end = getattr(args, f"{ver_str}_end")
+    
+    # Create time range
+    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+
+    # only keep growing season dates: 3-15 to 10-31
+    if args.growing_season_only:
+        time_values= time_values[
+            ((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15)) &
+            ((time_values.month <= 10)))
+        ]
+
+    time_values_np = time_values.to_numpy()
+
+    # Define target dataset name
+    if args.ground_truth_source == "":
+        if args.model_name == "pangu":
+            target = "era5"
+        elif args.model_name == "ifs":
+            target = "hres_t0"
+        elif args.model_name == "aifs":
+            target = "era5"
+        else:
+            raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
+    else: 
+        # For now only IMD is supported as alternative ground truth
+        target = args.ground_truth_source
+    
+    # Load datasets
+    forecast_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, args.model_name)
+    forecast_ds = forecast_ds.rename({'valid_time': 'time'})
+    obs_ds = load_combined_dataset(lat_values, lon_values, time_values_np, data_dir, target)
+    
+    # Create wind speed if needed
+    if "10m_wind_speed" in args.training_vars:
+        forecast_ds["10m_wind_speed"] = np.sqrt(
+            forecast_ds["10m_u_component_of_wind"]**2 + 
+            forecast_ds["10m_v_component_of_wind"]**2
+        )
+    
+    if "10m_wind_speed" in args.output_vars:
+        obs_ds["10m_wind_speed"] = np.sqrt(
+            obs_ds["10m_u_component_of_wind"]**2 + 
+            obs_ds["10m_v_component_of_wind"]**2
+        )
+    
+    # Convert lead times to timedelta and select
+    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+    
+    # Select lead times and common time range, this prevents off by one errors 
+    # from lining up forecasts for days on the edges of the time range
+    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
+    common_times = np.intersect1d(common_times, time_values_np)
+    forecast_ds = forecast_ds.sel(time=common_times)
+    obs_ds = obs_ds.sel(time=common_times)
+    
+    # Get dimensions
+    n_time = len(common_times)
+    n_lead_times = len(lead_times_td)
+    n_lat = len(forecast_ds.latitude)
+    n_lon = len(forecast_ds.longitude)
+    n_training_vars = len(args.training_vars)
+    n_output_vars = len(args.output_vars)
+    
+    # Stack all dimensions except variables
+    forecast_stacked = forecast_ds[args.training_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    
+    forecast_output_stacked = forecast_ds[args.output_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+    
+    # For observations, we need to repeat for each lead time
+    obs_repeated = obs_ds[args.output_vars].expand_dims(
+        prediction_timedelta=lead_times_td
+    ).stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+    
+    # Transpose and reshape to (n_samples, n_features)
+    fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
+    fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+    obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+
+    
+    # Create lead time indices
+    lead_time_indices = np.tile(
+        np.arange(n_lead_times), n_time
+    )
+
+    # Create time array
+    all_times = np.repeat(common_times, n_lead_times)
+    # Create day-of-year sin/cos features
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy() # XX maybe should use all_times? I don't think so but flagging
+    # Convert to radians: 2*pi*d/365
+    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
+    day_of_year_sin = np.sin(day_of_year_rad)
+    day_of_year_cos = np.cos(day_of_year_rad)
+    # Stack to create [n_time, 2] array, then repeat for each lead time
+    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
+    day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
+
+    # Remove any samples with NaN
+    valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
+    fc_combined = fc_combined[valid_mask]
+    fc_output_combined = fc_output_combined[valid_mask]
+    obs_combined = obs_combined[valid_mask]
+    lead_time_indices_combined = lead_time_indices[valid_mask]
+    day_of_year_features_combined = day_of_year_features[valid_mask]
+    all_times = all_times[valid_mask]
+
+    # Calculate mean forecast error
+    training_mean_forecast_error = {}
+    
+    for lt_idx, lead_time_hours in enumerate(args.lead_time_hours):
+        mask = lead_time_indices_combined == lt_idx
+        if not np.any(mask):
+            continue
+            
+        fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+        obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+
+        # # FORCE COMPUTATION if these are dask arrays
+        # if hasattr(fc_output_lt, 'compute'):
+        #     fc_output_lt = fc_output_lt.compute()
+        # if hasattr(obs_lt, 'compute'):
+        #     obs_lt = obs_lt.compute()
+
+        
+        mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
+        
+        for var_idx, var_name in enumerate(args.output_vars):
+            key = f"{var_name}_lt{lead_time_hours}h"
+            training_mean_forecast_error[key] = mean_error[var_idx]
+
+    # each sample represents one forecast for one specific lead time and time combination
+    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
+            day_of_year_features_combined, all_times, forecast_ds.latitude.values,
+            forecast_ds.longitude.values, n_lat, n_lon,
+            n_training_vars, n_output_vars, training_mean_forecast_error)
+
+
+def create_dataloader(forecast_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
+    """
+    Create a PyTorch DataLoader from forecast, observation data, lead time indices, and day-of-year features.
     """
     dataset = torch.utils.data.TensorDataset(
-        torch.from_numpy(forecast_input_data).float(),
-        torch.from_numpy(forecast_output_data).float(),
+        torch.from_numpy(forecast_data).float(),
         torch.from_numpy(obs_data).float(),
         torch.from_numpy(lead_time_indices).long(),
         torch.from_numpy(day_of_year_features).float()
@@ -629,20 +779,18 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         # --- training step ---
         model.train()
         train_loss = 0.0
-        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
-            fc_input_batch = fc_input_batch.to(device)
-            fc_output_batch = fc_output_batch.to(device)
-            y_batch = y_batch.to(device)
+        for x_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
             lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
 
             optimizer.zero_grad()
 
-            # Pass forecast inputs, lead time, and day-of-year features to model
-            # Model predicts the error/correction to apply to forecast outputs
-            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+            # Pass lead time and day-of-year features to model
+            # Model predicts the error, so add to input forecast
+            pred_error = model(x_batch, lead_time_batch, doy_batch)
 
-            # Add predicted error to forecast outputs to get final corrected prediction
-            preds = fc_output_batch + pred_error
+            # Add predicted error to input forecast to get final prediction
+            preds = x_batch + pred_error
 
             # some custom loss functions need un-normalized values
             if alternate_loss_fn in {"extreme_heat_loss"}:
@@ -653,30 +801,28 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
 
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * fc_output_batch.size(0)
+            train_loss += loss.item() * x_batch.size(0)
         train_loss /= len(train_loader.dataset)
 
         # --- validation step ---
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
-                fc_input_batch = fc_input_batch.to(device)
-                fc_output_batch = fc_output_batch.to(device)
-                y_batch = y_batch.to(device)
+            for x_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
 
-                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                pred_error = model(x_batch, lead_time_batch, doy_batch)
 
-                # Add predicted error to forecast outputs to get final corrected prediction
-                preds = fc_output_batch + pred_error
+                # Add predicted error to input forecast to get final prediction
+                preds = x_batch + pred_error
 
                 if alternate_loss_fn in {"extreme_heat_loss"}:
                     loss = criterion(preds, y_batch, std_out, mean_out)
                 else:
                     loss = criterion(preds, y_batch)
 
-                val_loss += loss.item() * fc_output_batch.size(0)
+                val_loss += loss.item() * x_batch.size(0)
         val_loss /= len(valid_loader.dataset)
 
         # --- learning rate scheduling ---
@@ -697,50 +843,25 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     return model, training_time_minutes
 
 
-def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device):
+def apply_correction(model, forecast_data, lead_time_indices, day_of_year_features, device):
     """
     Apply the correction to forecast data with lead times and day-of-year features.
-
-    Parameters:
-    -----------
-    model : torch.nn.Module
-        Trained model that predicts corrections
-    forecast_input_data : np.ndarray
-        Normalized forecast inputs (all training variables) - shape (n_samples, n_training_vars * n_lat * n_lon)
-    forecast_output_data : np.ndarray
-        Normalized forecast outputs (output variables to be corrected) - shape (n_samples, n_output_vars * n_lat * n_lon)
-    lead_time_indices : np.ndarray
-        Lead time indices for each sample
-    day_of_year_features : np.ndarray
-        Day of year sin/cos features
-    device : torch.device
-        Device to run model on
-
-    Returns:
-    --------
-    np.ndarray
-        Corrected forecast outputs (in normalized space)
     """
     model.eval()
     corrected_all = []
 
     # Process in batches to handle memory efficiently
     batch_size = 128
-    n_samples = forecast_input_data.shape[0]
+    n_samples = forecast_data.shape[0]
 
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             end_idx = min(i + batch_size, n_samples)
-            fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device)
-            fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device)
+            x_batch = torch.from_numpy(forecast_data[i:end_idx]).float().to(device)
             lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
             doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device)
-
-            # Model takes forecast inputs and predicts correction for forecast outputs
-            predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
-
-            # Add correction to forecast outputs (not inputs!)
-            corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+            predicted_error = model(x_batch, lt_batch, doy_batch).cpu().numpy()
+            corrected_batch = x_batch.cpu().numpy() + predicted_error
             corrected_all.append(corrected_batch)
 
     return np.concatenate(corrected_all, axis=0)
@@ -848,36 +969,17 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     print(f"Forecasts saved to {output_path}")
 
 
-def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device,
-                             patch_num=None, use_legacy_global_data=False, data_bundle=None):
+def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
     """
     Run experiment with multiple lead times and month encoding.
-
-    Parameters:
-    -----------
-    data_bundle : dict
-        Pre-loaded data bundle from prepare_data_for_finetuning(). Must contain 'train' and 'test' data.
-    use_legacy_global_data : bool
-        DEPRECATED - kept for backward compatibility, no longer used.
     """
     start_time = time.time()
 
-    # Use pre-loaded data from data_bundle or load for legacy mode
-    if data_bundle is None:
-        if not use_legacy_global_data:
-            raise ValueError("data_bundle is required. Data must be pre-loaded using prepare_data_for_finetuning()")
-
-        # Legacy mode: load data internally
-        print(f"[LEGACY MODE] Loading data for lat range ({lat_vals.min()}, {lat_vals.max()}) and lon range ({lon_vals.min()}, {lon_vals.max()})...")
-        from finetuning.prepare_forecasts_and_targets import load_forecasts
-        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
-         n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
-            load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
-                           patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
-    else:
-        print("Using pre-loaded data bundle...")
-        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
-         n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = data_bundle['train']
+    # Load training data
+    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
+     n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
+                       patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
 
     loading_time = time.time()
     print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
@@ -887,7 +989,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
 
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
-    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
 
     # normalize target observations using forecasts to be corrected
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
@@ -899,10 +1000,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     split = int(0.8 * n_train)
     t_idx, v_idx = idx[:split], idx[split:]
 
-    train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+    train_loader = create_dataloader(fc_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
                                     batch_size=128)
-    val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+    val_loader = create_dataloader(fc_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
                                   batch_size=128)
 
@@ -948,29 +1049,15 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
     load_time = time.time()
-    # Use pre-loaded test data from data_bundle or load for legacy mode
-    if data_bundle is None:
-        # Legacy mode: load test data internally
-        print(f"[LEGACY MODE] Loading test data for spatial subset...")
-        from finetuning.prepare_forecasts_and_targets import load_forecasts
-        (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
-         test_times, _, _, _, _, _, _, _) = \
-            load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num,
-                           use_legacy_global_data=use_legacy_global_data)
-    else:
-        print("Using pre-loaded test data from bundle...")
-        (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
-         test_times, _, _, _, _, _, _, _) = data_bundle['test']
+    # Load test data
+    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
+     test_times, _, _, _, _, _, _, _) = \
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
 
-    # Normalize test data
+    # Apply correction
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
-    test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
-
-    # Apply correction (pass both inputs and outputs)
-    corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                test_lead_time_indices, test_day_of_year_features, device)
-
-    # Denormalize corrected outputs
+    corrected = apply_correction(model, test_fc_norm, test_lead_time_indices,
+                                test_day_of_year_features, device)
     corrected = (corrected * stats_out['std']) + stats_out['mean']
 
     # Calculate MSE per lead time and month
@@ -1010,19 +1097,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
 def main():
     # ========================================================================
-    # LEGACY DATA LOADING FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
+    # LEGACY FLAG: Set to True to use global yearly files (legacy format)
+    # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    # Set to True to use legacy global yearly data files (e.g., pangu_2018.zarr)
-    # Set to False to use new region-specific files (e.g., pangu_india_2018.zarr)
     USE_LEGACY_GLOBAL_DATA = False  # <-- EDIT THIS FLAG
-    # ========================================================================
-
-    # ========================================================================
-    # SKIP DOWNLOAD FLAG - REMOVE THIS SECTION WHEN NO LONGER NEEDED
-    # ========================================================================
-    # Set to True to check for data but skip downloading/saving if missing
-    # Set to False to automatically download missing data (recommended)
-    SKIP_DOWNLOAD = True # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
@@ -1044,223 +1122,77 @@ def main():
     torch.manual_seed(58)
     random.seed(58)
 
+    if USE_LEGACY_GLOBAL_DATA:
+        print("\n[LEGACY MODE] Will load global yearly files directly")
+        print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
+        print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
+
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # ========================================================================
-    # PREPARE SPATIAL SUBSETS FOR CLIMATE/TOPO/BOOTSTRAP REGIONS
-    # ========================================================================
-
-    # Determine if we need spatial subsets
-    is_climate_or_topo = args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP
-    will_bootstrap = args.bootstrap
-
-    spatial_subsets = None
-    if is_climate_or_topo:
-        # Load patches for climate/topo regions
+    # Decide if we're in a climate‐zone region or a geographic one
+    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+        
         if args.region in CLIMATE_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
         elif args.region in TOPO_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"topo_zone_patches_{args.region}_{args.subregion}.npy")
         else:
             raise ValueError(f'Unknown file path for region {args.region}')
-
+    
         patches = np.load(patches_path, allow_pickle=True)
         patch_ids = np.arange(1, len(patches) + 1)
         assert len(patches) == 50
 
-        # Build spatial_subsets list
-        spatial_subsets = []
+
         for patch, idx in zip(patches, patch_ids):
             lat_min = patch[0,].min()
             lat_max = patch[0,].max()
             lon_min = patch[1,].min()
             lon_max = patch[1,].max()
 
+            # print lat min and max
+            print(f"Processing patch {idx} with lat range ({lat_min}, {lat_max}) and lon range ({lon_min}, {lon_max})")
+
+            print(f"Max and min region_lon: {region_lon.max()}, {region_lon.min()}")
+
             lat_vals = region_lat[(region_lat >= lat_min) & (region_lat <= lat_max)]
             lon_vals = region_lon[(region_lon >= lon_min) & (region_lon <= lon_max)]
 
-            spatial_subsets.append({
-                'lat_vals': lat_vals,
-                'lon_vals': lon_vals,
-                'id': idx
-            })
+            out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 
-    elif will_bootstrap:
-        # Generate random spatial subsets for bootstrap
-        spatial_subsets = []
+            if os.path.exists(out_path):
+                print(f"Skipping already existing output: {out_path}")
+                continue
+
+            run_subregion_experiment(
+                lat_vals, lon_vals, out_path,
+                args, os.path.expanduser(args.data_dir), device, patch_num=idx,
+                use_legacy_global_data=USE_LEGACY_GLOBAL_DATA
+            )
+
+    elif args.bootstrap:
+        # Bootstrap sampling for uniform-grid regions
         for i in range(args.bootstrap):
             si = random.randint(0, len(region_lat) - nlat_patch)
             sj = random.randint(0, len(region_lon) - nlon_patch)
             lat_vals = region_lat[si:si+nlat_patch + 1]
             lon_vals = region_lon[sj:sj+nlon_patch + 1]
-
-            spatial_subsets.append({
-                'lat_vals': lat_vals,
-                'lon_vals': lon_vals,
-                'id': i + 1
-            })
-
-    # ========================================================================
-    # DATA PREPARATION
-    # ========================================================================
-
-    if USE_LEGACY_GLOBAL_DATA:
-        print("\n[LEGACY MODE] Skipping data preparation - will load global yearly files directly")
-        print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
-        print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
-        data_bundles = None
+            out_path = base_path.replace('.zarr', f'_bs{i+1}.zarr')
+            print(f"Running bootstrap sample {i+1}/{args.bootstrap}")
+            run_subregion_experiment(lat_vals, lon_vals, out_path, args,
+                                     os.path.expanduser(args.data_dir), device,
+                                     use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
     else:
-        print("\nPreparing data for finetuning...")
-
-        data_result = prepare_data_for_finetuning(
-            data_dir=args.data_dir,
-            model_name=args.model_name,
-            ground_truth_source=args.ground_truth_source,
-            region=args.region,
-            training_vars=args.training_vars,
-            output_vars=args.output_vars,
-            train_start=args.train_start,
-            train_end=args.train_end,
-            test_start=args.test_start,
-            test_end=args.test_end,
-            lead_time_hours=args.lead_time_hours,
-            region_lat=region_lat,
-            region_lon=region_lon,
-            skip_download=SKIP_DOWNLOAD,
-            growing_season_only=args.growing_season_only,
-            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-            load_data=True,  # Always load data
-            spatial_subsets=spatial_subsets
-        )
-
-        # Handle both single bundle and list of bundles
-        if isinstance(data_result, list):
-            data_bundles = data_result
-        else:
-            data_bundles = [data_result]
-
-        print("Data preparation complete. Proceeding with finetuning...\n")
-
-    # ========================================================================
-    # RUN EXPERIMENTS
-    # ========================================================================
-
-    if is_climate_or_topo:
-        # Climate/topo regions: process each patch with its pre-loaded data
-        if data_bundles is None:
-            # Legacy mode: data will be loaded within run_subregion_experiment
-            for i, subset in enumerate(spatial_subsets):
-                subset_id = subset['id']
-                lat_vals = subset['lat_vals']
-                lon_vals = subset['lon_vals']
-
-                print(f"\n[{i+1}/{len(spatial_subsets)}] Processing patch {subset_id}")
-                print(f"  Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-                print(f"  Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-                out_path = base_path.replace('.zarr', f'_{args.region}_bs{subset_id}.zarr')
-
-                if os.path.exists(out_path):
-                    print(f"  Skipping already existing output: {out_path}")
-                    continue
-
-                run_subregion_experiment(
-                    lat_vals, lon_vals, out_path,
-                    args, os.path.expanduser(args.data_dir), device, patch_num=subset_id,
-                    use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-                    data_bundle=None
-                )
-        else:
-            # Normal mode: use pre-loaded data bundles
-            for i, (subset, data_bundle) in enumerate(zip(spatial_subsets, data_bundles)):
-                subset_id = subset['id']
-                lat_vals = subset['lat_vals']
-                lon_vals = subset['lon_vals']
-
-                print(f"\n[{i+1}/{len(spatial_subsets)}] Processing patch {subset_id}")
-                print(f"  Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-                print(f"  Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-                out_path = base_path.replace('.zarr', f'_{args.region}_bs{subset_id}.zarr')
-
-                if os.path.exists(out_path):
-                    print(f"  Skipping already existing output: {out_path}")
-                    continue
-
-                run_subregion_experiment(
-                    lat_vals, lon_vals, out_path,
-                    args, os.path.expanduser(args.data_dir), device, patch_num=subset_id,
-                    use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-                    data_bundle=data_bundle
-                )
-
-    elif will_bootstrap:
-        # Bootstrap regions: process each random sample with its pre-loaded data
-        if data_bundles is None:
-            # Legacy mode: data will be loaded within run_subregion_experiment
-            for i, subset in enumerate(spatial_subsets):
-                subset_id = subset['id']
-                lat_vals = subset['lat_vals']
-                lon_vals = subset['lon_vals']
-
-                print(f"\n[{i+1}/{len(spatial_subsets)}] Running bootstrap sample {subset_id}/{args.bootstrap}")
-                print(f"  Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-                print(f"  Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-                out_path = base_path.replace('.zarr', f'_bs{subset_id}.zarr')
-
-                if os.path.exists(out_path):
-                    print(f"  Skipping already existing output: {out_path}")
-                    continue
-
-                run_subregion_experiment(
-                    lat_vals, lon_vals, out_path,
-                    args, os.path.expanduser(args.data_dir), device,
-                    use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-                    data_bundle=None
-                )
-        else:
-            # Normal mode: use pre-loaded data bundles
-            for i, (subset, data_bundle) in enumerate(zip(spatial_subsets, data_bundles)):
-                subset_id = subset['id']
-                lat_vals = subset['lat_vals']
-                lon_vals = subset['lon_vals']
-
-                print(f"\n[{i+1}/{len(spatial_subsets)}] Running bootstrap sample {subset_id}/{args.bootstrap}")
-                print(f"  Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-                print(f"  Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-                out_path = base_path.replace('.zarr', f'_bs{subset_id}.zarr')
-
-                if os.path.exists(out_path):
-                    print(f"  Skipping already existing output: {out_path}")
-                    continue
-
-                run_subregion_experiment(
-                    lat_vals, lon_vals, out_path,
-                    args, os.path.expanduser(args.data_dir), device,
-                    use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-                    data_bundle=data_bundle
-                )
-
-    else:
-        # Normal region: single central patch with pre-loaded data
+        # Central patch
         ci = (len(region_lat) - nlat_patch) // 2
         cj = (len(region_lon) - nlon_patch) // 2
         lat_vals = region_lat[ci:ci+nlat_patch]
         lon_vals = region_lon[cj:cj+nlon_patch]
 
-        print(f"\nRunning single region experiment")
-        print(f"  Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-        print(f"  Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-        run_subregion_experiment(
-            lat_vals, lon_vals, base_path, args,
-            os.path.expanduser(args.data_dir), device,
-            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-            data_bundle=data_bundles[0] if data_bundles is not None else None
-        )
+        run_subregion_experiment(lat_vals, lon_vals, base_path, args,
+                                 os.path.expanduser(args.data_dir), device,
+                                 use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
 
 
 if __name__ == "__main__":
