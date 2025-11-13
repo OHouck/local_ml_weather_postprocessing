@@ -13,8 +13,6 @@ import os
 import re
 import time
 import warnings
-from datetime import datetime
-from pathlib import Path
 
 import dask
 import numpy as np
@@ -450,7 +448,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         print(f"  Available variables: {list(ds.data_vars)[:10]}...")
         if 'level' in ds.dims:
             print(f"  Available pressure levels: {ds.level.values}")
-        start_time = print_time_and_memory("Dataset opened", start_time)
+        print_time_and_memory("Dataset opened", start_time)
 
         # Check which variables are available
         all_vars_to_download = list(set(surface_vars + list(atmospheric_vars.keys())))
@@ -763,7 +761,7 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
         print(f"  Available variables: {list(ds.data_vars)[:10]}...")
         if 'level' in ds.dims:
             print(f"  Available pressure levels: {ds.level.values}")
-        start_time = print_time_and_memory("Dataset opened", start_time)
+        print_time_and_memory("Dataset opened", start_time)
 
         # Check which variables are available
         all_vars_to_download = list(set(surface_vars + list(atmospheric_vars.keys())))
@@ -966,7 +964,6 @@ def load_or_pull_forecast_data(data_dir, model_name, region, years, variables, l
     years_to_pull = []
 
     for year in years:
-        output_path = get_data_path(data_dir, model_name, region, year)
         status = check_data_exists(data_dir, model_name, region, [year], variables)
         year_status = status[year]
 
@@ -1050,7 +1047,6 @@ def load_or_pull_target_data(data_dir, model_name, ground_truth_source, region, 
     years_to_pull = []
 
     for year in years:
-        output_path = get_data_path(data_dir, target, region, year)
         status = check_data_exists(data_dir, target, region, [year], variables)
         year_status = status[year]
 
@@ -1249,9 +1245,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     # only keep growing season dates: 3-15 to 10-31
     if args.growing_season_only:
-        time_values= time_values[
-            ((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15)) &
-            ((time_values.month <= 10)))
+        time_values = time_values[
+            (((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15))) &
+            (time_values.month <= 10))
         ]
 
     time_values_np = time_values.to_numpy()
