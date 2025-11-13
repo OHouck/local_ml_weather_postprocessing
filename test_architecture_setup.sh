@@ -14,7 +14,7 @@ SUBREGION=6x6
 MODEL=pangu
 ARCHITECTURE=mlp
 
-# Very short period for quick test (1 week training, 2 days testing)
+# Very short period for quick test (2 years training, 2 days testing)
 TRAIN_START=2018-01-01
 TRAIN_END=2020-01-07
 TEST_START=2020-01-08
@@ -27,7 +27,7 @@ echo "Configuration:"
 echo "  Region: ${REGION} (${SUBREGION})"
 echo "  Model: ${MODEL}"
 echo "  Architecture: ${ARCHITECTURE}"
-echo "  Training: ${TRAIN_START} to ${TRAIN_END} (1 week - FAST TEST)"
+echo "  Training: ${TRAIN_START} to ${TRAIN_END} (2 years)"
 echo "  Testing: ${TEST_START} to ${TEST_END} (3 days)"
 echo ""
 echo "This should take 5-15 minutes instead of hours."
