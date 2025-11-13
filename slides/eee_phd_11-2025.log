@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  10 NOV 2025 17:03
+=======
 This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.13)  12 NOV 2025 13:37
+>>>>>>> 401ad925a82d9fa181e781a9adaf9f57e3c6643b
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1067,7 +1071,11 @@ Here is how much of TeX's memory you used:
  1141 hyphenation exceptions out of 8191
  128i,19n,122p,428b,768s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss12.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssbx10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmssi10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb>
+<<<<<<< HEAD
+Output written on eee_phd_11-2025.pdf (31 pages, 8325179 bytes).
+=======
 Output written on eee_phd_11-2025.pdf (34 pages, 8339985 bytes).
+>>>>>>> 401ad925a82d9fa181e781a9adaf9f57e3c6643b
 PDF statistics:
  2284 PDF objects out of 2487 (max. 8388607)
  2116 compressed objects within 22 object streams
