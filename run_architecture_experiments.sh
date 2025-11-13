@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 # Configuration
 DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
 OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
-REGION=corn_belt
+REGION=india
 SUBREGION=6x6
 MODEL=pangu
 
@@ -108,26 +108,6 @@ run_experiment() {
 }
 
 # ----------------------------------------------------------------------------
-# Experiment 1: MLP_Deep
-# Deep MLP with 6 hidden layers, 1024 neurons each
-# ----------------------------------------------------------------------------
-run_experiment \
-    "mlp_deep" \
-    "Deep MLP: 6 layers × 1024 neurons" \
-    "mlp" \
-    "--mlp_hidden_dim=1024 --mlp_num_layers=6 --mlp_dropout=0.25"
-exit 0
-# ----------------------------------------------------------------------------
-# Experiment 2: MLP_Wide
-# Wide MLP with 3 hidden layers, 2048 neurons each
-# ----------------------------------------------------------------------------
-run_experiment \
-    "mlp_wide" \
-    "Wide MLP: 3 layers × 2048 neurons" \
-    "mlp" \
-    "--mlp_hidden_dim=2048 --mlp_num_layers=3 --mlp_dropout=0.3"
-
-# ----------------------------------------------------------------------------
 # Experiment 3: UNet_Light
 # Lightweight UNet with 64 base channels
 # ----------------------------------------------------------------------------
@@ -146,6 +126,26 @@ run_experiment \
     "Deep UNet: 128 base channels" \
     "unet" \
     "--unet_hidden_dim=128 --unet_dropout=0.15"
+
+# ----------------------------------------------------------------------------
+# Experiment 1: MLP_Deep
+# Deep MLP with 6 hidden layers, 1024 neurons each
+# ----------------------------------------------------------------------------
+run_experiment \
+    "mlp_deep" \
+    "Deep MLP: 6 layers × 1024 neurons" \
+    "mlp" \
+    "--mlp_hidden_dim=1024 --mlp_num_layers=6 --mlp_dropout=0.25"
+# ----------------------------------------------------------------------------
+# Experiment 2: MLP_Wide
+# Wide MLP with 3 hidden layers, 2048 neurons each
+# ----------------------------------------------------------------------------
+run_experiment \
+    "mlp_wide" \
+    "Wide MLP: 3 layers × 2048 neurons" \
+    "mlp" \
+    "--mlp_hidden_dim=2048 --mlp_num_layers=3 --mlp_dropout=0.3"
+
 
 # ----------------------------------------------------------------------------
 # All experiments complete!
