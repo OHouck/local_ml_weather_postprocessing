@@ -156,7 +156,7 @@ def check_variables_in_dataset(file_path, required_vars):
         missing_vars : list - Variables that are missing
     """
     try:
-        ds = xr.open_zarr(file_path)
+        ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
         present_vars = []
         missing_vars = []
@@ -986,10 +986,13 @@ def load_or_pull_forecast_data(data_dir, model_name, region, years, variables, l
     for year in years_to_load:
         output_path = get_data_path(data_dir, model_name, region, year)
         print(f"    Loading {year} from {output_path}")
-        ds = xr.open_zarr(output_path)
+        ds = xr.open_zarr(output_path, chunks='auto', consolidated=True)
         # Select required lead times
         lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
         ds = ds.sel(prediction_timedelta=lead_times_td)
+        # select only region of interest if lat/lon provided
+        if region_lat is not None and region_lon is not None:
+            ds = ds.sel(latitude=region_lat, longitude=region_lon).compute()
         datasets.append(ds)
 
     # Pull from weatherbench for missing years
@@ -1291,8 +1294,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             data_dir, args.model_name, args.region, years_needed, forecast_vars,
             args.lead_time_hours, lat_values, lon_values, skip_save=skip_download
         )
-        print(f"  Forecast data loaded successfully")
-        print(forecast_ds)
 
         print("  Loading observation data...")
         target_vars = [v for v in args.output_vars if v != "10m_wind_speed"]
@@ -1300,9 +1301,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             data_dir, args.model_name, args.ground_truth_source, args.region,
             years_needed, target_vars, lat_values, lon_values, skip_save=skip_download
         )
-        print(f"  Target data loaded successfully")
-        print(obs_ds)
-
         # If data was pulled (not loaded from disk), it's a dask array - load into memory for faster processing
         # Check if data is dask-backed by looking at the first variable
         first_forecast_var = list(forecast_ds.data_vars)[0]
@@ -1344,7 +1342,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             obs_ds["10m_u_component_of_wind"]**2 +
             obs_ds["10m_v_component_of_wind"]**2
         )
-    print("created wind speed if needed")
 
     # Convert lead times to timedelta and select
     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
@@ -1356,8 +1353,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     common_times = np.intersect1d(common_times, time_values_np)
     forecast_ds = forecast_ds.sel(time=common_times)
     obs_ds = obs_ds.sel(time=common_times)
-
-    print("Filtered to common times")
 
     # Get dimensions
     n_time = len(common_times)
@@ -1377,12 +1372,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         sample=['time', 'prediction_timedelta']
     ).to_array()
 
-    print("  Data shapes after stacking:")
-    print(f"    Forecast stacked: {forecast_stacked.shape}")
-    print(f"    Forecast output stacked: {forecast_output_stacked.shape}")
 
-    # For observations, we need to repeat for each lead time
-    print("  Stacking and reshaping data arrays...")
     obs_repeated = obs_ds[args.output_vars].expand_dims(
         prediction_timedelta=lead_times_td
     ).stack(
@@ -1410,11 +1400,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
         obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
 
-    print("  Data shapes after stacking:")
-    print(f"    Forecast combined: {fc_combined.shape}")
-    print(f"    Forecast output combined: {fc_output_combined.shape}")
-    print(f"    Observations combined: {obs_combined.shape}")
-
     # Create lead time indices
     lead_time_indices = np.tile(
         np.arange(n_lead_times), n_time
@@ -1440,8 +1425,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     lead_time_indices_combined = lead_time_indices[valid_mask]
     day_of_year_features_combined = day_of_year_features[valid_mask]
     all_times = all_times[valid_mask]
-
-    print("applied mask")
 
     # Calculate mean forecast error
     training_mean_forecast_error = {}
