@@ -29,11 +29,10 @@ subregions=(6x6)
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 all_lead_times=(24 120 216)
-nn_architectures=("mlp")
+nn_architectures=("unet")
 variables=("2m_temperature")
 model_names=("pangu")
 loss_functions=("mse")
-
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
