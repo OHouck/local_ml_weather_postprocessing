@@ -24,7 +24,7 @@
 ## PROJECT OVERVIEW
 
 ### Purpose
-This repository implements **neural network-based post-processing** (bias correction) for AI weather forecasts. The primary goal is to reduce RMSE (Root Mean Squared Error) in temperature predictions from models like Pangu, ECMWF IFS, and AIFS for specific geographic regions.
+This repository implements **neural network-based post-processing** (bias correction) for AI weather forecasts. The primary goal is to reduce RMSE (Root Mean Squared Error) in 2m temperature and 10m wind speed predictions from models like Pangu, ECMWF IFS, and AIFS for specific geographic regions.
 
 ### Core Technology Stack
 - **Language**: Python 3.11+
@@ -41,9 +41,9 @@ This repository implements **neural network-based post-processing** (bias correc
 
 ### Expected Outcomes
 - **Baseline**: SimpleMLP/UNet without improvements
-- **Conservative improvements**: 4-5% RMSE reduction (residual connections, better normalization)
-- **Moderate improvements**: 5-6% RMSE reduction (+ attention mechanisms)
-- **Aggressive improvements**: Not recommended (over-engineered, worse performance)
+- **Conservative improvements**: 4-5% RMSE reduction (residual connections, better normalization) need to test
+- **Moderate improvements**: 5-6% RMSE reduction (+ attention mechanisms) need to test
+- **Aggressive improvements**: Not recommended (over-engineered, worse performance) need to test
 
 ---
 
