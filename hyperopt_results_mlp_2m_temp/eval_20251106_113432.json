@@ -1,0 +1,20 @@
+{
+  "hyperparams": {
+    "T_0": 15,
+    "T_mult": 2,
+    "batch_size": 32,
+    "dropout_rate": 0.47130074072189565,
+    "eta_min": 4.2321595297488694e-07,
+    "lead_time_embedding_dim": 8,
+    "learning_rate": 0.0032736866275969007,
+    "mlp_hidden_dim": 512,
+    "mlp_layers": 3,
+    "num_epochs": 250,
+    "weight_decay": 4.22644466320129e-06
+  },
+  "loss": 0.07378447440588418,
+  "region_losses": {
+    "india_6x6_24_120_216h_mlp": 0.07378447440588418
+  },
+  "architecture": "mlp"
+}

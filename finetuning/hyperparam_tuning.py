@@ -588,7 +588,7 @@ if __name__ == "__main__":
         'args': pangu_args,
         'data_dir': data_dir,
         'weight': 1.0  # Optional, defaults to 1.0 if not specified
-    },
+    }
 ]
 
     device = torch.device('cuda' if torch.cuda.is_available() else

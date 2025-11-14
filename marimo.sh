@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --exclusive
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=ohouck@uchicago.edu
 #SBATCH --job-name=mlp_finetune
 #SBATCH --account=pi-jfranke
-#SBATCH --output=output-%J.txt
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --time=2:00:00
+#SBATCH --output=marimo-%J.txt
+#SBATCH --partition=caslake
+#SBATCH --time=0:05:00
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1 
  
