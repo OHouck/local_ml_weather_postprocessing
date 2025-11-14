@@ -15,14 +15,14 @@
 source .venv/bin/activate
 
 # laptop
-# data_dir="/Users/ohouck/globus/forecast_data/raw/"
-# output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
+data_dir="/Users/ohouck/globus/forecast_data/raw/"
+output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 
 # midway
-data_dir="/project/jfranke/ozma/forecast_data/raw/"
-output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+# data_dir="/project/jfranke/ozma/forecast_data/raw/"
+# output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
 
-regions=("india")
+regions=("corn_belt")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")

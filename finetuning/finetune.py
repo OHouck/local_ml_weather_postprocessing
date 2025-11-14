@@ -958,7 +958,7 @@ def main():
     # LEGACY FLAG: Set to True to use global yearly files (legacy format)
     # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    USE_LEGACY_GLOBAL_DATA = False  # <-- EDIT THIS FLAG
+    USE_LEGACY_GLOBAL_DATA = True # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
@@ -983,8 +983,8 @@ def main():
 
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Will load global yearly files directly")
-        print("  Expected files: {data_dir}/{model_name}/{model_name}_YEAR.zarr")
-        print(f"  e.g., {args.data_dir}/pangu/pangu_2019.zarr\n")
+        print("  Expected files: {data_dir}/{model_name}_YEAR.zarr")
+        print(f"  e.g., {args.data_dir}/pangu_2019.zarr\n")
 
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)

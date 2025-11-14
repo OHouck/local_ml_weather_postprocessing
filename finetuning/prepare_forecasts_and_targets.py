@@ -924,7 +924,7 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
     file_paths = []
     for year in range(min_year, max_year + 1):
         # Legacy format: data_source/data_source_year.zarr (no region in filename)
-        file_pattern = f"{data_source}/{data_source}_{year}.zarr"
+        file_pattern = f"{data_source}_{year}.zarr"
         file_paths.append(os.path.join(root_dir, file_pattern))
 
     if len(file_paths) == 0:
@@ -938,7 +938,16 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
             raise FileNotFoundError(f"Required data file not found: {file_path}")
 
         # Load global zarr file with automatic chunking
-        ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+        ds = xr.open_zarr(file_path, chunks='auto')
+
+        # check to see if valid_time is a dimension, if so rename to time
+        if 'valid_time' in ds.dims:
+            ds = ds.rename({'valid_time': 'time'})
+
+        # Ensure time is datetime64
+        if not np.issubdtype(ds.time.dtype, np.datetime64):
+            # Convert integer time to datetime64 if needed
+            ds = ds.assign_coords(time=pd.to_datetime(ds.time.values, unit='ns'))
 
         # Select spatial subset (this is the key difference from new loading)
         ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
@@ -949,6 +958,7 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
 
     # Sort by time to ensure monotonic order
     forecast_ds = forecast_ds.sortby('time')
+    print(forecast_ds)
 
     # Remove any duplicate time steps (keeping first occurrence)
     _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
