@@ -2237,8 +2237,6 @@ def main():
                                                   x_metric="sdor")
                 map_global_improvements(dirs=dirs, model=model, 
                                         variable=variable, map_type=map_type)
-    exit()
-
     stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
 
     nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
