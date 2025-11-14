@@ -176,6 +176,56 @@ python3 finetuning/hyperparam_tuning.py \
     --max_evals 100
 ```
 
+### Workflow 5: Understanding Data Loading (`load_forecasts`)
+
+**Goal**: Understand how the refactored `load_forecasts` function intelligently loads data
+
+The `load_forecasts()` function in `prepare_forecasts_and_targets.py` is the **main data loading function** for finetuning. It implements intelligent data loading logic:
+
+**Loading Logic (in order of preference)**:
+1. **Try regional files first**: Check for `DATASOURCE/DATASOURCE_REGION_YEAR.zarr` (e.g., `pangu/pangu_india_2020.zarr`)
+   - If all required variables present → Load and return
+
+2. **If data doesn't exist AND only basic variables needed** (`2m_temperature`, `10m_wind_speed`):
+   - Try loading from global files: `DATASOURCE/DATASOURCE_YEAR.zarr` (e.g., `pangu/pangu_2020.zarr`)
+   - If global files don't exist → Download regional data
+
+3. **If data doesn't exist AND atmospheric variables needed**:
+   - Download regional data with standard atmospheric variables at 1000hPa:
+     - `2m_temperature`, `10m_u_component_of_wind`, `10m_v_component_of_wind`
+     - `temperature_1000hPa`, `specific_humidity_1000hPa`, `geopotential_1000hPa`
+
+**Performance optimizations**:
+- Uses Dask with automatic chunking for efficient memory usage
+- Strategically loads data into memory when needed
+- Rechunks data for optimal layout before computing
+- Computes forecast and target data in parallel
+
+**Function signature**:
+```python
+load_forecasts(data_dir, args, lat_values, lon_values, train=True,
+               patch_num=None, use_legacy_global_data=False)
+```
+
+**Returns**:
+```python
+(fc, fc_output, obs, lead_time_indices, day_of_year_features, times,
+ lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
+ training_mean_forecast_error)
+```
+
+**Example call** (from `finetune.py`):
+```python
+from finetuning.prepare_forecasts_and_targets import load_forecasts
+
+(fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
+ lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
+ training_mean_forecast_error) = load_forecasts(
+    data_dir, args, lat_vals, lon_vals, train=True,
+    patch_num=None, use_legacy_global_data=False
+)
+```
+
 ---
 
 ## KEY CONVENTIONS
@@ -513,7 +563,7 @@ Data variables:
 
 | File | Purpose | Key Functions |
 |------|---------|---------------|
-| `finetuning/prepare_forecasts_and_targets.py` | Data loading & download | `load_forecasts()`, `download_forecast_data()`, `parse_atmospheric_variable()`, `check_data_exists()` |
+| `finetuning/prepare_forecasts_and_targets.py` | **MAIN DATA LOADING MODULE** - Intelligently loads data from local regional files, global files, or downloads from WeatherBench2 | `load_forecasts()` (MAIN), `download_forecast_data()`, `download_target_data()`, `parse_atmospheric_variable()`, `check_data_exists()` |
 | `finetuning/process_forecasts.py` | Forecast utilities | `process_forecast_data()` |
 | `finetuning/figures_finetuning.py` | Visualization | `plot_forecast_comparison()`, `create_rmse_maps()` |
 | `finetuning/hyperparam_tuning.py` | Hyperparameter search | `objective()`, `run_hyperopt()` |
@@ -836,6 +886,14 @@ git diff
 ---
 
 ## VERSION HISTORY
+
+- **v1.1** (2025-11-14): Refactored `prepare_forecasts_and_targets.py`
+  - `load_forecasts()` is now the main data loading function
+  - Intelligent data loading: tries regional files → global files → downloads as needed
+  - Cleaner, more readable code structure (~1,400 lines, reduced from ~1,700)
+  - Improved performance with strategic Dask chunking and memory management
+  - Removed redundant helper functions (`load_or_pull_forecast_data`, `load_or_pull_target_data`, `prepare_data_for_finetuning`)
+  - Updated documentation to reflect new architecture
 
 - **v1.0** (2025-11-14): Initial comprehensive documentation created
   - Full codebase structure analysis

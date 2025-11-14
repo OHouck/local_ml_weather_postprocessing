@@ -3,7 +3,7 @@
 Author: Ozma Houck
 Filename: finetuning/prepare_forecasts_and_targets.py
 
-Purpose: Dynamically load forecast and target data on-the-fly for finetuning.
+Purpose: Main data loading function for finetuning.
 Checks if data exists locally, and if not, downloads it from weatherbench2.
 Supports atmospheric variables at specific pressure levels.
 Organizes data by region: data_dir/model/model_region_year.zarr
@@ -24,6 +24,10 @@ from dask.distributed import Client
 
 warnings.filterwarnings('ignore')
 
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def print_time_and_memory(step_name, start_time):
     """Print elapsed time and current memory usage"""
@@ -135,6 +139,30 @@ def get_data_path(data_dir, data_source, region, year):
     os.makedirs(model_dir, exist_ok=True)
 
     filename = f"{data_source}_{region}_{year}.zarr"
+    return os.path.join(model_dir, filename)
+
+
+def get_global_data_path(data_dir, data_source, year):
+    """
+    Get the file path for a global data file (legacy format).
+
+    Parameters:
+    -----------
+    data_dir : str
+        Base data directory
+    data_source : str
+        Data source name (e.g., 'pangu', 'era5')
+    year : int
+        Year
+
+    Returns:
+    --------
+    str : Path to global data file
+    """
+    data_dir = os.path.expanduser(data_dir)
+    model_dir = os.path.join(data_dir, data_source)
+
+    filename = f"{data_source}_{year}.zarr"
     return os.path.join(model_dir, filename)
 
 
@@ -283,7 +311,7 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
     print(f"    Merging {len(variables_to_merge)} variables into existing dataset...")
 
     # Load existing dataset
-    existing_ds = xr.open_zarr(existing_path)
+    existing_ds = xr.open_zarr(existing_path, chunks='auto', consolidated=True)
 
     # Extract only the variables we want to add from new_ds
     # Note: new_ds already has flattened atmospheric variables
@@ -315,9 +343,12 @@ def merge_variables_into_dataset(existing_path, new_ds, variables_to_merge):
     return merged_ds
 
 
+# ============================================================================
+# DOWNLOAD FUNCTIONS
+# ============================================================================
+
 def download_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
-                           region_lat=None, region_lon=None, use_dask_client=True, skip_save=False,
-                           return_datasets=False):
+                           region_lat=None, region_lon=None, use_dask_client=True):
     """
     Download forecast data from weatherbench2 for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -342,14 +373,10 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         Longitude values for regional subset
     use_dask_client : bool
         Whether to use dask client for parallel processing
-    skip_save : bool
-        If True, pull data from weatherbench but skip saving to disk
-    return_datasets : bool
-        If True, return list of xarray Datasets instead of file paths
 
     Returns:
     --------
-    list : Paths to downloaded files (if return_datasets=False) or xarray Datasets (if return_datasets=True)
+    list : Paths to downloaded files
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -359,7 +386,6 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
     print(f"  Lead times: {lead_time_hours} hours")
 
     # Early check: see if all requested years already exist with all variables
-    # This avoids starting dask client and opening remote dataset unnecessarily
     all_exist = True
     for year in years:
         status = check_data_exists(data_dir, model_name, region, [year], variables)
@@ -370,17 +396,7 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
 
     if all_exist:
         print(f"  All years already exist with required variables. Skipping download.")
-        # Return file paths for existing data
-        if return_datasets:
-            # If datasets are requested, load them and return
-            datasets = []
-            for year in years:
-                output_path = get_data_path(data_dir, model_name, region, year)
-                ds = xr.open_zarr(output_path)
-                datasets.append(ds)
-            return datasets
-        else:
-            return [get_data_path(data_dir, model_name, region, year) for year in years]
+        return [get_data_path(data_dir, model_name, region, year) for year in years]
 
     start_time = time.time()
 
@@ -462,7 +478,6 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
         lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
 
         downloaded_files = []
-        downloaded_datasets = []
 
         # Download year by year
         for year in years:
@@ -575,37 +590,23 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
                     subset_flattened,
                     vars_to_download
                 )
-                final_ds = merged_ds
 
-                if not skip_save:
-                    print(f"    Saving merged dataset to {output_path}...")
-                    with ProgressBar():
-                        merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
-                else:
-                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
+                print(f"    Saving merged dataset to {output_path}...")
+                with ProgressBar():
+                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
             else:
                 # Save new dataset
-                final_ds = subset_flattened
+                print(f"    Saving to {output_path}...")
+                with ProgressBar():
+                    subset_flattened.to_zarr(
+                        output_path,
+                        mode='w',
+                        consolidated=True,
+                        zarr_version=2
+                    )
 
-                if not skip_save:
-                    print(f"    Saving to {output_path}...")
-                    with ProgressBar():
-                        subset_flattened.to_zarr(
-                            output_path,
-                            mode='w',
-                            consolidated=True,
-                            zarr_version=2
-                        )
-                else:
-                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
-
-            # Collect datasets if requested
-            if return_datasets:
-                downloaded_datasets.append(final_ds)
-
-            if not skip_save:
-                downloaded_files.append(output_path)
-                print(f"    Saved successfully")
+            downloaded_files.append(output_path)
+            print(f"    Saved successfully")
 
         print(f"\nForecast data download complete!")
 
@@ -614,15 +615,11 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
             client.close()
             print("\nDask client closed")
 
-    if return_datasets:
-        return downloaded_datasets
-    else:
-        return downloaded_files
+    return downloaded_files
 
 
 def download_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
-                        region_lat=None, region_lon=None, use_dask_client=True, skip_save=False,
-                        return_datasets=False):
+                        region_lat=None, region_lon=None, use_dask_client=True):
     """
     Download target/observation data for the given parameters.
     Supports atmospheric variables at specific pressure levels.
@@ -647,14 +644,10 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
         Longitude values for regional subset
     use_dask_client : bool
         Whether to use dask client for parallel processing
-    skip_save : bool
-        If True, pull data from weatherbench but skip saving to disk
-    return_datasets : bool
-        If True, return list of xarray Datasets instead of file paths
 
     Returns:
     --------
-    list : Paths to downloaded files (if return_datasets=False) or xarray Datasets (if return_datasets=True)
+    list : Paths to downloaded files
     """
     data_dir = os.path.expanduser(data_dir)
 
@@ -676,7 +669,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
     print(f"  Variables: {variables}")
 
     # Early check: see if all requested years already exist with all variables
-    # This avoids starting dask client and opening remote dataset unnecessarily
     all_exist = True
     for year in years:
         status = check_data_exists(data_dir, target, region, [year], variables)
@@ -687,17 +679,7 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
 
     if all_exist:
         print(f"  All years already exist with required variables. Skipping download.")
-        # Return file paths for existing data
-        if return_datasets:
-            # If datasets are requested, load them and return
-            datasets = []
-            for year in years:
-                output_path = get_data_path(data_dir, target, region, year)
-                ds = xr.open_zarr(output_path)
-                datasets.append(ds)
-            return datasets
-        else:
-            return [get_data_path(data_dir, target, region, year) for year in years]
+        return [get_data_path(data_dir, target, region, year) for year in years]
 
     start_time = time.time()
 
@@ -772,7 +754,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             print(f"  Warning: Variables not found in remote dataset: {missing}")
 
         downloaded_files = []
-        downloaded_datasets = []
 
         # Download year by year
         for year in years:
@@ -895,37 +876,23 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
                     subset_flattened,
                     vars_to_download
                 )
-                final_ds = merged_ds
 
-                if not skip_save:
-                    print(f"    Saving merged dataset to {output_path}...")
-                    with ProgressBar():
-                        merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
-                else:
-                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
+                print(f"    Saving merged dataset to {output_path}...")
+                with ProgressBar():
+                    merged_ds.to_zarr(output_path, mode='w', consolidated=True, zarr_version=2)
             else:
                 # Save new dataset
-                final_ds = subset_flattened
+                print(f"    Saving to {output_path}...")
+                with ProgressBar():
+                    subset_flattened.to_zarr(
+                        output_path,
+                        mode='w',
+                        consolidated=True,
+                        zarr_version=2
+                    )
 
-                if not skip_save:
-                    print(f"    Saving to {output_path}...")
-                    with ProgressBar():
-                        subset_flattened.to_zarr(
-                            output_path,
-                            mode='w',
-                            consolidated=True,
-                            zarr_version=2
-                        )
-                else:
-                    print(f"    [SKIP SAVE] Data pulled but not saved to disk")
-
-            # Collect datasets if requested
-            if return_datasets:
-                downloaded_datasets.append(final_ds)
-
-            if not skip_save:
-                downloaded_files.append(output_path)
-                print(f"    Saved successfully")
+            downloaded_files.append(output_path)
+            print(f"    Saved successfully")
 
         print(f"\nTarget data download complete!")
 
@@ -934,178 +901,13 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             client.close()
             print("\nDask client closed")
 
-    if return_datasets:
-        return downloaded_datasets
-    else:
-        return downloaded_files
+    return downloaded_files
 
 
 # ============================================================================
-# COMPREHENSIVE DATA LOADING/PULLING FUNCTION
+# LEGACY SUPPORT FUNCTIONS
 # ============================================================================
 
-def load_or_pull_forecast_data(data_dir, model_name, region, years, variables, lead_time_hours,
-                                region_lat=None, region_lon=None, skip_save=False):
-    """
-    Load forecast data from local files if they exist, or pull from weatherbench if missing.
-    Optionally save pulled data to disk if skip_save=False.
-
-    Returns the combined xarray Dataset for all years.
-    """
-    data_dir = os.path.expanduser(data_dir)
-
-    print(f"\nLoading/pulling {model_name} forecast data for region '{region}'...")
-    print(f"  Years: {years}")
-    print(f"  Variables: {variables}")
-    print(f"  Lead times: {lead_time_hours} hours")
-
-    # Check which years exist locally and which need to be pulled
-    years_to_load = []
-    years_to_pull = []
-
-    for year in years:
-        status = check_data_exists(data_dir, model_name, region, [year], variables)
-        year_status = status[year]
-
-        if year_status['exists'] and not year_status['missing_vars']:
-            years_to_load.append(year)
-        else:
-            years_to_pull.append(year)
-
-    if years_to_load:
-        print(f"  Loading from local files: {years_to_load}")
-    if years_to_pull:
-        if skip_save:
-            print(f"  Pulling from weatherbench (not saving): {years_to_pull}")
-        else:
-            print(f"  Pulling from weatherbench and saving: {years_to_pull}")
-
-    datasets = []
-
-    # Load from local files
-    for year in years_to_load:
-        output_path = get_data_path(data_dir, model_name, region, year)
-        print(f"    Loading {year} from {output_path}")
-        ds = xr.open_zarr(output_path, chunks='auto', consolidated=True)
-        # Select required lead times
-        lead_times_td = [np.timedelta64(h, 'h') for h in lead_time_hours]
-        ds = ds.sel(prediction_timedelta=lead_times_td)
-        # select only region of interest if lat/lon provided
-        if region_lat is not None and region_lon is not None:
-            ds = ds.sel(latitude=region_lat, longitude=region_lon).compute()
-        datasets.append(ds)
-
-    # Pull from weatherbench for missing years
-    if years_to_pull:
-        pulled_datasets = download_forecast_data(
-            data_dir, model_name, region, years_to_pull, variables,
-            lead_time_hours, region_lat, region_lon, use_dask_client=True,
-            skip_save=skip_save, return_datasets=True
-        )
-        datasets.extend(pulled_datasets)
-
-    # Combine all datasets
-    if not datasets:
-        raise ValueError(f"No data available for {model_name} in {region} for years {years}")
-
-    combined_ds = xr.concat(datasets, dim='time', combine_attrs='override')
-    combined_ds = combined_ds.sortby('time')
-
-    # Remove duplicates
-    _, unique_indices = np.unique(combined_ds.time.values, return_index=True)
-    combined_ds = combined_ds.isel(time=sorted(unique_indices))
-
-    return combined_ds
-
-
-def load_or_pull_target_data(data_dir, model_name, ground_truth_source, region, years, variables,
-                             region_lat=None, region_lon=None, skip_save=False):
-    """
-    Load target data from local files if they exist, or pull from weatherbench if missing.
-    Optionally save pulled data to disk if skip_save=False.
-
-    Returns the combined xarray Dataset for all years.
-    """
-    data_dir = os.path.expanduser(data_dir)
-
-    # Determine target dataset
-    if ground_truth_source == "":
-        if model_name == "pangu":
-            target = "era5"
-        elif model_name == "ifs":
-            target = "hres_t0"
-        elif model_name == "aifs":
-            target = "era5"
-        else:
-            raise ValueError(f"Unknown model_name '{model_name}' and no ground_truth_source provided")
-    else:
-        target = ground_truth_source
-
-    print(f"\nLoading/pulling {target} target data for region '{region}'...")
-    print(f"  Years: {years}")
-    print(f"  Variables: {variables}")
-
-    # Check which years exist locally and which need to be pulled
-    years_to_load = []
-    years_to_pull = []
-
-    for year in years:
-        status = check_data_exists(data_dir, target, region, [year], variables)
-        year_status = status[year]
-
-        if year_status['exists'] and not year_status['missing_vars']:
-            years_to_load.append(year)
-        else:
-            years_to_pull.append(year)
-
-    if years_to_load:
-        print(f"  Loading from local files: {years_to_load}")
-    if years_to_pull:
-        if skip_save:
-            print(f"  Pulling from weatherbench (not saving): {years_to_pull}")
-        else:
-            print(f"  Pulling from weatherbench and saving: {years_to_pull}")
-
-    datasets = []
-
-    # Load from local files
-    for year in years_to_load:
-        output_path = get_data_path(data_dir, target, region, year)
-        print(f"    Loading {year} from {output_path}")
-        ds = xr.open_zarr(output_path)
-        datasets.append(ds)
-
-    # Pull from weatherbench for missing years
-    if years_to_pull:
-        pulled_datasets = download_target_data(
-            data_dir, model_name, ground_truth_source, region, years_to_pull,
-            variables, region_lat, region_lon, use_dask_client=True,
-            skip_save=skip_save, return_datasets=True
-        )
-        datasets.extend(pulled_datasets)
-
-    # Combine all datasets
-    if not datasets:
-        raise ValueError(f"No data available for {target} in {region} for years {years}")
-
-    combined_ds = xr.concat(datasets, dim='time', combine_attrs='override')
-    combined_ds = combined_ds.sortby('time')
-    print("created combined_ds")
-
-    # Remove duplicates
-    _, unique_indices = np.unique(combined_ds.time.values, return_index=True)
-    combined_ds = combined_ds.isel(time=sorted(unique_indices))
-
-    return combined_ds
-
-
-# ============================================================================
-# DATA LOADING FUNCTIONS
-# ============================================================================
-
-# ============================================================================
-# LEGACY DATA LOADING - REMOVE THIS FUNCTION WHEN NO LONGER NEEDED
-# ============================================================================
 def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, root_dir, data_source):
     """
     LEGACY: Loads global yearly data files and subsets to region of interest.
@@ -1114,7 +916,7 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
     Example: ~/data/pangu/pangu_2018.zarr, ~/data/era5/era5_2019.zarr
 
     This function loads global data files and subsets them spatially.
-    TO REMOVE: Delete this entire function when legacy data is no longer needed.
+    Used when use_legacy_global_data=True in load_forecasts.
     """
     min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
     max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
@@ -1135,8 +937,8 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Required data file not found: {file_path}")
 
-        # Load global zarr file
-        ds = xr.open_zarr(file_path)
+        # Load global zarr file with automatic chunking
+        ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
         # Select spatial subset (this is the key difference from new loading)
         ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
@@ -1153,88 +955,54 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
     forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
 
     return forecast_ds
+
+
 # ============================================================================
-# END LEGACY DATA LOADING
+# MAIN DATA LOADING FUNCTION
 # ============================================================================
-
-
-def load_combined_dataset(lat_values, lon_values, time_values, root_dir, data_source, region):
-    """
-    Finds all files in the subfolders of root_dir matching file_pattern and combines them.
-    Uses new file organization: root_dir/data_source/data_source_region_year.zarr
-
-    Updated to handle overlapping time coordinates across years by loading individually
-    and concatenating with proper sorting.
-    """
-
-    min_year = min(time_values).astype('datetime64[Y]').astype(int) + 1970
-    max_year = max(time_values).astype('datetime64[Y]').astype(int) + 1970
-
-    file_paths = []
-    for year in range(min_year, max_year + 1):
-
-        if data_source == "imd":
-            file_pattern = f"IMD_0p25deg/data_{year}.nc"
-        else:
-            # New file organization: data_source/data_source_region_year.zarr
-            file_pattern = f"{data_source}/{data_source}_{region}_{year}.zarr"
-
-        file_paths.append(os.path.join(root_dir, file_pattern))
-
-    if len(file_paths) == 0:
-        raise ValueError(f"No files found matching pattern: {file_pattern}")
-
-    # Load datasets individually to handle overlapping time coordinates
-    datasets = []
-
-    for file_path in file_paths:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Required data file not found: {file_path}")
-
-        # Load individual file
-        if data_source == "imd":
-            ds = xr.open_dataset(file_path)
-            ds = ds.rename({
-                'TIME': 'time',
-                'LONGITUDE': 'longitude',
-                'LATITUDE': 'latitude',
-                'RAINFALL': 'total_precipitation'
-            })
-        else:
-            ds = xr.open_zarr(file_path)
-
-        # Select spatial subset
-        ds = ds.sel(latitude=lat_values, longitude=lon_values).sortby('latitude')
-        datasets.append(ds)
-
-    # Concatenate along time dimension, allowing overlaps
-    # This will handle the case where forecast valid_times extend across year boundaries
-    forecast_ds = xr.concat(datasets, dim='time', combine_attrs='override')
-
-    # Sort by time to ensure monotonic order
-    forecast_ds = forecast_ds.sortby('time')
-
-    # Remove any duplicate time steps (keeping first occurrence)
-    _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
-    forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
-
-    return forecast_ds
-
 
 def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num=None,
-                   use_legacy_global_data=False, skip_download=False):
+                   use_legacy_global_data=False):
     """
-    Vectorized version that processes all data at once without loops.
-    More memory intensive but faster for reasonable data sizes.
+    Main function to load forecast and target data for training/testing.
+
+    Logic:
+    1. Try to read data from DATASOURCE/DATASOURCE_REGION_YEAR.zarr format
+    2. Check if all required variables are present
+    3. If data doesn't exist AND only basic variables needed (2m_temperature, 10m_wind_speed),
+       try to read from global versions (DATASOURCE_YEAR.zarr)
+    4. If data doesn't exist AND more variables needed, download regional data with
+       standard atmospheric variables at 1000hPa
+    5. Use Dask with automatic chunking for performance
+    6. Load data into memory strategically
 
     Parameters:
     -----------
+    data_dir : str
+        Directory containing data
+    args : object
+        Arguments object with attributes:
+        - model_name, region, training_vars, output_vars, lead_time_hours
+        - train_start, train_end, test_start, test_end
+        - ground_truth_source, growing_season_only
+    lat_values : np.ndarray
+        Latitude values for region
+    lon_values : np.ndarray
+        Longitude values for region
+    train : bool
+        If True, load training data. If False, load test data
+    patch_num : int, optional
+        Patch number for sub-region experiments
     use_legacy_global_data : bool
-        If True, load from global yearly files (e.g., pangu_2018.zarr)
-        If False, load from region-specific files (e.g., pangu_india_2018.zarr)
-    skip_download : bool
-        If True, pull from weatherbench but don't save. If False, save pulled data.
+        If True, use legacy global data loading (for backward compatibility)
+
+    Returns:
+    --------
+    tuple : (fc, fc_output, obs, lead_time_indices, day_of_year_features, times,
+             lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
+             training_mean_forecast_error)
     """
+    # Determine time period
     if train:
         ver_str = "train"
     else:
@@ -1246,7 +1014,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # Create time range
     time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
 
-    # only keep growing season dates: 3-15 to 10-31
+    # Only keep growing season dates if requested: 3-15 to 10-31
     if args.growing_season_only:
         time_values = time_values[
             (((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15))) &
@@ -1255,7 +1023,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     time_values_np = time_values.to_numpy()
 
-    # Define target dataset name
+    # Determine target dataset name
     if args.ground_truth_source == "":
         if args.model_name == "pangu":
             target = "era5"
@@ -1266,7 +1034,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         else:
             raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
     else:
-        # For now only IMD is supported as alternative ground truth
         target = args.ground_truth_source
 
     # Determine years needed
@@ -1274,42 +1041,234 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     max_year = max(time_values_np).astype('datetime64[Y]').astype(int) + 1970
     years_needed = list(range(min_year, max_year + 1))
 
+    print(f"\n{'='*70}")
+    print(f"LOADING {'TRAINING' if train else 'TEST'} DATA")
+    print(f"{'='*70}")
+    print(f"  Model: {args.model_name}")
+    print(f"  Region: {args.region}")
+    print(f"  Years: {years_needed}")
+    print(f"  Period: {time_start} to {time_end}")
+
     # ========================================================================
-    # LEGACY: Load datasets using appropriate method based on flag
-    # TO REMOVE: Remove this entire if/else block when legacy data not needed
+    # LEGACY MODE: Load global files and subset spatially
     # ========================================================================
     if use_legacy_global_data:
-        # Legacy: Load global files and subset spatially
         print(f"  [LEGACY MODE] Loading global yearly data files...")
-        forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, args.model_name)
-        obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np, data_dir, target)
+        forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np,
+                                                          data_dir, args.model_name)
+        obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np,
+                                                     data_dir, target)
+
+    # ========================================================================
+    # NEW MODE: Load regional files or download if needed
+    # ========================================================================
     else:
-        # New: Load from local files or pull from weatherbench
+        # Prepare variable lists
         forecast_vars = [v for v in args.training_vars if v != "10m_wind_speed"]
         if "10m_wind_speed" in args.training_vars:
             forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
 
-        print("  Loading forecast data...")
-        forecast_ds = load_or_pull_forecast_data(
-            data_dir, args.model_name, args.region, years_needed, forecast_vars,
-            args.lead_time_hours, lat_values, lon_values, skip_save=skip_download
-        )
-
-        print("  Loading observation data...")
         target_vars = [v for v in args.output_vars if v != "10m_wind_speed"]
-        obs_ds = load_or_pull_target_data(
-            data_dir, args.model_name, args.ground_truth_source, args.region,
-            years_needed, target_vars, lat_values, lon_values, skip_save=skip_download
-        )
-        # If data was pulled (not loaded from disk), it's a dask array - load into memory for faster processing
-        # Check if data is dask-backed by looking at the first variable
+        if "10m_wind_speed" in args.output_vars:
+            target_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
+
+        # Check if only basic variables are needed
+        basic_vars_only = all(v in ['2m_temperature', '10m_wind_speed', '10m_u_component_of_wind',
+                                    '10m_v_component_of_wind'] for v in forecast_vars + target_vars)
+
+        # ====================================================================
+        # STEP 1: Try to load regional data files
+        # ====================================================================
+        print(f"\n  Checking for regional data files...")
+        forecast_status = check_data_exists(data_dir, args.model_name, args.region,
+                                           years_needed, forecast_vars)
+        target_status = check_data_exists(data_dir, target, args.region,
+                                         years_needed, target_vars)
+
+        # Check if all data exists with all variables
+        forecast_all_exist = all(status['exists'] and not status['missing_vars']
+                                for status in forecast_status.values())
+        target_all_exist = all(status['exists'] and not status['missing_vars']
+                              for status in target_status.values())
+
+        # ====================================================================
+        # STEP 2: If regional data exists, load it
+        # ====================================================================
+        if forecast_all_exist and target_all_exist:
+            print(f"  ✓ All regional data files exist with required variables")
+            print(f"\n  Loading forecast data from regional files...")
+
+            forecast_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, args.model_name, args.region, year)
+                print(f"    Loading {year} from {file_path}")
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+
+                # Select lead times
+                lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+                ds = ds.sel(prediction_timedelta=lead_times_td)
+
+                # Select region if needed (data is already regional, but may need sub-region)
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                forecast_datasets.append(ds)
+
+            # Combine years
+            forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
+            forecast_ds = forecast_ds.sortby('time')
+
+            # Remove duplicates
+            _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+            forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+            print(f"\n  Loading target data from regional files...")
+            target_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, target, args.region, year)
+                print(f"    Loading {year} from {file_path}")
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+
+                # Select region if needed
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                target_datasets.append(ds)
+
+            # Combine years
+            obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
+            obs_ds = obs_ds.sortby('time')
+
+            # Remove duplicates
+            _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
+            obs_ds = obs_ds.isel(time=sorted(unique_indices))
+
+        # ====================================================================
+        # STEP 3: If data doesn't exist and only basic vars needed, try global
+        # ====================================================================
+        elif basic_vars_only:
+            print(f"  ✗ Regional data not found")
+            print(f"  ✓ Only basic variables needed - trying global data files...")
+
+            try:
+                forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values,
+                                                                  time_values_np, data_dir,
+                                                                  args.model_name)
+                obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values,
+                                                             time_values_np, data_dir, target)
+                print(f"  ✓ Successfully loaded from global data files")
+            except (FileNotFoundError, ValueError) as e:
+                print(f"  ✗ Global data files not found: {e}")
+                print(f"  → Downloading regional data...")
+
+                # Download forecast data
+                download_forecast_data(
+                    data_dir, args.model_name, args.region, years_needed, forecast_vars,
+                    args.lead_time_hours, lat_values, lon_values, use_dask_client=True
+                )
+
+                # Download target data
+                download_target_data(
+                    data_dir, args.model_name, args.ground_truth_source, args.region,
+                    years_needed, target_vars, lat_values, lon_values, use_dask_client=True
+                )
+
+                # Reload the data we just downloaded
+                print(f"\n  Loading newly downloaded data...")
+                forecast_datasets = []
+                for year in years_needed:
+                    file_path = get_data_path(data_dir, args.model_name, args.region, year)
+                    ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+                    ds = ds.sel(prediction_timedelta=lead_times_td)
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                    forecast_datasets.append(ds)
+
+                forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
+                forecast_ds = forecast_ds.sortby('time')
+                _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+                forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+                target_datasets = []
+                for year in years_needed:
+                    file_path = get_data_path(data_dir, target, args.region, year)
+                    ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                    target_datasets.append(ds)
+
+                obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
+                obs_ds = obs_ds.sortby('time')
+                _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
+                obs_ds = obs_ds.isel(time=sorted(unique_indices))
+
+        # ====================================================================
+        # STEP 4: If more variables needed, download with standard atmos vars
+        # ====================================================================
+        else:
+            print(f"  ✗ Regional data not found")
+            print(f"  → Atmospheric variables needed - downloading regional data with standard variables...")
+            print(f"     Standard variables: 2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind")
+            print(f"     Standard variables: temperature_1000hPa, specific_humidity_1000hPa, geopotential_1000hPa")
+
+            # Define standard variable set
+            standard_forecast_vars = [
+                '2m_temperature',
+                '10m_u_component_of_wind',
+                '10m_v_component_of_wind',
+                'temperature_1000hPa',
+                'specific_humidity_1000hPa',
+                'geopotential_1000hPa'
+            ]
+
+            # Add any additional requested variables
+            all_forecast_vars = list(set(standard_forecast_vars + forecast_vars))
+
+            # Download forecast data
+            download_forecast_data(
+                data_dir, args.model_name, args.region, years_needed, all_forecast_vars,
+                args.lead_time_hours, lat_values, lon_values, use_dask_client=True
+            )
+
+            # Download target data (only surface vars typically)
+            download_target_data(
+                data_dir, args.model_name, args.ground_truth_source, args.region,
+                years_needed, target_vars, lat_values, lon_values, use_dask_client=True
+            )
+
+            # Load the data we just downloaded
+            print(f"\n  Loading newly downloaded data...")
+            forecast_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, args.model_name, args.region, year)
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+                ds = ds.sel(prediction_timedelta=lead_times_td)
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                forecast_datasets.append(ds)
+
+            forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
+            forecast_ds = forecast_ds.sortby('time')
+            _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+            forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+            target_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, target, args.region, year)
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                target_datasets.append(ds)
+
+            obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
+            obs_ds = obs_ds.sortby('time')
+            _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
+            obs_ds = obs_ds.isel(time=sorted(unique_indices))
+
+        # ====================================================================
+        # Load into memory if data is dask-backed
+        # ====================================================================
         first_forecast_var = list(forecast_ds.data_vars)[0]
         if hasattr(forecast_ds[first_forecast_var].data, 'compute'):
-            print("  Data is dask-backed (pulled from weatherbench). Loading into memory for faster processing...")
-            import dask
+            print(f"\n  Data is dask-backed. Loading into memory for faster processing...")
+
             # Rechunk for optimal memory layout before computing
             optimal_chunks = {
-                'time': len(forecast_ds.time) // 4,  # Split time into 4 chunks for parallel loading
+                'time': len(forecast_ds.time) // 4,
                 'latitude': len(forecast_ds.latitude),
                 'longitude': len(forecast_ds.longitude)
             }
@@ -1325,9 +1284,10 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
             # Compute both datasets in parallel
             forecast_ds, obs_ds = dask.compute(forecast_ds, obs_ds)
-            print("  Data loaded into memory successfully")
+            print(f"  ✓ Data loaded into memory successfully")
+
     # ========================================================================
-    # END LEGACY
+    # PROCESS DATA FOR TRAINING
     # ========================================================================
 
     # Create wind speed if needed
@@ -1347,8 +1307,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
     forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
 
-    # Select lead times and common time range, this prevents off by one errors
-    # from lining up forecasts for days on the edges of the time range
+    # Select common time range
     common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
     common_times = np.intersect1d(common_times, time_values_np)
     forecast_ds = forecast_ds.sel(time=common_times)
@@ -1362,16 +1321,22 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     n_training_vars = len(args.training_vars)
     n_output_vars = len(args.output_vars)
 
+    print(f"\n  Data dimensions:")
+    print(f"    Time steps: {n_time}")
+    print(f"    Lead times: {n_lead_times}")
+    print(f"    Latitude: {n_lat}")
+    print(f"    Longitude: {n_lon}")
+    print(f"    Training vars: {n_training_vars}")
+    print(f"    Output vars: {n_output_vars}")
+
     # Stack all dimensions except variables
     forecast_stacked = forecast_ds[args.training_vars].stack(
         sample=['time', 'prediction_timedelta']
     ).to_array()
 
-
     forecast_output_stacked = forecast_ds[args.output_vars].stack(
         sample=['time', 'prediction_timedelta']
     ).to_array()
-
 
     obs_repeated = obs_ds[args.output_vars].expand_dims(
         prediction_timedelta=lead_times_td
@@ -1380,11 +1345,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     ).to_array()
 
     # Transpose and reshape to (n_samples, n_features)
-    # Check if any of the arrays are dask-backed and compute together if so
     if hasattr(forecast_stacked.data, 'compute'):
-        print("  Computing dask arrays (this may take a moment)...")
-        import dask
-        # Compute all three arrays together for efficiency
+        print(f"  Computing dask arrays...")
         fc_vals, fc_out_vals, obs_vals = dask.compute(
             forecast_stacked.values.T,
             forecast_output_stacked.values.T,
@@ -1393,27 +1355,23 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
         fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
         obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
-        print("  Arrays computed and reshaped successfully")
+        print(f"  ✓ Arrays computed and reshaped")
     else:
-        # Data already in memory, just reshape
         fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
         fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
         obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
 
     # Create lead time indices
-    lead_time_indices = np.tile(
-        np.arange(n_lead_times), n_time
-    )
+    lead_time_indices = np.tile(np.arange(n_lead_times), n_time)
 
     # Create time array
     all_times = np.repeat(common_times, n_lead_times)
+
     # Create day-of-year sin/cos features
-    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy() # XX maybe should use all_times? I don't think so but flagging
-    # Convert to radians: 2*pi*d/365
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
     day_of_year_rad = 2 * np.pi * day_of_year / 365.0
     day_of_year_sin = np.sin(day_of_year_rad)
     day_of_year_cos = np.cos(day_of_year_rad)
-    # Stack to create [n_time, 2] array, then repeat for each lead time
     day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
     day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
 
@@ -1426,6 +1384,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     day_of_year_features_combined = day_of_year_features[valid_mask]
     all_times = all_times[valid_mask]
 
+    print(f"\n  Valid samples after NaN removal: {len(fc_combined)}")
+
     # Calculate mean forecast error
     training_mean_forecast_error = {}
 
@@ -1437,258 +1397,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
         obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
 
-        # print("force compute if dask arrays")
-        # # FORCE COMPUTATION if these are dask arrays
-        # if hasattr(fc_output_lt, 'compute'):
-        #     fc_output_lt = fc_output_lt.compute()
-        # if hasattr(obs_lt, 'compute'):
-        #     obs_lt = obs_lt.compute()
-
         mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
 
         for var_idx, var_name in enumerate(args.output_vars):
             key = f"{var_name}_lt{lead_time_hours}h"
             training_mean_forecast_error[key] = mean_error[var_idx]
 
-    # each sample represents one forecast for one specific lead time and time combination
+    print(f"{'='*70}\n")
+
     return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
             day_of_year_features_combined, all_times, forecast_ds.latitude.values,
             forecast_ds.longitude.values, n_lat, n_lon,
             n_training_vars, n_output_vars, training_mean_forecast_error)
-
-
-# ============================================================================
-# DATA PREPARATION AND LOADING ORCHESTRATION
-# ============================================================================
-
-def prepare_data_for_finetuning(data_dir, model_name, ground_truth_source, region,
-                                training_vars, output_vars, train_start, train_end,
-                                test_start, test_end, lead_time_hours,
-                                region_lat=None, region_lon=None, skip_download=False,
-                                growing_season_only=False, use_legacy_global_data=False,
-                                load_data=True, spatial_subsets=None):
-    """
-    Main function to prepare forecast and target data for finetuning.
-    Checks if data exists, downloads if necessary (unless skip_download=True),
-    and optionally loads the data for training and testing.
-    Supports atmospheric variables at specific pressure levels.
-
-    Parameters:
-    -----------
-    data_dir : str
-        Directory for data storage
-    model_name : str
-        Name of forecast model
-    ground_truth_source : str
-        Name of ground truth source (empty string for default)
-    region : str
-        Region name for file organization
-    training_vars : list
-        List of training variables (may include 'temperature_500hPa' etc.)
-    output_vars : list
-        List of output variables
-    train_start : str
-        Training start date (YYYY-MM-DD)
-    train_end : str
-        Training end date (YYYY-MM-DD)
-    test_start : str
-        Test start date (YYYY-MM-DD)
-    test_end : str
-        Test end date (YYYY-MM-DD)
-    lead_time_hours : list
-        List of lead times in hours
-    region_lat : np.ndarray, optional
-        Latitude values for regional subset
-    region_lon : np.ndarray, optional
-        Longitude values for regional subset
-    skip_download : bool, optional
-        If True, check for data but skip downloading if missing (default: False)
-    growing_season_only : bool, optional
-        If True, only keep growing season dates (3-15 to 10-31) (default: False)
-    use_legacy_global_data : bool, optional
-        If True, load from global yearly files instead of region-specific (default: False)
-    load_data : bool, optional
-        If True, load and return data. If False, only download/check data (default: True)
-    spatial_subsets : list of dict, optional
-        List of spatial subsets for patches/bootstrap. Each dict should contain:
-        - 'lat_vals': np.ndarray of latitude values
-        - 'lon_vals': np.ndarray of longitude values
-        - 'id': identifier for the subset (e.g., patch number or bootstrap sample number)
-        If None, uses region_lat and region_lon for a single region (default: None)
-
-    Returns:
-    --------
-    dict or list of dict :
-        If spatial_subsets is None: Dictionary containing train and test data with keys:
-            'train': tuple of training data (or None if load_data=False)
-            'test': tuple of test data (or None if load_data=False)
-            'metadata': dict with data_dir, region, forecast_source, target_source, years
-        If spatial_subsets is provided: List of dictionaries (one per subset) with same structure
-    """
-    data_dir = os.path.expanduser(data_dir)
-
-    print("="*70)
-    print("PREPARING DATA FOR FINETUNING")
-    print("="*70)
-
-    # Determine years needed
-    train_years = list(range(int(train_start[:4]), int(train_end[:4]) + 1))
-    test_years = list(range(int(test_start[:4]), int(test_end[:4]) + 1))
-    all_years = sorted(set(train_years + test_years))
-
-    print(f"\nRegion: {region}")
-    print(f"Years needed: {all_years}")
-    print(f"  Training: {train_years}")
-    print(f"  Testing: {test_years}")
-
-    # Determine target dataset
-    if ground_truth_source == "":
-        if model_name == "pangu":
-            target = "era5"
-        elif model_name == "ifs":
-            target = "hres_t0"
-        elif model_name == "aifs":
-            target = "era5"
-        else:
-            raise ValueError(f"Unknown model_name '{model_name}' and no ground_truth_source provided")
-    else:
-        target = ground_truth_source
-
-    # Note: Data checking, loading, and downloading is now handled by load_forecasts()
-    # which will check for local files and pull from weatherbench as needed
-
-    # ========================================================================
-    # LOAD DATA FOR TRAINING AND TESTING (optional)
-    # ========================================================================
-    if load_data:
-        # Create args-like object for load_forecasts
-        class Args:
-            pass
-
-        args = Args()
-        args.model_name = model_name
-        args.ground_truth_source = ground_truth_source
-        args.region = region
-        args.training_vars = training_vars
-        args.output_vars = output_vars
-        args.train_start = train_start
-        args.train_end = train_end
-        args.test_start = test_start
-        args.test_end = test_end
-        args.lead_time_hours = lead_time_hours
-        args.growing_season_only = growing_season_only
-
-        if spatial_subsets is None:
-            # Single region case
-            print("\nLoading data for finetuning...")
-
-            # Load training data
-            print("\n  Loading training data...")
-            train_data = load_forecasts(
-                data_dir, args, region_lat, region_lon, train=True,
-                use_legacy_global_data=use_legacy_global_data,
-                skip_download=skip_download
-            )
-
-            # Load test data
-            print("\n  Loading test data...")
-            test_data = load_forecasts(
-                data_dir, args, region_lat, region_lon, train=False,
-                use_legacy_global_data=use_legacy_global_data,
-                skip_download=skip_download
-            )
-
-            print("\n" + "="*70)
-            print("DATA LOADING COMPLETE")
-            print("="*70)
-
-            return {
-                'train': train_data,
-                'test': test_data,
-                'metadata': {
-                    'data_dir': data_dir,
-                    'region': region,
-                    'forecast_source': model_name,
-                    'target_source': target,
-                    'years': all_years
-                }
-            }
-        else:
-            # Multiple spatial subsets case (patches/bootstrap)
-            print(f"\nLoading data for {len(spatial_subsets)} spatial subsets...")
-            data_bundles = []
-
-            for i, subset in enumerate(spatial_subsets):
-                subset_id = subset['id']
-                lat_vals = subset['lat_vals']
-                lon_vals = subset['lon_vals']
-
-                print(f"\n  [{i+1}/{len(spatial_subsets)}] Loading data for subset {subset_id}...")
-                print(f"    Lat range: [{lat_vals.min():.2f}, {lat_vals.max():.2f}]")
-                print(f"    Lon range: [{lon_vals.min():.2f}, {lon_vals.max():.2f}]")
-
-                # Load training data for this subset
-                print(f"    Loading training data...")
-                train_data = load_forecasts(
-                    data_dir, args, lat_vals, lon_vals, train=True,
-                    patch_num=subset_id,
-                    use_legacy_global_data=use_legacy_global_data,
-                    skip_download=skip_download
-                )
-
-                # Load test data for this subset
-                print(f"    Loading test data...")
-                test_data = load_forecasts(
-                    data_dir, args, lat_vals, lon_vals, train=False,
-                    patch_num=subset_id,
-                    use_legacy_global_data=use_legacy_global_data,
-                    skip_download=skip_download
-                )
-
-                data_bundles.append({
-                    'train': train_data,
-                    'test': test_data,
-                    'metadata': {
-                        'data_dir': data_dir,
-                        'region': region,
-                        'forecast_source': model_name,
-                        'target_source': target,
-                        'years': all_years,
-                        'subset_id': subset_id
-                    }
-                })
-
-            print("\n" + "="*70)
-            print(f"DATA LOADING COMPLETE - {len(data_bundles)} subsets loaded")
-            print("="*70)
-
-            return data_bundles
-    else:
-        print("\n[SKIP DATA LOADING] Data preparation complete. Data will be loaded later.")
-
-        if spatial_subsets is None:
-            return {
-                'train': None,
-                'test': None,
-                'metadata': {
-                    'data_dir': data_dir,
-                    'region': region,
-                    'forecast_source': model_name,
-                    'target_source': target,
-                    'years': all_years
-                }
-            }
-        else:
-            # Return list of bundles with None data
-            return [{
-                'train': None,
-                'test': None,
-                'metadata': {
-                    'data_dir': data_dir,
-                    'region': region,
-                    'forecast_source': model_name,
-                    'target_source': target,
-                    'years': all_years,
-                    'subset_id': subset['id']
-                }
-            } for subset in spatial_subsets]
