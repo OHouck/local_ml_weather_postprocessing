@@ -501,7 +501,7 @@ def sort_lat_lon(ds):
     return ds.sortby(['latitude', 'longitude'])
 
 
-def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_time_indices, day_of_year_features, batch_size):
+def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_time_indices, day_of_year_features, batch_size, device=None):
     """
     Create a PyTorch DataLoader from forecast input, forecast output, observation data, lead time indices, and day-of-year features.
 
@@ -509,6 +509,7 @@ def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_
         forecast_input_data: Training variables forecast (e.g., 6 vars for UNet input)
         forecast_output_data: Output variables forecast (e.g., 1 var to correct)
         obs_data: Observations for output variables
+        device: Device being used (for optimization settings)
     """
     dataset = torch.utils.data.TensorDataset(
         torch.from_numpy(forecast_input_data).float(),
@@ -517,9 +518,28 @@ def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_
         torch.from_numpy(lead_time_indices).long(),
         torch.from_numpy(day_of_year_features).float()
     )
+
+    # Optimize DataLoader based on device and available CPU cores
+    pin_memory = False
+    num_workers = 0
+    if device is not None and device.type == 'cuda':
+        # Auto-detect available CPU cores
+        cpu_count = os.cpu_count() or 1
+        # Use min(cpu_count - 1, 4) to leave 1 core for main process
+        # But if only 1-2 cores available, use 0 workers (main process handles it)
+        if cpu_count <= 2:
+            num_workers = 0  # Too few cores, use main process
+            pin_memory = True
+        else:
+            num_workers = min(cpu_count - 1, 4)  # Leave 1 core free, cap at 4
+            pin_memory = True
+
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
-                                             shuffle=True)
+                                             shuffle=True,
+                                             pin_memory=pin_memory,
+                                             num_workers=num_workers,
+                                             persistent_workers=num_workers > 0)
     return dataloader
 
 
@@ -567,6 +587,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7):
     """
     Train the model over multiple epochs with ReduceLROnPlateau and early stopping.
+    Uses mixed precision training for CUDA devices to improve speed.
 
     Args:
         model: PyTorch model to train
@@ -574,7 +595,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         valid_loader: DataLoader for validation data
         epochs: Maximum number of epochs to train
         lr: Initial learning rate
-        device: Device to train on (cpu/cuda)
+        device: Device to train on (cpu/cuda/mps)
         weight_decay: L2 regularization weight
         stats_out: Statistics for denormalizing outputs (for custom losses)
         alternate_loss_fn: Name of custom loss function to use
@@ -609,8 +630,17 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     # Add ReduceLROnPlateau scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=scheduler_factor,
-        patience=scheduler_patience, min_lr=min_lr, verbose=True
+        patience=scheduler_patience, min_lr=min_lr
     )
+
+    # Setup mixed precision training for CUDA
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+    if use_amp:
+        print("Using mixed precision training (AMP) for faster GPU training")
+
+    # Determine if non_blocking transfers should be used
+    non_blocking = device.type == 'cuda'
 
     best_val_loss = float('inf')
     epochs_without_improvement = 0
@@ -624,29 +654,46 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         model.train()
         train_loss = 0.0
         for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
-            fc_input_batch = fc_input_batch.to(device)
-            fc_output_batch = fc_output_batch.to(device)
-            y_batch = y_batch.to(device)
-            lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+            fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+            fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+            y_batch = y_batch.to(device, non_blocking=non_blocking)
+            lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+            doy_batch = doy_batch.to(device, non_blocking=non_blocking)
 
             optimizer.zero_grad()
 
-            # Pass training variables, lead time and day-of-year features to model
-            # Model predicts the error to apply to the output forecast variables
-            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+            # Use automatic mixed precision for CUDA
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    # Pass training variables, lead time and day-of-year features to model
+                    # Model predicts the error to apply to the output forecast variables
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
 
-            # Add predicted error to output forecast to get final prediction
-            preds = fc_output_batch + pred_error
+                    # Add predicted error to output forecast to get final prediction
+                    preds = fc_output_batch + pred_error
 
-            # some custom loss functions need un-normalized values
-            if alternate_loss_fn in {"extreme_heat_loss"}:
-                loss = criterion(preds, y_batch, std_out, mean_out)
+                    # some custom loss functions need un-normalized values
+                    if alternate_loss_fn in {"extreme_heat_loss"}:
+                        loss = criterion(preds, y_batch, std_out, mean_out)
+                    else:
+                        loss = criterion(preds, y_batch)
 
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                loss = criterion(preds, y_batch)
+                # Standard training for CPU/MPS
+                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                preds = fc_output_batch + pred_error
 
-            loss.backward()
-            optimizer.step()
+                if alternate_loss_fn in {"extreme_heat_loss"}:
+                    loss = criterion(preds, y_batch, std_out, mean_out)
+                else:
+                    loss = criterion(preds, y_batch)
+
+                loss.backward()
+                optimizer.step()
+
             train_loss += loss.item() * fc_output_batch.size(0)
         train_loss /= len(train_loader.dataset)
 
@@ -655,20 +702,29 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         val_loss = 0.0
         with torch.no_grad():
             for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
-                fc_input_batch = fc_input_batch.to(device)
-                fc_output_batch = fc_output_batch.to(device)
-                y_batch = y_batch.to(device)
-                lead_time_batch, doy_batch = lead_time_batch.to(device), doy_batch.to(device)
+                fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+                fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+                y_batch = y_batch.to(device, non_blocking=non_blocking)
+                lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+                doy_batch = doy_batch.to(device, non_blocking=non_blocking)
 
-                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                if use_amp:
+                    with torch.amp.autocast('cuda'):
+                        pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                        preds = fc_output_batch + pred_error
 
-                # Add predicted error to output forecast to get final prediction
-                preds = fc_output_batch + pred_error
-
-                if alternate_loss_fn in {"extreme_heat_loss"}:
-                    loss = criterion(preds, y_batch, std_out, mean_out)
+                        if alternate_loss_fn in {"extreme_heat_loss"}:
+                            loss = criterion(preds, y_batch, std_out, mean_out)
+                        else:
+                            loss = criterion(preds, y_batch)
                 else:
-                    loss = criterion(preds, y_batch)
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    preds = fc_output_batch + pred_error
+
+                    if alternate_loss_fn in {"extreme_heat_loss"}:
+                        loss = criterion(preds, y_batch, std_out, mean_out)
+                    else:
+                        loss = criterion(preds, y_batch)
 
                 val_loss += loss.item() * fc_output_batch.size(0)
         val_loss /= len(valid_loader.dataset)
@@ -700,7 +756,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     # Calculate training time in minutes
     train_end_time = time.time()
     training_time_minutes = (train_end_time - train_start_time) / 60.0
-    
+
     # Load best weights
     model.load_state_dict(best_model_wts)
     return model, training_time_minutes
@@ -709,6 +765,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
 def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device):
     """
     Apply the correction to forecast output data using forecast input data.
+    Uses mixed precision for CUDA devices.
 
     Args:
         forecast_input_data: Training variables (e.g., 6 vars)
@@ -727,15 +784,26 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
     batch_size = 128
     n_samples = forecast_input_data.shape[0]
 
+    # Use AMP and non_blocking for CUDA
+    use_amp = device.type == 'cuda'
+    non_blocking = device.type == 'cuda'
+
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             end_idx = min(i + batch_size, n_samples)
-            fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device)
-            fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device)
-            lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device)
-            doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device)
-            predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
-            corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+            fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
+            fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
+            lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device, non_blocking=non_blocking)
+            doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device, non_blocking=non_blocking)
+
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
+                    corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+            else:
+                predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
+                corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+
             corrected_all.append(corrected_batch)
 
     return np.concatenate(corrected_all, axis=0)
@@ -877,10 +945,15 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                    batch_size=128)
+                                    batch_size=128, device=device)
     val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                  batch_size=128)
+                                  batch_size=128, device=device)
+
+    # Log DataLoader settings
+    print(f"DataLoader settings: num_workers={train_loader.num_workers}, pin_memory={train_loader.pin_memory}")
+    if device.type == 'cuda':
+        print(f"  CPU cores available: {os.cpu_count()}")
 
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon
@@ -998,6 +1071,12 @@ def main():
                           'mps' if torch.backends.mps.is_available() else
                           'cpu')
     print(f"Using device: {device}")
+
+    # Enable cudnn benchmarking for faster training on GPU
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+        print("Enabled cudnn benchmarking for faster GPU training")
+
     torch.manual_seed(58)
     random.seed(58)
 
