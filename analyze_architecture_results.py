@@ -17,29 +17,75 @@ import numpy as np
 
 # Experiment configuration
 EXPERIMENTS = {
-    'mlp_deep': {
-        'name': 'MLP Deep',
-        'description': 'Deep MLP (6 layers × 1024 neurons)',
-        'architecture': 'MLP'
-    },
-    'mlp_wide': {
-        'name': 'MLP Wide',
+    # Group 1: MLP Architecture Variations (Full Variables)
+    'mlp_wide_shallow': {
+        'name': 'MLP Wide Shallow',
         'description': 'Wide MLP (3 layers × 2048 neurons)',
-        'architecture': 'MLP'
+        'architecture': 'MLP',
+        'group': 'MLP Variations',
+        'variables': 'Full (6 vars)'
     },
+    'mlp_moderate': {
+        'name': 'MLP Moderate',
+        'description': 'Moderate MLP (6 layers × 1024 neurons)',
+        'architecture': 'MLP',
+        'group': 'MLP Variations',
+        'variables': 'Full (6 vars)'
+    },
+    'mlp_skinny_deep': {
+        'name': 'MLP Skinny Deep',
+        'description': 'Skinny MLP (8 layers × 512 neurons)',
+        'architecture': 'MLP',
+        'group': 'MLP Variations',
+        'variables': 'Full (6 vars)'
+    },
+    # Group 2: UNet Architecture Variations (Full Variables)
     'unet_light': {
         'name': 'UNet Light',
-        'description': 'Lightweight UNet (64 base channels)',
-        'architecture': 'UNet'
+        'description': 'Lightweight UNet (32 channels)',
+        'architecture': 'UNet',
+        'group': 'UNet Variations',
+        'variables': 'Full (6 vars)'
     },
-    'unet_deep': {
-        'name': 'UNet Deep',
-        'description': 'Deep UNet (128 base channels)',
-        'architecture': 'UNet'
-    }
+    'unet_medium': {
+        'name': 'UNet Medium',
+        'description': 'Medium UNet (64 channels)',
+        'architecture': 'UNet',
+        'group': 'UNet Variations',
+        'variables': 'Full (6 vars)'
+    },
+    'unet_heavy': {
+        'name': 'UNet Heavy',
+        'description': 'Heavy UNet (128 channels)',
+        'architecture': 'UNet',
+        'group': 'UNet Variations',
+        'variables': 'Full (6 vars)'
+    },
+    'unet_very_heavy': {
+        'name': 'UNet Very Heavy',
+        'description': 'Very Heavy UNet (256 channels)',
+        'architecture': 'UNet',
+        'group': 'UNet Variations',
+        'variables': 'Full (6 vars)'
+    },
+    # Group 3: Input Variable Comparison
+    'mlp_moderate_minimal': {
+        'name': 'MLP Moderate (Minimal)',
+        'description': 'Moderate MLP (6 layers × 1024 neurons, 2m_temp only)',
+        'architecture': 'MLP',
+        'group': 'Variable Comparison',
+        'variables': 'Minimal (1 var)'
+    },
+    'unet_medium_minimal': {
+        'name': 'UNet Medium (Minimal)',
+        'description': 'Medium UNet (64 channels, 2m_temp only)',
+        'architecture': 'UNet',
+        'group': 'Variable Comparison',
+        'variables': 'Minimal (1 var)'
+    },
 }
 
-LEAD_TIMES = [24, 72, 144]  # hours
+LEAD_TIMES = [24, 120, 216]  # hours
 
 
 def parse_log_file(log_path):
@@ -125,74 +171,94 @@ def create_comparison_report(results_dict):
     """Create a comprehensive comparison report"""
 
     report = []
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("ARCHITECTURE EXPERIMENT RESULTS")
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("")
     report.append("Objective: Improve Pangu weather forecasts for India region")
     report.append("Region: India (6x6 degree subregion)")
     report.append("Output variable: 2m temperature")
-    report.append("Lead times: 24h, 72h, 144h")
+    report.append("Lead times: 24h, 120h, 216h")
     report.append("")
 
     # Individual experiment results
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("INDIVIDUAL EXPERIMENT RESULTS")
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("")
 
+    # Group experiments by category
+    groups = {}
     for exp_name, exp_info in EXPERIMENTS.items():
-        results = results_dict.get(exp_name)
+        group = exp_info.get('group', 'Other')
+        if group not in groups:
+            groups[group] = []
+        groups[group].append(exp_name)
 
-        report.append(f"{exp_info['name']} - {exp_info['description']}")
-        report.append("-" * 80)
+    for group_name, exp_names in groups.items():
+        report.append("-" * 100)
+        report.append(f"GROUP: {group_name}")
+        report.append("-" * 100)
+        report.append("")
 
-        if results is None:
-            report.append("  ⚠ No results found")
+        for exp_name in exp_names:
+            exp_info = EXPERIMENTS[exp_name]
+            results = results_dict.get(exp_name)
+
+            report.append(f"{exp_info['name']} - {exp_info['description']}")
+            report.append("  " + "-" * 90)
+
+            if results is None:
+                report.append("  ⚠ No results found")
+                report.append("")
+                continue
+
+            # Variables used
+            report.append(f"  Variables: {exp_info['variables']}")
+
+            # Architecture parameters
+            if results['architecture_params']:
+                report.append("  Architecture Parameters:")
+                for param, value in results['architecture_params'].items():
+                    report.append(f"    {param}: {value}")
+
+            # Training time
+            if results['training_time']:
+                report.append(f"  Training Time: {results['training_time']:.2f} minutes")
+
+            # Results by lead time
             report.append("")
-            continue
+            report.append("  Results by Lead Time:")
+            report.append(f"    {'Lead Time':<12} {'MSE Orig':<14} {'MSE Corr':<14} {'RMSE Orig':<12} {'RMSE Corr':<12} {'Improvement':<12}")
+            report.append(f"    {'-'*12} {'-'*14} {'-'*14} {'-'*12} {'-'*12} {'-'*12}")
 
-        # Architecture parameters
-        if results['architecture_params']:
-            report.append("  Architecture Parameters:")
-            for param, value in results['architecture_params'].items():
-                report.append(f"    {param}: {value}")
+            for lead_time in LEAD_TIMES:
+                if lead_time in results['lead_times']:
+                    lt_results = results['lead_times'][lead_time]
+                    report.append(
+                        f"    {lead_time}h{'':<9} "
+                        f"{lt_results['mse_original']:<14.6f} "
+                        f"{lt_results['mse_corrected']:<14.6f} "
+                        f"{lt_results['rmse_original']:<12.6f} "
+                        f"{lt_results['rmse_corrected']:<12.6f} "
+                        f"{lt_results['improvement_percent']:>10.2f}%"
+                    )
 
-        # Training time
-        if results['training_time']:
-            report.append(f"  Training Time: {results['training_time']:.2f} minutes")
-
-        # Results by lead time
-        report.append("")
-        report.append("  Results by Lead Time:")
-        report.append(f"    {'Lead Time':<12} {'RMSE Orig':<12} {'RMSE Corr':<12} {'Improvement':<12}")
-        report.append(f"    {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
-
-        for lead_time in LEAD_TIMES:
-            if lead_time in results['lead_times']:
-                lt_results = results['lead_times'][lead_time]
-                report.append(
-                    f"    {lead_time}h{'':<9} "
-                    f"{lt_results['rmse_original']:<12.6f} "
-                    f"{lt_results['rmse_corrected']:<12.6f} "
-                    f"{lt_results['improvement_percent']:>10.2f}%"
-                )
-
-        report.append("")
-        report.append("")
+            report.append("")
+            report.append("")
 
     # Comparison table
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("COMPARISON SUMMARY")
-    report.append("=" * 80)
+    report.append("=" * 100)
     report.append("")
 
-    # By lead time
+    # By lead time with training time
     for lead_time in LEAD_TIMES:
         report.append(f"Lead Time: {lead_time}h")
-        report.append("-" * 80)
-        report.append(f"{'Architecture':<20} {'RMSE Original':<15} {'RMSE Corrected':<15} {'Improvement':<15}")
-        report.append(f"{'-'*20} {'-'*15} {'-'*15} {'-'*15}")
+        report.append("-" * 100)
+        report.append(f"{'Architecture':<30} {'MSE Orig':<12} {'MSE Corr':<12} {'RMSE Orig':<12} {'RMSE Corr':<12} {'Improvement':<12} {'Train Time':<12}")
+        report.append(f"{'-'*30} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
 
         lt_results = []
         for exp_name, exp_info in EXPERIMENTS.items():
@@ -201,9 +267,12 @@ def create_comparison_report(results_dict):
                 lt_data = results['lead_times'][lead_time]
                 lt_results.append({
                     'name': exp_info['name'],
+                    'mse_original': lt_data['mse_original'],
+                    'mse_corrected': lt_data['mse_corrected'],
                     'rmse_original': lt_data['rmse_original'],
                     'rmse_corrected': lt_data['rmse_corrected'],
-                    'improvement': lt_data['improvement_percent']
+                    'improvement': lt_data['improvement_percent'],
+                    'training_time': results['training_time']
                 })
 
         # Sort by improvement (best first)
@@ -211,19 +280,23 @@ def create_comparison_report(results_dict):
 
         for i, res in enumerate(lt_results):
             marker = "⭐" if i == 0 else "  "
+            train_time_str = f"{res['training_time']:.1f} min" if res['training_time'] else "N/A"
             report.append(
-                f"{marker} {res['name']:<18} "
-                f"{res['rmse_original']:<15.6f} "
-                f"{res['rmse_corrected']:<15.6f} "
-                f"{res['improvement']:>13.2f}%"
+                f"{marker} {res['name']:<28} "
+                f"{res['mse_original']:<12.6f} "
+                f"{res['mse_corrected']:<12.6f} "
+                f"{res['rmse_original']:<12.6f} "
+                f"{res['rmse_corrected']:<12.6f} "
+                f"{res['improvement']:>10.2f}% "
+                f"{train_time_str:<12}"
             )
 
         report.append("")
 
     # Overall best
-    report.append("=" * 80)
-    report.append("BEST ARCHITECTURES")
-    report.append("=" * 80)
+    report.append("=" * 100)
+    report.append("BEST ARCHITECTURES (RANKED BY AVERAGE IMPROVEMENT)")
+    report.append("=" * 100)
     report.append("")
 
     # Calculate average improvement across all lead times
@@ -239,34 +312,47 @@ def create_comparison_report(results_dict):
                 avg_improvements[exp_name] = {
                     'name': exp_info['name'],
                     'description': exp_info['description'],
+                    'group': exp_info.get('group', 'Other'),
+                    'variables': exp_info.get('variables', 'Unknown'),
                     'avg_improvement': np.mean(improvements),
-                    'improvements': improvements
+                    'improvements': improvements,
+                    'training_time': results['training_time']
                 }
 
     # Sort by average improvement
     sorted_exps = sorted(avg_improvements.items(), key=lambda x: x[1]['avg_improvement'], reverse=True)
 
-    report.append(f"{'Rank':<6} {'Architecture':<20} {'Avg Improvement':<20} {'Description'}")
-    report.append(f"{'-'*6} {'-'*20} {'-'*20} {'-'*40}")
+    report.append(f"{'Rank':<6} {'Architecture':<30} {'Avg Improve':<12} {'Train Time':<12} {'Group':<20} {'Variables'}")
+    report.append(f"{'-'*6} {'-'*30} {'-'*12} {'-'*12} {'-'*20} {'-'*15}")
 
     for rank, (exp_name, data) in enumerate(sorted_exps, 1):
         marker = "🏆" if rank == 1 else f"{rank}."
+        train_time_str = f"{data['training_time']:.1f} min" if data['training_time'] else "N/A"
         report.append(
-            f"{marker:<6} {data['name']:<20} "
-            f"{data['avg_improvement']:>18.2f}%  {data['description']}"
+            f"{marker:<6} {data['name']:<30} "
+            f"{data['avg_improvement']:>10.2f}% "
+            f"{train_time_str:<12} "
+            f"{data['group']:<20} "
+            f"{data['variables']}"
         )
 
     if sorted_exps:
         report.append("")
-        report.append("Detailed improvements by lead time:")
+        report.append("Detailed improvements and MSE by lead time:")
         for rank, (exp_name, data) in enumerate(sorted_exps, 1):
             report.append(f"  {rank}. {data['name']}:")
-            for i, lt in enumerate(LEAD_TIMES):
-                if i < len(data['improvements']):
-                    report.append(f"      {lt}h: {data['improvements'][i]:>6.2f}%")
+            results = results_dict.get(exp_name)
+            if results:
+                for i, lt in enumerate(LEAD_TIMES):
+                    if lt in results['lead_times']:
+                        lt_data = results['lead_times'][lt]
+                        report.append(
+                            f"      {lt}h: MSE {lt_data['mse_original']:.6f} → {lt_data['mse_corrected']:.6f}, "
+                            f"RMSE improvement {lt_data['improvement_percent']:.2f}%"
+                        )
 
     report.append("")
-    report.append("=" * 80)
+    report.append("=" * 100)
 
     return "\n".join(report)
 
@@ -274,6 +360,13 @@ def create_comparison_report(results_dict):
 def create_json_summary(results_dict):
     """Create a JSON summary of results"""
     summary = {
+        'metadata': {
+            'region': 'India',
+            'subregion': '6x6',
+            'model': 'pangu',
+            'output_variable': '2m_temperature',
+            'lead_times': LEAD_TIMES
+        },
         'experiments': {}
     }
 
@@ -284,6 +377,8 @@ def create_json_summary(results_dict):
                 'name': exp_info['name'],
                 'description': exp_info['description'],
                 'architecture': exp_info['architecture'],
+                'group': exp_info.get('group', 'Other'),
+                'variables': exp_info.get('variables', 'Unknown'),
                 'parameters': results['architecture_params'],
                 'training_time_minutes': results['training_time'],
                 'results_by_lead_time': results['lead_times']
