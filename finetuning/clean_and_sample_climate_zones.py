@@ -493,18 +493,23 @@ def classify_patch_by_continent(center_lat: float, center_lon: float) -> str:
     if lat < -60:
         return 'antarctica'
 
+    # Greenland - exclude completely (return 'greenland' to filter out)
+    if 60 <= lat <= 84:
+        if -75 <= lon <= -10:
+            return 'greenland'
+
     # Oceania/Australia
     if -47 <= lat <= 10:
         if 110 <= lon <= 180:
             return 'oceania'
 
-    # South America
-    if -56 <= lat <= 13:
-        if -82 <= lon <= -34:
+    # South America (extended to include Central America)
+    if -56 <= lat <= 18:
+        if -92 <= lon <= -34:
             return 'south_america'
 
-    # North America (including Central America and Caribbean)
-    if 15 <= lat <= 83:
+    # North America (excluding Central America, starting at 18°N)
+    if 18 <= lat <= 83:
         if -170 <= lon <= -52:
             return 'north_america'
 
@@ -614,6 +619,10 @@ def create_global_land_patches(dirs: Dict, patch_size_deg: int = 6,
 
                 # Classify by continent
                 continent = classify_patch_by_continent(center_lat, center_lon)
+
+                # Skip Greenland patches (don't save them)
+                if continent == 'greenland':
+                    continue
 
                 # Store patch as (lat_slice, lon_slice)
                 continent_patches[continent].append((lat_slice, lon_slice))
