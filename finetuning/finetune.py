@@ -826,7 +826,7 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
     """
-    Run experiment with multiple lead times and month encoding.
+    Run experiment with multiple lead times 
     """
     start_time = time.time()
 
@@ -869,7 +869,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     n_lead_times = len(args.lead_time_hours)
 
     if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
-        print(f"Using UNet with {n_lead_times} lead times and month encoding")
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
@@ -877,7 +876,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
         num_epochs = 200
     else:
-        print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
+        print(f"Using SimpleMLP with {n_lead_times} lead times")
         print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
         print(f"  MLP num_layers: {args.mlp_num_layers}")
         print(f"  MLP dropout: {args.mlp_dropout}")
@@ -958,7 +957,7 @@ def main():
     # LEGACY FLAG: Set to True to use global yearly files (legacy format)
     # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    USE_LEGACY_GLOBAL_DATA = True # <-- EDIT THIS FLAG
+    USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
