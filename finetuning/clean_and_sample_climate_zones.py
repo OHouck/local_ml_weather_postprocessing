@@ -416,7 +416,7 @@ def create_climate_zone_patches(dirs):
 def create_topographic_zone_patches(topo_zones: xr.DataArray, dirs: Dict):
     """
     Create patches of topographic zones for bootstrapping.
-    
+
     Parameters
     ----------
     topo_zones : xr.DataArray
@@ -431,18 +431,18 @@ def create_topographic_zone_patches(topo_zones: xr.DataArray, dirs: Dict):
 
     nlat_patch, nlon_patch = get_patch_shape(subregion)
     topo_zone_list = ["flat", "hilly", "mountainous"]
-    
+
     for zone_name in topo_zone_list:
         zone_code = TOPO_ZONE_MAP[zone_name]
         print(f"Sampling {zone_name} topographic patches...")
-        
+
         patch_path = os.path.join(dirs["processed"], f"topo_zone_patches_{zone_name}_{subregion}.npy")
-        
+
         # check if the patches already exist
         if os.path.exists(patch_path):
             print(f"Patch file {patch_path} already exists. Skipping sampling.")
             continue
-        
+
         # Sample N patches for this zone
         N = 50
         patches = sample_zone_patches(
@@ -457,17 +457,294 @@ def create_topographic_zone_patches(topo_zones: xr.DataArray, dirs: Dict):
             zone_type='topographic',
             exclude_masked=True  # Explicitly exclude patches with NaN values
         )
-        
+
         # save patches to disk
         np.save(patch_path, patches)
         print(f"Saved {len(patches)} patches to {patch_path}")
+
+def classify_patch_by_continent(center_lat: float, center_lon: float) -> str:
+    """
+    Classify a patch by continent based on its center coordinates.
+
+    Uses simplified continental boundaries. For overlapping regions,
+    priority is given in the order checked.
+
+    Parameters
+    ----------
+    center_lat : float
+        Center latitude of patch (degrees North)
+    center_lon : float
+        Center longitude of patch (degrees East, 0-360)
+
+    Returns
+    -------
+    continent : str
+        Continent name: 'africa', 'asia', 'europe', 'north_america',
+        'south_america', 'oceania', or 'unknown'
+    """
+    # Convert longitude from 0-360 to -180-180 for easier continent boundaries
+    lon = center_lon if center_lon <= 180 else center_lon - 360
+    lat = center_lat
+
+    # Define continental boundaries (simplified)
+    # Note: Some boundaries overlap; order matters for classification
+
+    # Antarctica (should be filtered out earlier, but include for completeness)
+    if lat < -60:
+        return 'antarctica'
+
+    # Greenland - exclude completely (return 'greenland' to filter out)
+    if 60 <= lat <= 84:
+        if -75 <= lon <= -10:
+            return 'greenland'
+
+    # Oceania/Australia
+    if -47 <= lat <= 10:
+        if 110 <= lon <= 180:
+            return 'oceania'
+
+    # South America (extended to include Central America)
+    if -56 <= lat <= 18:
+        if -92 <= lon <= -34:
+            return 'south_america'
+
+    # North America (excluding Central America, starting at 18°N)
+    if 18 <= lat <= 83:
+        if -170 <= lon <= -52:
+            return 'north_america'
+
+    # Africa
+    if -35 <= lat <= 37:
+        if -18 <= lon <= 52:
+            return 'africa'
+
+    # Europe
+    if 35 <= lat <= 71:
+        if -25 <= lon <= 60:
+            return 'europe'
+
+    # Asia (larger region, checked after Europe to handle overlap)
+    if -10 <= lat <= 80:
+        if 25 <= lon <= 180:
+            return 'asia'
+
+    return 'unknown'
+
+def create_global_land_patches(dirs: Dict, patch_size_deg: int = 6,
+                                land_threshold: float = 0.5):
+    """
+    Divide the world into 6x6 degree grid cells, filter by land coverage,
+    exclude Antarctica, classify by continent, and save patches.
+
+    Parameters
+    ----------
+    dirs : Dict
+        Directory paths (must contain 'processed' and 'raw' keys)
+    patch_size_deg : int
+        Size of each patch in degrees (default: 6)
+    land_threshold : float
+        Minimum fraction of land required to keep a patch (default: 0.5)
+
+    Returns
+    -------
+    continent_patches : dict
+        Dictionary mapping continent names to lists of patches
+    """
+    print(f"\n{'='*70}")
+    print(f"Creating global {patch_size_deg}x{patch_size_deg}° land patches by continent")
+    print(f"{'='*70}\n")
+
+    # Load land-sea mask
+    sea_mask_path = os.path.join(dirs["raw"], "IMERG_land_sea_mask.nc")
+    sea_mask = xr.open_dataset(sea_mask_path)["landseamask"]
+
+    # Make strict binary of land vs sea (<20 is land in original mask)
+    sea_mask = xr.where(sea_mask < 20, 1, 0)
+
+    # Regrid to 0.25°
+    sea_mask_p25 = regrid_to_025(sea_mask, resolution=0.25)
+    print(f"Land mask regridded to 0.25° resolution: {sea_mask_p25.shape}")
+
+    # Replace nodata values with 0 (ocean)
+    sea_mask_p25 = xr.where(sea_mask_p25 < 0, 0, sea_mask_p25)
+
+    # Get coordinate arrays
+    lats = sea_mask_p25.lat.values
+    lons = sea_mask_p25.lon.values
+
+    # Calculate patch size in grid points (0.25° resolution)
+    patch_grid_size = int(patch_size_deg / 0.25)
+
+    # Initialize dictionary to store patches by continent
+    continent_patches = {
+        'africa': [],
+        'asia': [],
+        'europe': [],
+        'north_america': [],
+        'south_america': [],
+        'oceania': [],
+        'unknown': []
+    }
+
+    # Generate all possible patches
+    print(f"Scanning global grid for {patch_size_deg}x{patch_size_deg}° patches with >{land_threshold*100}% land coverage...")
+    total_patches = 0
+    land_patches = 0
+
+    # Iterate over latitude
+    for i in range(0, len(lats) - patch_grid_size + 1, patch_grid_size):
+        lat_slice = lats[i:i+patch_grid_size]
+        center_lat = np.mean(lat_slice)
+
+        # Skip Antarctica (lat < -60)
+        if center_lat < -60:
+            continue
+
+        # Iterate over longitude
+        for j in range(0, len(lons) - patch_grid_size + 1, patch_grid_size):
+            lon_slice = lons[j:j+patch_grid_size]
+            center_lon = np.mean(lon_slice)
+
+            total_patches += 1
+
+            # Extract patch from land mask
+            patch_mask = sea_mask_p25.sel(lat=lat_slice, lon=lon_slice)
+
+            # Calculate land fraction
+            land_fraction = float(patch_mask.mean())
+
+            # Keep patch if land fraction exceeds threshold
+            if land_fraction >= land_threshold:
+                land_patches += 1
+
+                # Classify by continent
+                continent = classify_patch_by_continent(center_lat, center_lon)
+
+                # Skip Greenland patches (don't save them)
+                if continent == 'greenland':
+                    continue
+
+                # Store patch as (lat_slice, lon_slice)
+                continent_patches[continent].append((lat_slice, lon_slice))
+
+    print(f"\nScanning complete:")
+    print(f"  Total patches scanned: {total_patches}")
+    print(f"  Patches with >{land_threshold*100}% land: {land_patches}")
+    print(f"\nPatches by continent:")
+    for continent, patches in continent_patches.items():
+        if len(patches) > 0:
+            print(f"  {continent:15s}: {len(patches):4d} patches")
+
+    # Save patches to disk
+    print(f"\nSaving patches to {dirs['processed']}/")
+    for continent, patches in continent_patches.items():
+        if len(patches) > 0:
+            patch_path = os.path.join(dirs["processed"], f"{continent}_patches.npy")
+            np.save(patch_path, patches)
+            print(f"  Saved {patch_path}")
+
+    print(f"\n{'='*70}")
+    print(f"Global land patch creation complete!")
+    print(f"{'='*70}\n")
+
+    return continent_patches
+
+def plot_global_land_patches(dirs: Dict):
+    """
+    Quick visualization of global land patches colored by continent.
+
+    TEMPORARY FUNCTION - Easy to remove when no longer needed.
+
+    Parameters
+    ----------
+    dirs : Dict
+        Directory paths (must contain 'processed' and 'fig' keys)
+    """
+    # Define continent colors
+    continent_colors = {
+        'africa': '#FF6B35',        # Orange-red
+        'asia': '#F7931E',          # Orange
+        'europe': '#004E89',        # Blue
+        'north_america': '#1B998B', # Teal
+        'south_america': '#9B59B6', # Purple
+        'oceania': '#E74C3C',       # Red
+        'unknown': '#95A5A6'        # Gray
+    }
+
+    # Load patches for each continent
+    continent_patches = {}
+    for continent in continent_colors.keys():
+        patch_path = os.path.join(dirs["processed"], f"{continent}_patches.npy")
+        if os.path.exists(patch_path):
+            continent_patches[continent] = np.load(patch_path, allow_pickle=True)
+            print(f"Loaded {len(continent_patches[continent])} patches for {continent}")
+        else:
+            continent_patches[continent] = []
+
+    # Create figure
+    plt.figure(figsize=(16, 8))
+    ax = plt.axes()
+
+    # Set world bounds
+    ax.set_xlim(0, 360)
+    ax.set_ylim(-90, 90)
+    ax.set_aspect('equal')
+
+    # Plot patches for each continent
+    for continent, patches in continent_patches.items():
+        if len(patches) == 0:
+            continue
+
+        color = continent_colors[continent]
+
+        for lat_slice, lon_slice in patches:
+            min_lat, max_lat = lat_slice.min(), lat_slice.max()
+            min_lon, max_lon = lon_slice.min(), lon_slice.max()
+
+            # Create rectangle
+            rect = Rectangle(
+                (min_lon, min_lat),
+                max_lon - min_lon,
+                max_lat - min_lat,
+                facecolor=color,
+                alpha=0.7,
+                edgecolor='black',
+                linewidth=0.5,
+                label=continent.replace('_', ' ').title()
+            )
+            ax.add_patch(rect)
+
+    # Add legend (only unique labels)
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys(),
+              loc='lower left', fontsize=10, framealpha=0.9)
+
+    # Add grid and labels
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_xlabel('Longitude (°E)', fontsize=12)
+    ax.set_ylabel('Latitude (°N)', fontsize=12)
+    ax.set_title('Global Land Patches by Continent (6×6°)', fontsize=14, fontweight='bold')
+
+    # Add tick marks
+    ax.set_xticks(np.arange(0, 361, 30))
+    ax.set_yticks(np.arange(-90, 91, 30))
+
+    plt.tight_layout()
+
+    # Save figure
+    fig_path = os.path.join(dirs["fig"], "global_land_patches_by_continent.png")
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"\nSaved plot to {fig_path}")
+
+    return fig_path
 
 def main():
 
     dirs = setup_directories()
 
 
-    # Get ERA5 Standard Deviation of Orthography from static variables 
+    # Get ERA5 Standard Deviation of Orthography from static variables
     # Downloaded to initialize aurora model
     era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
     sdor = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
@@ -477,7 +754,7 @@ def main():
     topo_zones = bin_topography(sdor, dirs)
     print("Topographic zones shape:", topo_zones.shape)
     print("Unique zones:", np.unique(topo_zones.values[~np.isnan(topo_zones.values)]))
-    
+
     # Save topographic zones
     topo_zones_path = os.path.join(dirs["processed"], "topo_zones_0p25.nc")
     topo_zones.to_netcdf(topo_zones_path)
@@ -488,9 +765,15 @@ def main():
 
     # sample and save climate zone patches for bootstrapping
     # create_climate_zone_patches(dirs) # uncomment if need to resample patches
-    
+
     # sample and save topographic zone patches for bootstrapping
     # create_topographic_zone_patches(topo_zones, dirs) # uncomment to sample topo patches
+
+    # create global land patches divided by continent
+    create_global_land_patches(dirs, patch_size_deg=6, land_threshold=0.5) # uncomment to create continental patches
+    # plot global land patches by continent
+    plot_global_land_patches(dirs)  # uncomment to plot continental patches
+    exit()
 
 
     # load and plot the data
