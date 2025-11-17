@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helper_funcs import setup_directories
-from clean_and_sample_climate_zones import create_global_land_patches
+from clean_and_sample_climate_zones import create_global_land_patches, plot_global_land_patches
 
 
 def main():
@@ -57,6 +57,13 @@ def main():
     for continent, patches in continent_patches.items():
         if len(patches) > 0:
             print(f"  - {continent}_patches.npy")
+
+    # Create visualization
+    print("\n" + "="*70)
+    print("Creating visualization...")
+    print("="*70)
+    fig_path = plot_global_land_patches(dirs)
+    print(f"Visualization complete: {fig_path}")
 
     print("\n" + "="*70)
     print("To load patches in another script:")

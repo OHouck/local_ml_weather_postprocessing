@@ -640,6 +640,96 @@ def create_global_land_patches(dirs: Dict, patch_size_deg: int = 6,
 
     return continent_patches
 
+def plot_global_land_patches(dirs: Dict):
+    """
+    Quick visualization of global land patches colored by continent.
+
+    TEMPORARY FUNCTION - Easy to remove when no longer needed.
+
+    Parameters
+    ----------
+    dirs : Dict
+        Directory paths (must contain 'processed' and 'fig' keys)
+    """
+    # Define continent colors
+    continent_colors = {
+        'africa': '#FF6B35',        # Orange-red
+        'asia': '#F7931E',          # Orange
+        'europe': '#004E89',        # Blue
+        'north_america': '#1B998B', # Teal
+        'south_america': '#9B59B6', # Purple
+        'oceania': '#E74C3C',       # Red
+        'unknown': '#95A5A6'        # Gray
+    }
+
+    # Load patches for each continent
+    continent_patches = {}
+    for continent in continent_colors.keys():
+        patch_path = os.path.join(dirs["processed"], f"{continent}_patches.npy")
+        if os.path.exists(patch_path):
+            continent_patches[continent] = np.load(patch_path, allow_pickle=True)
+            print(f"Loaded {len(continent_patches[continent])} patches for {continent}")
+        else:
+            continent_patches[continent] = []
+
+    # Create figure
+    plt.figure(figsize=(16, 8))
+    ax = plt.axes()
+
+    # Set world bounds
+    ax.set_xlim(0, 360)
+    ax.set_ylim(-90, 90)
+    ax.set_aspect('equal')
+
+    # Plot patches for each continent
+    for continent, patches in continent_patches.items():
+        if len(patches) == 0:
+            continue
+
+        color = continent_colors[continent]
+
+        for lat_slice, lon_slice in patches:
+            min_lat, max_lat = lat_slice.min(), lat_slice.max()
+            min_lon, max_lon = lon_slice.min(), lon_slice.max()
+
+            # Create rectangle
+            rect = Rectangle(
+                (min_lon, min_lat),
+                max_lon - min_lon,
+                max_lat - min_lat,
+                facecolor=color,
+                alpha=0.7,
+                edgecolor='black',
+                linewidth=0.5,
+                label=continent.replace('_', ' ').title()
+            )
+            ax.add_patch(rect)
+
+    # Add legend (only unique labels)
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys(),
+              loc='lower left', fontsize=10, framealpha=0.9)
+
+    # Add grid and labels
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_xlabel('Longitude (°E)', fontsize=12)
+    ax.set_ylabel('Latitude (°N)', fontsize=12)
+    ax.set_title('Global Land Patches by Continent (6×6°)', fontsize=14, fontweight='bold')
+
+    # Add tick marks
+    ax.set_xticks(np.arange(0, 361, 30))
+    ax.set_yticks(np.arange(-90, 91, 30))
+
+    plt.tight_layout()
+
+    # Save figure
+    fig_path = os.path.join(dirs["fig"], "global_land_patches_by_continent.png")
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"\nSaved plot to {fig_path}")
+
+    return fig_path
+
 def main():
 
     dirs = setup_directories()
