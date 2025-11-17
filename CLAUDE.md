@@ -39,12 +39,6 @@ This repository implements **neural network-based post-processing** (bias correc
 2. **UNet**: Convolutional U-Net for preserving spatial structure
 3. **Aurora**: Microsoft's foundation weather model (separate module)
 
-### Expected Outcomes
-- **Baseline**: SimpleMLP/UNet without improvements
-- **Conservative improvements**: 4-5% RMSE reduction (residual connections, better normalization) need to test
-- **Moderate improvements**: 5-6% RMSE reduction (+ attention mechanisms) need to test
-- **Aggressive improvements**: Not recommended (over-engineered, worse performance) need to test
-
 ---
 
 ## CODEBASE STRUCTURE

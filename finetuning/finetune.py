@@ -621,12 +621,12 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     # Add ReduceLROnPlateau scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=scheduler_factor,
-        patience=scheduler_patience, min_lr=min_lr, verbose=True
+        patience=scheduler_patience, min_lr=min_lr
     )
 
     # Setup mixed precision training for CUDA
     use_amp = device.type == 'cuda'
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
     if use_amp:
         print("Using mixed precision training (AMP) for faster GPU training")
 
@@ -700,7 +700,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 doy_batch = doy_batch.to(device, non_blocking=non_blocking)
 
                 if use_amp:
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast('cuda'):
                         pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                         preds = fc_output_batch + pred_error
 
