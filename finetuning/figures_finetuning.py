@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
-from finetuning.process_forecasts import calculate_rmse
+from finetuning.process_forecasts import calculate_rmse, calculate_extreme_heat_rmse
 
 # Suppress Zarr warnings (e.g., for .DS_Store files)
 import warnings
@@ -519,7 +519,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                         test_end, model, training_output_vars,
                                         prediction_var, nn_architecture=["mlp"],
                                         lead_time=None, simultaneous=False,
-                                        growing_season_only = False, alternative_loss_fn = None):
+                                        growing_season_only = False, alternate_loss_fn = None):
     """
     Creates plot showing how RMSE changes when trained on different sizes of subregions.
     """
@@ -569,7 +569,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                         lead_time_hours=lead_time_hours,
                         nn_architecture=arch,
                         growing_season_only = growing_season_only,
-                        alternative_loss_fn = alternative_loss_fn
+                        alternate_loss_fn = alternate_loss_fn
                     )
                     
                     path = os.path.join(input_folder, generate_output_path(args))
@@ -737,7 +737,7 @@ def generate_map_plots(
         lead_time=24,
         simultaneous=False,
         growing_season_only = False,
-        alternative_loss_fn = None
+        alternate_loss_fn = None
 ):
     """
     Generates a figure with 2 maps: original forecast RMSE and percent improvement in RMSE.
@@ -782,7 +782,7 @@ def generate_map_plots(
         lead_time_hours=lead_time_hours,
         nn_architecture=nn_architecture,
         growing_season_only=growing_season_only,
-        alternative_loss_fn= alternative_loss_fn
+        alternate_loss_fn=alternate_loss_fn
     )
     
 
@@ -972,7 +972,7 @@ def generate_time_series_plots(
         lead_time=24,
         simultaneous=False,
         growing_season_only=False,
-        alternative_loss_fn=None
+        alternate_loss_fn=None
 ):
     """
     Generates a single bar plot showing monthly RMSE for original and corrected forecasts
@@ -1016,7 +1016,7 @@ def generate_time_series_plots(
         lead_time_hours=lead_time_hours,
         nn_architecture=nn_architecture,
         growing_season_only=growing_season_only,
-        alternative_loss_fn=alternative_loss_fn
+        alternate_loss_fn=alternate_loss_fn
 
 
     )
@@ -1663,6 +1663,331 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     print(f"RMSE improvement plot saved to: {save_path}")
 
 
+def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_start, test_end,
+                                         model, training_output_vars, variable, lead_time,
+                                         regions=None, subregion="6x6",
+                                         nn_architecture="mlp", loss_trained_on="mse",
+                                         evaluation_loss="rmse",
+                                         n_bins=10, growing_season_only=False,
+                                         ground_truth_source="",
+                                         save_path=None):
+    """
+    Plot RMSE improvement (or other metrics) binned by weather variable values.
+
+    Creates a line plot with RMSE improvement (or other metric) on y-axis and
+    binned weather variable values on x-axis. Each region gets its own line.
+    Includes a translucent histogram at the bottom showing data density.
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories from setup_directories()
+    train_start : str
+        Training start date (YYYY-MM-DD)
+    train_end : str
+        Training end date (YYYY-MM-DD)
+    test_start : str
+        Test start date (YYYY-MM-DD)
+    test_end : str
+        Test end date (YYYY-MM-DD)
+    model : str
+        Model name: "pangu", "ifs", "aifs", etc.
+    training_output_vars : tuple
+        Tuple of (training_vars, output_vars) where each is a list
+        Example: (['2m_temperature'], ['2m_temperature'])
+    variable : str
+        Variable to plot (e.g., "2m_temperature", "10m_wind_speed")
+    lead_time : int
+        Specific lead time in hours (e.g., 24, 72, 144)
+    regions : list or None
+        List of regions to include. If None, defaults to standard regions
+    subregion : str
+        Patch size identifier (default: "6x6")
+    nn_architecture : str
+        Architecture used: "mlp" or "unet"
+    evaluation_loss : str
+        Evaluation loss function. Options:
+        - "rmse_pct_improvement": RMSE percentage improvement (default)
+        - "extreme_heat": Extreme heat RMSE percentage improvement (uses weighted loss function)
+        Additional metrics can be added as needed
+    n_bins : int
+        Number of bins for weather variable (default: 10)
+    growing_season_only : bool
+        Whether to use results from model trained only on growing season
+    alternate_loss_fn : str or None
+        Alternate loss function used (e.g., "extreme_heat_loss")
+    ground_truth_source : str
+        Ground truth source identifier (default: "")
+    save_path : str
+        Custom save path. If None, auto-generates based on parameters
+
+    Returns
+    -------
+    None
+        Saves plot to file
+    """
+    input_folder = dirs['input']
+    training_vars, output_vars = training_output_vars
+    training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
+    output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
+
+    # If regions not specified, use standard regions
+    if regions is None:
+        regions = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
+
+    # Get color schemes
+    region_colors, climate_region_colors, topographic_region_colors, _, _ = _get_color_schemes()
+
+    # Create figure with gridspec for main plot and histogram
+    fig = plt.figure(figsize=(14, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
+    ax_main = fig.add_subplot(gs[0])
+    ax_hist = fig.add_subplot(gs[1], sharex=ax_main)
+
+    # Storage for histogram data per region
+    region_histogram_data = {}
+
+    # Determine if temperature conversion is needed
+    is_temperature = 'temperature' in variable.lower()
+
+    # First pass: Load all data and calculate global min/max
+    global_min, global_max = float('inf'), float('-inf')
+    loaded_data = {}  # Cache loaded data to avoid redundant loading
+
+    for region in regions:
+
+        # Build path using generate_output_path
+        if loss_trained_on == "extreme_heat":
+            alternate_loss_fn= "extreme_heat_loss"
+        else:
+            alternate_loss_fn = None
+        args = SimpleNamespace(
+            model_name=model,
+            region=region,
+            subregion=subregion,
+            train_start=train_start,
+            train_end=train_end,
+            test_start=test_start,
+            test_end=test_end,
+            training_vars=training_vars,
+            output_vars=output_vars,
+            alternate_loss_fn=alternate_loss_fn,
+            lead_time_hours=[24, 120, 216], # XX change if adding more lead times
+            nn_architecture=nn_architecture,
+            growing_season_only=growing_season_only,
+            ground_truth_source=ground_truth_source
+        )
+
+        zarr_path = os.path.join(input_folder, generate_output_path(args))
+        print(f"Loading data from: {zarr_path}")
+
+        try:
+            ds = load_zarr_cached(zarr_path)
+            ground_truth, original, corrected, mean_corrected = extract_forecast_data(ds, variable, lead_time)
+        except Exception as e:
+            print(f"Warning: Could not load data for region {region}: {e}")
+            continue
+
+        # Flatten arrays
+        gt_flat = ground_truth.values.flatten()
+        orig_flat = original.values.flatten()
+        corr_flat = corrected.values.flatten()
+
+        # Remove NaN values
+        valid_mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+        gt_flat = gt_flat[valid_mask]
+        orig_flat = orig_flat[valid_mask]
+        corr_flat = corr_flat[valid_mask]
+
+        # Convert temperature from Kelvin to Celsius if needed
+        if is_temperature:
+            gt_flat = gt_flat - 273.15
+            orig_flat = orig_flat - 273.15
+            corr_flat = corr_flat - 273.15
+
+        # Store data for this region (for calculating global bins and histogram)
+        loaded_data[region] = {
+            'gt': gt_flat,
+            'orig': orig_flat,
+            'corr': corr_flat
+        }
+
+        # Update global min/max
+        global_min = min(global_min, gt_flat.min())
+        global_max = max(global_max, gt_flat.max())
+
+    # Create bins with equal spacing based on global min/max
+    bin_edges = np.linspace(global_min, global_max, n_bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # Second pass: Calculate metrics and plot using cached data
+    for region in regions:
+        if region not in loaded_data:
+            continue
+
+        gt_flat = loaded_data[region]['gt']
+        orig_flat = loaded_data[region]['orig']
+        corr_flat = loaded_data[region]['corr']
+
+        # Store for histogram (per region)
+        region_histogram_data[region] = gt_flat
+
+        # Bin the data
+        bin_indices = np.digitize(gt_flat, bin_edges) - 1
+        bin_indices = np.clip(bin_indices, 0, n_bins - 1)  # Handle edge cases
+
+        # Calculate metric for each bin
+        metric_values = []
+        for i in range(n_bins):
+            bin_mask = bin_indices == i
+
+            if np.sum(bin_mask) == 0:
+                metric_values.append(np.nan)
+                continue
+
+            gt_bin = gt_flat[bin_mask]
+            orig_bin = orig_flat[bin_mask]
+            corr_bin = corr_flat[bin_mask]
+
+            if evaluation_loss == "rmse":
+                rmse_orig = np.sqrt(np.mean((orig_bin - gt_bin) ** 2))
+                rmse_corr = np.sqrt(np.mean((corr_bin - gt_bin) ** 2))
+
+                if rmse_orig == 0:
+                    improvement = 0
+                else:
+                    improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                metric_values.append(improvement)
+
+            elif evaluation_loss == "extreme_heat":
+                # Calculate extreme heat RMSE using the weighted loss function
+                rmse_orig_extreme = calculate_extreme_heat_rmse(orig_bin, gt_bin)
+                rmse_corr_extreme = calculate_extreme_heat_rmse(corr_bin, gt_bin)
+
+                if rmse_orig_extreme == 0:
+                    improvement = 0
+                else:
+                    improvement = (rmse_orig_extreme - rmse_corr_extreme) / rmse_orig_extreme * 100
+                metric_values.append(improvement)
+            else:
+                raise ValueError(f"Unknown metric: {evaluation_loss}")
+
+        # Get color for region
+        if region in climate_region_colors:
+            color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        else:
+            color = region_colors.get(region, '#1f77b4')
+
+        # Plot line
+        ax_main.plot(bin_centers, metric_values, marker='o', linewidth=2.5,
+                    markersize=8, color=color, label=region.replace('_', ' ').title(),
+                    alpha=0.9)
+
+    # Set up main axis
+    if evaluation_loss == "rmse":
+        ax_main.set_ylabel("RMSE Improvement (%)", fontsize=18)
+        ax_main.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    elif evaluation_loss == "extreme_heat":
+        ax_main.set_ylabel("Extreme Heat RMSE Improvement (%)", fontsize=18)
+        ax_main.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+
+    ax_main.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax_main.set_axisbelow(True)
+    ax_main.tick_params(axis='both', labelsize=16)
+
+    # Title
+    regions_str = ", ".join([r.replace('_', ' ').title() for r in regions])
+    var_display = variable.replace('_', ' ').title()
+    title = f"{evaluation_loss.replace('_', ' ').title()} by {var_display} Value\n"
+    title += f"Model: {model.upper()}, Lead Time: {lead_time}h, Architecture: {nn_architecture.upper()}"
+    if len(regions) <= 3:
+        title += f"\nRegions: {regions_str}"
+    ax_main.set_title(title, fontsize=18, pad=15)
+
+    # Legend
+    ax_main.legend(loc='best', fontsize=14, framealpha=0.95, edgecolor='gray')
+
+    # Remove x-axis labels from main plot (shared with histogram)
+    plt.setp(ax_main.get_xticklabels(), visible=False)
+
+    # Create overlapping histograms for each region (density/percentage)
+    for region in regions:
+        if region not in region_histogram_data:
+            continue
+
+        # Get color matching the line plot
+        if region in climate_region_colors:
+            color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        else:
+            color = region_colors.get(region, '#1f77b4')
+
+        # Plot histogram with density=True to get probability density
+        ax_hist.hist(region_histogram_data[region], bins=bin_edges,
+                    color=color, alpha=0.3, edgecolor=color, linewidth=1.5,
+                    density=True, label=region.replace('_', ' ').title())
+
+    # Convert y-axis to percentages
+    ax_hist.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y*100:.1f}%'))
+    ax_hist.set_ylabel('Probability Density (%)', fontsize=16)
+    ax_hist.tick_params(axis='both', labelsize=14)
+    ax_hist.grid(True, alpha=0.3, linestyle='--', linewidth=0.5, axis='y')
+    ax_hist.set_axisbelow(True)
+
+    # Add legend to histogram if multiple regions
+    if len(regions) > 1:
+        ax_hist.legend(loc='upper right', fontsize=10, framealpha=0.9, ncol=min(3, len(regions)))
+
+    # Set x-axis label
+    if is_temperature:
+        unit = "°C"
+    elif "wind" in variable:
+        unit = "m/s"
+    else:
+        unit = ""
+
+    xlabel = f"{var_display} {unit}".strip()
+    ax_hist.set_xlabel(xlabel, fontsize=18)
+
+    # Remove top spine from histogram
+    ax_hist.spines['top'].set_visible(False)
+    ax_main.spines['bottom'].set_visible(False)
+
+    # Remove other unnecessary spines
+    for ax in [ax_main, ax_hist]:
+        ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+
+    # Save figure
+    if save_path is None:
+        out_folder = os.path.join(dirs["fig"], model, "binned_analysis", subregion)
+        os.makedirs(out_folder, exist_ok=True)
+
+        if len(regions) == 1:
+            region_str = regions[0]
+        elif any(r in climate_region_colors for r in regions):
+            region_str = "climate_zones"
+        elif any(r in topographic_region_colors for r in regions):
+            region_str = "topographic_zones"
+        else:
+            region_str = "multi_region"
+
+        fname = (f"binned_{evaluation_loss}_trained_on_{loss_trained_on}_{variable}_lt{lead_time}h_{model}_"
+                f"{nn_architecture}_{region_str}_{n_bins}bins.png")
+        save_path = os.path.join(out_folder, fname)
+
+    plt.show()
+    exit()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Binned RMSE improvement plot saved to: {save_path}")
+
+
 def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                             regions=None, subregion="6x6",
                             nn_architectures=["mlp"], growing_season_only = False, 
@@ -2226,18 +2551,49 @@ def main():
     dirs = setup_directories()
 
 
-    for map_type in ["original", "improvement"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            for model in ["ifs", "pangu"]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                  variable=variable, y_metric=map_type, 
-                                                  x_metric="equator_distance")
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                  variable=variable, y_metric=map_type, 
-                                                  x_metric="sdor")
-                map_global_improvements(dirs=dirs, model=model, 
-                                        variable=variable, map_type=map_type)
-    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
+#=============================================
+# Global Improvement Plots
+#=============================================
+    # for map_type in ["original", "improvement"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         for model in ["ifs", "pangu"]:
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                               variable=variable, y_metric=map_type, 
+    #                                               x_metric="equator_distance")
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                               variable=variable, y_metric=map_type, 
+    #                                               x_metric="sdor")
+    #             map_global_improvements(dirs=dirs, model=model, 
+    #                                     variable=variable, map_type=map_type)
+
+#=============================================
+# Binned RMSE Improvement Plots
+#=============================================
+    dirs = setup_directories()
+    var = "2m_temperature"
+    loss_train_on = "mse"
+    evaluation_loss = "rmse"
+    training_outptut_vars = ([var], [var])
+    variable = var
+    plot_rmse_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
+                                test_start="2022-01-01", test_end="2022-12-31",
+                                model="pangu",
+                                training_output_vars=training_outptut_vars,
+                                variable=variable,
+                                nn_architecture="mlp",
+                                lead_time=216,
+                                regions=["india", "ethiopia", "usa_south", "amazon"],
+                                subregion="6x6",
+                                n_bins=10,
+                                loss_trained_on=loss_train_on,
+                                evaluation_loss=evaluation_loss
+                                )
+
+    exit()
+
+#=============================================
+# Lead Time Plots (by region and lead time)
+#=============================================
 
     nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
     variable_list = ["2m_temperature", "10m_wind_speed"]
@@ -2246,6 +2602,7 @@ def main():
     climate_regions = ["tropical", "arid", "temperate"]
     topo_regions = ["flat", "hilly", "mountainous"]
     growing_season_flags = [False]
+    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
     for var in variable_list:
         for model in model_list:
             for gs_flag in growing_season_flags:
