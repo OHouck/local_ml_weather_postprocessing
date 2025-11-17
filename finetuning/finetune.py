@@ -71,7 +71,7 @@ TOPO_ZONE_MAP = {
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
 # ------------------------------
-# Simple MLP definition with lead time and month encoding
+# Simple MLP definition with lead time and day-of-year encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
@@ -82,7 +82,7 @@ class SimpleMLP(nn.Module):
         self.n_lead_times = n_lead_times
         self.lead_time_embedding = None
 
-
+        # Day-of-year features (sin/cos) - 2 features
         # Calculate actual input dimension
         actual_input_dim = input_dim + 2  # +2 for sin and cos of day of year
 
@@ -116,14 +116,14 @@ class SimpleMLP(nn.Module):
         return self.net(x)
 
 # ------------------------------
-# U-Net definition with lead time and month encoding
+# U-Net definition with lead time and day-of-year encoding
 # ------------------------------
 class UNet(nn.Module):
     """
     U-Net architecture with FiLM conditioning for weather forecast bias correction.
-    Uses Feature-wise Linear Modulation to incorporate lead time and month information.
+    Uses Feature-wise Linear Modulation to incorporate lead time and day-of-year information.
     """
-    
+
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
                  n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
                  n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1):
@@ -826,7 +826,7 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
     """
-    Run experiment with multiple lead times and month encoding.
+    Run experiment with multiple lead times and day-of-year encoding.
     """
     start_time = time.time()
 
@@ -869,7 +869,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     n_lead_times = len(args.lead_time_hours)
 
     if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
-        print(f"Using UNet with {n_lead_times} lead times and month encoding")
+        print(f"Using UNet with {n_lead_times} lead times and day-of-year encoding")
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
@@ -877,7 +877,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
         num_epochs = 200
     else:
-        print(f"Using SimpleMLP with {n_lead_times} lead times and month encoding")
+        print(f"Using SimpleMLP with {n_lead_times} lead times and day-of-year encoding")
         print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
         print(f"  MLP num_layers: {args.mlp_num_layers}")
         print(f"  MLP dropout: {args.mlp_dropout}")
