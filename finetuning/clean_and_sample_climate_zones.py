@@ -770,7 +770,10 @@ def main():
     # create_topographic_zone_patches(topo_zones, dirs) # uncomment to sample topo patches
 
     # create global land patches divided by continent
-    # create_global_land_patches(dirs, patch_size_deg=6, land_threshold=0.5) # uncomment to create continental patches
+    create_global_land_patches(dirs, patch_size_deg=6, land_threshold=0.5) # uncomment to create continental patches
+    # plot global land patches by continent
+    plot_global_land_patches(dirs)  # uncomment to plot continental patches
+    exit()
 
 
     # load and plot the data
