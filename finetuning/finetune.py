@@ -561,11 +561,12 @@ def extreme_heat_loss(preds, targets, std_out, mean_out):
 
 
 def train_model(model, train_loader, valid_loader, epochs, lr, device,
-                weight_decay=0, 
-                stats_out=None, alternate_loss_fn=None, 
-                T_0=10, T_mult=3, eta_min=1e-7):
+                weight_decay=0,
+                stats_out=None, alternate_loss_fn=None,
+                patience=50, min_delta=1e-5,
+                scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7):
     """
-    Train the model over multiple epochs with early stopping.
+    Train the model over multiple epochs with ReduceLROnPlateau and early stopping.
 
     Args:
         model: PyTorch model to train
@@ -577,9 +578,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         weight_decay: L2 regularization weight
         stats_out: Statistics for denormalizing outputs (for custom losses)
         alternate_loss_fn: Name of custom loss function to use
-        T_0: Number of epochs for first restart cycle (cosine annealing)
-        T_mult: Factor to increase T_0 after each restart (cosine annealing)
-        eta_min: Minimum learning rate (cosine annealing)
+        patience: Early stopping patience (epochs without improvement)
+        min_delta: Minimum change in validation loss to qualify as improvement
+        scheduler_patience: Number of epochs with no improvement before reducing LR
+        scheduler_factor: Factor by which to reduce learning rate (new_lr = lr * factor)
+        min_lr: Minimum learning rate (floor for scheduler)
     """
 
     loss_functions = {
@@ -603,9 +606,10 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                            lr=lr,
                            weight_decay=weight_decay)
 
-    # Add cosine annealing with warm restarts scheduler
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min
+    # Add ReduceLROnPlateau scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=scheduler_factor,
+        patience=scheduler_patience, min_lr=min_lr, verbose=True
     )
 
     best_val_loss = float('inf')
@@ -669,14 +673,29 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 val_loss += loss.item() * fc_output_batch.size(0)
         val_loss /= len(valid_loader.dataset)
 
-        # --- learning rate scheduling ---
-        scheduler.step()
+        # --- learning rate scheduling (based on validation loss) ---
+        scheduler.step(val_loss)
 
-        # Print progress every 10 epochs (optional, shows LR changes)
+        # --- early stopping check ---
+        if val_loss + min_delta < best_val_loss:
+            best_val_loss = val_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        # Print progress every 10 epochs
         if epoch % 10 == 0:
             current_lr = optimizer.param_groups[0]['lr']
             print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, "
-                  f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}")
+                  f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}, "
+                  f"Best Val: {best_val_loss:.6f}, Patience: {epochs_without_improvement}/{patience}")
+
+        # Check for early stopping
+        if epochs_without_improvement >= patience:
+            print(f"→ Early stopping at epoch {epoch}. "
+                  f"No improvement in {patience} epochs.")
+            break
 
     # Calculate training time in minutes
     train_end_time = time.time()
@@ -898,9 +917,11 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                                 weight_decay=5.210913466175803e-06,
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn=args.alternate_loss_fn,
-                                                T_0=5,  # First restart after 5 epochs
-                                                T_mult=3,  
-                                                eta_min=1.4365296743890787e-07
+                                                patience=50,  # Early stopping: stop after 50 epochs without improvement
+                                                min_delta=1e-5,  # Minimum improvement to qualify as progress
+                                                scheduler_patience=10,  # Reduce LR after 10 epochs without improvement
+                                                scheduler_factor=0.5,  # Reduce LR by half when plateau detected
+                                                min_lr=1e-7  # Minimum learning rate floor
                                               )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
