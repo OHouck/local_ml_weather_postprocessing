@@ -14,13 +14,20 @@
 #
 source .venv/bin/activate
 
-# laptop
-data_dir="/Users/ohouck/globus/forecast_data/raw/"
-output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
-
-# midway
-# data_dir="/project/jfranke/ozma/forecast_data/raw/"
-# output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+# Auto-detect environment based on hostname
+hostname=$(hostname)
+if [[ "$hostname" == "oMac.local" ]]; then
+    # laptop
+    data_dir="/Users/ohouck/globus/forecast_data/raw/"
+    output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
+elif [[ "$hostname" == *"midway3"* ]]; then
+    # midway
+    data_dir="/project/jfranke/ozma/forecast_data/raw/"
+    output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+else
+    echo "Unknown environment. Hostname: $hostname"
+    exit 1
+fi
 
 # ============================================================================
 # TRAINING/OUTPUT VARIABLE PAIRS
