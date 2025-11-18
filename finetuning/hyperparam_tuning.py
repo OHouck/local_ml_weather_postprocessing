@@ -71,36 +71,21 @@ def create_unet_search_space():
         dict: Search space definition for hyperopt
     """
     return {
-<<<<<<< HEAD
         # Model architecture - centered on unet_medium optimal values
         'hidden_dim': hp.choice('hidden_dim', [64, 128]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
-=======
-        # Model architecture
-        'hidden_dim': hp.choice('hidden_dim', [16, 32, 64, 128]),
-
-        # Training parameters
-        'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [4, 8, 16, 32]),
->>>>>>> main
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
 
         # Early stopping parameters
         'patience': hp.choice('patience', [30, 50, 70, 100]),
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
-<<<<<<< HEAD
         # Embedding and regularization - centered on optimal dropout of 0.1
         'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
         'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
-=======
-        # Embedding and regularization
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
-        'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.3),
->>>>>>> main
     }
 
 
@@ -517,13 +502,9 @@ if __name__ == "__main__":
     # Define configuration for optimization
     config = SimpleNamespace(
         model_name="pangu",
-<<<<<<< HEAD
         training_vars=[
             "2m_temperature"
         ],
-=======
-        training_vars=["2m_temperature"],
->>>>>>> main
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
         train_end="2020-12-31",

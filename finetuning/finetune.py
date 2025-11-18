@@ -435,7 +435,6 @@ def parse_args():
 
     # Architecture hyperparameters
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
-<<<<<<< HEAD
                         help='Hidden dimension for MLP (default: 1024, from mlp_moderate)')
     parser.add_argument('--mlp_num_layers', type=int, default=6,
                         help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
@@ -443,15 +442,6 @@ def parse_args():
                         help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
     parser.add_argument('--unet_hidden_dim', type=int, default=64, 
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
-=======
-                        help='Hidden dimension for MLP')
-    parser.add_argument('--mlp_num_layers', type=int, default=4,
-                        help='Number of hidden layers for MLP')
-    parser.add_argument('--mlp_dropout', type=float, default=0.2477893381,
-                        help='Dropout rate for MLP')
-    parser.add_argument('--unet_hidden_dim', type=int, default=256,
-                        help='Base number of channels for UNet')
->>>>>>> main
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
 
