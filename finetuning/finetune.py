@@ -519,18 +519,27 @@ def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_
         torch.from_numpy(day_of_year_features).float()
     )
 
-    # Optimize DataLoader based on device
+    # Optimize DataLoader based on device and available CPU cores
     pin_memory = False
     num_workers = 0
     if device is not None and device.type == 'cuda':
-        pin_memory = True
-        num_workers = 4  # Use multiple workers for GPU
+        # Auto-detect available CPU cores
+        cpu_count = os.cpu_count() or 1
+        # Use min(cpu_count - 1, 4) to leave 1 core for main process
+        # But if only 1-2 cores available, use 0 workers (main process handles it)
+        if cpu_count <= 2:
+            num_workers = 0  # Too few cores, use main process
+            pin_memory = True
+        else:
+            num_workers = min(cpu_count - 1, 4)  # Leave 1 core free, cap at 4
+            pin_memory = True
 
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
                                              shuffle=True,
                                              pin_memory=pin_memory,
-                                             num_workers=num_workers)
+                                             num_workers=num_workers,
+                                             persistent_workers=num_workers > 0)
     return dataloader
 
 
@@ -940,6 +949,11 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
                                   batch_size=128, device=device)
+
+    # Log DataLoader settings
+    print(f"DataLoader settings: num_workers={train_loader.num_workers}, pin_memory={train_loader.pin_memory}")
+    if device.type == 'cuda':
+        print(f"  CPU cores available: {os.cpu_count()}")
 
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon
