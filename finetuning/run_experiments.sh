@@ -15,22 +15,23 @@
 source .venv/bin/activate
 
 # laptop
-data_dir="/Users/ohouck/globus/forecast_data/raw/"
-output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
+# data_dir="/Users/ohouck/globus/forecast_data/raw/"
+# output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 
 # midway
-# data_dir="/project/jfranke/ozma/forecast_data/raw/"
-# output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+data_dir="/project/jfranke/ozma/forecast_data/raw/"
+output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
 
-regions=("corn_belt")
+regions=("india")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 all_lead_times=(24 120 216)
-nn_architectures=("mlp")
-variables=("2m_temperature")
+nn_architectures=("unet")
+training_vars=("2m_temperature" "10m_u_component_of_wind" "10m_v_component_of_wind" "temperature_1000hPa" "specific_humidity_1000hPa" "geopotential_1000hPa")
+output_vars=("2m_temperature")
 model_names=("pangu")
 loss_functions=("mse")
 # Define bootstrap regions
@@ -49,12 +50,12 @@ for region in "${regions[@]}"; do
         fi
         
         for nn_architecture in "${nn_architectures[@]}"; do
-            for variable in "${variables[@]}"; do
+            for output_var in "${output_vars[@]}"; do
                 for model_name in "${model_names[@]}"; do
                     for loss_function in "${loss_functions[@]}"; do
                         # Skip incompatible combinations
-                        if [[ "$loss_function" == "extreme_heat_loss" && ${variable} != "2m_temperature" ]]; then
-                            continue 
+                        if [[ "$loss_function" == "extreme_heat_loss" && ${output_var} != "2m_temperature" ]]; then
+                            continue
                         fi
                         # Determine train/test dates based on model_name
                         if [[ "$model_name" == "aifs" ]]; then
@@ -64,16 +65,16 @@ for region in "${regions[@]}"; do
                             test_end="2024-12-31"
                             
                             # only current aifs variables are total_precipitation and 2m_temperature
-                            if [[ "$variable" != "total_precipitation" && "$variable" != "2m_temperature" ]]; then
+                            if [[ "$output_var" != "total_precipitation" && "$output_var" != "2m_temperature" ]]; then
                                 continue
                             fi
                         else
-                            train_start="2018-01-01"
-                            train_end="2021-12-31"
+                            train_start="2018-01-01" # XX change back after testing
+                            train_end="2018-01-31"
                             test_start="2022-01-01"
-                            test_end="2022-12-31"
+                            test_end="2022-01-31"
                             # aifs is the only model with precipitation currently
-                            if [[ "$variable" == "total_precipitation" ]]; then
+                            if [[ "$output_var" == "total_precipitation" ]]; then
                                 continue
                             fi
                         fi
@@ -82,8 +83,8 @@ for region in "${regions[@]}"; do
                         cmd="python3 finetuning/finetune.py \
                             --data_dir=\"$data_dir\" \
                             --output_dir=\"$output_dir\" \
-                            --training_vars \"$variable\" \
-                            --output_vars \"$variable\" \
+                            --training_vars \"$training_vars\" \
+                            --output_var \"$output_vars\" \
                             --train_start=\"$train_start\" --train_end=\"$train_end\" \
                             --test_start=\"$test_start\" --test_end=\"$test_end\" \
                             --model_name=\"$model_name\" \
@@ -99,7 +100,7 @@ for region in "${regions[@]}"; do
 
                         if [[ "$loss_function" == "extreme_heat_loss" ]]; then
                             # only both doing this for 2m_temperature and for geographic regions
-                            if [[ "$variable" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
+                            if [[ "$output_var" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
                                 cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                             fi
                         fi
