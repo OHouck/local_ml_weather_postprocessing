@@ -1,0 +1,1138 @@
+[0;34m========================================[0m
+[0;34mARCHITECTURE EXPERIMENTS[0m
+[0;34m========================================[0m
+Region: india (6x6)
+Model: pangu
+Training: 2018-01-01 to 2021-12-31
+Testing: 2022-01-01 to 2022-12-31
+Lead times: 24 120 216 hours
+Output directory: /project/jfranke/ozma/forecast_data/processed/architecture_experiments
+
+[0;34m========================================[0m
+[0;34mARCHITECTURE EXPERIMENTS[0m
+[0;34m========================================[0m
+Region: india (6x6)
+Model: pangu
+Training: 2018-01-01 to 2021-12-31
+Testing: 2022-01-01 to 2022-12-31
+Lead times: 24 120 216 hours
+Output directory: /project/jfranke/ozma/forecast_data/processed/architecture_experiments
+
+[0;33mTotal experiments: 9[0m
+
+[0;33m========================================[0m
+[0;33mGROUP 1: MLP Architecture Variations[0m
+[0;33mUsing full variable set (6 variables)[0m
+[0;33m========================================[0m
+
+[0;34m========================================[0m
+[0;34mExperiment: mlp_wide_shallow[0m
+[0;34mMLP Wide Shallow: 3 layers × 2048 neurons (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.69 minutes
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 2048
+  MLP num_layers: 3
+  MLP dropout: 0.3
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.072365, Val Loss: 0.072628, LR: 8.67e-06, Best Val: 0.072628, Patience: 0/50
+Epoch 20/750 - Train Loss: 0.065587, Val Loss: 0.069518, LR: 8.67e-06, Best Val: 0.069431, Patience: 1/50
+Epoch 30/750 - Train Loss: 0.061836, Val Loss: 0.067357, LR: 8.67e-06, Best Val: 0.067357, Patience: 0/50
+Epoch 40/750 - Train Loss: 0.059263, Val Loss: 0.067541, LR: 8.67e-06, Best Val: 0.066920, Patience: 9/50
+Epoch 50/750 - Train Loss: 0.057829, Val Loss: 0.066097, LR: 4.33e-06, Best Val: 0.065949, Patience: 1/50
+Epoch 60/750 - Train Loss: 0.056549, Val Loss: 0.065981, LR: 4.33e-06, Best Val: 0.065746, Patience: 8/50
+Epoch 70/750 - Train Loss: 0.055961, Val Loss: 0.065203, LR: 4.33e-06, Best Val: 0.065203, Patience: 0/50
+Epoch 80/750 - Train Loss: 0.054715, Val Loss: 0.064974, LR: 4.33e-06, Best Val: 0.064974, Patience: 0/50
+Epoch 90/750 - Train Loss: 0.053975, Val Loss: 0.064970, LR: 4.33e-06, Best Val: 0.064974, Patience: 10/50
+Epoch 100/750 - Train Loss: 0.053380, Val Loss: 0.065477, LR: 4.33e-06, Best Val: 0.064728, Patience: 9/50
+Epoch 110/750 - Train Loss: 0.053045, Val Loss: 0.065190, LR: 2.17e-06, Best Val: 0.064534, Patience: 3/50
+Epoch 120/750 - Train Loss: 0.052335, Val Loss: 0.065558, LR: 2.17e-06, Best Val: 0.064152, Patience: 1/50
+Epoch 130/750 - Train Loss: 0.052356, Val Loss: 0.064852, LR: 1.08e-06, Best Val: 0.064152, Patience: 11/50
+Epoch 140/750 - Train Loss: 0.051867, Val Loss: 0.064754, LR: 1.08e-06, Best Val: 0.064152, Patience: 21/50
+Epoch 150/750 - Train Loss: 0.051453, Val Loss: 0.064534, LR: 5.42e-07, Best Val: 0.064152, Patience: 31/50
+Epoch 160/750 - Train Loss: 0.051212, Val Loss: 0.064397, LR: 2.71e-07, Best Val: 0.064152, Patience: 41/50
+→ Early stopping at epoch 169. No improvement in 50 epochs.
+Training complete in 1.38 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.802743
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.454269
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.346393
+Test data loaded in 1.54 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
+time to save output: 0.74 minutes
+Total experiment time: 3.10 minutes
+[0;32m✓ Experiment mlp_wide_shallow completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/mlp_wide_shallow_20251117_150921.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.802743
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.454269
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.346393
+Training complete in 1.38 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: mlp_moderate[0m
+[0;34mMLP Moderate: 6 layers × 1024 neurons (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.60 minutes
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 1024
+  MLP num_layers: 6
+  MLP dropout: 0.25
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.077666, Val Loss: 0.076408, LR: 8.67e-06, Best Val: 0.076408, Patience: 0/50
+Epoch 20/750 - Train Loss: 0.072023, Val Loss: 0.071773, LR: 8.67e-06, Best Val: 0.071773, Patience: 0/50
+Epoch 30/750 - Train Loss: 0.067477, Val Loss: 0.068928, LR: 8.67e-06, Best Val: 0.068318, Patience: 2/50
+Epoch 40/750 - Train Loss: 0.064906, Val Loss: 0.066626, LR: 8.67e-06, Best Val: 0.066626, Patience: 0/50
+Epoch 50/750 - Train Loss: 0.063269, Val Loss: 0.067093, LR: 8.67e-06, Best Val: 0.066626, Patience: 10/50
+Epoch 60/750 - Train Loss: 0.061970, Val Loss: 0.066088, LR: 4.33e-06, Best Val: 0.066067, Patience: 7/50
+Epoch 70/750 - Train Loss: 0.061937, Val Loss: 0.066366, LR: 4.33e-06, Best Val: 0.065626, Patience: 1/50
+Epoch 80/750 - Train Loss: 0.060814, Val Loss: 0.066069, LR: 4.33e-06, Best Val: 0.065583, Patience: 9/50
+Epoch 90/750 - Train Loss: 0.060241, Val Loss: 0.066024, LR: 2.17e-06, Best Val: 0.065583, Patience: 19/50
+Epoch 100/750 - Train Loss: 0.060311, Val Loss: 0.065953, LR: 1.08e-06, Best Val: 0.065583, Patience: 29/50
+Epoch 110/750 - Train Loss: 0.060248, Val Loss: 0.066138, LR: 5.42e-07, Best Val: 0.065583, Patience: 39/50
+Epoch 120/750 - Train Loss: 0.060165, Val Loss: 0.065870, LR: 2.71e-07, Best Val: 0.065583, Patience: 49/50
+→ Early stopping at epoch 121. No improvement in 50 epochs.
+Training complete in 1.06 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.831123
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.562233
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.499480
+Test data loaded in 1.07 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
+time to save output: 0.52 minutes
+Total experiment time: 2.33 minutes
+[0;32m✓ Experiment mlp_moderate completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/mlp_moderate_20251117_151259.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.831123
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.562233
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.499480
+Training complete in 1.06 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: mlp_skinny_deep[0m
+[0;34mMLP Skinny Deep: 8 layers × 512 neurons (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.60 minutes
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 512
+  MLP num_layers: 8
+  MLP dropout: 0.2
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.083611, Val Loss: 0.083016, LR: 8.67e-06, Best Val: 0.083016, Patience: 0/50
+Epoch 20/750 - Train Loss: 0.077988, Val Loss: 0.079644, LR: 8.67e-06, Best Val: 0.079367, Patience: 1/50
+Epoch 30/750 - Train Loss: 0.075370, Val Loss: 0.076760, LR: 8.67e-06, Best Val: 0.076545, Patience: 1/50
+Epoch 40/750 - Train Loss: 0.071943, Val Loss: 0.073104, LR: 8.67e-06, Best Val: 0.073104, Patience: 0/50
+Epoch 50/750 - Train Loss: 0.068901, Val Loss: 0.070173, LR: 8.67e-06, Best Val: 0.070173, Patience: 0/50
+Epoch 60/750 - Train Loss: 0.067058, Val Loss: 0.068707, LR: 8.67e-06, Best Val: 0.068547, Patience: 2/50
+Epoch 70/750 - Train Loss: 0.065987, Val Loss: 0.067633, LR: 8.67e-06, Best Val: 0.067396, Patience: 4/50
+Epoch 80/750 - Train Loss: 0.064885, Val Loss: 0.066739, LR: 8.67e-06, Best Val: 0.066423, Patience: 1/50
+Epoch 90/750 - Train Loss: 0.063880, Val Loss: 0.066463, LR: 8.67e-06, Best Val: 0.066115, Patience: 3/50
+Epoch 100/750 - Train Loss: 0.063404, Val Loss: 0.065611, LR: 8.67e-06, Best Val: 0.065530, Patience: 1/50
+Epoch 110/750 - Train Loss: 0.062831, Val Loss: 0.065637, LR: 8.67e-06, Best Val: 0.065140, Patience: 6/50
+Epoch 120/750 - Train Loss: 0.062123, Val Loss: 0.065384, LR: 8.67e-06, Best Val: 0.064670, Patience: 1/50
+Epoch 130/750 - Train Loss: 0.061725, Val Loss: 0.065202, LR: 8.67e-06, Best Val: 0.064260, Patience: 1/50
+Epoch 140/750 - Train Loss: 0.061233, Val Loss: 0.064368, LR: 8.67e-06, Best Val: 0.064184, Patience: 2/50
+Epoch 150/750 - Train Loss: 0.060794, Val Loss: 0.064685, LR: 4.33e-06, Best Val: 0.064184, Patience: 12/50
+Epoch 160/750 - Train Loss: 0.060408, Val Loss: 0.064852, LR: 4.33e-06, Best Val: 0.064095, Patience: 7/50
+Epoch 170/750 - Train Loss: 0.060319, Val Loss: 0.064388, LR: 2.17e-06, Best Val: 0.064095, Patience: 17/50
+Epoch 180/750 - Train Loss: 0.060028, Val Loss: 0.064425, LR: 1.08e-06, Best Val: 0.064095, Patience: 27/50
+Epoch 190/750 - Train Loss: 0.059906, Val Loss: 0.064272, LR: 5.42e-07, Best Val: 0.064095, Patience: 37/50
+Epoch 200/750 - Train Loss: 0.059717, Val Loss: 0.064317, LR: 2.71e-07, Best Val: 0.064095, Patience: 47/50
+→ Early stopping at epoch 203. No improvement in 50 epochs.
+Training complete in 1.63 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.811259
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.508727
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.411928
+Test data loaded in 1.65 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
+time to save output: 0.28 minutes
+Total experiment time: 2.67 minutes
+[0;32m✓ Experiment mlp_skinny_deep completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/mlp_skinny_deep_20251117_151521.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.811259
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.508727
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.411928
+Training complete in 1.63 minutes
+
+
+[0;33m========================================[0m
+[0;33mGROUP 2: UNet Architecture Variations[0m
+[0;33mUsing full variable set (6 variables)[0m
+[0;33m========================================[0m
+
+[0;34m========================================[0m
+[0;34mExperiment: unet_light[0m
+[0;34mUNet Light: 32 channels (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.59 minutes
+  UNet hidden_dim: 32
+  UNet dropout: 0.1
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/200 - Train Loss: 0.134088, Val Loss: 0.087380, LR: 8.67e-06, Best Val: 0.087380, Patience: 0/50
+Epoch 20/200 - Train Loss: 0.111085, Val Loss: 0.076878, LR: 8.67e-06, Best Val: 0.076878, Patience: 0/50
+Epoch 30/200 - Train Loss: 0.100023, Val Loss: 0.072554, LR: 8.67e-06, Best Val: 0.072554, Patience: 0/50
+Epoch 40/200 - Train Loss: 0.094464, Val Loss: 0.069498, LR: 8.67e-06, Best Val: 0.069498, Patience: 0/50
+Epoch 50/200 - Train Loss: 0.090042, Val Loss: 0.067156, LR: 8.67e-06, Best Val: 0.067156, Patience: 0/50
+Epoch 60/200 - Train Loss: 0.086622, Val Loss: 0.064512, LR: 8.67e-06, Best Val: 0.064512, Patience: 0/50
+Epoch 70/200 - Train Loss: 0.084707, Val Loss: 0.063300, LR: 8.67e-06, Best Val: 0.063300, Patience: 0/50
+Epoch 80/200 - Train Loss: 0.082325, Val Loss: 0.062285, LR: 8.67e-06, Best Val: 0.062058, Patience: 1/50
+Epoch 90/200 - Train Loss: 0.080304, Val Loss: 0.061929, LR: 8.67e-06, Best Val: 0.061599, Patience: 3/50
+Epoch 100/200 - Train Loss: 0.079216, Val Loss: 0.061205, LR: 8.67e-06, Best Val: 0.061205, Patience: 0/50
+Epoch 110/200 - Train Loss: 0.079565, Val Loss: 0.060842, LR: 8.67e-06, Best Val: 0.060846, Patience: 2/50
+Epoch 120/200 - Train Loss: 0.077027, Val Loss: 0.060640, LR: 8.67e-06, Best Val: 0.060594, Patience: 3/50
+Epoch 130/200 - Train Loss: 0.075726, Val Loss: 0.060551, LR: 8.67e-06, Best Val: 0.060090, Patience: 1/50
+Epoch 140/200 - Train Loss: 0.074184, Val Loss: 0.060512, LR: 8.67e-06, Best Val: 0.059986, Patience: 5/50
+Epoch 150/200 - Train Loss: 0.074928, Val Loss: 0.060088, LR: 8.67e-06, Best Val: 0.059853, Patience: 4/50
+Epoch 160/200 - Train Loss: 0.073762, Val Loss: 0.059247, LR: 8.67e-06, Best Val: 0.059247, Patience: 0/50
+Epoch 170/200 - Train Loss: 0.073104, Val Loss: 0.059154, LR: 8.67e-06, Best Val: 0.058998, Patience: 2/50
+Epoch 180/200 - Train Loss: 0.072375, Val Loss: 0.058924, LR: 4.33e-06, Best Val: 0.058924, Patience: 0/50
+Epoch 190/200 - Train Loss: 0.071928, Val Loss: 0.058647, LR: 4.33e-06, Best Val: 0.058647, Patience: 0/50
+Epoch 200/200 - Train Loss: 0.073750, Val Loss: 0.059127, LR: 4.33e-06, Best Val: 0.058647, Patience: 10/50
+Training complete in 3.41 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.806464
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.568821
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.605690
+Test data loaded in 3.44 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_unet.zarr
+time to save output: 0.24 minutes
+Total experiment time: 4.40 minutes
+[0;32m✓ Experiment unet_light completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/unet_light_20251117_151804.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.806464
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.568821
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.605690
+Training complete in 3.41 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: unet_medium[0m
+[0;34mUNet Medium: 64 channels (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.61 minutes
+  UNet hidden_dim: 64
+  UNet dropout: 0.1
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/200 - Train Loss: 0.123908, Val Loss: 0.087951, LR: 8.67e-06, Best Val: 0.087951, Patience: 0/50
+Epoch 20/200 - Train Loss: 0.099735, Val Loss: 0.075967, LR: 8.67e-06, Best Val: 0.075967, Patience: 0/50
+Epoch 30/200 - Train Loss: 0.089581, Val Loss: 0.071875, LR: 8.67e-06, Best Val: 0.071875, Patience: 0/50
+Epoch 40/200 - Train Loss: 0.084546, Val Loss: 0.069532, LR: 8.67e-06, Best Val: 0.069141, Patience: 1/50
+Epoch 50/200 - Train Loss: 0.079715, Val Loss: 0.067971, LR: 8.67e-06, Best Val: 0.067651, Patience: 1/50
+Epoch 60/200 - Train Loss: 0.076238, Val Loss: 0.066904, LR: 8.67e-06, Best Val: 0.066705, Patience: 2/50
+Epoch 70/200 - Train Loss: 0.074976, Val Loss: 0.066824, LR: 8.67e-06, Best Val: 0.065843, Patience: 1/50
+Epoch 80/200 - Train Loss: 0.072209, Val Loss: 0.065374, LR: 8.67e-06, Best Val: 0.065102, Patience: 2/50
+Epoch 90/200 - Train Loss: 0.069436, Val Loss: 0.064971, LR: 8.67e-06, Best Val: 0.064577, Patience: 5/50
+Epoch 100/200 - Train Loss: 0.069382, Val Loss: 0.063551, LR: 8.67e-06, Best Val: 0.063551, Patience: 0/50
+Epoch 110/200 - Train Loss: 0.067520, Val Loss: 0.064156, LR: 8.67e-06, Best Val: 0.063487, Patience: 3/50
+Epoch 120/200 - Train Loss: 0.066774, Val Loss: 0.063414, LR: 8.67e-06, Best Val: 0.062740, Patience: 2/50
+Epoch 130/200 - Train Loss: 0.066009, Val Loss: 0.062475, LR: 8.67e-06, Best Val: 0.062226, Patience: 2/50
+Epoch 140/200 - Train Loss: 0.065021, Val Loss: 0.061969, LR: 8.67e-06, Best Val: 0.061970, Patience: 1/50
+Epoch 150/200 - Train Loss: 0.063815, Val Loss: 0.061509, LR: 8.67e-06, Best Val: 0.061236, Patience: 1/50
+Epoch 160/200 - Train Loss: 0.064168, Val Loss: 0.061286, LR: 8.67e-06, Best Val: 0.060817, Patience: 2/50
+Epoch 170/200 - Train Loss: 0.062645, Val Loss: 0.060846, LR: 8.67e-06, Best Val: 0.060505, Patience: 5/50
+Epoch 180/200 - Train Loss: 0.061621, Val Loss: 0.060372, LR: 4.33e-06, Best Val: 0.060366, Patience: 1/50
+Epoch 190/200 - Train Loss: 0.061257, Val Loss: 0.060382, LR: 2.17e-06, Best Val: 0.060366, Patience: 11/50
+Epoch 200/200 - Train Loss: 0.061167, Val Loss: 0.060453, LR: 2.17e-06, Best Val: 0.060270, Patience: 4/50
+Training complete in 3.74 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.786001
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.516192
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.538418
+Test data loaded in 3.76 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_unet.zarr
+time to save output: 1.08 minutes
+Total experiment time: 5.59 minutes
+[0;32m✓ Experiment unet_medium completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/unet_medium_20251117_152232.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.786001
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.516192
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.538418
+Training complete in 3.74 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: unet_heavy[0m
+[0;34mUNet Heavy: 128 channels (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.59 minutes
+  UNet hidden_dim: 128
+  UNet dropout: 0.15
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/200 - Train Loss: 0.122677, Val Loss: 0.078953, LR: 8.67e-06, Best Val: 0.078953, Patience: 0/50
+Epoch 20/200 - Train Loss: 0.100733, Val Loss: 0.071798, LR: 8.67e-06, Best Val: 0.071798, Patience: 0/50
+Epoch 30/200 - Train Loss: 0.089555, Val Loss: 0.068017, LR: 8.67e-06, Best Val: 0.067955, Patience: 1/50
+Epoch 40/200 - Train Loss: 0.084053, Val Loss: 0.066309, LR: 8.67e-06, Best Val: 0.066117, Patience: 3/50
+Epoch 50/200 - Train Loss: 0.079870, Val Loss: 0.064876, LR: 8.67e-06, Best Val: 0.064876, Patience: 0/50
+Epoch 60/200 - Train Loss: 0.078152, Val Loss: 0.063648, LR: 8.67e-06, Best Val: 0.063648, Patience: 0/50
+Epoch 70/200 - Train Loss: 0.077643, Val Loss: 0.062785, LR: 8.67e-06, Best Val: 0.062785, Patience: 0/50
+Epoch 80/200 - Train Loss: 0.074654, Val Loss: 0.062258, LR: 8.67e-06, Best Val: 0.062235, Patience: 4/50
+Epoch 90/200 - Train Loss: 0.072947, Val Loss: 0.062390, LR: 8.67e-06, Best Val: 0.061471, Patience: 1/50
+Epoch 100/200 - Train Loss: 0.071736, Val Loss: 0.060824, LR: 8.67e-06, Best Val: 0.060604, Patience: 1/50
+Epoch 110/200 - Train Loss: 0.069761, Val Loss: 0.059678, LR: 8.67e-06, Best Val: 0.059678, Patience: 0/50
+Epoch 120/200 - Train Loss: 0.069415, Val Loss: 0.059798, LR: 8.67e-06, Best Val: 0.059404, Patience: 2/50
+Epoch 130/200 - Train Loss: 0.067658, Val Loss: 0.059574, LR: 8.67e-06, Best Val: 0.059208, Patience: 1/50
+Epoch 140/200 - Train Loss: 0.065917, Val Loss: 0.059406, LR: 8.67e-06, Best Val: 0.059094, Patience: 7/50
+Epoch 150/200 - Train Loss: 0.065982, Val Loss: 0.058932, LR: 4.33e-06, Best Val: 0.058823, Patience: 4/50
+Epoch 160/200 - Train Loss: 0.065978, Val Loss: 0.058893, LR: 2.17e-06, Best Val: 0.058797, Patience: 2/50
+Epoch 170/200 - Train Loss: 0.064190, Val Loss: 0.058800, LR: 2.17e-06, Best Val: 0.058526, Patience: 4/50
+Epoch 180/200 - Train Loss: 0.063557, Val Loss: 0.058661, LR: 2.17e-06, Best Val: 0.058417, Patience: 3/50
+Epoch 190/200 - Train Loss: 0.065392, Val Loss: 0.058828, LR: 2.17e-06, Best Val: 0.058159, Patience: 2/50
+Epoch 200/200 - Train Loss: 0.065338, Val Loss: 0.058528, LR: 1.08e-06, Best Val: 0.058159, Patience: 12/50
+Training complete in 5.17 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.787387
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.554044
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.488079
+Test data loaded in 5.20 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_unet.zarr
+time to save output: 0.56 minutes
+Total experiment time: 6.49 minutes
+[0;32m✓ Experiment unet_heavy completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/unet_heavy_20251117_152812.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.787387
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.554044
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.488079
+Training complete in 5.17 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: unet_very_heavy[0m
+[0;34mUNet Very Heavy: 256 channels (Full vars)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.60 minutes
+  UNet hidden_dim: 256
+  UNet dropout: 0.2
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/200 - Train Loss: 0.128497, Val Loss: 0.080086, LR: 8.67e-06, Best Val: 0.080086, Patience: 0/50
+Epoch 20/200 - Train Loss: 0.108259, Val Loss: 0.077645, LR: 8.67e-06, Best Val: 0.077645, Patience: 0/50
+Epoch 30/200 - Train Loss: 0.098390, Val Loss: 0.073675, LR: 8.67e-06, Best Val: 0.073675, Patience: 0/50
+Epoch 40/200 - Train Loss: 0.086699, Val Loss: 0.073157, LR: 8.67e-06, Best Val: 0.072039, Patience: 1/50
+Epoch 50/200 - Train Loss: 0.083131, Val Loss: 0.070825, LR: 8.67e-06, Best Val: 0.070687, Patience: 2/50
+Epoch 60/200 - Train Loss: 0.078147, Val Loss: 0.069728, LR: 8.67e-06, Best Val: 0.069431, Patience: 1/50
+Epoch 70/200 - Train Loss: 0.076705, Val Loss: 0.071401, LR: 8.67e-06, Best Val: 0.068737, Patience: 6/50
+Epoch 80/200 - Train Loss: 0.073019, Val Loss: 0.068917, LR: 8.67e-06, Best Val: 0.068253, Patience: 3/50
+Epoch 90/200 - Train Loss: 0.072934, Val Loss: 0.068883, LR: 8.67e-06, Best Val: 0.067507, Patience: 1/50
+Epoch 100/200 - Train Loss: 0.071440, Val Loss: 0.066681, LR: 8.67e-06, Best Val: 0.066587, Patience: 2/50
+Epoch 110/200 - Train Loss: 0.069799, Val Loss: 0.067402, LR: 8.67e-06, Best Val: 0.066193, Patience: 8/50
+Epoch 120/200 - Train Loss: 0.069789, Val Loss: 0.065624, LR: 4.33e-06, Best Val: 0.065459, Patience: 1/50
+Epoch 130/200 - Train Loss: 0.069420, Val Loss: 0.065758, LR: 2.17e-06, Best Val: 0.065459, Patience: 11/50
+Epoch 140/200 - Train Loss: 0.068814, Val Loss: 0.065811, LR: 2.17e-06, Best Val: 0.065459, Patience: 21/50
+Epoch 150/200 - Train Loss: 0.068297, Val Loss: 0.065832, LR: 1.08e-06, Best Val: 0.065459, Patience: 31/50
+Epoch 160/200 - Train Loss: 0.068244, Val Loss: 0.065719, LR: 5.42e-07, Best Val: 0.065459, Patience: 41/50
+→ Early stopping at epoch 169. No improvement in 50 epochs.
+Training complete in 6.92 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 6
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.791724
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.650363
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.620457
+Test data loaded in 6.94 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_10m_u_component_of_wind_10m_v_component_of_wind_temperature_1000hPa_specific_humidity_1000hPa_geopotential_1000hPa_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_unet.zarr
+time to save output: 0.43 minutes
+Total experiment time: 8.12 minutes
+[0;32m✓ Experiment unet_very_heavy completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/unet_very_heavy_20251117_153444.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.791724
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.650363
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.620457
+Training complete in 6.92 minutes
+
+
+[0;33m========================================[0m
+[0;33mGROUP 3: Input Variable Comparison[0m
+[0;33mUsing 2m_temperature only[0m
+[0;33m========================================[0m
+
+[0;34m========================================[0m
+[0;34mExperiment: mlp_moderate_minimal[0m
+[0;34mMLP Moderate: 6 layers × 1024 neurons (2m_temp only)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 1
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.61 minutes
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 1024
+  MLP num_layers: 6
+  MLP dropout: 0.25
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.084604, Val Loss: 0.083278, LR: 8.67e-06, Best Val: 0.083278, Patience: 0/50
+Epoch 20/750 - Train Loss: 0.072913, Val Loss: 0.074034, LR: 8.67e-06, Best Val: 0.073096, Patience: 2/50
+Epoch 30/750 - Train Loss: 0.070587, Val Loss: 0.071077, LR: 8.67e-06, Best Val: 0.070590, Patience: 1/50
+Epoch 40/750 - Train Loss: 0.069407, Val Loss: 0.070484, LR: 8.67e-06, Best Val: 0.069576, Patience: 3/50
+Epoch 50/750 - Train Loss: 0.068391, Val Loss: 0.068719, LR: 8.67e-06, Best Val: 0.068633, Patience: 2/50
+Epoch 60/750 - Train Loss: 0.067744, Val Loss: 0.068211, LR: 8.67e-06, Best Val: 0.068109, Patience: 6/50
+Epoch 70/750 - Train Loss: 0.067147, Val Loss: 0.067463, LR: 8.67e-06, Best Val: 0.067463, Patience: 0/50
+Epoch 80/750 - Train Loss: 0.066643, Val Loss: 0.066739, LR: 8.67e-06, Best Val: 0.066739, Patience: 0/50
+Epoch 90/750 - Train Loss: 0.066264, Val Loss: 0.067618, LR: 8.67e-06, Best Val: 0.066602, Patience: 6/50
+Epoch 100/750 - Train Loss: 0.065670, Val Loss: 0.066074, LR: 8.67e-06, Best Val: 0.066079, Patience: 5/50
+Epoch 110/750 - Train Loss: 0.065310, Val Loss: 0.065708, LR: 8.67e-06, Best Val: 0.065610, Patience: 1/50
+Epoch 120/750 - Train Loss: 0.065138, Val Loss: 0.065162, LR: 8.67e-06, Best Val: 0.065162, Patience: 0/50
+Epoch 130/750 - Train Loss: 0.064609, Val Loss: 0.064961, LR: 8.67e-06, Best Val: 0.064882, Patience: 1/50
+Epoch 140/750 - Train Loss: 0.064096, Val Loss: 0.064911, LR: 8.67e-06, Best Val: 0.064547, Patience: 1/50
+Epoch 150/750 - Train Loss: 0.063762, Val Loss: 0.064423, LR: 8.67e-06, Best Val: 0.064423, Patience: 0/50
+Epoch 160/750 - Train Loss: 0.063549, Val Loss: 0.064230, LR: 8.67e-06, Best Val: 0.064076, Patience: 2/50
+Epoch 170/750 - Train Loss: 0.063039, Val Loss: 0.063818, LR: 8.67e-06, Best Val: 0.063818, Patience: 0/50
+Epoch 180/750 - Train Loss: 0.063324, Val Loss: 0.064071, LR: 8.67e-06, Best Val: 0.063755, Patience: 3/50
+Epoch 190/750 - Train Loss: 0.062469, Val Loss: 0.063641, LR: 8.67e-06, Best Val: 0.063596, Patience: 3/50
+Epoch 200/750 - Train Loss: 0.062296, Val Loss: 0.063630, LR: 8.67e-06, Best Val: 0.063381, Patience: 5/50
+Epoch 210/750 - Train Loss: 0.061447, Val Loss: 0.063108, LR: 8.67e-06, Best Val: 0.063033, Patience: 2/50
+Epoch 220/750 - Train Loss: 0.061419, Val Loss: 0.062635, LR: 8.67e-06, Best Val: 0.062635, Patience: 0/50
+Epoch 230/750 - Train Loss: 0.061099, Val Loss: 0.062800, LR: 8.67e-06, Best Val: 0.062635, Patience: 10/50
+Epoch 240/750 - Train Loss: 0.061101, Val Loss: 0.062354, LR: 4.33e-06, Best Val: 0.062324, Patience: 1/50
+Epoch 250/750 - Train Loss: 0.060049, Val Loss: 0.062151, LR: 4.33e-06, Best Val: 0.062118, Patience: 4/50
+Epoch 260/750 - Train Loss: 0.060565, Val Loss: 0.061979, LR: 4.33e-06, Best Val: 0.061979, Patience: 0/50
+Epoch 270/750 - Train Loss: 0.060319, Val Loss: 0.061963, LR: 4.33e-06, Best Val: 0.061922, Patience: 1/50
+Epoch 280/750 - Train Loss: 0.059577, Val Loss: 0.061791, LR: 4.33e-06, Best Val: 0.061664, Patience: 1/50
+Epoch 290/750 - Train Loss: 0.059396, Val Loss: 0.061524, LR: 4.33e-06, Best Val: 0.061483, Patience: 2/50
+Epoch 300/750 - Train Loss: 0.059413, Val Loss: 0.061415, LR: 4.33e-06, Best Val: 0.061339, Patience: 3/50
+Epoch 310/750 - Train Loss: 0.059568, Val Loss: 0.061358, LR: 4.33e-06, Best Val: 0.061056, Patience: 5/50
+Epoch 320/750 - Train Loss: 0.059622, Val Loss: 0.061169, LR: 4.33e-06, Best Val: 0.061007, Patience: 9/50
+Epoch 330/750 - Train Loss: 0.059239, Val Loss: 0.060929, LR: 2.17e-06, Best Val: 0.060929, Patience: 0/50
+Epoch 340/750 - Train Loss: 0.058813, Val Loss: 0.061128, LR: 2.17e-06, Best Val: 0.060902, Patience: 7/50
+Epoch 350/750 - Train Loss: 0.059003, Val Loss: 0.060972, LR: 1.08e-06, Best Val: 0.060825, Patience: 5/50
+Epoch 360/750 - Train Loss: 0.059118, Val Loss: 0.060889, LR: 5.42e-07, Best Val: 0.060825, Patience: 15/50
+Epoch 370/750 - Train Loss: 0.058393, Val Loss: 0.060876, LR: 5.42e-07, Best Val: 0.060809, Patience: 6/50
+Epoch 380/750 - Train Loss: 0.058708, Val Loss: 0.060830, LR: 5.42e-07, Best Val: 0.060797, Patience: 5/50
+Epoch 390/750 - Train Loss: 0.058620, Val Loss: 0.060820, LR: 2.71e-07, Best Val: 0.060797, Patience: 15/50
+Epoch 400/750 - Train Loss: 0.058914, Val Loss: 0.060797, LR: 1.35e-07, Best Val: 0.060797, Patience: 25/50
+Epoch 410/750 - Train Loss: 0.058614, Val Loss: 0.060824, LR: 1.00e-07, Best Val: 0.060797, Patience: 35/50
+Epoch 420/750 - Train Loss: 0.058666, Val Loss: 0.060812, LR: 1.00e-07, Best Val: 0.060797, Patience: 45/50
+→ Early stopping at epoch 425. No improvement in 50 epochs.
+Training complete in 3.32 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 1
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.777588
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.415852
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.210101
+Test data loaded in 3.34 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
+time to save output: 0.00 minutes
+Total experiment time: 4.09 minutes
+[0;32m✓ Experiment mlp_moderate_minimal completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/mlp_moderate_minimal_20251117_154254.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.777588
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.415852
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.210101
+Training complete in 3.32 minutes
+
+[0;34m========================================[0m
+[0;34mExperiment: unet_medium_minimal[0m
+[0;34mUNet Medium: 64 channels (2m_temp only)[0m
+[0;34m========================================[0m
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2021.zarr
+
+  Loading target data from regional files...
+    Loading 2018 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2018.zarr
+    Loading 2019 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2019.zarr
+    Loading 2020 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2020.zarr
+    Loading 2021 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2021.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 1460
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 1
+    Output vars: 1
+
+  Valid samples after NaN removal: 4332
+======================================================================
+
+Data loaded in 0.60 minutes
+  UNet hidden_dim: 64
+  UNet dropout: 0.1
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/200 - Train Loss: 0.099641, Val Loss: 0.083906, LR: 8.67e-06, Best Val: 0.083699, Patience: 1/50
+Epoch 20/200 - Train Loss: 0.089822, Val Loss: 0.077270, LR: 8.67e-06, Best Val: 0.077270, Patience: 0/50
+Epoch 30/200 - Train Loss: 0.083387, Val Loss: 0.073308, LR: 8.67e-06, Best Val: 0.073308, Patience: 0/50
+Epoch 40/200 - Train Loss: 0.078309, Val Loss: 0.070637, LR: 8.67e-06, Best Val: 0.070459, Patience: 1/50
+Epoch 50/200 - Train Loss: 0.076121, Val Loss: 0.069314, LR: 8.67e-06, Best Val: 0.069314, Patience: 0/50
+Epoch 60/200 - Train Loss: 0.074592, Val Loss: 0.068562, LR: 8.67e-06, Best Val: 0.068562, Patience: 0/50
+Epoch 70/200 - Train Loss: 0.073041, Val Loss: 0.068042, LR: 8.67e-06, Best Val: 0.067683, Patience: 1/50
+Epoch 80/200 - Train Loss: 0.071412, Val Loss: 0.067706, LR: 8.67e-06, Best Val: 0.067264, Patience: 2/50
+Epoch 90/200 - Train Loss: 0.070218, Val Loss: 0.067028, LR: 8.67e-06, Best Val: 0.066734, Patience: 2/50
+Epoch 100/200 - Train Loss: 0.068498, Val Loss: 0.066261, LR: 8.67e-06, Best Val: 0.066261, Patience: 0/50
+Epoch 110/200 - Train Loss: 0.069055, Val Loss: 0.066434, LR: 8.67e-06, Best Val: 0.066261, Patience: 10/50
+Epoch 120/200 - Train Loss: 0.067412, Val Loss: 0.066088, LR: 4.33e-06, Best Val: 0.065882, Patience: 4/50
+Epoch 130/200 - Train Loss: 0.067436, Val Loss: 0.066105, LR: 2.17e-06, Best Val: 0.065882, Patience: 14/50
+Epoch 140/200 - Train Loss: 0.067049, Val Loss: 0.066027, LR: 1.08e-06, Best Val: 0.065882, Patience: 24/50
+Epoch 150/200 - Train Loss: 0.066377, Val Loss: 0.066108, LR: 5.42e-07, Best Val: 0.065882, Patience: 34/50
+Epoch 160/200 - Train Loss: 0.067243, Val Loss: 0.066051, LR: 2.71e-07, Best Val: 0.065882, Patience: 44/50
+Epoch 170/200 - Train Loss: 0.066921, Val Loss: 0.066031, LR: 2.71e-07, Best Val: 0.065761, Patience: 8/50
+Epoch 180/200 - Train Loss: 0.066293, Val Loss: 0.066011, LR: 1.35e-07, Best Val: 0.065761, Patience: 18/50
+Epoch 190/200 - Train Loss: 0.065713, Val Loss: 0.066109, LR: 1.00e-07, Best Val: 0.065761, Patience: 28/50
+Epoch 200/200 - Train Loss: 0.067184, Val Loss: 0.065916, LR: 1.00e-07, Best Val: 0.065761, Patience: 38/50
+Training complete in 3.75 minutes
+
+======================================================================
+LOADING TEST DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2022]
+  Period: 2022-01-01 to 2022-12-31
+
+  Checking for regional data files...
+  ✓ All regional data files exist with required variables
+
+  Loading forecast data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/pangu/pangu_india_2022.zarr
+
+  Loading target data from regional files...
+    Loading 2022 from /project/jfranke/ozma/forecast_data/raw/era5/era5_india_2022.zarr
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 364
+    Lead times: 3
+    Latitude: 24
+    Longitude: 24
+    Training vars: 1
+    Output vars: 1
+
+  Valid samples after NaN removal: 1080
+======================================================================
+
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.772433
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.412659
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.124922
+Test data loaded in 3.77 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/architecture_experiments/pangu/india/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_unet.zarr
+time to save output: 0.00 minutes
+Total experiment time: 4.51 minutes
+[0;32m✓ Experiment unet_medium_minimal completed successfully[0m
+  Log saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs/unet_medium_minimal_20251117_154702.log
+
+Key Results:
+Lead time 24h - MSE original: 0.859618, MSE corrected: 0.772433
+Lead time 120h - MSE original: 1.767229, MSE corrected: 1.412659
+Lead time 216h - MSE original: 2.979921, MSE corrected: 2.124922
+Training complete in 3.75 minutes
+
+
+[0;32m========================================[0m
+[0;32mALL 9 EXPERIMENTS COMPLETED![0m
+[0;32m========================================[0m
+
+Results saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments
+Logs saved to: /project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs
+
+[0;33mExperiment Summary:[0m
+  Group 1: MLP Variations (3 experiments)
+    - Wide Shallow, Moderate, Skinny Deep
+  Group 2: UNet Variations (4 experiments)
+    - Light, Medium, Heavy, Very Heavy
+  Group 3: Input Variable Comparison (2 experiments)
+    - MLP and UNet with minimal variables
+
+To analyze results, run:
+  python3 analyze_architecture_results.py

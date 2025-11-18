@@ -1,4 +1,14 @@
 #!/bin/bash
+#SBATCH --exclusive
+#SBATCH --job-name=run_arch_experiments
+#SBATCH --account=pi-jfranke
+#SBATCH --output=run_arch_experiments-%J.txt
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --mem=32G
+#SBATCH --time=8:00:00
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
 # Architecture Experiment Runner for India Region (6x6)
 # Comprehensive comparison of MLP vs UNet architectures and input variable sets
 #
@@ -20,8 +30,11 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
-OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
+# DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
+# OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/architecture_experiments"
+
+DATA_DIR="/project/jfranke/ozma/forecast_data/raw"
+OUTPUT_DIR="/project/jfranke/ozma/forecast_data/processed/architecture_experiments"
 REGION=india
 SUBREGION=6x6
 MODEL=pangu

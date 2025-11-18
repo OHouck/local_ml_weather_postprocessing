@@ -390,8 +390,11 @@ def create_json_summary(results_dict):
 def main():
     """Main analysis function"""
 
-    log_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments/logs')
-    output_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments')
+    # log_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments/logs')
+    # output_dir = os.path.expanduser('/Users/ohouck/globus/forecast_data/processed/architecture_experiments')
+
+    log_dir = os.path.expanduser('/project/jfranke/ozma/forecast_data/processed/architecture_experiments/logs')
+    output_dir = os.path.expanduser('/project/jfranke/ozma/forecast_data/processed/architecture_experiments')
 
     print("=" * 80)
     print("ANALYZING ARCHITECTURE EXPERIMENT RESULTS")
