@@ -22,7 +22,6 @@ output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 # data_dir="/project/jfranke/ozma/forecast_data/raw/"
 # output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
 
-<<<<<<< HEAD
 # ============================================================================
 # TRAINING/OUTPUT VARIABLE PAIRS
 # ============================================================================
@@ -43,9 +42,6 @@ training_output_vars=(
 )
 
 regions=("india")
-=======
-regions=("corn_belt")
->>>>>>> 799aa5a35cab7ee041dde6b8eff62a72e08cf7fb
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
@@ -95,7 +91,6 @@ for region in "${regions[@]}"; do
                             train_end="2021-12-31"
                             test_start="2022-01-01"
                             test_end="2022-12-31"
-<<<<<<< HEAD
 
                             # PRODUCTION: Full period (uncomment for production runs)
                             # train_start="2018-01-01"
@@ -103,8 +98,6 @@ for region in "${regions[@]}"; do
                             # test_start="2022-01-01"
                             # test_end="2022-12-31"
 
-=======
->>>>>>> 799aa5a35cab7ee041dde6b8eff62a72e08cf7fb
                             # aifs is the only model with precipitation currently
                             if [[ "$variable" == "total_precipitation" ]]; then
                                 continue
