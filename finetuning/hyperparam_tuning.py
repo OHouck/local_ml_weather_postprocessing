@@ -78,11 +78,11 @@ def create_unet_search_space():
     """
     return {
         # Model architecture - centered on unet_medium optimal values
-        'hidden_dim': hp.choice('hidden_dim', [48, 64, 80, 96, 128]),
+        'hidden_dim': hp.choice('hidden_dim', [64, 128]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [8, 16, 32]),
+        'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
 
         # Early stopping parameters
@@ -90,7 +90,7 @@ def create_unet_search_space():
         'min_delta': hp.loguniform('min_delta', np.log(1e-6), np.log(1e-4)),
 
         # Embedding and regularization - centered on optimal dropout of 0.1
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
         'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
     }
 
@@ -461,12 +461,7 @@ if __name__ == "__main__":
     config = SimpleNamespace(
         model_name="pangu",
         training_vars=[
-            "2m_temperature",
-            "10m_u_component_of_wind",
-            "10m_v_component_of_wind",
-            "temperature_1000hPa",
-            "specific_humidity_1000hPa",
-            "geopotential_1000hPa"
+            "2m_temperature"
         ],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
@@ -488,27 +483,27 @@ if __name__ == "__main__":
     )
 
     # Optimize MLP architecture
-    mlp_results = optimize_hyperparameters(
-        args=config,
-        data_dir=data_dir,
-        architecture="mlp",
-        max_evals=100,
-        output_dir="hyperopt_results_mlp",
-        device=device,
-        random_seed=42,
-        resume=True  # Set to True to continue from previous runs
-    )
+    # mlp_results = optimize_hyperparameters(
+    #     args=config,
+    #     data_dir=data_dir,
+    #     architecture="mlp",
+    #     max_evals=100,
+    #     output_dir="hyperopt_results_mlp",
+    #     device=device,
+    #     random_seed=42,
+    #     resume=True  # Set to True to continue from previous runs
+    # )
 
     print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
 
     # Optionally optimize UNet architecture
-    # unet_results = optimize_hyperparameters(
-    #     args=config,
-    #     data_dir=data_dir,
-    #     architecture="unet",
-    #     max_evals=50,
-    #     output_dir="hyperopt_results_unet",
-    #     device=device,
-    #     random_seed=42,
-    #     resume=False
-    # )
+    unet_results = optimize_hyperparameters(
+        args=config,
+        data_dir=data_dir,
+        architecture="unet",
+        max_evals=100,
+        output_dir="hyperopt_results_unet",
+        device=device,
+        random_seed=42,
+        resume=False
+    )

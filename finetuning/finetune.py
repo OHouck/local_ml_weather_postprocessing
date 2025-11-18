@@ -74,8 +74,8 @@ TOPO_ZONE_MAP = {
 # Simple MLP definition with lead time and day-of-year encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
-                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.0):
+    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=6,
+                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.25):
         super(SimpleMLP, self).__init__()
 
         # Lead time embedding
@@ -441,7 +441,7 @@ def parse_args():
                         help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
     parser.add_argument('--mlp_dropout', type=float, default=0.25,
                         help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
-    parser.add_argument('--unet_hidden_dim', type=int, default=64,
+    parser.add_argument('--unet_hidden_dim', type=int, default=64, 
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet (default: 0.1, from unet_medium)')
@@ -979,7 +979,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
                      n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
-        num_epochs = 200
+        num_epochs = 500
     else:
         print(f"\n  MLP Architecture:")
         print(f"    Using SimpleMLP with {n_lead_times} lead times")
