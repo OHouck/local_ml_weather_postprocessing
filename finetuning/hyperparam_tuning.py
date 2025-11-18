@@ -71,27 +71,42 @@ def create_unet_search_space():
         dict: Search space definition for hyperopt
     """
     return {
+<<<<<<< HEAD
+        # Model architecture - centered on unet_medium optimal values
+        'hidden_dim': hp.choice('hidden_dim', [64, 128]),
+
+        # Training parameters
+        'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
+        'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
+=======
         # Model architecture
         'hidden_dim': hp.choice('hidden_dim', [16, 32, 64, 128]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [4, 8, 16, 32]),
+>>>>>>> main
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
 
         # Early stopping parameters
         'patience': hp.choice('patience', [30, 50, 70, 100]),
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
+<<<<<<< HEAD
+        # Embedding and regularization - centered on optimal dropout of 0.1
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
+        'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
+=======
         # Embedding and regularization
         'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
         'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.3),
+>>>>>>> main
     }
 
 
 def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, device):
     """
-    Train model with early stopping.
+    Train model with early stopping, mixed precision, and GPU optimizations.
 
     Args:
         model: The neural network model
@@ -112,9 +127,25 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         weight_decay=hyperparams['weight_decay']
     )
 
+    # Add ReduceLROnPlateau scheduler for better convergence
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=10,
+        min_lr=1e-7
+    )
+
     patience = hyperparams['patience']
     min_delta = hyperparams['min_delta']
     max_epochs = 1000  # Maximum epochs before stopping
+
+    # Setup mixed precision training for CUDA
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+
+    # Determine if non_blocking transfers should be used
+    non_blocking = device.type == 'cuda'
 
     best_val_loss = float('inf')
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -126,19 +157,36 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         # Training step
         model.train()
         train_loss = 0.0
-        for x_batch, y_batch, lead_time_batch, doy_batch in train_loader:
-            x_batch = x_batch.to(device)
-            y_batch = y_batch.to(device)
-            lead_time_batch = lead_time_batch.to(device)
-            doy_batch = doy_batch.to(device)
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+            fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+            y_batch = y_batch.to(device, non_blocking=non_blocking)
+            lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+            doy_batch = doy_batch.to(device, non_blocking=non_blocking)
 
             optimizer.zero_grad()
-            pred_error = model(x_batch, lead_time_batch, doy_batch)
-            preds = x_batch + pred_error
-            loss = criterion(preds, y_batch)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item() * x_batch.size(0)
+
+            # Use automatic mixed precision for CUDA
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    # Model takes training inputs and predicts error
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    # Apply error to output forecast
+                    preds = fc_output_batch + pred_error
+                    loss = criterion(preds, y_batch)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Standard training for CPU/MPS
+                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                preds = fc_output_batch + pred_error
+                loss = criterion(preds, y_batch)
+                loss.backward()
+                optimizer.step()
+
+            train_loss += loss.item() * fc_output_batch.size(0)
 
         train_loss /= len(train_loader.dataset)
 
@@ -146,18 +194,29 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
-                x_batch = x_batch.to(device)
-                y_batch = y_batch.to(device)
-                lead_time_batch = lead_time_batch.to(device)
-                doy_batch = doy_batch.to(device)
+            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+                fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+                y_batch = y_batch.to(device, non_blocking=non_blocking)
+                lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+                doy_batch = doy_batch.to(device, non_blocking=non_blocking)
 
-                pred_error = model(x_batch, lead_time_batch, doy_batch)
-                preds = x_batch + pred_error
-                loss = criterion(preds, y_batch)
-                val_loss += loss.item() * x_batch.size(0)
+                if use_amp:
+                    with torch.cuda.amp.autocast():
+                        pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                        preds = fc_output_batch + pred_error
+                        loss = criterion(preds, y_batch)
+                else:
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    preds = fc_output_batch + pred_error
+                    loss = criterion(preds, y_batch)
+
+                val_loss += loss.item() * fc_output_batch.size(0)
 
         val_loss /= len(valid_loader.dataset)
+
+        # Update learning rate scheduler
+        scheduler.step(val_loss)
 
         # Early stopping check
         if val_loss + min_delta < best_val_loss:
@@ -215,6 +274,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
     stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
+    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
     # Split train/validation (80/20)
@@ -225,20 +285,24 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     train_idx = indices[:split_idx]
     val_idx = indices[split_idx:]
 
-    # Create data loaders
+    # Create data loaders with device-specific optimizations
     train_loader = create_dataloader(
         fc_norm[train_idx],
+        fc_output_norm[train_idx],
         obs_norm[train_idx],
         lead_time_indices[train_idx],
         day_of_year_features[train_idx],
-        batch_size=hyperparams['batch_size']
+        batch_size=hyperparams['batch_size'],
+        device=device
     )
     val_loader = create_dataloader(
         fc_norm[val_idx],
+        fc_output_norm[val_idx],
         obs_norm[val_idx],
         lead_time_indices[val_idx],
         day_of_year_features[val_idx],
-        batch_size=hyperparams['batch_size']
+        batch_size=hyperparams['batch_size'],
+        device=device
     )
 
     # Initialize model
@@ -453,7 +517,13 @@ if __name__ == "__main__":
     # Define configuration for optimization
     config = SimpleNamespace(
         model_name="pangu",
+<<<<<<< HEAD
+        training_vars=[
+            "2m_temperature"
+        ],
+=======
         training_vars=["2m_temperature"],
+>>>>>>> main
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
         train_end="2021-12-31",
@@ -472,29 +542,36 @@ if __name__ == "__main__":
         'mps' if torch.backends.mps.is_available() else
         'cpu'
     )
+    print(f"Using device: {device}")
+
+    # Enable cudnn benchmarking for faster training on GPU
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+        print("Enabled cudnn benchmarking for faster GPU training")
+        print("Using mixed precision training (AMP) for CUDA operations")
 
     # Optimize MLP architecture
-    mlp_results = optimize_hyperparameters(
-        args=config,
-        data_dir=data_dir,
-        architecture="mlp",
-        max_evals=100,
-        output_dir="hyperopt_results_mlp",
-        device=device,
-        random_seed=42,
-        resume=True  # Set to True to continue from previous runs
-    )
+    # mlp_results = optimize_hyperparameters(
+    #     args=config,
+    #     data_dir=data_dir,
+    #     architecture="mlp",
+    #     max_evals=100,
+    #     output_dir="hyperopt_results_mlp",
+    #     device=device,
+    #     random_seed=42,
+    #     resume=True  # Set to True to continue from previous runs
+    # )
 
     print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
 
     # Optionally optimize UNet architecture
-    # unet_results = optimize_hyperparameters(
-    #     args=config,
-    #     data_dir=data_dir,
-    #     architecture="unet",
-    #     max_evals=50,
-    #     output_dir="hyperopt_results_unet",
-    #     device=device,
-    #     random_seed=42,
-    #     resume=False
-    # )
+    unet_results = optimize_hyperparameters(
+        args=config,
+        data_dir=data_dir,
+        architecture="unet",
+        max_evals=100,
+        output_dir="hyperopt_results_unet",
+        device=device,
+        random_seed=42,
+        resume=False
+    )
