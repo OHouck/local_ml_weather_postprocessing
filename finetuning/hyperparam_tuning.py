@@ -40,29 +40,26 @@ def create_mlp_search_space():
     """
     Define the hyperparameter search space for MLP architecture with early stopping.
 
-    Search space is centered around optimal values from architecture experiments:
-    - mlp_moderate: hidden_dim=1024, num_layers=6, dropout=0.25
-
     Returns:
         dict: Search space definition for hyperopt
     """
     return {
-        # Model architecture - centered on mlp_moderate optimal values
-        'hidden_dim': hp.choice('hidden_dim', [512, 768, 1024, 1280, 1536, 2048]),
-        'num_layers': hp.choice('num_layers', [4, 5, 6, 7, 8]),
+        # Model architecture
+        'hidden_dim': hp.choice('hidden_dim', [64, 128, 256, 512, 1024]),
+        'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [64, 128, 256]),
+        'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
 
         # Early stopping parameters
-        'patience': hp.choice('patience', [40, 50, 60, 75]),
-        'min_delta': hp.loguniform('min_delta', np.log(1e-6), np.log(1e-4)),
+        'patience': hp.choice('patience', [30, 50, 70, 100]),
+        'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
-        # Embedding and regularization - centered on optimal dropout of 0.25
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
-        'dropout_rate': hp.uniform('dropout_rate', 0.15, 0.35),
+        # Embedding and regularization
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
+        'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.5),
     }
 
 
@@ -70,28 +67,25 @@ def create_unet_search_space():
     """
     Define the hyperparameter search space for UNet architecture with early stopping.
 
-    Search space is centered around optimal values from architecture experiments:
-    - unet_medium: hidden_dim=64, dropout=0.1
-
     Returns:
         dict: Search space definition for hyperopt
     """
     return {
-        # Model architecture - centered on unet_medium optimal values
-        'hidden_dim': hp.choice('hidden_dim', [48, 64, 80, 96, 128]),
+        # Model architecture
+        'hidden_dim': hp.choice('hidden_dim', [16, 32, 64, 128]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [8, 16, 32]),
+        'batch_size': hp.choice('batch_size', [4, 8, 16, 32]),
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
 
         # Early stopping parameters
-        'patience': hp.choice('patience', [40, 50, 60, 75]),
-        'min_delta': hp.loguniform('min_delta', np.log(1e-6), np.log(1e-4)),
+        'patience': hp.choice('patience', [30, 50, 70, 100]),
+        'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
-        # Embedding and regularization - centered on optimal dropout of 0.1
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
-        'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
+        # Embedding and regularization
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
+        'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.3),
     }
 
 
@@ -457,17 +451,9 @@ if __name__ == "__main__":
     data_dir = dirs['raw']
 
     # Define configuration for optimization
-    # Using full variable set based on architecture experiment results
     config = SimpleNamespace(
         model_name="pangu",
-        training_vars=[
-            "2m_temperature",
-            "10m_u_component_of_wind",
-            "10m_v_component_of_wind",
-            "temperature_1000hPa",
-            "specific_humidity_1000hPa",
-            "geopotential_1000hPa"
-        ],
+        training_vars=["2m_temperature"],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
         train_end="2021-12-31",

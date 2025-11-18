@@ -1336,16 +1336,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     print(f"    Lead times: {n_lead_times}")
     print(f"    Latitude: {n_lat}")
     print(f"    Longitude: {n_lon}")
-    print(f"    Training vars ({n_training_vars}): {args.training_vars}")
-    print(f"    Output vars ({n_output_vars}): {args.output_vars}")
-    print(f"\n  Verifying loaded data contains all requested variables...")
-    available_forecast_vars = list(forecast_ds.data_vars)
-    print(f"    Available forecast variables: {available_forecast_vars}")
-    missing_train_vars = [v for v in args.training_vars if v not in available_forecast_vars]
-    if missing_train_vars:
-        print(f"    WARNING: Missing training variables: {missing_train_vars}")
-    else:
-        print(f"    ✓ All training variables present in forecast data")
+    print(f"    Training vars: {n_training_vars}")
+    print(f"    Output vars: {n_output_vars}")
 
     # Stack all dimensions except variables
     forecast_stacked = forecast_ds[args.training_vars].stack(
