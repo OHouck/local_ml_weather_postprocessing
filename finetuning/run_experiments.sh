@@ -20,12 +20,12 @@ source .venv/bin/activate
 # Uncomment the appropriate configuration for your environment
 
 # laptop
-# data_dir="/Users/ohouck/globus/forecast_data/raw/"
-# output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
+data_dir="/Users/ohouck/globus/forecast_data/raw/"
+output_dir="/Users/ohouck/globus/forecast_data/processed/finetuning_output/"
 
 # midway
-data_dir="/project/jfranke/ozma/forecast_data/raw/"
-output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+# data_dir="/project/jfranke/ozma/forecast_data/raw/"
+# output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
 
 # ============================================================================
 # TRAINING/OUTPUT VARIABLE PAIRS
@@ -42,8 +42,8 @@ training_output_vars=(
     # Minimal: Use only the output variable for training
     "2m_temperature|2m_temperature"
 
-    # Full: Use all 6 variables for training (best performance from experiments)
-    "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
+    # # Full: Use all 6 variables for training (best performance from experiments)
+    # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
 )
 
 regions=("india")
@@ -103,9 +103,9 @@ for region in "${regions[@]}"; do
                             # Pangu/IFS dates - SHORT TEST PERIOD
                             # For quick testing: 1 month train, 1 month test
                             train_start="2018-01-01"
-                            train_end="2018-01-31"
+                            train_end="2021-12-31"
                             test_start="2022-01-01"
-                            test_end="2022-01-31"
+                            test_end="2022-12-31"
 
                             # PRODUCTION: Full period (uncomment for production runs)
                             # train_start="2018-01-01"
