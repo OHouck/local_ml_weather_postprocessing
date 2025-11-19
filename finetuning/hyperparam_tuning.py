@@ -376,7 +376,10 @@ def optimize_hyperparameters(args: SimpleNamespace,
             # Extract best results
             best_idx = np.argmin([t['result']['loss'] for t in trials.trials])
             best_trial = trials.trials[best_idx]
-            best_hyperparams = space_eval(search_space, best_trial['misc']['vals'])
+            # Extract scalar values from the vals lists
+            best_vals = {k: v[0] if isinstance(v, list) else v 
+                        for k, v in best_trial['misc']['vals'].items()}
+            best_hyperparams = space_eval(search_space, best_vals)
 
             return {
                 'architecture': architecture,
