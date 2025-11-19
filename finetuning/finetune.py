@@ -69,16 +69,6 @@ TOPO_ZONE_MAP = {
     'mountainous': 3,
 }
 
-# Map continents (for 6x6 degree patch-based training)
-CONTINENT_MAP = {
-    'africa': 1,
-    'asia': 2,
-    'europe': 3,
-    'north_america': 4,
-    'south_america': 5,
-    'oceania': 6,
-}
-
 # Purpose: save patches of of climate zones to be used for bootstrapping
 # ------------------------------
 # Simple MLP definition with lead time and day-of-year encoding
@@ -444,17 +434,26 @@ def parse_args():
     parser.add_argument('--alternate_loss_fn', type=str, default=None, choices=['quantile_loss', 'extreme_heat_loss'])
 
     # Architecture hyperparameters
-    # Defaults based on architecture experiments: mlp_moderate and unet_medium were best
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
+<<<<<<< HEAD
+                        help='Hidden dimension for MLP')
+    parser.add_argument('--mlp_num_layers', type=int, default=4,
+                        help='Number of hidden layers for MLP')
+    parser.add_argument('--mlp_dropout', type=float, default=0.2477893381,
+                        help='Dropout rate for MLP')
+    parser.add_argument('--unet_hidden_dim', type=int, default=256,
+                        help='Base number of channels for UNet')
+=======
                         help='Hidden dimension for MLP (default: 1024, from mlp_moderate)')
     parser.add_argument('--mlp_num_layers', type=int, default=6,
                         help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
     parser.add_argument('--mlp_dropout', type=float, default=0.25,
                         help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
-    parser.add_argument('--unet_hidden_dim', type=int, default=64,
+    parser.add_argument('--unet_hidden_dim', type=int, default=64, 
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
+>>>>>>> 40bd1ed202808cc2d94a6ac9e806533909344a55
     parser.add_argument('--unet_dropout', type=float, default=0.1,
-                        help='Dropout rate for UNet (default: 0.1, from unet_medium)')
+                        help='Dropout rate for UNet')
 
     return parser.parse_args()
 
@@ -487,7 +486,7 @@ def get_region_grid(args):
     elif args.region == "corn_belt":
         lat0, lat1 = 36, 46
         lon0, lon1 = -95 + 360, -85 + 360
-    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
+    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
     else:
@@ -971,31 +970,18 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     output_dim = n_output_vars * n_lat * n_lon
     n_lead_times = len(args.lead_time_hours)
 
-    # Print input/output dimensions for debugging
-    print(f"\n  Model Input/Output Dimensions:")
-    print(f"    Training variables: {args.training_vars}")
-    print(f"    Number of training vars: {n_training_vars}")
-    print(f"    Output variables: {args.output_vars}")
-    print(f"    Number of output vars: {n_output_vars}")
-    print(f"    Spatial dims: {n_lat} x {n_lon} = {n_lat * n_lon} points")
-    print(f"    Input dim (flattened): {input_dim} = {n_training_vars} vars × {n_lat * n_lon} points")
-    print(f"    Output dim (flattened): {output_dim} = {n_output_vars} vars × {n_lat * n_lon} points")
-    print(f"    Number of lead times: {n_lead_times}")
-
     if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
-        print(f"\n  UNet Architecture:")
-        print(f"    Hidden dim (base channels): {args.unet_hidden_dim}")
-        print(f"    Dropout: {args.unet_dropout}")
+        print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
+        print(f"  UNet dropout: {args.unet_dropout}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
                      n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
         num_epochs = 200
     else:
-        print(f"\n  MLP Architecture:")
-        print(f"    Using SimpleMLP with {n_lead_times} lead times")
-        print(f"    Hidden dim: {args.mlp_hidden_dim}")
-        print(f"    Number of layers: {args.mlp_num_layers}")
-        print(f"    Dropout: {args.mlp_dropout}")
+        print(f"Using SimpleMLP with {n_lead_times} lead times")
+        print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
+        print(f"  MLP num_layers: {args.mlp_num_layers}")
+        print(f"  MLP dropout: {args.mlp_dropout}")
         model = SimpleMLP(input_dim = input_dim,
                           hidden_dim = args.mlp_hidden_dim,
                           output_dim = output_dim,
@@ -1112,26 +1098,19 @@ def main():
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # Decide if we're in a climate‐zone region, topographic region, continent, or a geographic one
-    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
-
+    # Decide if we're in a climate‐zone region or a geographic one
+    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+        
         if args.region in CLIMATE_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
         elif args.region in TOPO_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"topo_zone_patches_{args.region}_{args.subregion}.npy")
-        elif args.region in CONTINENT_MAP:
-            patches_path = os.path.join(dirs["processed"], f"{args.region}_patches.npy")
         else:
             raise ValueError(f'Unknown file path for region {args.region}')
-
+    
         patches = np.load(patches_path, allow_pickle=True)
         patch_ids = np.arange(1, len(patches) + 1)
-
-        # Climate and topo zones have 50 patches, continents have variable number
-        if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
-            assert len(patches) == 50
-
-        print(f"Loaded {len(patches)} patches for region '{args.region}'")
+        assert len(patches) == 50
 
 
         for patch, idx in zip(patches, patch_ids):

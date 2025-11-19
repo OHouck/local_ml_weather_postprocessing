@@ -1,0 +1,16 @@
+/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/hyperopt/atpe.py:19: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+Traceback (most recent call last):
+  File "/project/jfranke/ozma/code/ai_weather_ag/finetuning/hyperparam_tuning.py", line 477, in <module>
+    mlp_results = optimize_hyperparameters(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/finetuning/hyperparam_tuning.py", line 379, in optimize_hyperparameters
+    best_hyperparams = space_eval(search_space, best_trial['misc']['vals'])
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/hyperopt/fmin.py", line 618, in space_eval
+    rval = pyll.rec_eval(space, memo=memo)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/jfranke/ozma/code/ai_weather_ag/.venv/lib/python3.11/site-packages/hyperopt/pyll/base.py", line 902, in rec_eval
+    rval = scope._impls[node.name](*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: float() argument must be a string or a real number, not 'list'
