@@ -35,12 +35,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from finetuning.finetune import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid
 from helper_funcs import setup_directories
 
-# ========================================================================
-# LEGACY FLAG: Set to True to use global yearly files (legacy format)
-# TO REMOVE: Remove this flag when legacy data is no longer needed
-# ========================================================================
-USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
-# ========================================================================
 
 def create_mlp_search_space():
     """
@@ -501,6 +495,14 @@ def optimize_hyperparameters(args: SimpleNamespace,
 
 # Example usage
 if __name__ == "__main__":
+
+    # ========================================================================
+    # LEGACY FLAG: Set to True to use global yearly files (legacy format)
+    # TO REMOVE: Remove this flag when legacy data is no longer needed
+    # ========================================================================
+    USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
+    # ========================================================================
+
     # Setup directories
     dirs = setup_directories()
     data_dir = dirs['raw']
@@ -513,9 +515,7 @@ if __name__ == "__main__":
         ],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
-        train_end="2018-01-31",
-        test_start="2021-01-01",
-        test_end="2021-01-31",
+        train_end="2021-12-31",
         region='india',
         subregion='6x6',
         ground_truth_source='',  # Will default to era5 for pangu
@@ -543,7 +543,7 @@ if __name__ == "__main__":
         args=config,
         data_dir=data_dir,
         architecture="unet",
-        max_evals=10,
+        max_evals=100,
         output_dir="hyperopt_results_unet",
         device=device,
         random_seed=42,
@@ -556,7 +556,7 @@ if __name__ == "__main__":
         args=config,
         data_dir=data_dir,
         architecture="mlp",
-        max_evals=10,
+        max_evals=100,
         output_dir="hyperopt_results_mlp",
         device=device,
         random_seed=42,
