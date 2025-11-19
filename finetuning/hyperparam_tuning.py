@@ -507,9 +507,9 @@ if __name__ == "__main__":
         ],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
+        train_end="2020-12-31",
+        test_start="2021-01-01",
+        test_end="2021-12-31",
         region='india',
         subregion='6x6',
         ground_truth_source='',  # Will default to era5 for pangu
@@ -531,19 +531,6 @@ if __name__ == "__main__":
         print("Enabled cudnn benchmarking for faster GPU training")
         print("Using mixed precision training (AMP) for CUDA operations")
 
-    # Optimize MLP architecture
-    # mlp_results = optimize_hyperparameters(
-    #     args=config,
-    #     data_dir=data_dir,
-    #     architecture="mlp",
-    #     max_evals=100,
-    #     output_dir="hyperopt_results_mlp",
-    #     device=device,
-    #     random_seed=42,
-    #     resume=True  # Set to True to continue from previous runs
-    # )
-
-    print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
 
     # Optionally optimize UNet architecture
     unet_results = optimize_hyperparameters(
@@ -556,3 +543,16 @@ if __name__ == "__main__":
         random_seed=42,
         resume=False
     )
+    print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")
+    # Optimize MLP architecture
+    mlp_results = optimize_hyperparameters(
+        args=config,
+        data_dir=data_dir,
+        architecture="mlp",
+        max_evals=100,
+        output_dir="hyperopt_results_mlp",
+        device=device,
+        random_seed=42,
+        resume=False # Set to True to continue from previous runs
+    )
+    print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
