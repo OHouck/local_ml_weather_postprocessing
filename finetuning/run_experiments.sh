@@ -94,16 +94,17 @@ for region in "${regions[@]}"; do
                                 continue
                             fi
                         else
+                            # Testing period 
+                            # train_start="2018-01-01"
+                            # train_end="2018-01-31"
+                            # test_start="2022-01-01"
+                            # test_end="2022-01-31"
+
+                            # PRODUCTION: Full period (uncomment for production runs)
                             train_start="2018-01-01"
                             train_end="2021-12-31"
                             test_start="2022-01-01"
                             test_end="2022-12-31"
-
-                            # PRODUCTION: Full period (uncomment for production runs)
-                            # train_start="2018-01-01"
-                            # train_end="2021-12-31"
-                            # test_start="2022-01-01"
-                            # test_end="2022-12-31"
 
                             # aifs is the only model with precipitation currently
                             if [[ "$variable" == "total_precipitation" ]]; then

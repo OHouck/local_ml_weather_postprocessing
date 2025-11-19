@@ -35,6 +35,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from finetuning.finetune import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid
 from helper_funcs import setup_directories
 
+# ========================================================================
+# LEGACY FLAG: Set to True to use global yearly files (legacy format)
+# TO REMOVE: Remove this flag when legacy data is no longer needed
+# ========================================================================
+USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
+# ========================================================================
 
 def create_mlp_search_space():
     """
@@ -253,7 +259,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     # Load training data
     (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
      lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True)
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
 
     # Normalize data
     stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
@@ -507,9 +513,9 @@ if __name__ == "__main__":
         ],
         output_vars=["2m_temperature"],
         train_start="2018-01-01",
-        train_end="2020-12-31",
+        train_end="2018-01-31",
         test_start="2021-01-01",
-        test_end="2021-12-31",
+        test_end="2021-01-31",
         region='india',
         subregion='6x6',
         ground_truth_source='',  # Will default to era5 for pangu
@@ -537,19 +543,20 @@ if __name__ == "__main__":
         args=config,
         data_dir=data_dir,
         architecture="unet",
-        max_evals=100,
+        max_evals=10,
         output_dir="hyperopt_results_unet",
         device=device,
         random_seed=42,
         resume=False
     )
     print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")
+
     # Optimize MLP architecture
     mlp_results = optimize_hyperparameters(
         args=config,
         data_dir=data_dir,
         architecture="mlp",
-        max_evals=100,
+        max_evals=10,
         output_dir="hyperopt_results_mlp",
         device=device,
         random_seed=42,
