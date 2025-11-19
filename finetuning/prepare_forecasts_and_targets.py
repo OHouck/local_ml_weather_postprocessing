@@ -426,10 +426,10 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
     if use_dask_client:
         print("\nSetting up Dask client...")
         client = Client(
-            n_workers=2,
+            n_workers=4,
             threads_per_worker=4,
             processes=False,
-            memory_limit='8GB',
+            memory_limit='16GB',
             silence_logs=30
         )
         print(f"  Dask dashboard: {client.dashboard_link}")
@@ -709,10 +709,10 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
     if use_dask_client:
         print("\nSetting up Dask client...")
         client = Client(
-            n_workers=2,
+            n_workers=4,
             threads_per_worker=4,
             processes=False,
-            memory_limit='8GB',
+            memory_limit='16GB',
             silence_logs=30
         )
         print(f"  Dask dashboard: {client.dashboard_link}")

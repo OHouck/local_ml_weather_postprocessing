@@ -222,11 +222,85 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
     return best_val_loss, epoch
 
 
+def preload_training_data(args: SimpleNamespace,
+                          data_dir: str,
+                          device: torch.device,
+                          use_legacy_global_data: bool = False) -> Dict[str, Any]:
+    """
+    Pre-load and cache training data to avoid repeated loading across hyperparameter trials.
+
+    This function loads the training data once, normalizes it, and performs train/val split.
+    The cached data can be reused across all hyperparameter trials, dramatically reducing
+    data loading overhead.
+
+    Args:
+        args: Configuration with region, variables, lead times, etc.
+        data_dir: Path to data directory
+        device: torch device
+        use_legacy_global_data: Whether to use legacy global data format
+
+    Returns:
+        dict: Cached training data including normalized arrays, indices, and metadata
+    """
+    print("\n" + "="*70)
+    print("PRE-LOADING TRAINING DATA (will be cached for all trials)")
+    print("="*70)
+
+    # Get region grid
+    lat_vals, lon_vals = get_region_grid(args)
+
+    # Load training data
+    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
+     lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
+        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
+                       use_legacy_global_data=use_legacy_global_data)
+
+    print(f"  Loaded {len(fc)} training samples")
+    print(f"  Spatial dimensions: {n_lat} x {n_lon}")
+    print(f"  Training variables: {n_training_vars}, Output variables: {n_output_vars}")
+
+    # Normalize data
+    stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
+    stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+    fc_norm = (fc - stats_train['mean']) / stats_train['std']
+    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
+    obs_norm = (obs - stats_out['mean']) / stats_out['std']
+
+    # Split train/validation (80/20) with fixed seed for reproducibility
+    n_samples = len(fc)
+    indices = np.arange(n_samples)
+    np.random.shuffle(indices)
+    split_idx = int(0.8 * n_samples)
+    train_idx = indices[:split_idx]
+    val_idx = indices[split_idx:]
+
+    print(f"  Train samples: {len(train_idx)}, Validation samples: {len(val_idx)}")
+    print("  Data caching complete!")
+    print("="*70 + "\n")
+
+    return {
+        'fc_norm': fc_norm,
+        'fc_output_norm': fc_output_norm,
+        'obs_norm': obs_norm,
+        'lead_time_indices': lead_time_indices,
+        'day_of_year_features': day_of_year_features,
+        'train_idx': train_idx,
+        'val_idx': val_idx,
+        'n_lat': n_lat,
+        'n_lon': n_lon,
+        'n_training_vars': n_training_vars,
+        'n_output_vars': n_output_vars,
+        'stats_train': stats_train,
+        'stats_out': stats_out
+    }
+
+
 def evaluate_hyperparameters(hyperparams: Dict[str, Any],
                             args: SimpleNamespace,
                             data_dir: str,
                             architecture: str,
-                            device: torch.device) -> Dict[str, Any]:
+                            device: torch.device,
+                            cached_data: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Evaluate a set of hyperparameters for a single region/variable configuration.
 
@@ -236,6 +310,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         data_dir: Path to data directory
         architecture: 'mlp' or 'unet'
         device: torch device
+        cached_data: Optional pre-loaded training data to avoid repeated loading
 
     Returns:
         dict: {'loss': validation_loss, 'status': STATUS_OK, 'epochs_trained': num_epochs}
@@ -247,28 +322,44 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
     print(f"  Batch size: {hyperparams['batch_size']}")
     print(f"  Patience: {hyperparams['patience']}")
 
-    # Get region grid
-    lat_vals, lon_vals = get_region_grid(args)
+    # Use cached data if available, otherwise load from scratch
+    if cached_data is not None:
+        print(f"  Using cached training data (fast path)")
+        fc_norm = cached_data['fc_norm']
+        fc_output_norm = cached_data['fc_output_norm']
+        obs_norm = cached_data['obs_norm']
+        lead_time_indices = cached_data['lead_time_indices']
+        day_of_year_features = cached_data['day_of_year_features']
+        train_idx = cached_data['train_idx']
+        val_idx = cached_data['val_idx']
+        n_lat = cached_data['n_lat']
+        n_lon = cached_data['n_lon']
+        n_training_vars = cached_data['n_training_vars']
+        n_output_vars = cached_data['n_output_vars']
+    else:
+        print(f"  Loading training data (slow path - no cache)")
+        # Get region grid
+        lat_vals, lon_vals = get_region_grid(args)
 
-    # Load training data
-    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
-     lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
+        # Load training data
+        (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
+         lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
+            load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
 
-    # Normalize data
-    stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
-    stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
-    fc_norm = (fc - stats_train['mean']) / stats_train['std']
-    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
-    obs_norm = (obs - stats_out['mean']) / stats_out['std']
+        # Normalize data
+        stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
+        stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+        fc_norm = (fc - stats_train['mean']) / stats_train['std']
+        fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
+        obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-    # Split train/validation (80/20)
-    n_samples = len(fc)
-    indices = np.arange(n_samples)
-    np.random.shuffle(indices)
-    split_idx = int(0.8 * n_samples)
-    train_idx = indices[:split_idx]
-    val_idx = indices[split_idx:]
+        # Split train/validation (80/20)
+        n_samples = len(fc)
+        indices = np.arange(n_samples)
+        np.random.shuffle(indices)
+        split_idx = int(0.8 * n_samples)
+        train_idx = indices[:split_idx]
+        val_idx = indices[split_idx:]
 
     # Create data loaders with device-specific optimizations
     train_loader = create_dataloader(
@@ -391,10 +482,14 @@ def optimize_hyperparameters(args: SimpleNamespace,
     else:  # unet
         search_space = create_unet_search_space()
 
+    # Pre-load training data once for all trials (major performance optimization)
+    cached_data = preload_training_data(args, data_dir, device, use_legacy_global_data=USE_LEGACY_GLOBAL_DATA)
+
     # Define objective function
     def objective(hyperparams):
         result = evaluate_hyperparameters(
-            hyperparams, args, data_dir, architecture, device
+            hyperparams, args, data_dir, architecture, device,
+            cached_data=cached_data  # Pass cached data to avoid repeated loading
         )
 
         # Save intermediate result
