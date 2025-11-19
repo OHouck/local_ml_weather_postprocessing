@@ -40,6 +40,11 @@ def create_mlp_search_space():
     """
     Define the hyperparameter search space for MLP architecture with early stopping.
 
+    OPTIMIZED FOR FAST HYPERPARAMETER SEARCH:
+    - Higher learning rates (1e-4 to 1e-2) for faster convergence
+    - Lower patience (15-30) for quicker trials
+    - Removed batch_size=32 (too slow)
+
     Returns:
         dict: Search space definition for hyperopt
     """
@@ -48,24 +53,29 @@ def create_mlp_search_space():
         'hidden_dim': hp.choice('hidden_dim', [64, 128, 256, 512, 1024]),
         'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6]),
 
-        # Training parameters
-        'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
-        'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
+        # Training parameters - OPTIMIZED: Higher learning rates
+        'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
+        'batch_size': hp.choice('batch_size', [64, 128, 256]),
+        'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-3)),
 
-        # Early stopping parameters
-        'patience': hp.choice('patience', [30, 50, 70, 100]),
+        # Early stopping parameters - OPTIMIZED: Lower patience
+        'patience': hp.choice('patience', [15, 20, 25, 30]),
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
         # Embedding and regularization
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16, 32]),
-        'dropout_rate': hp.uniform('dropout_rate', 0.0, 0.5),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
+        'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.3),
     }
 
 
 def create_unet_search_space():
     """
     Define the hyperparameter search space for UNet architecture with early stopping.
+
+    OPTIMIZED FOR FAST HYPERPARAMETER SEARCH:
+    - Higher learning rates (1e-4 to 1e-2) for faster convergence
+    - Lower patience (15-30) for quicker trials
+    - Removed batch_size=32 (too slow)
 
     Returns:
         dict: Search space definition for hyperopt
@@ -74,17 +84,17 @@ def create_unet_search_space():
         # Model architecture - centered on unet_medium optimal values
         'hidden_dim': hp.choice('hidden_dim', [64, 128]),
 
-        # Training parameters
-        'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
-        'batch_size': hp.choice('batch_size', [32, 64, 128, 256]),
-        'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-2)),
+        # Training parameters - OPTIMIZED: Higher learning rates
+        'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
+        'batch_size': hp.choice('batch_size', [64, 128, 256]),
+        'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-3)),
 
-        # Early stopping parameters
-        'patience': hp.choice('patience', [30, 50, 70, 100]),
+        # Early stopping parameters - OPTIMIZED: Lower patience
+        'patience': hp.choice('patience', [15, 20, 25, 30]),
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
         # Embedding and regularization - centered on optimal dropout of 0.1
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16]),
         'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
     }
 
@@ -113,17 +123,18 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
     )
 
     # Add ReduceLROnPlateau scheduler for better convergence
+    # FIXED: Increased patience to match early_stopping patience to avoid premature LR reduction
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode='min',
         factor=0.5,
-        patience=10,
-        min_lr=1e-7
+        patience=max(10, hyperparams['patience'] // 2),  # At least half of early stopping patience
+        min_lr=1e-6  # Prevent LR from getting too small
     )
 
     patience = hyperparams['patience']
     min_delta = hyperparams['min_delta']
-    max_epochs = 1000  # Maximum epochs before stopping
+    max_epochs = 300  # OPTIMIZED: Reduced from 1000 to 300 for faster hyperparameter search
 
     # Setup mixed precision training for CUDA
     use_amp = device.type == 'cuda'
