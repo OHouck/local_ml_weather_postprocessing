@@ -131,15 +131,15 @@ class SimpleMLP(nn.Module):
 # ------------------------------
 class UNet(nn.Module):
     """
-    U-Net architecture with FiLM conditioning for weather forecast bias correction.
-    Uses Feature-wise Linear Modulation to incorporate lead time and day-of-year information.
+    U-Net architecture with channel concatenation conditioning for weather forecast bias correction.
+    Incorporates lead time and day-of-year information by concatenating them as extra input channels.
     """
 
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
                  n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
                  n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1):
         """
-        Initialize U-Net with FiLM conditioning.
+        Initialize U-Net with concatenation-based conditioning.
 
         Args:
             input_dim: Flattened input dimension (for compatibility)
@@ -179,17 +179,16 @@ class UNet(nn.Module):
         self.total_embedding_dim = 2  # sin and cos of day of year
         if n_lead_times > 1:
             self.total_embedding_dim += lead_time_embedding_dim
-        
+
         # Calculate number of encoder/decoder levels
         self.num_levels = self._calculate_num_levels()
-        
+
         # Build encoder and decoder
+        # Note: First encoder block takes n_input_vars + total_embedding_dim channels
+        # because we concatenate conditioning as extra channels
         self._build_encoder()
         self._build_decoder()
-        
-        # Build FiLM conditioning layers
-        self._build_film_layers()
-        
+
         # Final output layer
         self.final_conv = nn.Conv2d(self.encoder_channels[0], self.n_output_vars, kernel_size=1)
         
@@ -236,19 +235,20 @@ class UNet(nn.Module):
         self.encoders = nn.ModuleList()
         self.pools = nn.ModuleList()
         self.encoder_channels = []
-        
-        in_ch = self.n_input_vars
+
+        # First encoder block takes input vars + conditioning channels
+        in_ch = self.n_input_vars + self.total_embedding_dim
         out_ch = self.hidden_dim
-        
+
         for i in range(self.num_levels):
             # Add encoder block
             self.encoders.append(self._make_conv_block(in_ch, out_ch))
             self.encoder_channels.append(out_ch)
-            
+
             # Add pooling layer (except for last level)
             if i < self.num_levels - 1:
                 self.pools.append(nn.MaxPool2d(kernel_size=2))
-            
+
             # Update channels for next level
             in_ch = out_ch
             out_ch = min(out_ch * 2, 256)  # Cap at 256 channels
@@ -257,62 +257,26 @@ class UNet(nn.Module):
         """Build the decoder (upsampling) path."""
         self.decoders = nn.ModuleList()
         self.upconvs = nn.ModuleList()
-        
+
         for i in range(self.num_levels - 1):
             # Calculate channel numbers
             decoder_level = self.num_levels - 1 - i
             skip_level = self.num_levels - 2 - i
-            
+
             in_ch = self.encoder_channels[decoder_level]
             skip_ch = self.encoder_channels[skip_level]
             out_ch = skip_ch
-            
+
             # Add upconvolution
             self.upconvs.append(self._make_upconv(in_ch, out_ch))
-            
+
             # Add decoder block (takes concatenated skip connection)
             combined_ch = out_ch + skip_ch
             self.decoders.append(self._make_conv_block(combined_ch, out_ch))
     
-    def _build_film_layers(self):
-        """Build FiLM (Feature-wise Linear Modulation) layers for each encoder level."""
-        self.film_generators = nn.ModuleList()
-        
-        for i, channels in enumerate(self.encoder_channels):
-            # Each FiLM generator produces scale and shift parameters
-            film_generator = nn.Sequential(
-                nn.Linear(self.total_embedding_dim, channels * 4),
-                nn.ReLU(),
-                nn.Linear(channels * 4, channels * 2)  # Output: channels for scale + channels for shift
-            )
-            self.film_generators.append(film_generator)
-    
-    def apply_film(self, x, film_params):
-        """
-        Apply FiLM conditioning to feature maps.
-        
-        Args:
-            x: Feature maps [batch_size, channels, height, width]
-            film_params: FiLM parameters [batch_size, channels * 2]
-        
-        Returns:
-            Modulated feature maps
-        """
-        batch_size, channels, height, width = x.shape
-        
-        # Split into scale and shift
-        scale, shift = torch.chunk(film_params, 2, dim=1)
-        
-        # Reshape for broadcasting
-        scale = scale.view(batch_size, channels, 1, 1)
-        shift = shift.view(batch_size, channels, 1, 1)
-        
-        # Apply affine transformation
-        return x * (1 + scale) + shift
-    
     def forward(self, x, lead_time_idx=None, day_of_year_features=None):
         """
-        Forward pass through U-Net with FiLM conditioning.
+        Forward pass through U-Net with concatenation-based conditioning.
 
         Args:
             x: Input tensor [batch_size, input_dim]
@@ -339,30 +303,26 @@ class UNet(nn.Module):
 
         # Concatenate conditioning vectors
         if conditioning_vectors:
-            conditioning = torch.cat(conditioning_vectors, dim=1)
+            conditioning = torch.cat(conditioning_vectors, dim=1)  # [batch, total_embedding_dim]
         else:
             # If no conditioning, create zeros
             conditioning = torch.zeros(batch_size, self.total_embedding_dim, device=x.device)
-        
-        # Generate FiLM parameters for each encoder level
-        film_params_list = []
-        for film_gen in self.film_generators:
-            film_params = film_gen(conditioning)
-            film_params_list.append(film_params)
-        
-        # Encoder path with skip connections and FiLM modulation
+
+        # Broadcast conditioning to spatial dimensions and concatenate as extra channels
+        # conditioning shape: [batch, total_embedding_dim] -> [batch, total_embedding_dim, height, width]
+        conditioning_spatial = conditioning.view(batch_size, self.total_embedding_dim, 1, 1)
+        conditioning_spatial = conditioning_spatial.expand(batch_size, self.total_embedding_dim, self.height, self.width)
+
+        # Concatenate conditioning as extra input channels
+        x = torch.cat([x, conditioning_spatial], dim=1)  # [batch, n_input_vars + total_embedding_dim, height, width]
+
+        # Encoder path with skip connections
         encoder_outputs = []
-        
+
         for i in range(self.num_levels):
             # Apply convolution
             x = self.encoders[i](x)
-            
-            # Apply FiLM modulation
-            # XX Note original paper( https://arxiv.org/abs/1907.01277) applies
-            # FiLM in encoder block not after. This is simplier to implement and
-            # requires less parameters to estimate.
-            x = self.apply_film(x, film_params_list[i])
-            
+
             # Store skip connections (except for bottleneck)
             if i < self.num_levels - 1:
                 encoder_outputs.append(x)
