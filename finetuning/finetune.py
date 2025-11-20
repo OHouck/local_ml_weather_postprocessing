@@ -29,6 +29,7 @@ import socket
 import random
 import glob
 import math
+import json
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -409,6 +410,38 @@ class UNet(nn.Module):
         return x
 
 # ------------------------------
+# Load optimal hyperparameters
+# ------------------------------
+def load_optimal_hyperparameters(architecture):
+    """
+    Load optimal hyperparameters from hyperopt results.
+    
+    Args:
+        architecture: 'mlp' or 'unet'
+    
+    Returns:
+        Dictionary of optimal hyperparameters, or None if file not found
+    """
+    # Get the script's directory
+    script_dir = Path(__file__).parent.parent
+    results_file = script_dir / f"hyperopt_results_{architecture}" / f"optimization_results_{architecture}.json"
+    
+    if not results_file.exists():
+        print(f"Warning: Hyperparameter file not found at {results_file}")
+        return None
+    
+    try:
+        with open(results_file, 'r') as f:
+            results = json.load(f)
+        print(f"\nLoaded optimal hyperparameters for {architecture} from {results_file}")
+        print(f"  Best loss: {results['best_loss']:.6f}")
+        print(f"  Evaluations: {results['n_evaluations']}")
+        return results['best_hyperparams']
+    except Exception as e:
+        print(f"Warning: Could not load hyperparameters from {results_file}: {e}")
+        return None
+
+# ------------------------------
 # Argument parsing
 # ------------------------------
 def parse_args():
@@ -594,7 +627,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         model: PyTorch model to train
         train_loader: DataLoader for training data
         valid_loader: DataLoader for validation data
-        epochs: Maximum number of epochs to train
+        epochs: Maximum number of epochs1 to train
         lr: Initial learning rate
         device: Device to train on (cpu/cuda/mps)
         weight_decay: L2 regularization weight
@@ -944,12 +977,16 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     split = int(0.8 * n_train)
     t_idx, v_idx = idx[:split], idx[split:]
 
+    # Use optimal batch size if available, otherwise default to 128
+    batch_size = args.optimal_batch_size if args.optimal_batch_size else 128
+    print(f"Using batch_size: {batch_size}")
+    
     train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                    batch_size=128, device=device)
+                                    batch_size=batch_size, device=device)
     val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
                                   lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                  batch_size=128, device=device)
+                                  batch_size=batch_size, device=device)
 
     # Log DataLoader settings
     print(f"DataLoader settings: num_workers={train_loader.num_workers}, pin_memory={train_loader.pin_memory}")
@@ -961,37 +998,56 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     output_dim = n_output_vars * n_lat * n_lon
     n_lead_times = len(args.lead_time_hours)
 
+    # Use optimal lead time embedding dimension if available
+    lead_time_emb_dim = args.optimal_lead_time_embedding_dim if args.optimal_lead_time_embedding_dim else 4
+    
     if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
+        print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                     n_lead_times=n_lead_times, dropout_rate=args.unet_dropout).to(device)
+                     n_lead_times=n_lead_times, 
+                     lead_time_embedding_dim=lead_time_emb_dim,
+                     dropout_rate=args.unet_dropout).to(device)
         num_epochs = 500
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times")
         print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
         print(f"  MLP num_layers: {args.mlp_num_layers}")
         print(f"  MLP dropout: {args.mlp_dropout}")
+        print(f"  MLP lead_time_embedding_dim: {lead_time_emb_dim}")
         model = SimpleMLP(input_dim = input_dim,
                           hidden_dim = args.mlp_hidden_dim,
                           output_dim = output_dim,
                           num_hidden_layers= args.mlp_num_layers,
                           n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=4,
+                          lead_time_embedding_dim=lead_time_emb_dim,
                           dropout_rate=args.mlp_dropout
                           ).to(device)
         num_epochs = 750
 
+    # Use optimal training hyperparameters if available
+    lr = args.optimal_lr if args.optimal_lr else 8.669714431623457e-06
+    weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 5.210913466175803e-06
+    patience = args.optimal_patience if args.optimal_patience else 50
+    min_delta = args.optimal_min_delta if args.optimal_min_delta else 1e-5
+    
+    print(f"\nTraining with:")
+    print(f"  lr: {lr}")
+    print(f"  weight_decay: {weight_decay}")
+    print(f"  patience: {patience}")
+    print(f"  min_delta: {min_delta}")
+    
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=num_epochs, lr=8.669714431623457e-06,
+                                                epochs=num_epochs, lr=lr,
                                                 device=device,
-                                                weight_decay=5.210913466175803e-06,
+                                                weight_decay=weight_decay,
                                                 stats_out=stats_out, # used to un-normalize outputs for some loss fns
                                                 alternate_loss_fn=args.alternate_loss_fn,
-                                                patience=50,  # Early stopping: stop after 50 epochs without improvement
-                                                min_delta=1e-5,  # Minimum improvement to qualify as progress
+                                                patience=patience,  # Early stopping: stop after N epochs without improvement
+                                                min_delta=min_delta,  # Minimum improvement to qualify as progress
                                                 scheduler_patience=10,  # Reduce LR after 10 epochs without improvement
                                                 scheduler_factor=0.5,  # Reduce LR by half when plateau detected
                                                 min_lr=1e-7  # Minimum learning rate floor
@@ -1059,6 +1115,49 @@ def main():
 
     # Parse command line arguments
     args = parse_args()
+    
+    # Load optimal hyperparameters based on architecture
+    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture)
+    if optimal_hyperparams:
+        # Override defaults with optimal hyperparameters
+        if args.nn_architecture == 'mlp':
+            args.mlp_hidden_dim = optimal_hyperparams.get('hidden_dim', args.mlp_hidden_dim)
+            args.mlp_num_layers = optimal_hyperparams.get('num_layers', args.mlp_num_layers)
+            args.mlp_dropout = optimal_hyperparams.get('dropout_rate', args.mlp_dropout)
+        elif args.nn_architecture == 'unet':
+            args.unet_hidden_dim = optimal_hyperparams.get('hidden_dim', args.unet_hidden_dim)
+            args.unet_dropout = optimal_hyperparams.get('dropout_rate', args.unet_dropout)
+        
+        # Store training hyperparameters for use later
+        args.optimal_lr = optimal_hyperparams.get('learning_rate', None)
+        args.optimal_batch_size = optimal_hyperparams.get('batch_size', None)
+        args.optimal_weight_decay = optimal_hyperparams.get('weight_decay', None)
+        args.optimal_patience = optimal_hyperparams.get('patience', None)
+        args.optimal_min_delta = optimal_hyperparams.get('min_delta', None)
+        args.optimal_lead_time_embedding_dim = optimal_hyperparams.get('lead_time_embedding_dim', None)
+        
+        print(f"\nUsing optimal hyperparameters:")
+        if args.nn_architecture == 'mlp':
+            print(f"  hidden_dim: {args.mlp_hidden_dim}")
+            print(f"  num_layers: {args.mlp_num_layers}")
+            print(f"  dropout: {args.mlp_dropout}")
+        else:
+            print(f"  hidden_dim: {args.unet_hidden_dim}")
+            print(f"  dropout: {args.unet_dropout}")
+        print(f"  learning_rate: {args.optimal_lr}")
+        print(f"  batch_size: {args.optimal_batch_size}")
+        print(f"  weight_decay: {args.optimal_weight_decay}")
+        print(f"  patience: {args.optimal_patience}")
+        print(f"  min_delta: {args.optimal_min_delta}")
+    else:
+        # Set defaults if no optimal hyperparameters found
+        args.optimal_lr = None
+        args.optimal_batch_size = None
+        args.optimal_weight_decay = None
+        args.optimal_patience = None
+        args.optimal_min_delta = None
+        args.optimal_lead_time_embedding_dim = None
+        print("\nUsing default hyperparameters (no optimal hyperparameters found)")
 
     # Prepare output dir and base path
     args.output_dir = os.path.expanduser(args.output_dir)

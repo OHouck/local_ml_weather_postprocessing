@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=80G
 
 # OPTIMIZATION NOTES:
@@ -22,7 +22,6 @@ source .venv/bin/activate
 
 # Enable better GPU utilization
 export CUDA_LAUNCH_BLOCKING=0
-export OMP_NUM_THREADS=16
-
+export OMP_NUM_THREADS=8
 uv run finetuning/hyperparam_tuning.py 
  

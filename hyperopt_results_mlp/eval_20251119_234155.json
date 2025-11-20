@@ -1,0 +1,16 @@
+{
+  "hyperparams": {
+    "batch_size": 256,
+    "dropout_rate": 0.26745018489334865,
+    "hidden_dim": 1024,
+    "lead_time_embedding_dim": 32,
+    "learning_rate": 0.0005936109713645268,
+    "min_delta": 0.00018494971140207896,
+    "num_layers": 5,
+    "patience": 25,
+    "weight_decay": 7.91864358180378e-06
+  },
+  "loss": 0.06064474980552029,
+  "epochs_trained": 141,
+  "architecture": "mlp"
+}
