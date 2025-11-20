@@ -69,6 +69,15 @@ TOPO_ZONE_MAP = {
     'flat': 1,
     'hilly': 2,
     'mountainous': 3,
+} 
+# Map continents (for 6x6 degree patch-based training)
+CONTINENT_MAP = {
+    'africa': 1,
+    'asia': 2,
+    'europe': 3,
+    'north_america': 4,
+    'south_america': 5,
+    'oceania': 6,
 }
 
 # Purpose: save patches of of climate zones to be used for bootstrapping
@@ -510,7 +519,7 @@ def get_region_grid(args):
     elif args.region == "corn_belt":
         lat0, lat1 = 36, 46
         lon0, lon1 = -95 + 360, -85 + 360
-    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
     else:
@@ -1108,7 +1117,7 @@ def main():
     # LEGACY FLAG: Set to True to use global yearly files (legacy format)
     # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
+    USE_LEGACY_GLOBAL_DATA = True # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()
@@ -1188,19 +1197,25 @@ def main():
     region_lat, region_lon = get_region_grid(args)
     nlat_patch, nlon_patch = get_patch_shape(args)
 
-    # Decide if we're in a climate‐zone region or a geographic one
-    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+    # Decide if we're in a climate, topographic, or continent region or a geographic one
+    if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
         
         if args.region in CLIMATE_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"climate_zone_patches_{args.region}_{args.subregion}.npy")
         elif args.region in TOPO_ZONE_MAP:
             patches_path = os.path.join(dirs["processed"], f"topo_zone_patches_{args.region}_{args.subregion}.npy")
+        elif args.region in CONTINENT_MAP:
+            patches_path = os.path.join(dirs["processed"], f"{args.region}_patches.npy")
         else:
             raise ValueError(f'Unknown file path for region {args.region}')
     
         patches = np.load(patches_path, allow_pickle=True)
         patch_ids = np.arange(1, len(patches) + 1)
-        assert len(patches) == 50
+
+        # Climate and topo zones have 50 patches, continents have variable number
+        if args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP:
+            assert len(patches) == 50
+        print(f"Loaded {len(patches)} patches for region '{args.region}'")
 
 
         for patch, idx in zip(patches, patch_ids):
