@@ -251,7 +251,7 @@ class UNet(nn.Module):
 
             # Update channels for next level
             in_ch = out_ch
-            out_ch = min(out_ch * 2, 256)  # Cap at 256 channels
+            out_ch = min(out_ch * 2, 128)  # Cap at 128 channels
     
     def _build_decoder(self):
         """Build the decoder (upsampling) path."""

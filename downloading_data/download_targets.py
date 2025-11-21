@@ -469,7 +469,7 @@ if __name__ == '__main__':
     print(f"  dask: {dask.__version__}")
 
     # years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-    years = [2018, 2019, 2021]
+    years = [2022]
     data_source = 'hres_t0'  # hres_t0 or era5
     dirs = setup_directories()
     
