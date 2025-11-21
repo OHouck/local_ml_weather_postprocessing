@@ -1,14 +1,13 @@
 #!/bin/bash
-#SBATCH --exclusive
-#SBATCH --job-name=run_experiments
+#SBATCH --job-name=run_experiments_mlp
 #SBATCH --account=pi-jfranke
-#SBATCH --output=run_experiments-%J.txt
+#SBATCH --output=run_experiments_mlp-%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=32G
-#SBATCH --time=6:00:00
+#SBATCH --mem=80G
+#SBATCH --time=12:00:00
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1 
+#SBATCH --cpus-per-task=8 
 # lat must be between -90 and 90
 # lon must be between 0 and 360 (0 is at prime meridian)
 #
@@ -51,13 +50,13 @@ training_output_vars=(
     # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
 )
 
-regions=("india")
+regions=("oceania")
 subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
-regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+# regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
