@@ -140,27 +140,26 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
     return matching_files
 
 
-def map_global_improvements(
+def load_region_data(
     dirs,
     model="pangu",
     variable="10m_wind_speed",
-    zone_types=None,
-    save_dir=None,
-    map_type="improvement",
+    regions=None,
     train_start="2018-01-01",
     train_end="2021-12-31",
     test_start="2022-01-01",
     test_end="2022-12-31",
     nn_architecture="mlp",
-    subregion="2x2",
-    alternate_loss_fn=None
+    subregion="6x6",
+    alternate_loss_fn=None,
+    lead_times=None,
+    sdor_da=None
 ):
     """
-    Create global maps showing RMSE metrics for all post-processed patches.
-    Generates 3 separate maps, one for each lead time (24h, 120h, 216h).
+    Load and process zarr data for multiple regions.
 
-    Only processes zarr files that match the specified model configuration to ensure
-    all patches are from the same training/testing setup.
+    This function consolidates the data loading logic that was previously duplicated
+    in map_global_improvements and plot_scatter_forecast_improvement.
 
     Parameters
     ----------
@@ -170,57 +169,58 @@ def map_global_improvements(
         Model to use: "pangu" or "ifs"
     variable : str
         Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
-    zone_types : list, optional
-        List of zone types to include. If None, uses all available zones:
-        ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
-    save_dir : str, optional
-        Custom save directory. If None, auto-generates based on parameters
-    map_type : str, optional
-        Type of map to create: "improvement" (percent improvement),
-        "original" (original RMSE), or "corrected" (corrected RMSE).
-        Default is "improvement".
-    train_start : str, optional
-        Training start date (default: "2018-01-01")
-    train_end : str, optional
-        Training end date (default: "2021-12-31")
-    test_start : str, optional
-        Test start date (default: "2022-01-01")
-    test_end : str, optional
-        Test end date (default: "2022-12-31")
-    nn_architecture : str, optional
-        Neural network architecture: "mlp" or "unet" (default: "mlp")
-    subregion : str, optional
-        Subregion size pattern (default: "2x2")
+    regions : list, optional
+        List of regions to include. If None, uses:
+        ["asia", "africa", "north_america", "south_america", "europe", "oceania"]
+    train_start : str
+        Training start date
+    train_end : str
+        Training end date
+    test_start : str
+        Test start date
+    test_end : str
+        Test end date
+    nn_architecture : str
+        Neural network architecture: "mlp" or "unet"
+    subregion : str
+        Subregion size pattern (e.g., "6x6")
     alternate_loss_fn : str, optional
-        Alternate loss function name if used (default: None)
+        Alternate loss function name if used
+    lead_times : list, optional
+        List of lead times to process. If None, uses [24, 120, 216]
+    sdor_da : xarray.DataArray, optional
+        Standard deviation of orography data (only needed if calculating sdor)
 
     Returns
     -------
-    figs : dict
-        Dictionary of created figures keyed by lead time
+    dict
+        Dictionary keyed by lead time, with each value being a list of patch data dicts.
+        Each patch data dict contains:
+        - lat_min, lat_max, lon_min, lon_max: spatial bounds
+        - improvement: percent improvement in RMSE
+        - rmse_original: original forecast RMSE
+        - rmse_corrected: corrected forecast RMSE
+        - region: region name
+        - distance_from_equator: absolute value of center latitude
+        - center_lat: center latitude (for hemisphere determination)
+        - sdor: mean standard deviation of orography (if sdor_da provided)
+        - ds: xarray Dataset (for pixel-level access)
     """
 
-    # Default zone types
-    if zone_types is None:
-        zone_types = ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+    # Default regions (continents)
+    if regions is None:
+        regions = ["asia", "africa", "north_america", "south_america", "europe", "oceania"]
 
-    # Lead times to process
-    lead_times = [24, 120, 216]
+    # Default lead times
+    if lead_times is None:
+        lead_times = [24, 120, 216]
 
     # Base directory for the model
     base_dir = os.path.join(dirs["raw"], "..", "processed", "finetuning_output", model)
 
-    # Determine what metric to display
-    metric_name = {
-        "improvement": "improvements",
-        "original": "original RMSE",
-        "corrected": "corrected RMSE"
-    }.get(map_type, "improvements")
-
-    print(f"\nMapping global {metric_name} for {model.upper()} - {variable}")
-    print(f"Map type: {map_type}")
+    print(f"\nLoading region data for {model.upper()} - {variable}")
     print(f"Searching in: {base_dir}")
-    print(f"Zone types: {zone_types}")
+    print(f"Regions: {regions}")
     print(f"Lead times: {lead_times}")
     print(f"Model config: {nn_architecture}, subregion={subregion}, "
           f"train={train_start} to {train_end}, test={test_start} to {test_end}")
@@ -230,20 +230,20 @@ def map_global_improvements(
     # Collect patch data for each lead time
     all_patch_data = {lt: [] for lt in lead_times}
 
-    for zone_type in zone_types:
-        zone_dir = os.path.join(base_dir, zone_type)
+    for region in regions:
+        region_dir = os.path.join(base_dir, region)
 
-        if not os.path.exists(zone_dir):
-            print(f"Warning: Directory not found: {zone_dir}")
+        if not os.path.exists(region_dir):
+            print(f"Warning: Directory not found: {region_dir}")
             continue
 
         # Find zarr files matching the model configuration
         zarr_files = filter_patch_zarr_files(
-            zone_dir, variable, train_start, train_end,
+            region_dir, variable, train_start, train_end,
             test_start, test_end, nn_architecture, subregion, alternate_loss_fn
         )
 
-        print(f"\nProcessing {zone_type}: found {len(zarr_files)} matching files")
+        print(f"\nProcessing {region}: found {len(zarr_files)} matching files")
 
         for zarr_file in zarr_files:
             try:
@@ -257,10 +257,69 @@ def map_global_improvements(
                 lon_max = float(ds.longitude.max())
 
                 # Convert longitude to 0-360 if needed
-                if lon_min < 0:
-                    lon_min = lon_min + 360
-                if lon_max < 0:
-                    lon_max = lon_max + 360
+                lon_min_360 = lon_min + 360 if lon_min < 0 else lon_min
+                lon_max_360 = lon_max + 360 if lon_max < 0 else lon_max
+
+                # Calculate center latitude for distance from equator
+                center_lat = (lat_min + lat_max) / 2
+                distance_from_equator = abs(center_lat)
+
+                # Calculate mean sdor for this patch if needed
+                mean_sdor = None
+                if sdor_da is not None:
+                    try:
+                        # Ensure longitude is in the same coordinate system as sdor data
+                        sdor_lon_min = float(sdor_da.longitude.min())
+                        sdor_lon_max = float(sdor_da.longitude.max())
+
+                        # Convert patch longitude to match sdor coordinate system
+                        patch_lon_min = lon_min
+                        patch_lon_max = lon_max
+
+                        if sdor_lon_min >= 0 and sdor_lon_max > 180:
+                            # sdor uses 0-360, convert patch coords if needed
+                            if patch_lon_min < 0:
+                                patch_lon_min += 360
+                            if patch_lon_max < 0:
+                                patch_lon_max += 360
+                        else:
+                            # sdor uses -180 to 180, convert patch coords if needed
+                            if patch_lon_min > 180:
+                                patch_lon_min -= 360
+                            if patch_lon_max > 180:
+                                patch_lon_max -= 360
+
+                        # Handle latitude slice order (ERA5 often has descending latitude)
+                        sdor_lat = sdor_da.latitude.values
+                        if sdor_lat[0] > sdor_lat[-1]:
+                            # Descending latitude - use max to min for slice
+                            patch_sdor = sdor_da.sel(
+                                latitude=slice(lat_max, lat_min),
+                                longitude=slice(patch_lon_min, patch_lon_max)
+                            )
+                        else:
+                            # Ascending latitude - use min to max for slice
+                            patch_sdor = sdor_da.sel(
+                                latitude=slice(lat_min, lat_max),
+                                longitude=slice(patch_lon_min, patch_lon_max)
+                            )
+
+                        # Calculate mean, ignoring NaN values
+                        if patch_sdor.size > 0:
+                            mean_sdor = float(patch_sdor.mean(skipna=True))
+                            # Check if result is NaN
+                            if np.isnan(mean_sdor):
+                                print(f"  Warning: sdor calculation returned NaN for patch at "
+                                      f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
+                                mean_sdor = None
+                        else:
+                            print(f"  Warning: No sdor data found for patch at "
+                                  f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
+                            mean_sdor = None
+                    except Exception as e:
+                        print(f"  Warning: Could not calculate sdor for patch at "
+                              f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]: {e}")
+                        mean_sdor = None
 
                 # Process each lead time
                 for lead_time in lead_times:
@@ -290,12 +349,17 @@ def map_global_improvements(
                     all_patch_data[lead_time].append({
                         'lat_min': lat_min,
                         'lat_max': lat_max,
-                        'lon_min': lon_min,
-                        'lon_max': lon_max,
+                        'lon_min': lon_min_360,
+                        'lon_max': lon_max_360,
                         'improvement': pct_improvement,
-                        'zone_type': zone_type,
+                        'region': region,
                         'rmse_original': rmse_original,
-                        'rmse_corrected': rmse_corrected
+                        'rmse_corrected': rmse_corrected,
+                        'distance_from_equator': distance_from_equator,
+                        'center_lat': center_lat,
+                        'sdor': mean_sdor,
+                        'ds': ds,
+                        'lead_time': lead_time
                     })
 
             except Exception as e:
@@ -310,18 +374,110 @@ def map_global_improvements(
     # Print summary for each lead time
     for lt in lead_times:
         if all_patch_data[lt]:
-            if map_type == "improvement":
-                values = [p['improvement'] for p in all_patch_data[lt]]
-                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
-                print(f"  Improvement range: {min(values):.1f}% to {max(values):.1f}%")
-            elif map_type == "original":
-                values = [p['rmse_original'] for p in all_patch_data[lt]]
-                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
-                print(f"  Original RMSE range: {min(values):.3f} to {max(values):.3f}")
-            elif map_type == "corrected":
-                values = [p['rmse_corrected'] for p in all_patch_data[lt]]
-                print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
-                print(f"  Corrected RMSE range: {min(values):.3f} to {max(values):.3f}")
+            improvements = [p['improvement'] for p in all_patch_data[lt]]
+            print(f"\nLead time {lt}h: {len(all_patch_data[lt])} patches")
+            print(f"  Improvement range: {min(improvements):.1f}% to {max(improvements):.1f}%")
+
+    return all_patch_data
+
+
+def map_global_improvements(
+    dirs,
+    model="pangu",
+    variable="10m_wind_speed",
+    regions=None,
+    save_dir=None,
+    map_type="improvement",
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="6x6",
+    alternate_loss_fn=None,
+    pixel_level=False
+):
+    """
+    Create global maps showing RMSE metrics for all post-processed patches.
+    Generates 3 separate maps, one for each lead time (24h, 120h, 216h).
+
+    Only processes zarr files that match the specified model configuration to ensure
+    all patches are from the same training/testing setup.
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    model : str
+        Model to use: "pangu" or "ifs"
+    variable : str
+        Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
+    regions : list, optional
+        List of regions to include. If None, uses:
+        ["asia", "africa", "north_america", "south_america", "europe", "oceania"]
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    map_type : str, optional
+        Type of map to create: "improvement" (percent improvement),
+        "original" (original RMSE), or "corrected" (corrected RMSE).
+        Default is "improvement".
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "6x6")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
+    pixel_level : bool, optional
+        If True, plot RMSE improvement for each quarter-degree pixel.
+        If False, plot mean RMSE improvement for each region (default: False)
+
+    Returns
+    -------
+    figs : dict
+        Dictionary of created figures keyed by lead time
+    """
+
+    # Lead times to process
+    lead_times = [24, 120, 216]
+
+    # Determine what metric to display
+    metric_name = {
+        "improvement": "improvements",
+        "original": "original RMSE",
+        "corrected": "corrected RMSE"
+    }.get(map_type, "improvements")
+
+    plot_type = "pixel-level" if pixel_level else "region-mean"
+    print(f"\nMapping global {metric_name} for {model.upper()} - {variable}")
+    print(f"Map type: {map_type}, Plot type: {plot_type}")
+
+    # Load region data using the helper function
+    all_patch_data = load_region_data(
+        dirs=dirs,
+        model=model,
+        variable=variable,
+        regions=regions,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        nn_architecture=nn_architecture,
+        subregion=subregion,
+        alternate_loss_fn=alternate_loss_fn,
+        lead_times=lead_times,
+        sdor_da=None
+    )
+
+    if all_patch_data is None:
+        return None
 
     # Create maps for each lead time
     figs = {}
@@ -356,69 +512,248 @@ def map_global_improvements(
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5, edgecolor='black', zorder=2)
         ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.3, edgecolor='gray', zorder=2)
 
-        # Extract values based on map type
-        if map_type == "improvement":
-            values = [p['improvement'] for p in patch_data]
-            value_key = 'improvement'
-        elif map_type == "original":
-            values = [p['rmse_original'] for p in patch_data]
-            value_key = 'rmse_original'
-        elif map_type == "corrected":
-            values = [p['rmse_corrected'] for p in patch_data]
-            value_key = 'rmse_corrected'
-        else:
-            raise ValueError(f"Invalid map_type: {map_type}. Must be 'improvement', 'original', or 'corrected'.")
+        if pixel_level:
+            # Pixel-level plotting: create global gridded dataset and plot as raster
+            print(f"  Creating global gridded dataset for pixel-level plotting...")
 
-        vmin = min(values)
-        vmax = max(values)
+            # Collect all unique lat/lon coordinates to determine global grid
+            all_lats = []
+            all_lons = []
 
-        # Create colormap based on map type
-        if map_type == "improvement":
-            # For improvements, center at 0 with asymmetric bounds
-            # Handle cases where all values are on one side of 0
+            for patch in patch_data:
+                ds = patch['ds']
+                all_lats.extend(ds.latitude.values.tolist())
+                all_lons.extend(ds.longitude.values.tolist())
+
+            # Get unique sorted coordinates
+            unique_lats = np.array(sorted(set(all_lats)))
+            unique_lons = np.array(sorted(set(all_lons)))
+
+            print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
+
+            # Create empty global grid filled with NaN
+            global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
+
+            # Fill in data from each patch
+            for patch in patch_data:
+                ds = patch['ds']
+                var_suffix = f"_lt{lead_time}h"
+
+                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                original = ds[f"{variable}_original{var_suffix}"]
+                corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+                # Compute pixel-wise RMSE over time dimension
+                # Shape: (time, lat, lon) -> (lat, lon)
+                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
+                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
+
+                # Compute improvement percentage for each pixel
+                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
+
+                # Get patch coordinates
+                patch_lats = ds.latitude.values
+                patch_lons = ds.longitude.values
+
+                # Find indices in global grid
+                for i, lat in enumerate(patch_lats):
+                    for j, lon in enumerate(patch_lons):
+                        # Find position in global grid
+                        lat_idx = np.where(unique_lats == lat)[0]
+                        lon_idx = np.where(unique_lons == lon)[0]
+
+                        if len(lat_idx) > 0 and len(lon_idx) > 0:
+                            global_improvement[lat_idx[0], lon_idx[0]] = improvement_pixel.values[i, j]
+
+            # Create xarray DataArray for the global grid
+            global_da = xr.DataArray(
+                global_improvement,
+                coords={'latitude': unique_lats, 'longitude': unique_lons},
+                dims=['latitude', 'longitude'],
+                name='improvement_percent'
+            )
+
+            # Count valid pixels
+            n_pixels = int((~np.isnan(global_improvement)).sum())
+
+            if n_pixels == 0:
+                print(f"  No valid pixel data for lead time {lead_time}h!")
+                continue
+
+            # Calculate statistics (ignoring NaN)
+            valid_data = global_improvement[~np.isnan(global_improvement)]
+            vmin = float(np.min(valid_data))
+            vmax = float(np.max(valid_data))
+            mean_val = float(np.mean(valid_data))
+            median_val = float(np.median(valid_data))
+            std_val = float(np.std(valid_data))
+
+            print(f"  Pixel improvement range: {vmin:.1f}% to {vmax:.1f}%")
+            print(f"  Valid pixels: {n_pixels}")
+
+            # Create colormap
             if vmin >= 0:
-                # All improvements are positive - use regular norm from 0 to vmax
                 norm = plt.Normalize(vmin=0, vmax=vmax)
             elif vmax <= 0:
-                # All improvements are negative - use regular norm from vmin to 0
                 norm = plt.Normalize(vmin=vmin, vmax=0)
             else:
-                # Values span both sides of 0 - use TwoSlopeNorm for asymmetric centering
                 norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-            cmap = plt.cm.RdBu  # Red for negative (worse), Blue for positive (better)
-        else:
-            # For RMSE values, use sequential colormap (lower is better)
-            norm = plt.Normalize(vmin=vmin, vmax=vmax)
-            cmap = plt.cm.YlOrRd  # Yellow (low error) to Red (high error)
+            cmap = plt.cm.RdBu  # Red for negative, Blue for positive
 
-        # Plot each patch as a colored rectangle
-        for patch in patch_data:
-            lat_min = patch['lat_min']
-            lat_max = patch['lat_max']
-            lon_min = patch['lon_min']
-            lon_max = patch['lon_max']
-            value = patch[value_key]
+            # Plot as raster using imshow
+            # Convert longitude to 0-360 if needed for display
+            plot_lons = unique_lons.copy()
+            plot_data = global_improvement.copy()
 
-            # Get color for this value
-            color = cmap(norm(value))
+            if np.any(unique_lons < 0):
+                # Some longitudes are negative, convert to 0-360
+                lon_360 = unique_lons.copy()
+                lon_360[lon_360 < 0] += 360
 
-            # Calculate width and height
-            width = lon_max - lon_min
-            height = lat_max - lat_min
+                # Sort and reorder data
+                sort_idx = np.argsort(lon_360)
+                plot_lons = lon_360[sort_idx]
+                plot_data = global_improvement[:, sort_idx]
 
-            # Add rectangle
-            rect = Rectangle(
-                (lon_min, lat_min),
-                width,
-                height,
-                facecolor=color,
-                edgecolor='black',
-                linewidth=0.3,
-                alpha=0.8,
+            # Use pcolormesh for proper georeferencing
+            mesh = ax.pcolormesh(
+                plot_lons, unique_lats, plot_data,
                 transform=ccrs.PlateCarree(),
+                cmap=cmap,
+                norm=norm,
+                shading='auto',
                 zorder=1
             )
-            ax.add_patch(rect)
+
+            # Add black boxes showing patch boundaries
+            print(f"  Adding patch boundary boxes...")
+            for patch in patch_data:
+                lat_min = patch['lat_min']
+                lat_max = patch['lat_max']
+                lon_min = patch['lon_min']
+                lon_max = patch['lon_max']
+
+                width = lon_max - lon_min
+                height = lat_max - lat_min
+
+                # Draw black boundary box
+                boundary_rect = Rectangle(
+                    (lon_min, lat_min),
+                    width,
+                    height,
+                    facecolor='none',
+                    edgecolor='black',
+                    linewidth=1.5,
+                    alpha=1.0,
+                    transform=ccrs.PlateCarree(),
+                    zorder=2
+                )
+                ax.add_patch(boundary_rect)
+
+            # Statistics for title
+            title_main = f"Global RMSE Improvement Map (Pixel-Level)"
+            title_parts = [
+                title_main,
+                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
+                f"N = {n_pixels} pixels"
+            ]
+
+            stats_text = (
+                f"Mean: {mean_val:.1f}%\n"
+                f"Median: {median_val:.1f}%\n"
+                f"Std: {std_val:.1f}%"
+            )
+
+        else:
+            # Region-mean plotting: plot mean RMSE improvement for each region
+            # Extract values based on map type
+            if map_type == "improvement":
+                values = [p['improvement'] for p in patch_data]
+                value_key = 'improvement'
+            elif map_type == "original":
+                values = [p['rmse_original'] for p in patch_data]
+                value_key = 'rmse_original'
+            elif map_type == "corrected":
+                values = [p['rmse_corrected'] for p in patch_data]
+                value_key = 'rmse_corrected'
+            else:
+                raise ValueError(f"Invalid map_type: {map_type}. Must be 'improvement', 'original', or 'corrected'.")
+
+            vmin = min(values)
+            vmax = max(values)
+
+            # Create colormap based on map type
+            if map_type == "improvement":
+                # For improvements, center at 0 with asymmetric bounds
+                if vmin >= 0:
+                    norm = plt.Normalize(vmin=0, vmax=vmax)
+                elif vmax <= 0:
+                    norm = plt.Normalize(vmin=vmin, vmax=0)
+                else:
+                    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+                cmap = plt.cm.RdBu
+            else:
+                # For RMSE values, use sequential colormap
+                norm = plt.Normalize(vmin=vmin, vmax=vmax)
+                cmap = plt.cm.YlOrRd
+
+            # Plot each patch as a colored rectangle
+            for patch in patch_data:
+                lat_min = patch['lat_min']
+                lat_max = patch['lat_max']
+                lon_min = patch['lon_min']
+                lon_max = patch['lon_max']
+                value = patch[value_key]
+
+                color = cmap(norm(value))
+                width = lon_max - lon_min
+                height = lat_max - lat_min
+
+                rect = Rectangle(
+                    (lon_min, lat_min),
+                    width,
+                    height,
+                    facecolor=color,
+                    edgecolor='black',
+                    linewidth=0.3,
+                    alpha=0.8,
+                    transform=ccrs.PlateCarree(),
+                    zorder=1
+                )
+                ax.add_patch(rect)
+
+            # Statistics for title
+            mean_val = np.mean(values)
+            median_val = np.median(values)
+            std_val = np.std(values)
+
+            if map_type == "improvement":
+                title_main = f"Global RMSE Improvement Map"
+                stats_text = (
+                    f"Mean: {mean_val:.1f}%\n"
+                    f"Median: {median_val:.1f}%\n"
+                    f"Std: {std_val:.1f}%"
+                )
+            elif map_type == "original":
+                title_main = f"Global Original Forecast Error Map"
+                stats_text = (
+                    f"Mean: {mean_val:.3f}\n"
+                    f"Median: {median_val:.3f}\n"
+                    f"Std: {std_val:.3f}"
+                )
+            elif map_type == "corrected":
+                title_main = f"Global Corrected Forecast Error Map"
+                stats_text = (
+                    f"Mean: {mean_val:.3f}\n"
+                    f"Median: {median_val:.3f}\n"
+                    f"Std: {std_val:.3f}"
+                )
+
+            title_parts = [
+                title_main,
+                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
+                f"N = {len(patch_data)} regions"
+            ]
 
         # Add gridlines
         gl = ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False,
@@ -433,8 +768,8 @@ def map_global_improvements(
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=ax, orientation='horizontal', pad=0.05, shrink=0.6)
 
-        # Set colorbar label based on map type
-        if map_type == "improvement":
+        # Set colorbar label
+        if pixel_level or map_type == "improvement":
             cbar.set_label('RMSE Improvement (%)', fontsize=14, weight='bold')
         elif map_type == "original":
             cbar.set_label('Original Forecast RMSE', fontsize=14, weight='bold')
@@ -443,38 +778,9 @@ def map_global_improvements(
         cbar.ax.tick_params(labelsize=12)
 
         # Add title
-        if map_type == "improvement":
-            title_main = f"Global RMSE Improvement Map"
-        elif map_type == "original":
-            title_main = f"Global Original Forecast Error Map"
-        elif map_type == "corrected":
-            title_main = f"Global Corrected Forecast Error Map"
-
-        title_parts = [
-            title_main,
-            f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
-            f"N = {len(patch_data)} patches"
-        ]
         ax.set_title('\n'.join(title_parts), fontsize=16, weight='bold', pad=20)
 
         # Add statistics box
-        mean_val = np.mean(values)
-        median_val = np.median(values)
-        std_val = np.std(values)
-
-        if map_type == "improvement":
-            stats_text = (
-                f"Mean: {mean_val:.1f}%\n"
-                f"Median: {median_val:.1f}%\n"
-                f"Std: {std_val:.1f}%"
-            )
-        else:
-            stats_text = (
-                f"Mean: {mean_val:.3f}\n"
-                f"Median: {median_val:.3f}\n"
-                f"Std: {std_val:.3f}"
-            )
-
         ax.text(0.02, 0.98, stats_text,
                 transform=ax.transAxes,
                 fontsize=12,
@@ -487,8 +793,9 @@ def map_global_improvements(
         plt.tight_layout()
 
         # Save figure
-        zones_str = "_".join(zone_types)
-        if map_type == "improvement":
+        if pixel_level:
+            fname = f"global_improvement_map_pixel_{variable}_{model}_lt{lead_time}.png"
+        elif map_type == "improvement":
             fname = f"global_improvement_map_{variable}_{model}_lt{lead_time}.png"
         elif map_type == "original":
             fname = f"global_original_rmse_map_{variable}_{model}_lt{lead_time}.png"
@@ -496,7 +803,6 @@ def map_global_improvements(
             fname = f"global_corrected_rmse_map_{variable}_{model}_lt{lead_time}.png"
 
         save_path = os.path.join(out_folder, fname)
-
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"  Saved: {save_path}")
 
@@ -506,7 +812,7 @@ def map_global_improvements(
         # Close to free memory
         plt.close(fig)
 
-    map_type_str = {
+    map_type_str = "pixel-level improvement" if pixel_level else {
         "improvement": "improvement",
         "original": "original RMSE",
         "corrected": "corrected RMSE"
@@ -2554,17 +2860,22 @@ def main():
 #=============================================
 # Global Improvement Plots
 #=============================================
-    # for map_type in ["original", "improvement"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         for model in ["ifs", "pangu"]:
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                               variable=variable, y_metric=map_type, 
-    #                                               x_metric="equator_distance")
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                               variable=variable, y_metric=map_type, 
-    #                                               x_metric="sdor")
-    #             map_global_improvements(dirs=dirs, model=model, 
-    #                                     variable=variable, map_type=map_type)
+    for map_type in ["original", "improvement"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            for model in ["pangu"]:
+                for pixel_flag in [True]:
+                    map_global_improvements(dirs=dirs, model=model, 
+                                            variable=variable, map_type=map_type,
+                                            pixel_level=pixel_flag)
+                    plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                    variable=variable, y_metric=map_type, 
+                                                    x_metric="equator_distance",
+                                                    pixel_level=pixel_flag)
+                    plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                    variable=variable, y_metric=map_type, 
+                                                    x_metric="sdor",
+                                                    pixel_level=pixel_flag)
+    exit()
 
 #=============================================
 # Binned RMSE Improvement Plots
@@ -2755,7 +3066,7 @@ def plot_scatter_forecast_improvement(
     dirs,
     model="pangu",
     variable="10m_wind_speed",
-    zone_types=None,
+    regions=None,
     save_dir=None,
     x_metric="equator_distance",
     y_metric="improvement",
@@ -2765,12 +3076,13 @@ def plot_scatter_forecast_improvement(
     test_start="2022-01-01",
     test_end="2022-12-31",
     nn_architecture="mlp",
-    subregion="2x2",
-    alternate_loss_fn=None
+    subregion="6x6",
+    alternate_loss_fn=None,
+    pixel_level=False
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
-    Each point represents a patch post-processed with its own model.
+    Each point represents either a region (pixel_level=False) or individual pixels (pixel_level=True).
 
     Only processes zarr files that match the specified model configuration to ensure
     all patches are from the same training/testing setup.
@@ -2783,9 +3095,9 @@ def plot_scatter_forecast_improvement(
         Model to use: "pangu" or "ifs"
     variable : str
         Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
-    zone_types : list, optional
-        List of zone types to include. If None, uses all available zones:
-        ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
+    regions : list, optional
+        List of regions to include. If None, uses:
+        ["asia", "africa", "north_america", "south_america", "europe", "oceania"]
     save_dir : str, optional
         Custom save directory. If None, auto-generates based on parameters
     x_metric : str, optional
@@ -2807,9 +3119,12 @@ def plot_scatter_forecast_improvement(
     nn_architecture : str, optional
         Neural network architecture: "mlp" or "unet" (default: "mlp")
     subregion : str, optional
-        Subregion size pattern (default: "2x2")
+        Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    pixel_level : bool, optional
+        If True, plot individual pixels with smaller markers (s=10).
+        If False, plot region means with larger markers (s=50). Default is False.
 
     Returns
     -------
@@ -2817,16 +3132,9 @@ def plot_scatter_forecast_improvement(
         The created figure
     """
 
-    # Default zone types
-    if zone_types is None:
-        zone_types = ["tropical", "arid", "temperate", "flat", "hilly", "mountainous"]
-
     # Default lead times
     if lead_times is None:
         lead_times = [24, 120, 216]
-
-    # Base directory for the model
-    base_dir = os.path.join(dirs["raw"], "..", "processed", "finetuning_output", model)
 
     # Determine axis labels
     x_label = {
@@ -2842,13 +3150,6 @@ def plot_scatter_forecast_improvement(
     print(f"\nCreating forecast improvement scatter plot for {model.upper()} - {variable}")
     print(f"X-axis metric: {x_metric}")
     print(f"Y-axis metric: {y_metric}")
-    print(f"Searching in: {base_dir}")
-    print(f"Zone types: {zone_types}")
-    print(f"Lead times: {lead_times}")
-    print(f"Model config: {nn_architecture}, subregion={subregion}, "
-          f"train={train_start} to {train_end}, test={test_start} to {test_end}")
-    if alternate_loss_fn:
-        print(f"Alternate loss function: {alternate_loss_fn}")
 
     # Load sdor data if needed
     sdor_da = None
@@ -2857,151 +3158,34 @@ def plot_scatter_forecast_improvement(
         sdor_da = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
         print(f"Loaded sdor data from {era5_static_path}")
 
-    # Collect patch data for each lead time
-    all_patch_data = {lt: [] for lt in lead_times}
+    # Load region data using the helper function
+    all_patch_data = load_region_data(
+        dirs=dirs,
+        model=model,
+        variable=variable,
+        regions=regions,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        nn_architecture=nn_architecture,
+        subregion=subregion,
+        alternate_loss_fn=alternate_loss_fn,
+        lead_times=lead_times,
+        sdor_da=sdor_da
+    )
 
-    for zone_type in zone_types:
-        zone_dir = os.path.join(base_dir, zone_type)
-
-        if not os.path.exists(zone_dir):
-            print(f"Warning: Directory not found: {zone_dir}")
-            continue
-
-        # Find zarr files matching the model configuration
-        zarr_files = filter_patch_zarr_files(
-            zone_dir, variable, train_start, train_end,
-            test_start, test_end, nn_architecture, subregion, alternate_loss_fn
-        )
-
-        print(f"\nProcessing {zone_type}: found {len(zarr_files)} matching files")
-
-        for zarr_file in zarr_files:
-            try:
-                # Load dataset
-                ds = xr.open_zarr(zarr_file, consolidated=False)
-
-                # Get spatial bounds
-                lat_min = float(ds.latitude.min())
-                lat_max = float(ds.latitude.max())
-                lon_min = float(ds.longitude.min())
-                lon_max = float(ds.longitude.max())
-
-                # Calculate center latitude for distance from equator
-                center_lat = (lat_min + lat_max) / 2
-                distance_from_equator = abs(center_lat)
-
-                # Calculate mean sdor for this patch if needed
-                mean_sdor = None
-                if x_metric == "sdor" and sdor_da is not None:
-                    try:
-                        # Ensure longitude is in the same coordinate system as sdor data
-                        # Check if sdor uses 0-360 or -180 to 180
-                        sdor_lon_min = float(sdor_da.longitude.min())
-                        sdor_lon_max = float(sdor_da.longitude.max())
-
-                        # Convert patch longitude to match sdor coordinate system
-                        patch_lon_min = lon_min
-                        patch_lon_max = lon_max
-
-                        if sdor_lon_min >= 0 and sdor_lon_max > 180:
-                            # sdor uses 0-360, convert patch coords if needed
-                            if patch_lon_min < 0:
-                                patch_lon_min += 360
-                            if patch_lon_max < 0:
-                                patch_lon_max += 360
-                        else:
-                            # sdor uses -180 to 180, convert patch coords if needed
-                            if patch_lon_min > 180:
-                                patch_lon_min -= 360
-                            if patch_lon_max > 180:
-                                patch_lon_max -= 360
-
-                        # Handle latitude slice order (ERA5 often has descending latitude)
-                        sdor_lat = sdor_da.latitude.values
-                        if sdor_lat[0] > sdor_lat[-1]:
-                            # Descending latitude - use max to min for slice
-                            patch_sdor = sdor_da.sel(
-                                latitude=slice(lat_max, lat_min),
-                                longitude=slice(patch_lon_min, patch_lon_max)
-                            )
-                        else:
-                            # Ascending latitude - use min to max for slice
-                            patch_sdor = sdor_da.sel(
-                                latitude=slice(lat_min, lat_max),
-                                longitude=slice(patch_lon_min, patch_lon_max)
-                            )
-
-                        # Calculate mean, ignoring NaN values
-                        if patch_sdor.size > 0:
-                            mean_sdor = float(patch_sdor.mean(skipna=True))
-                            # Check if result is NaN
-                            if np.isnan(mean_sdor):
-                                print(f"  Warning: sdor calculation returned NaN for patch at "
-                                      f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
-                                mean_sdor = None
-                        else:
-                            print(f"  Warning: No sdor data found for patch at "
-                                  f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]")
-                            mean_sdor = None
-                    except Exception as e:
-                        print(f"  Warning: Could not calculate sdor for patch at "
-                              f"lat=[{lat_min:.2f}, {lat_max:.2f}], lon=[{lon_min:.2f}, {lon_max:.2f}]: {e}")
-                        mean_sdor = None
-
-                # Process each lead time
-                for lead_time in lead_times:
-                    var_suffix = f"_lt{lead_time}h"
-
-                    ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
-                    original = ds[f"{variable}_original{var_suffix}"]
-                    corrected = ds[f"{variable}_corrected{var_suffix}"]
-
-                    # Flatten arrays and remove NaNs
-                    gt_flat = ground_truth.values.flatten()
-                    orig_flat = original.values.flatten()
-                    corr_flat = corrected.values.flatten()
-
-                    # Remove NaN values
-                    mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-                    gt_flat = gt_flat[mask]
-                    orig_flat = orig_flat[mask]
-                    corr_flat = corr_flat[mask]
-
-                    # Calculate RMSE
-                    rmse_original = calculate_rmse(orig_flat, gt_flat)
-                    rmse_corrected = calculate_rmse(corr_flat, gt_flat)
-                    pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
-
-                    # Store patch data for this lead time
-                    all_patch_data[lead_time].append({
-                        'distance_from_equator': distance_from_equator,
-                        'sdor': mean_sdor,
-                        'improvement': pct_improvement,
-                        'rmse_original': rmse_original,
-                        'rmse_corrected': rmse_corrected,
-                        'zone_type': zone_type,
-                        'center_lat': center_lat
-                    })
-
-            except Exception as e:
-                print(f"  Error processing {os.path.basename(zarr_file)}: {e}")
-                continue
-
-    # Check if we have data
-    if all(len(all_patch_data[lt]) == 0 for lt in lead_times):
-        print("No patch data found for any lead time!")
+    if all_patch_data is None:
         return None
 
-    # Print summary for each lead time
-    for lt in lead_times:
-        if all_patch_data[lt]:
-            total_patches = len(all_patch_data[lt])
-            if x_metric == "sdor":
+    # Print summary for each lead time (sdor-specific if needed)
+    if x_metric == "sdor":
+        for lt in lead_times:
+            if all_patch_data[lt]:
+                total_patches = len(all_patch_data[lt])
                 patches_with_sdor = sum(1 for p in all_patch_data[lt] if p['sdor'] is not None)
                 print(f"\nLead time {lt}h: {total_patches} patches total, "
                       f"{patches_with_sdor} with valid sdor values")
-            else:
-                print(f"\nLead time {lt}h: {total_patches} patches")
 
     # Determine output directory
     if save_dir is None:
@@ -3029,67 +3213,154 @@ def plot_scatter_forecast_improvement(
             print(f"\nSkipping lead time {lead_time}h - no data available")
             continue
 
-        # Determine x and y values based on metrics
-        if x_metric == "equator_distance":
-            x_values = [p['distance_from_equator'] for p in patch_data]
-        elif x_metric == "sdor":
-            x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
-            # Filter patch_data to only include patches with sdor values
-            patch_data = [p for p in patch_data if p['sdor'] is not None]
-            if not patch_data:
-                print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+        # Set marker size based on pixel_level
+        marker_size = 10 if pixel_level else 50
+        marker_edge = 0.2 if pixel_level else 0.5
+
+        if pixel_level:
+            # Pixel-level scatter: extract data for each pixel
+            print(f"  Extracting pixel-level data for scatter plot (lead time {lead_time}h)...")
+
+            all_x_values = []
+            all_y_values = []
+            all_latitudes = []
+
+            for patch in patch_data:
+                ds = patch['ds']
+                var_suffix = f"_lt{lead_time}h"
+
+                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                original = ds[f"{variable}_original{var_suffix}"]
+                corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+                lats = ds.latitude.values
+                lons = ds.longitude.values
+
+                # Compute pixel-wise RMSE over time dimension
+                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
+                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
+
+                # Compute improvement percentage for each pixel
+                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
+
+                # Extract x-metric for each pixel
+                if x_metric == "equator_distance":
+                    # For each pixel, use its latitude
+                    for i, lat in enumerate(lats):
+                        for j, lon in enumerate(lons):
+                            if y_metric == "improvement":
+                                y_val = float(improvement_pixel.values[i, j])
+                            elif y_metric == "original":
+                                y_val = float(rmse_original_pixel.values[i, j])
+                            else:
+                                raise ValueError(f"Invalid y_metric: {y_metric}")
+
+                            if not np.isnan(y_val):
+                                all_x_values.append(abs(lat))
+                                all_y_values.append(y_val)
+                                all_latitudes.append(lat)
+
+                elif x_metric == "sdor":
+                    # For sdor, we'd need to compute it per pixel - use patch mean for now
+                    if patch['sdor'] is not None:
+                        for i, lat in enumerate(lats):
+                            for j, lon in enumerate(lons):
+                                if y_metric == "improvement":
+                                    y_val = float(improvement_pixel.values[i, j])
+                                elif y_metric == "original":
+                                    y_val = float(rmse_original_pixel.values[i, j])
+                                else:
+                                    raise ValueError(f"Invalid y_metric: {y_metric}")
+
+                                if not np.isnan(y_val):
+                                    all_x_values.append(patch['sdor'])
+                                    all_y_values.append(y_val)
+                                    all_latitudes.append(lat)
+
+            if not all_x_values:
+                print(f"\nSkipping lead time {lead_time}h - no valid pixel data")
                 continue
+
+            # Separate by hemisphere
+            northern_x = [x for x, lat in zip(all_x_values, all_latitudes) if lat >= 0]
+            northern_y = [y for y, lat in zip(all_y_values, all_latitudes) if lat >= 0]
+            southern_x = [x for x, lat in zip(all_x_values, all_latitudes) if lat < 0]
+            southern_y = [y for y, lat in zip(all_y_values, all_latitudes) if lat < 0]
+
+            x_values = all_x_values
+            y_values = all_y_values
+
         else:
-            raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
-
-        if y_metric == "improvement":
-            y_values = [p['improvement'] for p in patch_data]
-        elif y_metric == "original":
-            y_values = [p['rmse_original'] for p in patch_data]
-        else:
-            raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
-
-        # Separate patches by hemisphere
-        northern_patches = [p for p in patch_data if p['center_lat'] >= 0]
-        southern_patches = [p for p in patch_data if p['center_lat'] < 0]
-
-        # Plot northern hemisphere patches
-        if northern_patches:
+            # Region-mean scatter: use existing patch-level data
+            # Determine x and y values based on metrics
             if x_metric == "equator_distance":
-                northern_x = [p['distance_from_equator'] for p in northern_patches]
+                x_values = [p['distance_from_equator'] for p in patch_data]
+            elif x_metric == "sdor":
+                x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
+                # Filter patch_data to only include patches with sdor values
+                patch_data = [p for p in patch_data if p['sdor'] is not None]
+                if not patch_data:
+                    print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+                    continue
             else:
-                northern_x = [p['sdor'] for p in northern_patches if p['sdor'] is not None]
-                northern_patches = [p for p in northern_patches if p['sdor'] is not None]
+                raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
 
             if y_metric == "improvement":
-                northern_y = [p['improvement'] for p in northern_patches]
+                y_values = [p['improvement'] for p in patch_data]
+            elif y_metric == "original":
+                y_values = [p['rmse_original'] for p in patch_data]
             else:
-                northern_y = [p['rmse_original'] for p in northern_patches]
+                raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
 
-            if northern_x:  # Only plot if we have data
-                ax.scatter(northern_x, northern_y,
-                          c=hemisphere_colors['Northern'],
-                          label='Northern Hemisphere',
-                          alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+            # Separate patches by hemisphere
+            northern_patches = [p for p in patch_data if p['center_lat'] >= 0]
+            southern_patches = [p for p in patch_data if p['center_lat'] < 0]
 
-        # Plot southern hemisphere patches
-        if southern_patches:
-            if x_metric == "equator_distance":
-                southern_x = [p['distance_from_equator'] for p in southern_patches]
+            # Extract northern hemisphere data
+            if northern_patches:
+                if x_metric == "equator_distance":
+                    northern_x = [p['distance_from_equator'] for p in northern_patches]
+                else:
+                    northern_x = [p['sdor'] for p in northern_patches if p['sdor'] is not None]
+                    northern_patches = [p for p in northern_patches if p['sdor'] is not None]
+
+                if y_metric == "improvement":
+                    northern_y = [p['improvement'] for p in northern_patches]
+                else:
+                    northern_y = [p['rmse_original'] for p in northern_patches]
             else:
-                southern_x = [p['sdor'] for p in southern_patches if p['sdor'] is not None]
-                southern_patches = [p for p in southern_patches if p['sdor'] is not None]
+                northern_x = []
+                northern_y = []
 
-            if y_metric == "improvement":
-                southern_y = [p['improvement'] for p in southern_patches]
+            # Extract southern hemisphere data
+            if southern_patches:
+                if x_metric == "equator_distance":
+                    southern_x = [p['distance_from_equator'] for p in southern_patches]
+                else:
+                    southern_x = [p['sdor'] for p in southern_patches if p['sdor'] is not None]
+                    southern_patches = [p for p in southern_patches if p['sdor'] is not None]
+
+                if y_metric == "improvement":
+                    southern_y = [p['improvement'] for p in southern_patches]
+                else:
+                    southern_y = [p['rmse_original'] for p in southern_patches]
             else:
-                southern_y = [p['rmse_original'] for p in southern_patches]
+                southern_x = []
+                southern_y = []
 
-            if southern_x:  # Only plot if we have data
-                ax.scatter(southern_x, southern_y,
-                          c=hemisphere_colors['Southern'],
-                          label='Southern Hemisphere',
-                          alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+        # Plot northern hemisphere
+        if northern_x:
+            ax.scatter(northern_x, northern_y,
+                      c=hemisphere_colors['Northern'],
+                      label='Northern Hemisphere',
+                      alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
+
+        # Plot southern hemisphere
+        if southern_x:
+            ax.scatter(southern_x, southern_y,
+                      c=hemisphere_colors['Southern'],
+                      label='Southern Hemisphere',
+                      alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
 
         # Add horizontal line at y=0 for improvement plots
         if y_metric == "improvement":

@@ -22,7 +22,7 @@ if [[ "$hostname" == "oMac.local" ]]; then
 elif [[ "$hostname" == *"midway3"* ]]; then
     # midway
     data_dir="/project/jfranke/ozma/forecast_data/raw/"
-    output_dir="/project/jfranke/ozma/forecast_data/fine_tuning_output/"
+    output_dir="/project/jfranke/ozma/forecast_data/processed/finetuning_output/"
 else
     echo "Unknown environment. Hostname: $hostname"
     exit 1
@@ -41,13 +41,15 @@ fi
 #
 training_output_vars=(
     # Minimal: Use only the output variable for training
-    "2m_temperature|2m_temperature"
+    # "2m_temperature|2m_temperature"
 
     # partial:use 3 vars
     # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
 
     # Full: Use all 6 variables for training (best performance from experiments)
     # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
+
+    "10m_wind_speed|10m_wind_speed"
 )
 
 regions=("oceania")
