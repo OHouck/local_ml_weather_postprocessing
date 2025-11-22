@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=mlp_finetune
 #SBATCH --account=pi-jfranke
-#SBATCH --output=hyperparam_2m_temp-%J.txt
-#SBATCH --error=hyperparam_2m_temp-%J.err
+#SBATCH --output=hyperparam_2m_windspeed-%J.txt
+#SBATCH --error=hyperparam_2m_windspeed-%J.err
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00

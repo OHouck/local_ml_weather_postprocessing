@@ -617,9 +617,9 @@ if __name__ == "__main__":
     config = SimpleNamespace(
         model_name="pangu",
         training_vars=[
-            "2m_temperature"
+            "10m_wind_speed"
         ],
-        output_vars=["2m_temperature"],
+        output_vars=["10m_wind_speed"],
         train_start="2018-01-01",
         train_end="2021-12-31",
         region='india',
@@ -644,18 +644,6 @@ if __name__ == "__main__":
         print("Using mixed precision training (AMP) for CUDA operations")
 
 
-    # Optionally optimize UNet architecture
-    unet_results = optimize_hyperparameters(
-        args=config,
-        data_dir=data_dir,
-        architecture="unet",
-        max_evals=100,
-        output_dir="hyperopt_results_unet",
-        device=device,
-        random_seed=42,
-        resume=False
-    )
-    print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")
 
     # Optimize MLP architecture
     mlp_results = optimize_hyperparameters(
@@ -663,9 +651,22 @@ if __name__ == "__main__":
         data_dir=data_dir,
         architecture="mlp",
         max_evals=100,
-        output_dir="hyperopt_results_mlp",
+        output_dir="hyperopt_results_wind_speed_mlp",
         device=device,
         random_seed=42,
         resume=False # Set to True to continue from previous runs
     )
     print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
+
+    # Optionally optimize UNet architecture
+    unet_results = optimize_hyperparameters(
+        args=config,
+        data_dir=data_dir,
+        architecture="unet",
+        max_evals=100,
+        output_dir="hyperopt_results_wind_speed_unet",
+        device=device,
+        random_seed=42,
+        resume=False
+    )
+    print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")

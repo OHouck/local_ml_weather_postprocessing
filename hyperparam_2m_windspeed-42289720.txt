@@ -1,0 +1,688 @@
+Using device: cuda
+Enabled cudnn benchmarking for faster GPU training
+Using mixed precision training (AMP) for CUDA operations
+Using device: cuda
+Optimizing MLP for region 'india', variable(s) ['10m_wind_speed'], lead times [24, 120, 216]h
+
+======================================================================
+PRE-LOADING TRAINING DATA (will be cached for all trials)
+======================================================================
+
+======================================================================
+LOADING TRAINING DATA
+======================================================================
+  Model: pangu
+  Region: india
+  Years: [2018, 2019, 2020, 2021]
+  Period: 2018-01-01 to 2021-12-31
+
+  Checking for regional data files...
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+<xarray.Dataset> Size: 336MB
+Dimensions:                  (time: 2920, prediction_timedelta: 6,
+                              latitude: 40, longitude: 40)
+Coordinates:
+  * time                     (time) datetime64[ns] 23kB 2018-01-02 ... 2021-1...
+  * prediction_timedelta     (prediction_timedelta) timedelta64[ns] 48B 1 day...
+  * latitude                 (latitude) float32 160B 17.0 17.25 ... 26.5 26.75
+  * longitude                (longitude) float32 160B 72.0 72.25 ... 81.5 81.75
+Data variables:
+    10m_u_component_of_wind  (time, prediction_timedelta, latitude, longitude) float32 112MB dask.array<chunksize=(1, 1, 40, 40), meta=np.ndarray>
+    2m_temperature           (time, prediction_timedelta, latitude, longitude) float32 112MB dask.array<chunksize=(1, 1, 40, 40), meta=np.ndarray>
+    10m_v_component_of_wind  (time, prediction_timedelta, latitude, longitude) float32 112MB dask.array<chunksize=(1, 1, 40, 40), meta=np.ndarray>
+<xarray.Dataset> Size: 75MB
+Dimensions:                  (time: 2922, latitude: 40, longitude: 40)
+Coordinates:
+  * time                     (time) datetime64[ns] 23kB 2018-01-01 ... 2021-1...
+  * latitude                 (latitude) float32 160B 17.0 17.25 ... 26.5 26.75
+  * longitude                (longitude) float32 160B 72.0 72.25 ... 81.5 81.75
+Data variables:
+    2m_temperature           (time, latitude, longitude) float32 19MB dask.array<chunksize=(1, 40, 40), meta=np.ndarray>
+    10m_v_component_of_wind  (time, latitude, longitude) float32 19MB dask.array<chunksize=(1, 40, 40), meta=np.ndarray>
+    10m_u_component_of_wind  (time, latitude, longitude) float32 19MB dask.array<chunksize=(1, 40, 40), meta=np.ndarray>
+    total_precipitation      (time, latitude, longitude) float32 19MB dask.array<chunksize=(73, 40, 40), meta=np.ndarray>
+Attributes:
+    last_updated:           2025-09-12 02:06:11.613150+00:00
+    valid_time_start:       1940-01-01
+    valid_time_stop:        2025-04-30
+    valid_time_stop_era5t:  2025-09-06
+  ✓ Successfully loaded from global data files
+
+  Data is dask-backed. Loading into memory for faster processing...
+  ✓ Data loaded into memory successfully
+
+  Data dimensions:
+    Time steps: 2919
+    Lead times: 3
+    Latitude: 40
+    Longitude: 40
+    Training vars: 1
+    Output vars: 1
+
+  Valid samples after NaN removal: 4368
+======================================================================
+
+  Loaded 4368 training samples
+  Spatial dimensions: 40 x 40
+  Training variables: 1, Output variables: 1
+  Train samples: 3494, Validation samples: 874
+  Data caching complete!
+======================================================================
+
+
+Starting Bayesian optimization with 100 evaluations...
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                       
+Evaluating hyperparameters:
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Architecture: mlp
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Learning rate: 0.000149
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Hidden dim: 512
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Batch size: 256
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Patience: 30
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Using cached training data (fast path)
+  0%|          | 0/100 [00:00<?, ?trial/s, best loss=?]                                                         Early stopping at epoch 288 (patience=30)
+  0%|          | 0/100 [00:26<?, ?trial/s, best loss=?]                                                         Validation loss: 0.354273 (trained 288 epochs)
+  0%|          | 0/100 [00:26<?, ?trial/s, best loss=?]  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.007342
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 128
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 64
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 25
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  1%|          | 1/100 [00:26<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 33 (patience=25)
+  1%|          | 1/100 [00:33<44:17, 26.85s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.457582 (trained 33 epochs)
+  1%|          | 1/100 [00:33<44:17, 26.85s/trial, best loss: 0.3542733315199409]  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.004267
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 512
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 128
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 25
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  2%|▏         | 2/100 [00:33<24:23, 14.93s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.392226 (trained 300 epochs)
+  2%|▏         | 2/100 [01:05<24:23, 14.93s/trial, best loss: 0.3542733315199409]  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.000647
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 256
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 64
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 20
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  3%|▎         | 3/100 [01:05<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 126 (patience=20)
+  3%|▎         | 3/100 [01:34<36:54, 22.83s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.380227 (trained 126 epochs)
+  3%|▎         | 3/100 [01:34<36:54, 22.83s/trial, best loss: 0.3542733315199409]  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.000543
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 1024
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 256
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 30
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  4%|▍         | 4/100 [01:34<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 120 (patience=30)
+  4%|▍         | 4/100 [01:45<40:25, 25.27s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.360707 (trained 120 epochs)
+  4%|▍         | 4/100 [01:45<40:25, 25.27s/trial, best loss: 0.3542733315199409]  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.002171
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 256
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 128
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 30
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  5%|▌         | 5/100 [01:45<31:42, 20.02s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.416598 (trained 300 epochs)
+  5%|▌         | 5/100 [02:20<31:42, 20.02s/trial, best loss: 0.3542733315199409]  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.000190
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 256
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 64
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 20
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  6%|▌         | 6/100 [02:20<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 174 (patience=20)
+  6%|▌         | 6/100 [03:00<39:17, 25.08s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.387433 (trained 174 epochs)
+  6%|▌         | 6/100 [03:00<39:17, 25.08s/trial, best loss: 0.3542733315199409]  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                 
+Evaluating hyperparameters:
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.002319
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 256
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 64
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 30
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  7%|▋         | 7/100 [03:00<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 285 (patience=30)
+  7%|▋         | 7/100 [04:09<46:24, 29.94s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.418500 (trained 285 epochs)
+  7%|▋         | 7/100 [04:09<46:24, 29.94s/trial, best loss: 0.3542733315199409]  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                   
+Evaluating hyperparameters:
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Architecture: mlp
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Learning rate: 0.003908
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Hidden dim: 64
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Batch size: 256
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Patience: 30
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Using cached training data (fast path)
+  8%|▊         | 8/100 [04:09<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]                                                                                     Validation loss: 0.425822 (trained 300 epochs)
+  8%|▊         | 8/100 [04:36<1:04:54, 42.33s/trial, best loss: 0.3542733315199409]  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   
+Evaluating hyperparameters:
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Architecture: mlp
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Learning rate: 0.007861
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Hidden dim: 128
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Batch size: 256
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Patience: 30
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Using cached training data (fast path)
+  9%|▉         | 9/100 [04:36<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Early stopping at epoch 276 (patience=30)
+  9%|▉         | 9/100 [04:59<56:55, 37.54s/trial, best loss: 0.3542733315199409]                                                                                   Validation loss: 0.421613 (trained 276 epochs)
+  9%|▉         | 9/100 [04:59<56:55, 37.54s/trial, best loss: 0.3542733315199409] 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000369
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 128
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 128
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 30
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 10%|█         | 10/100 [04:59<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 206 (patience=30)
+ 10%|█         | 10/100 [05:24<49:48, 33.21s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.398516 (trained 206 epochs)
+ 10%|█         | 10/100 [05:24<49:48, 33.21s/trial, best loss: 0.3542733315199409] 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.005897
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 512
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 256
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 30
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 11%|█         | 11/100 [05:24<45:39, 30.78s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.438897 (trained 300 epochs)
+ 11%|█         | 11/100 [05:51<45:39, 30.78s/trial, best loss: 0.3542733315199409] 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000524
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 1024
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 64
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 20
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 12%|█▏        | 12/100 [05:51<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 128 (patience=20)
+ 12%|█▏        | 12/100 [06:24<43:24, 29.60s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.380427 (trained 128 epochs)
+ 12%|█▏        | 12/100 [06:24<43:24, 29.60s/trial, best loss: 0.3542733315199409] 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.002747
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 512
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 64
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 20
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 13%|█▎        | 13/100 [06:25<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 286 (patience=20)
+ 13%|█▎        | 13/100 [07:14<44:32, 30.72s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.396148 (trained 286 epochs)
+ 13%|█▎        | 13/100 [07:14<44:32, 30.72s/trial, best loss: 0.3542733315199409] 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000682
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 256
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 64
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 30
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 14%|█▍        | 14/100 [07:15<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 191 (patience=30)
+ 14%|█▍        | 14/100 [07:47<52:21, 36.53s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.386546 (trained 191 epochs)
+ 14%|█▍        | 14/100 [07:47<52:21, 36.53s/trial, best loss: 0.3542733315199409] 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000222
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 64
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 128
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 15
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 15%|█▌        | 15/100 [07:47<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 50 (patience=15)
+ 15%|█▌        | 15/100 [07:54<50:12, 35.44s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.466179 (trained 50 epochs)
+ 15%|█▌        | 15/100 [07:54<50:12, 35.44s/trial, best loss: 0.3542733315199409] 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000193
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 512
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 128
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 20
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 16%|█▌        | 16/100 [07:54<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 174 (patience=20)
+ 16%|█▌        | 16/100 [08:17<37:32, 26.82s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.392540 (trained 174 epochs)
+ 16%|█▌        | 16/100 [08:17<37:32, 26.82s/trial, best loss: 0.3542733315199409] 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000317
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 1024
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 64
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 30
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 17%|█▋        | 17/100 [08:17<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 162 (patience=30)
+ 17%|█▋        | 17/100 [08:59<35:16, 25.50s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.374280 (trained 162 epochs)
+ 17%|█▋        | 17/100 [08:59<35:16, 25.50s/trial, best loss: 0.3542733315199409] 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.001326
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 128
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 256
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 30
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 18%|█▊        | 18/100 [08:59<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 174 (patience=30)
+ 18%|█▊        | 18/100 [09:13<41:35, 30.44s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.396766 (trained 174 epochs)
+ 18%|█▊        | 18/100 [09:13<41:35, 30.44s/trial, best loss: 0.3542733315199409] 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.008248
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 256
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 64
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 25
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 19%|█▉        | 19/100 [09:14<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 29 (patience=25)
+ 19%|█▉        | 19/100 [09:19<34:48, 25.79s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.520469 (trained 29 epochs)
+ 19%|█▉        | 19/100 [09:19<34:48, 25.79s/trial, best loss: 0.3542733315199409] 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                  
+Evaluating hyperparameters:
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Architecture: mlp
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Learning rate: 0.000124
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Hidden dim: 1024
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Batch size: 256
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Patience: 15
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Using cached training data (fast path)
+ 20%|██        | 20/100 [09:19<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Early stopping at epoch 145 (patience=15)
+ 20%|██        | 20/100 [09:32<26:10, 19.63s/trial, best loss: 0.3542733315199409]                                                                                    Validation loss: 0.353790 (trained 145 epochs)
+ 20%|██        | 20/100 [09:32<26:10, 19.63s/trial, best loss: 0.3542733315199409] 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.000106
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 1024
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 21%|██        | 21/100 [09:32<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 148 (patience=15)
+ 21%|██        | 21/100 [09:45<23:13, 17.65s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.357463 (trained 148 epochs)
+ 21%|██        | 21/100 [09:45<23:13, 17.65s/trial, best loss: 0.35379043923908293] 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.000101
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 512
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 22%|██▏       | 22/100 [09:45<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 175 (patience=15)
+ 22%|██▏       | 22/100 [10:00<21:10, 16.29s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.366922 (trained 175 epochs)
+ 22%|██▏       | 22/100 [10:00<21:10, 16.29s/trial, best loss: 0.35379043923908293] 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.000118
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 1024
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 23%|██▎       | 23/100 [10:00<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 136 (patience=15)
+ 23%|██▎       | 23/100 [10:12<20:15, 15.78s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.355153 (trained 136 epochs)
+ 23%|██▎       | 23/100 [10:12<20:15, 15.78s/trial, best loss: 0.35379043923908293] 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.000145
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 64
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 24%|██▍       | 24/100 [10:12<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 248 (patience=15)
+ 24%|██▍       | 24/100 [10:32<18:36, 14.68s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.409348 (trained 248 epochs)
+ 24%|██▍       | 24/100 [10:32<18:36, 14.68s/trial, best loss: 0.35379043923908293] 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.001170
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 512
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 25%|██▌       | 25/100 [10:32<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 93 (patience=15)
+ 25%|██▌       | 25/100 [10:40<20:24, 16.32s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.368627 (trained 93 epochs)
+ 25%|██▌       | 25/100 [10:40<20:24, 16.32s/trial, best loss: 0.35379043923908293] 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                   
+Evaluating hyperparameters:
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Architecture: mlp
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Learning rate: 0.000314
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Hidden dim: 1024
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Batch size: 256
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Patience: 15
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Using cached training data (fast path)
+ 26%|██▌       | 26/100 [10:40<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Early stopping at epoch 154 (patience=15)
+ 26%|██▌       | 26/100 [10:53<17:01, 13.81s/trial, best loss: 0.35379043923908293]                                                                                     Validation loss: 0.351538 (trained 154 epochs)
+ 26%|██▌       | 26/100 [10:53<17:01, 13.81s/trial, best loss: 0.35379043923908293] 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000334
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 27%|██▋       | 27/100 [10:53<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 125 (patience=15)
+ 27%|██▋       | 27/100 [11:05<16:42, 13.73s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.355760 (trained 125 epochs)
+ 27%|██▋       | 27/100 [11:05<16:42, 13.73s/trial, best loss: 0.35153821731322965] 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000255
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 28%|██▊       | 28/100 [11:05<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 120 (patience=15)
+ 28%|██▊       | 28/100 [11:15<15:34, 12.98s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.353246 (trained 120 epochs)
+ 28%|██▊       | 28/100 [11:15<15:34, 12.98s/trial, best loss: 0.35153821731322965] 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000262
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 29%|██▉       | 29/100 [11:15<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 131 (patience=15)
+ 29%|██▉       | 29/100 [11:27<14:33, 12.31s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.353048 (trained 131 epochs)
+ 29%|██▉       | 29/100 [11:27<14:33, 12.31s/trial, best loss: 0.35153821731322965] 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000778
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 30%|███       | 30/100 [11:27<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 106 (patience=15)
+ 30%|███       | 30/100 [11:36<14:07, 12.11s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.359725 (trained 106 epochs)
+ 30%|███       | 30/100 [11:36<14:07, 12.11s/trial, best loss: 0.35153821731322965] 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000360
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 31%|███       | 31/100 [11:37<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 127 (patience=25)
+ 31%|███       | 31/100 [11:48<13:02, 11.34s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.356960 (trained 127 epochs)
+ 31%|███       | 31/100 [11:48<13:02, 11.34s/trial, best loss: 0.35153821731322965] 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000930
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 32%|███▏      | 32/100 [11:48<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 137 (patience=15)
+ 32%|███▏      | 32/100 [12:01<12:51, 11.35s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.380526 (trained 137 epochs)
+ 32%|███▏      | 32/100 [12:01<12:51, 11.35s/trial, best loss: 0.35153821731322965] 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000497
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 33%|███▎      | 33/100 [12:01<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 251 (patience=25)
+ 33%|███▎      | 33/100 [12:42<13:10, 11.80s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.390752 (trained 251 epochs)
+ 33%|███▎      | 33/100 [12:42<13:10, 11.80s/trial, best loss: 0.35153821731322965] 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000163
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 64
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 34%|███▍      | 34/100 [12:42<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 264 (patience=15)
+ 34%|███▍      | 34/100 [13:03<22:35, 20.54s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.404256 (trained 264 epochs)
+ 34%|███▍      | 34/100 [13:03<22:35, 20.54s/trial, best loss: 0.35153821731322965] 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000264
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 128
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 35%|███▌      | 35/100 [13:03<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 212 (patience=15)
+ 35%|███▌      | 35/100 [13:20<22:34, 20.84s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.385354 (trained 212 epochs)
+ 35%|███▌      | 35/100 [13:20<22:34, 20.84s/trial, best loss: 0.35153821731322965] 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.001533
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 36%|███▌      | 36/100 [13:21<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 264 (patience=25)
+ 36%|███▌      | 36/100 [13:51<21:06, 19.79s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.358889 (trained 264 epochs)
+ 36%|███▌      | 36/100 [13:51<21:06, 19.79s/trial, best loss: 0.35153821731322965] 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000442
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 37%|███▋      | 37/100 [13:51<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 120 (patience=15)
+ 37%|███▋      | 37/100 [14:01<24:01, 22.88s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.356590 (trained 120 epochs)
+ 37%|███▋      | 37/100 [14:01<24:01, 22.88s/trial, best loss: 0.35153821731322965] 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000836
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 64
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 20
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 38%|███▊      | 38/100 [14:01<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 176 (patience=20)
+ 38%|███▊      | 38/100 [14:16<19:53, 19.25s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.410759 (trained 176 epochs)
+ 38%|███▊      | 38/100 [14:17<19:53, 19.25s/trial, best loss: 0.35153821731322965] 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000598
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 39%|███▉      | 39/100 [14:17<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 118 (patience=15)
+ 39%|███▉      | 39/100 [14:36<18:19, 18.03s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.386747 (trained 118 epochs)
+ 39%|███▉      | 39/100 [14:36<18:19, 18.03s/trial, best loss: 0.35153821731322965] 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000150
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 128
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 40%|████      | 40/100 [14:36<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 262 (patience=25)
+ 40%|████      | 40/100 [14:57<18:27, 18.46s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.383868 (trained 262 epochs)
+ 40%|████      | 40/100 [14:57<18:27, 18.46s/trial, best loss: 0.35153821731322965] 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000444
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 256
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 41%|████      | 41/100 [14:57<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 181 (patience=15)
+ 41%|████      | 41/100 [15:13<18:59, 19.31s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.370160 (trained 181 epochs)
+ 41%|████      | 41/100 [15:13<18:59, 19.31s/trial, best loss: 0.35153821731322965] 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.001944
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 64
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 20
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 42%|████▏     | 42/100 [15:13<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 237 (patience=20)
+ 42%|████▏     | 42/100 [16:20<17:35, 18.21s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.407264 (trained 237 epochs)
+ 42%|████▏     | 42/100 [16:20<17:35, 18.21s/trial, best loss: 0.35153821731322965] 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000276
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 43%|████▎     | 43/100 [16:20<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 130 (patience=15)
+ 43%|████▎     | 43/100 [16:32<31:13, 32.86s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.352485 (trained 130 epochs)
+ 43%|████▎     | 43/100 [16:32<31:13, 32.86s/trial, best loss: 0.35153821731322965] 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000199
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 256
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 44%|████▍     | 44/100 [16:32<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 184 (patience=15)
+ 44%|████▍     | 44/100 [16:51<24:42, 26.48s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.366526 (trained 184 epochs)
+ 44%|████▍     | 44/100 [16:51<24:42, 26.48s/trial, best loss: 0.35153821731322965] 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.003918
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 128
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 20
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 45%|████▌     | 45/100 [16:51<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 194 (patience=20)
+ 45%|████▌     | 45/100 [17:07<22:26, 24.47s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.394843 (trained 194 epochs)
+ 45%|████▌     | 45/100 [17:07<22:26, 24.47s/trial, best loss: 0.35153821731322965] 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000671
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 64
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 64
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 46%|████▌     | 46/100 [17:07<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 152 (patience=25)
+ 46%|████▌     | 46/100 [17:42<19:44, 21.93s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.414477 (trained 152 epochs)
+ 46%|████▌     | 46/100 [17:42<19:44, 21.93s/trial, best loss: 0.35153821731322965] 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.001095
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 512
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 47%|████▋     | 47/100 [17:42<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 95 (patience=15)
+ 47%|████▋     | 47/100 [17:50<22:47, 25.81s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.362009 (trained 95 epochs)
+ 47%|████▋     | 47/100 [17:50<22:47, 25.81s/trial, best loss: 0.35153821731322965] 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000424
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 30
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 48%|████▊     | 48/100 [17:50<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 213 (patience=30)
+ 48%|████▊     | 48/100 [18:25<17:40, 20.40s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.378540 (trained 213 epochs)
+ 48%|████▊     | 48/100 [18:25<17:40, 20.40s/trial, best loss: 0.35153821731322965] 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.005770
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 256
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 64
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 20
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 49%|████▉     | 49/100 [18:25<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 41 (patience=20)
+ 49%|████▉     | 49/100 [18:34<21:00, 24.72s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.482747 (trained 41 epochs)
+ 49%|████▉     | 49/100 [18:34<21:00, 24.72s/trial, best loss: 0.35153821731322965] 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000226
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 128
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 50%|█████     | 50/100 [18:34<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 163 (patience=15)
+ 50%|█████     | 50/100 [18:48<16:39, 20.00s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.413093 (trained 163 epochs)
+ 50%|█████     | 50/100 [18:48<16:39, 20.00s/trial, best loss: 0.35153821731322965] 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.002647
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 30
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 51%|█████     | 51/100 [18:48<15:00, 18.37s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.378018 (trained 300 epochs)
+ 51%|█████     | 51/100 [19:15<15:00, 18.37s/trial, best loss: 0.35153821731322965] 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000310
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 512
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 64
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 52%|█████▏    | 52/100 [19:15<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 91 (patience=15)
+ 52%|█████▏    | 52/100 [19:32<16:36, 20.76s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.361652 (trained 91 epochs)
+ 52%|█████▏    | 52/100 [19:32<16:36, 20.76s/trial, best loss: 0.35153821731322965] 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000167
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 64
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 25
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 53%|█████▎    | 53/100 [19:32<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 186 (patience=25)
+ 53%|█████▎    | 53/100 [19:52<15:32, 19.85s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.398461 (trained 186 epochs)
+ 53%|█████▎    | 53/100 [19:52<15:32, 19.85s/trial, best loss: 0.35153821731322965] 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.001557
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 54%|█████▍    | 54/100 [19:52<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 128 (patience=15)
+ 54%|█████▍    | 54/100 [20:05<15:14, 19.89s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.384411 (trained 128 epochs)
+ 54%|█████▍    | 54/100 [20:05<15:14, 19.89s/trial, best loss: 0.35153821731322965] 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000123
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 256
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 20
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 55%|█████▌    | 55/100 [20:05<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 252 (patience=20)
+ 55%|█████▌    | 55/100 [20:26<13:18, 17.74s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.371449 (trained 252 epochs)
+ 55%|█████▌    | 55/100 [20:26<13:18, 17.74s/trial, best loss: 0.35153821731322965] 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000538
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 64
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 30
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 56%|█████▌    | 56/100 [20:26<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 165 (patience=30)
+ 56%|█████▌    | 56/100 [21:13<13:38, 18.60s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.388905 (trained 165 epochs)
+ 56%|█████▌    | 56/100 [21:13<13:38, 18.60s/trial, best loss: 0.35153821731322965] 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000291
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 512
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 57%|█████▋    | 57/100 [21:13<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 202 (patience=15)
+ 57%|█████▋    | 57/100 [21:30<19:23, 27.06s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.372237 (trained 202 epochs)
+ 57%|█████▋    | 57/100 [21:30<19:23, 27.06s/trial, best loss: 0.35153821731322965] 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000396
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 128
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 256
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 15
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 58%|█████▊    | 58/100 [21:30<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 167 (patience=15)
+ 58%|█████▊    | 58/100 [21:44<16:56, 24.21s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.382291 (trained 167 epochs)
+ 58%|█████▊    | 58/100 [21:44<16:56, 24.21s/trial, best loss: 0.35153821731322965] 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                   
+Evaluating hyperparameters:
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Architecture: mlp
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Learning rate: 0.000100
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Hidden dim: 1024
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Batch size: 128
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Patience: 30
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Using cached training data (fast path)
+ 59%|█████▉    | 59/100 [21:44<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Early stopping at epoch 253 (patience=30)
+ 59%|█████▉    | 59/100 [22:15<14:23, 21.06s/trial, best loss: 0.35153821731322965]                                                                                     Validation loss: 0.348611 (trained 253 epochs)
+ 59%|█████▉    | 59/100 [22:15<14:23, 21.06s/trial, best loss: 0.35153821731322965] 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                   
+Evaluating hyperparameters:
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Architecture: mlp
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Learning rate: 0.000104
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Hidden dim: 1024
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Batch size: 128
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Patience: 30
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Using cached training data (fast path)
+ 60%|██████    | 60/100 [22:15<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Early stopping at epoch 213 (patience=30)
+ 60%|██████    | 60/100 [22:47<16:07, 24.18s/trial, best loss: 0.34861123295888746]                                                                                     Validation loss: 0.362933 (trained 213 epochs)
+ 60%|██████    | 60/100 [22:47<16:07, 24.18s/trial, best loss: 0.34861123295888746] 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                   
+Evaluating hyperparameters:
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Architecture: mlp
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Learning rate: 0.000131
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Hidden dim: 64
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Batch size: 128
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Patience: 30
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]                                                                                     Using cached training data (fast path)
+ 61%|██████    | 61/100 [22:47<17:16, 26.57s/trial, best loss: 0.34861123295888746]
