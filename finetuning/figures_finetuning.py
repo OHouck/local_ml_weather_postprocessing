@@ -517,19 +517,22 @@ def map_global_improvements(
             print(f"  Creating global gridded dataset for pixel-level plotting...")
 
             # Collect all unique lat/lon coordinates to determine global grid
-            all_lats = []
-            all_lons = []
+            # Use numpy concatenate instead of list extend for better performance
+            all_lats_list = [patch['ds'].latitude.values for patch in patch_data]
+            all_lons_list = [patch['ds'].longitude.values for patch in patch_data]
 
-            for patch in patch_data:
-                ds = patch['ds']
-                all_lats.extend(ds.latitude.values.tolist())
-                all_lons.extend(ds.longitude.values.tolist())
+            all_lats = np.concatenate(all_lats_list)
+            all_lons = np.concatenate(all_lons_list)
 
             # Get unique sorted coordinates
-            unique_lats = np.array(sorted(set(all_lats)))
-            unique_lons = np.array(sorted(set(all_lons)))
+            unique_lats = np.unique(all_lats)
+            unique_lons = np.unique(all_lons)
 
             print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
+
+            # Create lookup dictionaries for O(1) index finding
+            lat_to_idx = {lat: idx for idx, lat in enumerate(unique_lats)}
+            lon_to_idx = {lon: idx for idx, lon in enumerate(unique_lons)}
 
             # Create empty global grid filled with NaN
             global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
@@ -543,10 +546,13 @@ def map_global_improvements(
                 original = ds[f"{variable}_original{var_suffix}"]
                 corrected = ds[f"{variable}_corrected{var_suffix}"]
 
-                # Compute pixel-wise RMSE over time dimension
+                # Compute pixel-wise RMSE over time dimension in one pass
                 # Shape: (time, lat, lon) -> (lat, lon)
-                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
-                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
+                mse_original = ((original - ground_truth) ** 2).mean(dim='time')
+                mse_corrected = ((corrected - ground_truth) ** 2).mean(dim='time')
+
+                rmse_original_pixel = np.sqrt(mse_original)
+                rmse_corrected_pixel = np.sqrt(mse_corrected)
 
                 # Compute improvement percentage for each pixel
                 improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
@@ -555,15 +561,16 @@ def map_global_improvements(
                 patch_lats = ds.latitude.values
                 patch_lons = ds.longitude.values
 
-                # Find indices in global grid
-                for i, lat in enumerate(patch_lats):
-                    for j, lon in enumerate(patch_lons):
-                        # Find position in global grid
-                        lat_idx = np.where(unique_lats == lat)[0]
-                        lon_idx = np.where(unique_lons == lon)[0]
+                # Use vectorized indexing with lookup dictionaries (O(1) instead of O(n))
+                # Build index arrays for this patch
+                lat_indices = np.array([lat_to_idx[lat] for lat in patch_lats])
+                lon_indices = np.array([lon_to_idx[lon] for lon in patch_lons])
 
-                        if len(lat_idx) > 0 and len(lon_idx) > 0:
-                            global_improvement[lat_idx[0], lon_idx[0]] = improvement_pixel.values[i, j]
+                # Create meshgrid of indices
+                lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
+
+                # Assign values using fancy indexing (vectorized operation)
+                global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel.values
 
             # Create xarray DataArray for the global grid
             global_da = xr.DataArray(
@@ -573,20 +580,19 @@ def map_global_improvements(
                 name='improvement_percent'
             )
 
-            # Count valid pixels
-            n_pixels = int((~np.isnan(global_improvement)).sum())
+            # Calculate statistics using nanXXX functions (faster than masking)
+            n_pixels = int(np.count_nonzero(~np.isnan(global_improvement)))
 
             if n_pixels == 0:
                 print(f"  No valid pixel data for lead time {lead_time}h!")
                 continue
 
-            # Calculate statistics (ignoring NaN)
-            valid_data = global_improvement[~np.isnan(global_improvement)]
-            vmin = float(np.min(valid_data))
-            vmax = float(np.max(valid_data))
-            mean_val = float(np.mean(valid_data))
-            median_val = float(np.median(valid_data))
-            std_val = float(np.std(valid_data))
+            # Use nanXXX functions - they're optimized and faster than manual masking
+            vmin = float(np.nanmin(global_improvement))
+            vmax = float(np.nanmax(global_improvement))
+            mean_val = float(np.nanmean(global_improvement))
+            median_val = float(np.nanmedian(global_improvement))
+            std_val = float(np.nanstd(global_improvement))
 
             print(f"  Pixel improvement range: {vmin:.1f}% to {vmax:.1f}%")
             print(f"  Valid pixels: {n_pixels}")
@@ -643,7 +649,7 @@ def map_global_improvements(
                     height,
                     facecolor='none',
                     edgecolor='black',
-                    linewidth=1.5,
+                    linewidth=0.5,
                     alpha=1.0,
                     transform=ccrs.PlateCarree(),
                     zorder=2

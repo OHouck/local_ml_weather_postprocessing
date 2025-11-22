@@ -381,19 +381,27 @@ class UNet(nn.Module):
 # ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
-def load_optimal_hyperparameters(architecture):
+def load_optimal_hyperparameters(architecture, output_var):
     """
     Load optimal hyperparameters from hyperopt results.
     
     Args:
         architecture: 'mlp' or 'unet'
+        output_var: Output variable name 
     
     Returns:
         Dictionary of optimal hyperparameters, or None if file not found
     """
     # Get the script's directory
     script_dir = Path(__file__).parent.parent
-    results_file = script_dir / f"hyperopt_results_{architecture}" / f"optimization_results_{architecture}.json"
+
+    if output_var == "2m_temperature":
+        results_file = script_dir / f"hyperopt_results_temp_{architecture}" / f"optimization_results_{architecture}.json"
+    elif output_var == "10m_wind_speed":
+        results_file = script_dir / f"hyperopt_results_wind_{architecture}" / f"optimization_results_{architecture}.json"
+    else:
+        print(f"Warning: No hyperparameter results available for output variable '{output_var}'")
+        return None
     
     if not results_file.exists():
         print(f"Warning: Hyperparameter file not found at {results_file}")
@@ -1086,7 +1094,7 @@ def main():
     args = parse_args()
     
     # Load optimal hyperparameters based on architecture
-    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture)
+    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.output_vars)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
         if args.nn_architecture == 'mlp':
@@ -1194,9 +1202,11 @@ def main():
 
             out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 
-            if os.path.exists(out_path):
-                print(f"Skipping already existing output: {out_path}")
-                continue
+
+            # Uncomment to skip existing outputs
+            # if os.path.exists(out_path):
+            #     print(f"Skipping already existing output: {out_path}")
+            #     continue
 
             run_subregion_experiment(
                 lat_vals, lon_vals, out_path,

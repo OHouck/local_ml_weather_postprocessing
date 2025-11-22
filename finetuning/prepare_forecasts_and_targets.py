@@ -570,7 +570,6 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
             subset_rechunked = subset.chunk(chunk_dict)
 
             # Flatten atmospheric variables before saving (only for this year)
-            print(f"    Flattening atmospheric variables...")
             subset_flattened = flatten_atmospheric_variables(subset_rechunked, year_atmospheric_vars)
 
             # Rechunk the flattened dataset
@@ -613,7 +612,6 @@ def download_forecast_data(data_dir, model_name, region, years, variables, lead_
     finally:
         if client is not None:
             client.close()
-            print("\nDask client closed")
 
     return downloaded_files
 
@@ -739,10 +737,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
         else:
             raise ValueError(f"Unknown target: {target}")
 
-        print(f"  Dataset opened successfully")
-        print(f"  Available variables: {list(ds.data_vars)[:10]}...")
-        if 'level' in ds.dims:
-            print(f"  Available pressure levels: {ds.level.values}")
         print_time_and_memory("Dataset opened", start_time)
 
         # Check which variables are available
@@ -857,7 +851,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
             subset_rechunked = subset.chunk(chunk_dict)
 
             # Flatten atmospheric variables before saving (only for this year)
-            print(f"    Flattening atmospheric variables...")
             subset_flattened = flatten_atmospheric_variables(subset_rechunked, year_atmospheric_vars)
 
             # Rechunk the flattened dataset
@@ -899,7 +892,6 @@ def download_target_data(data_dir, model_name, ground_truth_source, region, year
     finally:
         if client is not None:
             client.close()
-            print("\nDask client closed")
 
     return downloaded_files
 
@@ -958,7 +950,6 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
 
     # Sort by time to ensure monotonic order
     forecast_ds = forecast_ds.sortby('time')
-    print(forecast_ds)
 
     # Remove any duplicate time steps (keeping first occurrence)
     _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
@@ -1051,13 +1042,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     max_year = max(time_values_np).astype('datetime64[Y]').astype(int) + 1970
     years_needed = list(range(min_year, max_year + 1))
 
-    print(f"\n{'='*70}")
-    print(f"LOADING {'TRAINING' if train else 'TEST'} DATA")
-    print(f"{'='*70}")
-    print(f"  Model: {args.model_name}")
-    print(f"  Region: {args.region}")
-    print(f"  Years: {years_needed}")
-    print(f"  Period: {time_start} to {time_end}")
+    # print(f"\n{'='*70}")
+    # print(f"LOADING {'TRAINING' if train else 'TEST'} DATA")
+    # print(f"{'='*70}")
+    # print(f"  Model: {args.model_name}")
+    # print(f"  Region: {args.region}")
+    # print(f"  Years: {years_needed}")
+    # print(f"  Period: {time_start} to {time_end}")
 
     # ========================================================================
     # LEGACY MODE: Load global files and subset spatially
@@ -1089,7 +1080,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # ====================================================================
         # STEP 1: Try to load regional data files
         # ====================================================================
-        print(f"\n  Checking for regional data files...")
         forecast_status = check_data_exists(data_dir, args.model_name, args.region,
                                            years_needed, forecast_vars)
         target_status = check_data_exists(data_dir, target, args.region,
@@ -1274,7 +1264,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # ====================================================================
         first_forecast_var = list(forecast_ds.data_vars)[0]
         if hasattr(forecast_ds[first_forecast_var].data, 'compute'):
-            print(f"\n  Data is dask-backed. Loading into memory for faster processing...")
 
             # Rechunk for optimal memory layout before computing
             optimal_chunks = {
@@ -1331,13 +1320,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     n_training_vars = len(args.training_vars)
     n_output_vars = len(args.output_vars)
 
-    print(f"\n  Data dimensions:")
-    print(f"    Time steps: {n_time}")
-    print(f"    Lead times: {n_lead_times}")
-    print(f"    Latitude: {n_lat}")
-    print(f"    Longitude: {n_lon}")
-    print(f"    Training vars: {n_training_vars}")
-    print(f"    Output vars: {n_output_vars}")
+    # print(f"\n  Data dimensions:")
+    # print(f"    Time steps: {n_time}")
+    # print(f"    Lead times: {n_lead_times}")
+    # print(f"    Latitude: {n_lat}")
+    # print(f"    Longitude: {n_lon}")
+    # print(f"    Training vars: {n_training_vars}")
+    # print(f"    Output vars: {n_output_vars}")
 
     # Stack all dimensions except variables
     forecast_stacked = forecast_ds[args.training_vars].stack(
@@ -1356,7 +1345,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
     # Transpose and reshape to (n_samples, n_features)
     if hasattr(forecast_stacked.data, 'compute'):
-        print(f"  Computing dask arrays...")
         fc_vals, fc_out_vals, obs_vals = dask.compute(
             forecast_stacked.values.T,
             forecast_output_stacked.values.T,
@@ -1365,7 +1353,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
         fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
         obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
-        print(f"  ✓ Arrays computed and reshaped")
     else:
         fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
         fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
@@ -1394,7 +1381,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     day_of_year_features_combined = day_of_year_features[valid_mask]
     all_times = all_times[valid_mask]
 
-    print(f"\n  Valid samples after NaN removal: {len(fc_combined)}")
 
     # Calculate mean forecast error
     training_mean_forecast_error = {}
