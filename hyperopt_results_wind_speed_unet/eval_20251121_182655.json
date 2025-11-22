@@ -1,0 +1,15 @@
+{
+  "hyperparams": {
+    "batch_size": 128,
+    "dropout_rate": 0.16535393771294657,
+    "hidden_dim": 128,
+    "lead_time_embedding_dim": 8,
+    "learning_rate": 0.0005425184744378243,
+    "min_delta": 2.3993152004415994e-05,
+    "patience": 30,
+    "weight_decay": 9.732689277700705e-06
+  },
+  "loss": 0.3555338136527849,
+  "epochs_trained": 165,
+  "architecture": "unet"
+}
