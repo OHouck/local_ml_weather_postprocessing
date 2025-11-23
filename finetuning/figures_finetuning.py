@@ -13,6 +13,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from cartopy.util import add_cyclic_point
 from types import SimpleNamespace
 from functools import lru_cache
 
@@ -628,13 +629,20 @@ def map_global_improvements(
             # When combining global data from different regions, coordinates are not uniformly
             # spaced. imshow assumes uniform spacing → causes misalignment. pcolormesh uses
             # actual coordinate positions → ensures perfect alignment with grid overlay.
-            # Create 2D meshgrid from coordinate arrays
-            lon_2d, lat_2d = np.meshgrid(unique_lons, unique_lats)
+
+            # Add cyclic point to prevent smudging at 0° meridian
+            # This adds a wrap-around column to ensure smooth rendering across longitude boundaries
+            global_improvement_cyclic, unique_lons_cyclic = add_cyclic_point(
+                global_improvement, coord=unique_lons
+            )
+
+            # Create 2D meshgrid from coordinate arrays (now with cyclic point)
+            lon_2d, lat_2d = np.meshgrid(unique_lons_cyclic, unique_lats)
 
             mesh = ax.pcolormesh(
                 lon_2d,
                 lat_2d,
-                global_improvement,
+                global_improvement_cyclic,
                 transform=ccrs.PlateCarree(),
                 cmap=cmap,
                 norm=norm,
