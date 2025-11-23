@@ -1678,6 +1678,15 @@ def _get_color_schemes():
         'hilly': '#FFD54F',
         'mountainous': '#6D4C41'
     }
+
+    continent_region_colors = {
+        'africa': '#FFD700',
+        'asia': '#FF8C00',
+        'europe': '#8A2BE2',
+        'north_america': '#00CED1',
+        'south_america': '#FF1493',
+        'oceania': '#7FFF00'
+    }
     
     model_markers = {
         'pangu': 'o',
@@ -1689,7 +1698,7 @@ def _get_color_schemes():
         'unet': 'none'
     }
     
-    return region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles
+    return region_colors, climate_region_colors, topographic_region_colors, continent_region_colors, model_markers, architecture_fillstyles
 
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
@@ -1756,7 +1765,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     prediction_var = df['variable'].iloc[0]
     
     # Get color schemes
-    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+    region_colors, climate_region_colors, topographic_region_colors, \
+        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -1891,6 +1901,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             color = climate_region_colors[region]
         elif region in topographic_region_colors:
             color = topographic_region_colors[region]
+        elif region in continent_region_colors:
+            color = continent_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
         region_handles.append(Line2D([0], [0], color=color, linewidth=3,
