@@ -632,9 +632,46 @@ def map_global_improvements(
 
             # Add cyclic point to prevent smudging at 0° meridian
             # This adds a wrap-around column to ensure smooth rendering across longitude boundaries
-            global_improvement_cyclic, unique_lons_cyclic = add_cyclic_point(
-                global_improvement, coord=unique_lons
-            )
+
+            # Fix floating-point precision issues in longitude spacing
+            # cartopy.util.add_cyclic_point requires exactly equally spaced coordinates
+            lon_diffs = np.diff(unique_lons)
+
+            # Try to use add_cyclic_point with fixed coordinates
+            try:
+                # Check if spacing is approximately uniform
+                if len(lon_diffs) > 0 and np.allclose(lon_diffs, lon_diffs[0], rtol=1e-3):
+                    # Create perfectly equally spaced coordinates
+                    # This is more robust than rounding - we reconstruct from scratch
+                    lon_min = unique_lons[0]
+                    lon_max = unique_lons[-1]
+                    n_lons = len(unique_lons)
+
+                    # Create linearly spaced array with exact spacing
+                    unique_lons_fixed = np.linspace(lon_min, lon_max, n_lons, dtype=unique_lons.dtype)
+                else:
+                    unique_lons_fixed = unique_lons
+
+                global_improvement_cyclic, unique_lons_cyclic = add_cyclic_point(
+                    global_improvement, coord=unique_lons_fixed
+                )
+            except ValueError as e:
+                # If add_cyclic_point still fails, manually add cyclic point
+                # This happens when coordinates are truly non-uniform or other edge cases
+                print(f"  Warning: Could not use cartopy's add_cyclic_point ({e})")
+                print(f"  Manually adding cyclic point for visualization...")
+
+                # Manually append first column to end for cyclic wrapping
+                global_improvement_cyclic = np.concatenate(
+                    [global_improvement, global_improvement[:, 0:1]], axis=1
+                )
+
+                # Calculate appropriate longitude for wrap-around
+                # Assumes longitude range is approximately 0-360 or -180-180
+                lon_spacing = np.median(lon_diffs) if len(lon_diffs) > 0 else 1.0
+                wrap_lon = unique_lons[-1] + lon_spacing
+
+                unique_lons_cyclic = np.append(unique_lons, wrap_lon)
 
             # Create 2D meshgrid from coordinate arrays (now with cyclic point)
             lon_2d, lat_2d = np.meshgrid(unique_lons_cyclic, unique_lats)
