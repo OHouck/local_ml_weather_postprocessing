@@ -530,13 +530,17 @@ def map_global_improvements(
 
             print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
 
-            # Create lookup dictionaries for O(1) index finding
-            # Use searchsorted for faster lookups with sorted arrays
-            lat_to_idx = {lat: idx for idx, lat in enumerate(unique_lats)}
-            lon_to_idx = {lon: idx for idx, lon in enumerate(unique_lons)}
-
             # Create empty global grid filled with NaN
             global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
+
+            # Helper function to find nearest indices (robust to floating point errors)
+            def find_nearest_indices(values, array):
+                """Find indices of nearest values in array for each value in values."""
+                # For each value, find the index of the closest match in array
+                indices = np.empty(len(values), dtype=int)
+                for i, val in enumerate(values):
+                    indices[i] = np.argmin(np.abs(array - val))
+                return indices
 
             # Pre-allocate arrays for batch processing
             print(f"  Processing {len(patch_data)} patches...")
@@ -581,10 +585,10 @@ def map_global_improvements(
                 patch_lats = ds.latitude.values
                 patch_lons = ds.longitude.values
 
-                # Vectorized indexing - faster than list comprehension
-                # Use searchsorted for even faster lookups
-                lat_indices = np.searchsorted(unique_lats, patch_lats)
-                lon_indices = np.searchsorted(unique_lons, patch_lons)
+                # Find nearest indices using robust method (handles floating point precision)
+                # This fixes smearing artifacts caused by searchsorted using insertion points
+                lat_indices = find_nearest_indices(patch_lats, unique_lats)
+                lon_indices = find_nearest_indices(patch_lons, unique_lons)
 
                 # Create meshgrid of indices
                 lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
