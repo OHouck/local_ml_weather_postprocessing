@@ -2869,18 +2869,16 @@ def main():
     for map_type in ["original", "improvement"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             for model in ["pangu"]:
-                for pixel_flag in [True]:
-                    map_global_improvements(dirs=dirs, model=model, 
-                                            variable=variable, map_type=map_type,
-                                            pixel_level=pixel_flag)
-                    plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                    variable=variable, y_metric=map_type, 
-                                                    x_metric="equator_distance",
-                                                    pixel_level=pixel_flag)
-                    plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                    variable=variable, y_metric=map_type, 
-                                                    x_metric="sdor",
-                                                    pixel_level=pixel_flag)
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, y_metric=map_type, 
+                                                x_metric="equator_distance")
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, y_metric=map_type, 
+                                                x_metric="sdor")
+                # for pixel_flag in [True]:
+                #     map_global_improvements(dirs=dirs, model=model, 
+                #                             variable=variable, map_type=map_type,
+                #                             pixel_level=pixel_flag)
     exit()
 
 #=============================================
@@ -3084,11 +3082,10 @@ def plot_scatter_forecast_improvement(
     nn_architecture="mlp",
     subregion="6x6",
     alternate_loss_fn=None,
-    pixel_level=False
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
-    Each point represents either a region (pixel_level=False) or individual pixels (pixel_level=True).
+    Each point represents either a region 6x6 patch mean 
 
     Only processes zarr files that match the specified model configuration to ensure
     all patches are from the same training/testing setup.
@@ -3128,9 +3125,6 @@ def plot_scatter_forecast_improvement(
         Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
-    pixel_level : bool, optional
-        If True, plot individual pixels with smaller markers (s=10).
-        If False, plot region means with larger markers (s=50). Default is False.
 
     Returns
     -------
@@ -3205,10 +3199,14 @@ def plot_scatter_forecast_improvement(
     if len(lead_times) == 1:
         axes = [axes]
 
-    # Color map for hemispheres
-    hemisphere_colors = {
-        'Northern': '#4D96FF',  # Blue
-        'Southern': '#FF6B6B'   # Red
+    # Color map for continents
+    continent_colors = {
+        'asia': '#FF6B6B',           # Red
+        'africa': '#4ECDC4',         # Turquoise
+        'north_america': '#45B7D1',  # Blue
+        'south_america': '#FFA07A',  # Light Salmon
+        'europe': '#98D8C8',         # Mint
+        'oceania': '#F7DC6F'         # Yellow
     }
 
     for idx, lead_time in enumerate(lead_times):
@@ -3219,153 +3217,66 @@ def plot_scatter_forecast_improvement(
             print(f"\nSkipping lead time {lead_time}h - no data available")
             continue
 
-        # Set marker size based on pixel_level
-        marker_size = 10 if pixel_level else 50
-        marker_edge = 0.2 if pixel_level else 0.5
+        # Set marker size based on patch-level plotting
+        marker_size = 20
+        marker_edge = 0.2
 
-        if pixel_level:
-            # Pixel-level scatter: extract data for each pixel
-            print(f"  Extracting pixel-level data for scatter plot (lead time {lead_time}h)...")
+        # Region-mean scatter: use existing patch-level data
+        # Determine x and y values based on metrics
+        if x_metric == "equator_distance":
+            x_values = [p['distance_from_equator'] for p in patch_data]
+        elif x_metric == "sdor":
+            x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
+            # Filter patch_data to only include patches with sdor values
+            patch_data = [p for p in patch_data if p['sdor'] is not None]
+            if not patch_data:
+                print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+                continue
+        else:
+            raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
 
-            all_x_values = []
-            all_y_values = []
-            all_latitudes = []
+        if y_metric == "improvement":
+            y_values = [p['improvement'] for p in patch_data]
+        elif y_metric == "original":
+            y_values = [p['rmse_original'] for p in patch_data]
+        else:
+            raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
 
-            for patch in patch_data:
-                ds = patch['ds']
-                var_suffix = f"_lt{lead_time}h"
+        # Group patches by continent
+        patches_by_continent = {}
+        for p in patch_data:
+            continent = p.get('region', 'unknown')
+            if continent not in patches_by_continent:
+                patches_by_continent[continent] = []
+            patches_by_continent[continent].append(p)
 
-                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
-                original = ds[f"{variable}_original{var_suffix}"]
-                corrected = ds[f"{variable}_corrected{var_suffix}"]
+        # Plot each continent separately
+        for continent, continent_patches in patches_by_continent.items():
+            # Extract x values based on metric
+            if x_metric == "equator_distance":
+                continent_x = [p['distance_from_equator'] for p in continent_patches]
+            else:
+                continent_x = [p['sdor'] for p in continent_patches if p['sdor'] is not None]
+                continent_patches = [p for p in continent_patches if p['sdor'] is not None]
 
-                lats = ds.latitude.values
-                lons = ds.longitude.values
+            # Extract y values based on metric
+            if y_metric == "improvement":
+                continent_y = [p['improvement'] for p in continent_patches]
+            else:
+                continent_y = [p['rmse_original'] for p in continent_patches]
 
-                # Compute pixel-wise RMSE over time dimension
-                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
-                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
-
-                # Compute improvement percentage for each pixel
-                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
-
-                # Extract x-metric for each pixel
-                if x_metric == "equator_distance":
-                    # For each pixel, use its latitude
-                    for i, lat in enumerate(lats):
-                        for j, lon in enumerate(lons):
-                            if y_metric == "improvement":
-                                y_val = float(improvement_pixel.values[i, j])
-                            elif y_metric == "original":
-                                y_val = float(rmse_original_pixel.values[i, j])
-                            else:
-                                raise ValueError(f"Invalid y_metric: {y_metric}")
-
-                            if not np.isnan(y_val):
-                                all_x_values.append(abs(lat))
-                                all_y_values.append(y_val)
-                                all_latitudes.append(lat)
-
-                elif x_metric == "sdor":
-                    # For sdor, we'd need to compute it per pixel - use patch mean for now
-                    if patch['sdor'] is not None:
-                        for i, lat in enumerate(lats):
-                            for j, lon in enumerate(lons):
-                                if y_metric == "improvement":
-                                    y_val = float(improvement_pixel.values[i, j])
-                                elif y_metric == "original":
-                                    y_val = float(rmse_original_pixel.values[i, j])
-                                else:
-                                    raise ValueError(f"Invalid y_metric: {y_metric}")
-
-                                if not np.isnan(y_val):
-                                    all_x_values.append(patch['sdor'])
-                                    all_y_values.append(y_val)
-                                    all_latitudes.append(lat)
-
-            if not all_x_values:
-                print(f"\nSkipping lead time {lead_time}h - no valid pixel data")
+            # Skip if no data for this continent
+            if not continent_x or not continent_y:
                 continue
 
-            # Separate by hemisphere
-            northern_x = [x for x, lat in zip(all_x_values, all_latitudes) if lat >= 0]
-            northern_y = [y for y, lat in zip(all_y_values, all_latitudes) if lat >= 0]
-            southern_x = [x for x, lat in zip(all_x_values, all_latitudes) if lat < 0]
-            southern_y = [y for y, lat in zip(all_y_values, all_latitudes) if lat < 0]
+            # Get color for this continent
+            color = continent_colors.get(continent, '#808080')  # Gray as default
+            label = continent.replace('_', ' ').title()
 
-            x_values = all_x_values
-            y_values = all_y_values
-
-        else:
-            # Region-mean scatter: use existing patch-level data
-            # Determine x and y values based on metrics
-            if x_metric == "equator_distance":
-                x_values = [p['distance_from_equator'] for p in patch_data]
-            elif x_metric == "sdor":
-                x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
-                # Filter patch_data to only include patches with sdor values
-                patch_data = [p for p in patch_data if p['sdor'] is not None]
-                if not patch_data:
-                    print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
-                    continue
-            else:
-                raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
-
-            if y_metric == "improvement":
-                y_values = [p['improvement'] for p in patch_data]
-            elif y_metric == "original":
-                y_values = [p['rmse_original'] for p in patch_data]
-            else:
-                raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
-
-            # Separate patches by hemisphere
-            northern_patches = [p for p in patch_data if p['center_lat'] >= 0]
-            southern_patches = [p for p in patch_data if p['center_lat'] < 0]
-
-            # Extract northern hemisphere data
-            if northern_patches:
-                if x_metric == "equator_distance":
-                    northern_x = [p['distance_from_equator'] for p in northern_patches]
-                else:
-                    northern_x = [p['sdor'] for p in northern_patches if p['sdor'] is not None]
-                    northern_patches = [p for p in northern_patches if p['sdor'] is not None]
-
-                if y_metric == "improvement":
-                    northern_y = [p['improvement'] for p in northern_patches]
-                else:
-                    northern_y = [p['rmse_original'] for p in northern_patches]
-            else:
-                northern_x = []
-                northern_y = []
-
-            # Extract southern hemisphere data
-            if southern_patches:
-                if x_metric == "equator_distance":
-                    southern_x = [p['distance_from_equator'] for p in southern_patches]
-                else:
-                    southern_x = [p['sdor'] for p in southern_patches if p['sdor'] is not None]
-                    southern_patches = [p for p in southern_patches if p['sdor'] is not None]
-
-                if y_metric == "improvement":
-                    southern_y = [p['improvement'] for p in southern_patches]
-                else:
-                    southern_y = [p['rmse_original'] for p in southern_patches]
-            else:
-                southern_x = []
-                southern_y = []
-
-        # Plot northern hemisphere
-        if northern_x:
-            ax.scatter(northern_x, northern_y,
-                      c=hemisphere_colors['Northern'],
-                      label='Northern Hemisphere',
-                      alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
-
-        # Plot southern hemisphere
-        if southern_x:
-            ax.scatter(southern_x, southern_y,
-                      c=hemisphere_colors['Southern'],
-                      label='Southern Hemisphere',
+            # Plot this continent
+            ax.scatter(continent_x, continent_y,
+                      c=color,
+                      label=label,
                       alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
 
         # Add horizontal line at y=0 for improvement plots
