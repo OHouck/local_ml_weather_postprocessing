@@ -624,42 +624,25 @@ def map_global_improvements(
                 norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
             cmap = plt.cm.RdBu  # Red for negative, Blue for positive
 
-            # Plot using imshow for pixel-perfect rendering
-            # imshow is designed for 2D array data and provides crisp pixel boundaries
-            # Unlike pcolormesh (which creates a quad mesh), imshow treats each array
-            # element as a discrete pixel, eliminating all edge artifacts and smearing
+            # IMPORTANT: We use pcolormesh (not imshow) to handle non-uniform grid spacing.
+            # When combining global data from different regions, coordinates are not uniformly
+            # spaced. imshow assumes uniform spacing → causes misalignment. pcolormesh uses
+            # actual coordinate positions → ensures perfect alignment with grid overlay.
+            # Create 2D meshgrid from coordinate arrays
+            lon_2d, lat_2d = np.meshgrid(unique_lons, unique_lats)
 
-            # Calculate extent from coordinate arrays
-            # extent = [lon_min, lon_max, lat_min, lat_max]
-            # Use minimum spacing to get actual grid resolution (robust to gaps in data)
-            if len(unique_lons) > 1:
-                lon_step = np.min(np.diff(unique_lons))
-            else:
-                lon_step = 0.25
-
-            if len(unique_lats) > 1:
-                lat_step = np.min(np.diff(unique_lats))
-            else:
-                lat_step = 0.25
-
-            # Extent defines the outer edges of corner pixels
-            # This ensures pixels are centered on their coordinate values
-            extent = [
-                unique_lons[0] - lon_step/2,  # Left edge
-                unique_lons[-1] + lon_step/2,  # Right edge
-                unique_lats[0] - lat_step/2,   # Bottom edge
-                unique_lats[-1] + lat_step/2   # Top edge
-            ]
-
-            mesh = ax.imshow(
+            mesh = ax.pcolormesh(
+                lon_2d,
+                lat_2d,
                 global_improvement,
-                extent=extent,
-                origin='lower',  # Match pcolormesh orientation (lower-left origin)
                 transform=ccrs.PlateCarree(),
                 cmap=cmap,
                 norm=norm,
-                interpolation='none',  # Critical: no interpolation, pixel-perfect rendering
-                aspect='auto',  # Let cartopy handle aspect ratio
+                shading='nearest',  # Treats coordinates as pixel centers
+                edgecolors='none',  # No edges between pixels
+                linewidth=0,        # Prevent edge artifacts
+                snap=True,          # Snap to pixel boundaries
+                rasterized=True,    # Rasterize for smaller file size
                 zorder=1
             )
 
