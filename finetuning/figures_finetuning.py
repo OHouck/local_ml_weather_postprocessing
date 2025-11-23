@@ -624,15 +624,15 @@ def map_global_improvements(
                 norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
             cmap = plt.cm.RdBu  # Red for negative, Blue for positive
 
-            # Plot using pcolormesh - keep original longitude coordinates
-            # Let cartopy handle the coordinate transformations
-            # This fixes the smearing issue by not manually converting coordinates
+            # Plot using pcolormesh with nearest-neighbor shading
+            # shading='nearest' treats coordinates as cell centers and prevents interpolation
+            # This eliminates smearing artifacts by rendering each pixel as a solid color
             mesh = ax.pcolormesh(
                 unique_lons, unique_lats, global_improvement,
                 transform=ccrs.PlateCarree(),
                 cmap=cmap,
                 norm=norm,
-                shading='auto',
+                shading='nearest',  # Critical: prevents interpolation between pixels
                 rasterized=True,  # Rasterize for better performance with large grids
                 zorder=1
             )
