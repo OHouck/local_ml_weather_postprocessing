@@ -2887,8 +2887,8 @@ def main():
 #=============================================
 # Global Improvement Plots
 #=============================================
-    for map_type in ["original", "improvement"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
+    for map_type in ["improvement"]:
+        for variable in ["2m_temperature"]:
             for model in ["pangu"]:
                 # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
                 #                                 variable=variable, y_metric=map_type, 
