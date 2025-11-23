@@ -534,17 +534,19 @@ def map_global_improvements(
             # Create empty global grid filled with NaN
             global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
 
-            # Helper function to find nearest indices (robust to floating point errors)
-            def find_nearest_indices(values, array):
-                """Find indices of nearest values in array for each value in values."""
-                # For each value, find the index of the closest match in array
-                indices = np.empty(len(values), dtype=int)
-                for i, val in enumerate(values):
-                    indices[i] = np.argmin(np.abs(array - val))
-                return indices
+            # Create coordinate-to-index lookup dictionaries for exact matching
+            # This prevents smearing artifacts from nearest-neighbor rounding
+            # Round coordinates to avoid floating-point precision issues
+            COORD_PRECISION = 6  # Round to 6 decimal places (~0.1m precision)
+
+            lat_to_idx = {round(lat, COORD_PRECISION): idx
+                         for idx, lat in enumerate(unique_lats)}
+            lon_to_idx = {round(lon, COORD_PRECISION): idx
+                         for idx, lon in enumerate(unique_lons)}
 
             # Pre-allocate arrays for batch processing
             print(f"  Processing {len(patch_data)} patches...")
+            print(f"  Using exact coordinate matching (tolerance: {10**(-COORD_PRECISION)} degrees)")
 
             # Fill in data from each patch - optimized version
             for i, patch in enumerate(patch_data):
@@ -586,15 +588,18 @@ def map_global_improvements(
                 patch_lats = ds.latitude.values
                 patch_lons = ds.longitude.values
 
-                # Find nearest indices using robust method (handles floating point precision)
-                # This fixes smearing artifacts caused by searchsorted using insertion points
-                lat_indices = find_nearest_indices(patch_lats, unique_lats)
-                lon_indices = find_nearest_indices(patch_lons, unique_lons)
+                # Use exact coordinate lookup instead of nearest-neighbor search
+                # This prevents multiple source coordinates from mapping to the same target
+                lat_indices = np.array([lat_to_idx[round(lat, COORD_PRECISION)]
+                                       for lat in patch_lats])
+                lon_indices = np.array([lon_to_idx[round(lon, COORD_PRECISION)]
+                                       for lon in patch_lons])
 
                 # Create meshgrid of indices
                 lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
 
                 # Assign values using fancy indexing (vectorized operation)
+                # With exact matching, each source pixel maps to exactly one target pixel
                 global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel
 
             print(f"  All {len(patch_data)} patches processed.")
