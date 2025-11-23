@@ -624,16 +624,31 @@ def map_global_improvements(
                 norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
             cmap = plt.cm.RdBu  # Red for negative, Blue for positive
 
-            # Plot using pcolormesh with nearest-neighbor shading
-            # shading='nearest' treats coordinates as cell centers and prevents interpolation
-            # This eliminates smearing artifacts by rendering each pixel as a solid color
-            mesh = ax.pcolormesh(
-                unique_lons, unique_lats, global_improvement,
+            # Plot using imshow for pixel-perfect rendering
+            # imshow is designed for 2D array data and provides crisp pixel boundaries
+            # Unlike pcolormesh (which creates a quad mesh), imshow treats each array
+            # element as a discrete pixel, eliminating all edge artifacts and smearing
+
+            # Calculate extent from coordinate arrays
+            # extent = [lon_min, lon_max, lat_min, lat_max]
+            lon_step = unique_lons[1] - unique_lons[0] if len(unique_lons) > 1 else 0.25
+            lat_step = unique_lats[1] - unique_lats[0] if len(unique_lats) > 1 else 0.25
+            extent = [
+                unique_lons[0] - lon_step/2,  # Left edge
+                unique_lons[-1] + lon_step/2,  # Right edge
+                unique_lats[0] - lat_step/2,   # Bottom edge
+                unique_lats[-1] + lat_step/2   # Top edge
+            ]
+
+            mesh = ax.imshow(
+                global_improvement,
+                extent=extent,
+                origin='lower',  # Match pcolormesh orientation (lower-left origin)
                 transform=ccrs.PlateCarree(),
                 cmap=cmap,
                 norm=norm,
-                shading='nearest',  # Critical: prevents interpolation between pixels
-                rasterized=True,  # Rasterize for better performance with large grids
+                interpolation='none',  # Critical: no interpolation, pixel-perfect rendering
+                aspect='auto',  # Let cartopy handle aspect ratio
                 zorder=1
             )
 
