@@ -531,14 +531,21 @@ def map_global_improvements(
             print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
 
             # Create lookup dictionaries for O(1) index finding
+            # Use searchsorted for faster lookups with sorted arrays
             lat_to_idx = {lat: idx for idx, lat in enumerate(unique_lats)}
             lon_to_idx = {lon: idx for idx, lon in enumerate(unique_lons)}
 
             # Create empty global grid filled with NaN
             global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
 
-            # Fill in data from each patch
-            for patch in patch_data:
+            # Pre-allocate arrays for batch processing
+            print(f"  Processing {len(patch_data)} patches...")
+
+            # Fill in data from each patch - optimized version
+            for i, patch in enumerate(patch_data):
+                if (i + 1) % 50 == 0:  # Progress indicator
+                    print(f"    Processed {i + 1}/{len(patch_data)} patches...")
+
                 ds = patch['ds']
                 var_suffix = f"_lt{lead_time}h"
 
@@ -546,39 +553,46 @@ def map_global_improvements(
                 original = ds[f"{variable}_original{var_suffix}"]
                 corrected = ds[f"{variable}_corrected{var_suffix}"]
 
+                # Load data into memory for faster computation (critical for performance)
+                if hasattr(ground_truth, 'load'):
+                    ground_truth = ground_truth.load()
+                    original = original.load()
+                    corrected = corrected.load()
+
                 # Compute pixel-wise RMSE over time dimension in one pass
-                # Shape: (time, lat, lon) -> (lat, lon)
-                mse_original = ((original - ground_truth) ** 2).mean(dim='time')
-                mse_corrected = ((corrected - ground_truth) ** 2).mean(dim='time')
+                # Using numpy directly is faster than xarray for simple operations
+                gt_data = ground_truth.values  # Shape: (time, lat, lon)
+                orig_data = original.values
+                corr_data = corrected.values
+
+                # Vectorized RMSE computation
+                mse_original = np.mean((orig_data - gt_data) ** 2, axis=0)
+                mse_corrected = np.mean((corr_data - gt_data) ** 2, axis=0)
 
                 rmse_original_pixel = np.sqrt(mse_original)
                 rmse_corrected_pixel = np.sqrt(mse_corrected)
 
                 # Compute improvement percentage for each pixel
-                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
+                # Add small epsilon to avoid division by zero
+                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel) /
+                                   (rmse_original_pixel + 1e-10) * 100)
 
                 # Get patch coordinates
                 patch_lats = ds.latitude.values
                 patch_lons = ds.longitude.values
 
-                # Use vectorized indexing with lookup dictionaries (O(1) instead of O(n))
-                # Build index arrays for this patch
-                lat_indices = np.array([lat_to_idx[lat] for lat in patch_lats])
-                lon_indices = np.array([lon_to_idx[lon] for lon in patch_lons])
+                # Vectorized indexing - faster than list comprehension
+                # Use searchsorted for even faster lookups
+                lat_indices = np.searchsorted(unique_lats, patch_lats)
+                lon_indices = np.searchsorted(unique_lons, patch_lons)
 
                 # Create meshgrid of indices
                 lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
 
                 # Assign values using fancy indexing (vectorized operation)
-                global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel.values
+                global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel
 
-            # Create xarray DataArray for the global grid
-            global_da = xr.DataArray(
-                global_improvement,
-                coords={'latitude': unique_lats, 'longitude': unique_lons},
-                dims=['latitude', 'longitude'],
-                name='improvement_percent'
-            )
+            print(f"  All {len(patch_data)} patches processed.")
 
             # Calculate statistics using nanXXX functions (faster than masking)
             n_pixels = int(np.count_nonzero(~np.isnan(global_improvement)))
@@ -606,28 +620,16 @@ def map_global_improvements(
                 norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
             cmap = plt.cm.RdBu  # Red for negative, Blue for positive
 
-            # Plot as raster using imshow
-            # Convert longitude to 0-360 if needed for display
-            plot_lons = unique_lons.copy()
-            plot_data = global_improvement.copy()
-
-            if np.any(unique_lons < 0):
-                # Some longitudes are negative, convert to 0-360
-                lon_360 = unique_lons.copy()
-                lon_360[lon_360 < 0] += 360
-
-                # Sort and reorder data
-                sort_idx = np.argsort(lon_360)
-                plot_lons = lon_360[sort_idx]
-                plot_data = global_improvement[:, sort_idx]
-
-            # Use pcolormesh for proper georeferencing
+            # Plot using pcolormesh - keep original longitude coordinates
+            # Let cartopy handle the coordinate transformations
+            # This fixes the smearing issue by not manually converting coordinates
             mesh = ax.pcolormesh(
-                plot_lons, unique_lats, plot_data,
+                unique_lons, unique_lats, global_improvement,
                 transform=ccrs.PlateCarree(),
                 cmap=cmap,
                 norm=norm,
                 shading='auto',
+                rasterized=True,  # Rasterize for better performance with large grids
                 zorder=1
             )
 
