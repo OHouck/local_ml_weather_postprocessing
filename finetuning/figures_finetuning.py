@@ -1958,6 +1958,8 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
             region_type = "climate_zones"
         elif any(r in topographic_region_colors for r in regions):
             region_type = "topographic_zones"
+        elif any(r in continent_region_colors for r in regions):
+            region_type = "continents"
         else:
             region_type = "geographic"
         
@@ -2351,20 +2353,21 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         raise ValueError(f"Unknown loss_trained_on: {loss_trained_on}")
 
     # Prepare data
-    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion, 
+    df, regions = _prepare_dataframe(csv_path, variable, regions, subregion,
                                     nn_architectures, model, growing_season_only,
                                     loss_fn=loss_fn)
     if len(df) == 0:
         print(f"No data found for specified filters")
         return
-    
+
     # Get unique values for plotting
     lead_times = sorted(df['lead_time'].unique())
     prediction_var = df['variable'].iloc[0]
-    
+
     # Get color schemes
-    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
-    
+    region_colors, climate_region_colors, topographic_region_colors, \
+        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
 
@@ -2385,6 +2388,10 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        elif region in continent_region_colors:
+            color = continent_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
 
@@ -2445,6 +2452,23 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                    label=label,
                                    zorder=2)
 
+                            # Add error bars if confidence intervals are available
+                            if 'mean_original_forecast_ci_lower' in arch_df.columns:
+                                ci_lower = arch_df['mean_original_forecast_ci_lower'].values - ground_truth_values
+                                ci_upper = arch_df['mean_original_forecast_ci_upper'].values - ground_truth_values
+                                # Calculate error bar lengths
+                                yerr_lower = y_values_error - ci_lower
+                                yerr_upper = ci_upper - y_values_error
+                                ax.errorbar(x_pos, y_values_error,
+                                           yerr=[yerr_lower, yerr_upper],
+                                           fmt='none',
+                                           ecolor='black',
+                                           elinewidth=1,
+                                           capsize=3,
+                                           capthick=1,
+                                           alpha=0.7,
+                                           zorder=5)
+
                     # Plot corrected forecast deviations as bars
                     if 'mean_corrected_forecast' in arch_df.columns:
                         y_values = arch_df['mean_corrected_forecast'].values
@@ -2468,6 +2492,23 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
                                    hatch=hatch,
                                    label=label,
                                    zorder=3)
+
+                            # Add error bars if confidence intervals are available
+                            if 'mean_corrected_forecast_ci_lower' in arch_df.columns:
+                                ci_lower = arch_df['mean_corrected_forecast_ci_lower'].values - ground_truth_values
+                                ci_upper = arch_df['mean_corrected_forecast_ci_upper'].values - ground_truth_values
+                                # Calculate error bar lengths
+                                yerr_lower = y_values_dev - ci_lower
+                                yerr_upper = ci_upper - y_values_dev
+                                ax.errorbar(x_pos, y_values_dev,
+                                           yerr=[yerr_lower, yerr_upper],
+                                           fmt='none',
+                                           ecolor='black',
+                                           elinewidth=1,
+                                           capsize=3,
+                                           capthick=1,
+                                           alpha=0.7,
+                                           zorder=5)
     
     # Set ylabel based on variable
     if variable == '2m_temperature':
@@ -2546,11 +2587,15 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     for region in regions:
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        elif region in continent_region_colors:
+            color = continent_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
         region_handles.append(Line2D([0], [0], color=color, linewidth=3,
                                     label=region.replace('_', ' ').title()))
-    
+
     legend2 = ax.legend(handles=region_handles, title="Region",
                        loc='lower left', bbox_to_anchor=(0, 0), fontsize=16, title_fontsize=16)
     
@@ -2573,14 +2618,18 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
     if save_path is None:
         out_folder = os.path.join(dirs["fig"], model, "lead_time", "multi_region", subregion)
         os.makedirs(out_folder, exist_ok=True)
-        
+
         arch_suffix = "_".join(nn_architectures)
-        
+
         if any(r in climate_region_colors for r in regions):
             region_type = "climate_zones"
+        elif any(r in topographic_region_colors for r in regions):
+            region_type = "topographic_zones"
+        elif any(r in continent_region_colors for r in regions):
+            region_type = "continents"
         else:
             region_type = "geographic"
-        
+
         if growing_season_only:
             grow_flag = "_growing_season"
         else:
@@ -2652,10 +2701,11 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     # Get unique values for plotting
     lead_times = sorted(df['lead_time'].unique())
     prediction_var = df['variable'].iloc[0]
-    
+
     # Get color schemes
-    region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
-    
+    region_colors, climate_region_colors, topographic_region_colors, \
+        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
 
@@ -2684,6 +2734,10 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
         # Get color for region
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        elif region in continent_region_colors:
+            color = continent_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
 
@@ -2726,6 +2780,23 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
                            label=label,
                            zorder=2)
 
+                    # Add error bars if confidence intervals are available
+                    if 'pct_error_cutoff_original_ci_lower' in arch_df.columns:
+                        ci_lower = arch_df['pct_error_cutoff_original_ci_lower'].values
+                        ci_upper = arch_df['pct_error_cutoff_original_ci_upper'].values
+                        # Calculate error bar lengths
+                        yerr_lower = y_values - ci_lower
+                        yerr_upper = ci_upper - y_values
+                        ax.errorbar(x_pos, y_values,
+                                   yerr=[yerr_lower, yerr_upper],
+                                   fmt='none',
+                                   ecolor='black',
+                                   elinewidth=1,
+                                   capsize=3,
+                                   capthick=1,
+                                   alpha=0.7,
+                                   zorder=5)
+
             # Plot corrected error rate as bars
             if 'pct_error_cutoff_corrected' in arch_df.columns:
                 y_values = arch_df['pct_error_cutoff_corrected'].values
@@ -2748,6 +2819,23 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
                            hatch=hatch,
                            label=label,
                            zorder=3)
+
+                    # Add error bars if confidence intervals are available
+                    if 'pct_error_cutoff_corrected_ci_lower' in arch_df.columns:
+                        ci_lower = arch_df['pct_error_cutoff_corrected_ci_lower'].values
+                        ci_upper = arch_df['pct_error_cutoff_corrected_ci_upper'].values
+                        # Calculate error bar lengths
+                        yerr_lower = y_values - ci_lower
+                        yerr_upper = ci_upper - y_values
+                        ax.errorbar(x_pos, y_values,
+                                   yerr=[yerr_lower, yerr_upper],
+                                   fmt='none',
+                                   ecolor='black',
+                                   elinewidth=1,
+                                   capsize=3,
+                                   capthick=1,
+                                   alpha=0.7,
+                                   zorder=5)
     
     # Set y-axis
     ax.set_ylabel("Forecasts Exceeding Error Threshold (%)", fontsize=20)
@@ -2788,11 +2876,15 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     for region in regions:
         if region in climate_region_colors:
             color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        elif region in continent_region_colors:
+            color = continent_region_colors[region]
         else:
             color = region_colors.get(region, '#1f77b4')
         region_handles.append(Line2D([0], [0], color=color, linewidth=3,
                                     label=region.replace('_', ' ').title()))
-    
+
     arch_handles = []
     for arch in nn_architectures:
         fillstyle = architecture_fillstyles.get(arch, 'full')
@@ -2841,19 +2933,23 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     if save_path is None:
         out_folder = os.path.join(dirs["fig"], model, "lead_time", "multi_region", subregion)
         os.makedirs(out_folder, exist_ok=True)
-        
+
         arch_suffix = "_".join(nn_architectures)
-        
+
         if any(r in climate_region_colors for r in regions):
             region_type = "climate_zones"
+        elif any(r in topographic_region_colors for r in regions):
+            region_type = "topographic_zones"
+        elif any(r in continent_region_colors for r in regions):
+            region_type = "continents"
         else:
             region_type = "geographic"
-        
+
         if growing_season_only:
             grow_flag = "_growing_season"
         else:
             grow_flag = ""
-        
+
         training_vars = df['training_vars'].iloc[0] if 'training_vars' in df.columns else "unknown"
 
         if loss_trained_on == "mse":
