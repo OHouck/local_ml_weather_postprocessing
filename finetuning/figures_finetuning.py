@@ -2871,16 +2871,16 @@ def main():
     for map_type in ["original", "improvement"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             for model in ["pangu"]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, y_metric=map_type, 
-                                                x_metric="equator_distance")
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, y_metric=map_type, 
-                                                x_metric="sdor")
-                # for pixel_flag in [True]:
-                #     map_global_improvements(dirs=dirs, model=model, 
-                #                             variable=variable, map_type=map_type,
-                #                             pixel_level=pixel_flag)
+                # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                #                                 variable=variable, y_metric=map_type, 
+                #                                 x_metric="equator_distance")
+                # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                #                                 variable=variable, y_metric=map_type, 
+                #                                 x_metric="sdor")
+                for pixel_flag in [True]:
+                    map_global_improvements(dirs=dirs, model=model, 
+                                            variable=variable, map_type=map_type,
+                                            pixel_level=pixel_flag)
     exit()
 
 #=============================================
