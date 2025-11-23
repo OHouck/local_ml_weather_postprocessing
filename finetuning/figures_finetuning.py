@@ -631,8 +631,19 @@ def map_global_improvements(
 
             # Calculate extent from coordinate arrays
             # extent = [lon_min, lon_max, lat_min, lat_max]
-            lon_step = unique_lons[1] - unique_lons[0] if len(unique_lons) > 1 else 0.25
-            lat_step = unique_lats[1] - unique_lats[0] if len(unique_lats) > 1 else 0.25
+            # Use minimum spacing to get actual grid resolution (robust to gaps in data)
+            if len(unique_lons) > 1:
+                lon_step = np.min(np.diff(unique_lons))
+            else:
+                lon_step = 0.25
+
+            if len(unique_lats) > 1:
+                lat_step = np.min(np.diff(unique_lats))
+            else:
+                lat_step = 0.25
+
+            # Extent defines the outer edges of corner pixels
+            # This ensures pixels are centered on their coordinate values
             extent = [
                 unique_lons[0] - lon_step/2,  # Left edge
                 unique_lons[-1] + lon_step/2,  # Right edge
