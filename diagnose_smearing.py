@@ -207,9 +207,10 @@ if __name__ == "__main__":
 
     # Example usage - modify these paths to match your data
     data_dir = Path.home() / "ai_weather_ag" / "data" / "fine_tuning_output"
+    data_dir = Path("/Users/ohouck/globus/forecast_data/processed/finetuning_output/pangu/africa")
 
     print("Looking for zarr files in:", data_dir)
-    zarr_files = list(data_dir.glob("*.zarr"))
+    zarr_files = list(data_dir.glob("*2m_temperature*.zarr"))
 
     if not zarr_files:
         print("\nNo zarr files found. Please specify paths manually:")
