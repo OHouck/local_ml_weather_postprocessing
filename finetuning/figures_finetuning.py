@@ -138,6 +138,14 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
             f"_{arch_str}_" in basename):
             matching_files.append(file_path)
 
+    # IMPORTANT: If multiple files match (e.g., different _bs## suffixes from multiple training runs),
+    # they represent the SAME region with IDENTICAL coordinates, not different spatial patches.
+    # Using all of them would cause coordinate collisions and smearing.
+    # Solution: Pick only the first match (sorted alphabetically for consistency).
+    if len(matching_files) > 1:
+        matching_files = [sorted(matching_files)[0]]
+        print(f"    Note: Multiple training runs found for this region, using: {os.path.basename(matching_files[0])}")
+
     return matching_files
 
 
@@ -531,10 +539,8 @@ def map_global_improvements(
 
             print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
 
-            # Create empty global grid filled with zeros for accumulation
-            # We'll track sum and count separately to handle overlapping patches
-            global_improvement_sum = np.zeros((len(unique_lats), len(unique_lons)))
-            global_improvement_count = np.zeros((len(unique_lats), len(unique_lons)))
+            # Create empty global grid filled with NaN
+            global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
 
             # Create coordinate-to-index lookup dictionaries for exact matching
             # This prevents smearing artifacts from nearest-neighbor rounding
@@ -600,25 +606,11 @@ def map_global_improvements(
                 # Create meshgrid of indices
                 lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
 
-                # Accumulate values instead of overwriting (fixes smearing from overlapping patches)
-                # Multiple patches may share coordinates - we average them instead of letting last one win
-                global_improvement_sum[lat_idx_grid, lon_idx_grid] += improvement_pixel
-                global_improvement_count[lat_idx_grid, lon_idx_grid] += 1
+                # Assign values using exact coordinate matching
+                # With proper filtering (one file per region), each coordinate appears only once
+                global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel
 
             print(f"  All {len(patch_data)} patches processed.")
-
-            # Average overlapping values: divide sum by count
-            # Set to NaN where count is 0 (no data)
-            global_improvement = np.where(
-                global_improvement_count > 0,
-                global_improvement_sum / global_improvement_count,
-                np.nan
-            )
-
-            # Report overlap statistics
-            max_overlap = int(np.max(global_improvement_count))
-            mean_overlap = float(np.mean(global_improvement_count[global_improvement_count > 0]))
-            print(f"  Overlap statistics: max={max_overlap} patches per pixel, mean={mean_overlap:.1f}")
 
             # Calculate statistics using nanXXX functions (faster than masking)
             n_pixels = int(np.count_nonzero(~np.isnan(global_improvement)))
