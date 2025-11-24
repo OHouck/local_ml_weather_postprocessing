@@ -531,8 +531,10 @@ def map_global_improvements(
 
             print(f"  Global grid: {len(unique_lats)} latitudes × {len(unique_lons)} longitudes")
 
-            # Create empty global grid filled with NaN
-            global_improvement = np.full((len(unique_lats), len(unique_lons)), np.nan)
+            # Create empty global grid filled with zeros for accumulation
+            # We'll track sum and count separately to handle overlapping patches
+            global_improvement_sum = np.zeros((len(unique_lats), len(unique_lons)))
+            global_improvement_count = np.zeros((len(unique_lats), len(unique_lons)))
 
             # Create coordinate-to-index lookup dictionaries for exact matching
             # This prevents smearing artifacts from nearest-neighbor rounding
@@ -598,11 +600,25 @@ def map_global_improvements(
                 # Create meshgrid of indices
                 lat_idx_grid, lon_idx_grid = np.meshgrid(lat_indices, lon_indices, indexing='ij')
 
-                # Assign values using fancy indexing (vectorized operation)
-                # With exact matching, each source pixel maps to exactly one target pixel
-                global_improvement[lat_idx_grid, lon_idx_grid] = improvement_pixel
+                # Accumulate values instead of overwriting (fixes smearing from overlapping patches)
+                # Multiple patches may share coordinates - we average them instead of letting last one win
+                global_improvement_sum[lat_idx_grid, lon_idx_grid] += improvement_pixel
+                global_improvement_count[lat_idx_grid, lon_idx_grid] += 1
 
             print(f"  All {len(patch_data)} patches processed.")
+
+            # Average overlapping values: divide sum by count
+            # Set to NaN where count is 0 (no data)
+            global_improvement = np.where(
+                global_improvement_count > 0,
+                global_improvement_sum / global_improvement_count,
+                np.nan
+            )
+
+            # Report overlap statistics
+            max_overlap = int(np.max(global_improvement_count))
+            mean_overlap = float(np.mean(global_improvement_count[global_improvement_count > 0]))
+            print(f"  Overlap statistics: max={max_overlap} patches per pixel, mean={mean_overlap:.1f}")
 
             # Calculate statistics using nanXXX functions (faster than masking)
             n_pixels = int(np.count_nonzero(~np.isnan(global_improvement)))
