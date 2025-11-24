@@ -2974,15 +2974,27 @@ def main():
 #=============================================
 # Global Improvement Plots
 #=============================================
-    for map_type in ["original", "improvement"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            for model in ["pangu"]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, y_metric=map_type, 
-                                                x_metric="equator_distance")
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, y_metric=map_type, 
-                                                x_metric="sdor")
+    # Updated: plot_scatter_forecast_improvement now creates all three metrics simultaneously
+    for variable in ["2m_temperature", "10m_wind_speed"]:
+        for model in ["pangu"]:
+            # Regular scatter (patch-level)
+            plot_scatter_forecast_improvement(dirs=dirs, model=model,
+                                            variable=variable,
+                                            x_metric="equator_distance",
+                                            binscatter=False)
+            plot_scatter_forecast_improvement(dirs=dirs, model=model,
+                                            variable=variable,
+                                            x_metric="sdor",
+                                            binscatter=False)
+            # Binscatter (pixel-level)
+            plot_scatter_forecast_improvement(dirs=dirs, model=model,
+                                            variable=variable,
+                                            x_metric="equator_distance",
+                                            binscatter=True)
+            plot_scatter_forecast_improvement(dirs=dirs, model=model,
+                                            variable=variable,
+                                            x_metric="sdor",
+                                            binscatter=True)
                 # for pixel_flag in [True]:
                 #     map_global_improvements(dirs=dirs, model=model, 
                 #                             variable=variable, map_type=map_type,
@@ -3181,7 +3193,6 @@ def plot_scatter_forecast_improvement(
     regions=None,
     save_dir=None,
     x_metric="equator_distance",
-    y_metric="improvement",
     lead_times=None,
     train_start="2018-01-01",
     train_end="2021-12-31",
@@ -3190,10 +3201,16 @@ def plot_scatter_forecast_improvement(
     nn_architecture="mlp",
     subregion="6x6",
     alternate_loss_fn=None,
+    binscatter=False,
+    n_bins=20,
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
-    Each point represents either a region 6x6 patch mean 
+    Creates three plots simultaneously: original RMSE, RMSE improvement (%), and corrected RMSE.
+
+    Each point represents either:
+    - A 6x6 patch mean (when binscatter=False)
+    - A 0.25 degree pixel (when binscatter=True, with binned averages displayed)
 
     Only processes zarr files that match the specified model configuration to ensure
     all patches are from the same training/testing setup.
@@ -3214,9 +3231,6 @@ def plot_scatter_forecast_improvement(
     x_metric : str, optional
         Metric to plot on x-axis: "equator_distance" (distance from equator in degrees)
         or "sdor" (standard deviation of orography). Default is "equator_distance".
-    y_metric : str, optional
-        Metric to plot on y-axis: "improvement" (percent improvement in RMSE)
-        or "original" (original forecast RMSE). Default is "improvement".
     lead_times : list, optional
         List of lead times to plot. If None, uses [24, 120, 216]
     train_start : str, optional
@@ -3233,6 +3247,12 @@ def plot_scatter_forecast_improvement(
         Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    binscatter : bool, optional
+        If True, creates binscatter plots with pixel-level data following
+        Cattaneo et al. (2023) best practices. If False, creates scatter
+        plots with patch-level data. (default: False)
+    n_bins : int, optional
+        Number of quantile bins for binscatter (default: 20)
 
     Returns
     -------
@@ -3250,14 +3270,10 @@ def plot_scatter_forecast_improvement(
         "sdor": "Standard Deviation of Orography (m)"
     }.get(x_metric, "Distance from Equator (degrees)")
 
-    y_label = {
-        "improvement": "RMSE Improvement (%)",
-        "original": "Original Forecast RMSE"
-    }.get(y_metric, "RMSE Improvement (%)")
-
-    print(f"\nCreating forecast improvement scatter plot for {model.upper()} - {variable}")
+    plot_type = "binscatter (pixel-level)" if binscatter else "scatter (patch-level)"
+    print(f"\nCreating forecast improvement {plot_type} for {model.upper()} - {variable}")
     print(f"X-axis metric: {x_metric}")
-    print(f"Y-axis metric: {y_metric}")
+    print(f"Plotting all three metrics: original RMSE, improvement (%), corrected RMSE")
 
     # Load sdor data if needed
     sdor_da = None
@@ -3302,124 +3318,289 @@ def plot_scatter_forecast_improvement(
         out_folder = save_dir
     os.makedirs(out_folder, exist_ok=True)
 
-    # Create scatter plot
-    fig, axes = plt.subplots(1, len(lead_times), figsize=(6 * len(lead_times), 5))
+    # Create scatter plot with 3 columns (original, improvement, corrected)
+    # Each row is a lead time
+    fig, axes = plt.subplots(len(lead_times), 3, figsize=(18, 6 * len(lead_times)))
     if len(lead_times) == 1:
-        axes = [axes]
+        axes = axes.reshape(1, -1)
 
-    # Color map for continents
-    continent_colors = {
-        'asia': '#FF6B6B',           # Red
-        'africa': '#4ECDC4',         # Turquoise
-        'north_america': '#45B7D1',  # Blue
-        'south_america': '#FFA07A',  # Light Salmon
-        'europe': '#98D8C8',         # Mint
-        'oceania': '#F7DC6F'         # Yellow
-    }
+    # Column labels
+    metric_names = ['Original RMSE', 'RMSE Improvement (%)', 'Corrected RMSE']
+    y_labels = ['Original Forecast RMSE', 'RMSE Improvement (%)', 'Corrected Forecast RMSE']
 
-    for idx, lead_time in enumerate(lead_times):
-        ax = axes[idx]
+    # Single color for all points
+    point_color = '#1f77b4'  # matplotlib default blue
+
+    for row_idx, lead_time in enumerate(lead_times):
         patch_data = all_patch_data[lead_time]
 
         if not patch_data:
             print(f"\nSkipping lead time {lead_time}h - no data available")
             continue
 
-        # Set marker size based on patch-level plotting
-        marker_size = 20
-        marker_edge = 0.2
+        if binscatter:
+            # Pixel-level binscatter analysis
+            print(f"\nProcessing pixel-level data for lead time {lead_time}h...")
 
-        # Region-mean scatter: use existing patch-level data
-        # Determine x and y values based on metrics
-        if x_metric == "equator_distance":
-            x_values = [p['distance_from_equator'] for p in patch_data]
-        elif x_metric == "sdor":
-            x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
-            # Filter patch_data to only include patches with sdor values
-            patch_data = [p for p in patch_data if p['sdor'] is not None]
-            if not patch_data:
-                print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+            # Extract pixel-level data
+            pixel_x_values = []
+            pixel_rmse_original = []
+            pixel_rmse_corrected = []
+
+            for patch in patch_data:
+                ds = patch['ds']
+                var_suffix = f"_lt{lead_time}h"
+
+                # Get data arrays
+                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                original = ds[f"{variable}_original{var_suffix}"]
+                corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+                # Get coordinates
+                lats = ds.latitude.values
+                lons = ds.longitude.values
+
+                # Calculate RMSE for each pixel (across time dimension)
+                # Shape: (time, lat, lon) -> (lat, lon)
+                gt_vals = ground_truth.values
+                orig_vals = original.values
+                corr_vals = corrected.values
+
+                # Calculate RMSE across time for each pixel
+                for i, lat in enumerate(lats):
+                    for j, lon in enumerate(lons):
+                        # Get time series for this pixel
+                        gt_pixel = gt_vals[:, i, j]
+                        orig_pixel = orig_vals[:, i, j]
+                        corr_pixel = corr_vals[:, i, j]
+
+                        # Remove NaN values
+                        mask = ~(np.isnan(gt_pixel) | np.isnan(orig_pixel) | np.isnan(corr_pixel))
+                        if mask.sum() == 0:
+                            continue
+
+                        gt_pixel = gt_pixel[mask]
+                        orig_pixel = orig_pixel[mask]
+                        corr_pixel = corr_pixel[mask]
+
+                        # Calculate RMSE for this pixel
+                        rmse_orig = np.sqrt(np.mean((orig_pixel - gt_pixel) ** 2))
+                        rmse_corr = np.sqrt(np.mean((corr_pixel - gt_pixel) ** 2))
+
+                        # Get x-metric value for this pixel
+                        if x_metric == "equator_distance":
+                            x_val = abs(lat)
+                        elif x_metric == "sdor":
+                            if sdor_da is not None and patch['sdor'] is not None:
+                                # Get sdor value for this specific pixel
+                                try:
+                                    # Handle longitude coordinate system
+                                    sdor_lon_min = float(sdor_da.longitude.min())
+                                    pixel_lon = lon
+                                    if sdor_lon_min >= 0 and pixel_lon < 0:
+                                        pixel_lon += 360
+                                    elif sdor_lon_min < 0 and pixel_lon > 180:
+                                        pixel_lon -= 360
+
+                                    # Get sdor value (nearest neighbor)
+                                    x_val = float(sdor_da.sel(latitude=lat, longitude=pixel_lon, method='nearest').values)
+                                    if np.isnan(x_val):
+                                        continue
+                                except:
+                                    continue
+                            else:
+                                continue
+                        else:
+                            continue
+
+                        pixel_x_values.append(x_val)
+                        pixel_rmse_original.append(rmse_orig)
+                        pixel_rmse_corrected.append(rmse_corr)
+
+            # Convert to numpy arrays
+            pixel_x_values = np.array(pixel_x_values)
+            pixel_rmse_original = np.array(pixel_rmse_original)
+            pixel_rmse_corrected = np.array(pixel_rmse_corrected)
+            pixel_improvement = (pixel_rmse_original - pixel_rmse_corrected) / pixel_rmse_original * 100
+
+            print(f"  Found {len(pixel_x_values)} valid pixels")
+
+            if len(pixel_x_values) == 0:
+                print(f"  No valid pixel data, skipping lead time {lead_time}h")
                 continue
+
+            # Create binscatter for each metric
+            y_metrics = [pixel_rmse_original, pixel_improvement, pixel_rmse_corrected]
+
+            for col_idx, (y_data, metric_name, y_label_text) in enumerate(zip(y_metrics, metric_names, y_labels)):
+                ax = axes[row_idx, col_idx]
+
+                # Create quantile bins
+                bin_edges = np.percentile(pixel_x_values, np.linspace(0, 100, n_bins + 1))
+                bin_indices = np.digitize(pixel_x_values, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate bin means and counts
+                bin_x_means = []
+                bin_y_means = []
+                bin_counts = []
+
+                for bin_idx in range(n_bins):
+                    mask = bin_indices == bin_idx
+                    if mask.sum() > 0:
+                        bin_x_means.append(pixel_x_values[mask].mean())
+                        bin_y_means.append(y_data[mask].mean())
+                        bin_counts.append(mask.sum())
+
+                bin_x_means = np.array(bin_x_means)
+                bin_y_means = np.array(bin_y_means)
+                bin_counts = np.array(bin_counts)
+
+                # Plot binned means
+                ax.scatter(bin_x_means, bin_y_means, c=point_color, alpha=0.7,
+                          s=50, edgecolors='black', linewidth=0.5, zorder=3)
+
+                # Weighted linear regression (weighted by bin counts)
+                weights = bin_counts
+                X_design = np.column_stack([np.ones_like(bin_x_means), bin_x_means])
+                W = np.diag(weights)
+
+                # Weighted least squares: beta = (X'WX)^-1 X'Wy
+                XtWX = X_design.T @ W @ X_design
+                XtWy = X_design.T @ W @ bin_y_means
+                beta = np.linalg.solve(XtWX, XtWy)
+                intercept, slope = beta
+
+                # Calculate fitted values and residuals
+                y_fitted = intercept + slope * bin_x_means
+                residuals = bin_y_means - y_fitted
+
+                # Calculate robust standard errors (HC3 - heteroskedasticity-consistent)
+                # Degrees of freedom
+                n_obs = len(bin_x_means)
+                df = n_obs - 2
+
+                # Residual variance
+                s_squared = np.sum(weights * residuals ** 2) / df
+
+                # Leverage (hat values)
+                H = X_design @ np.linalg.inv(XtWX) @ X_design.T @ W
+                h_ii = np.diag(H)
+
+                # HC3 robust standard errors
+                omega = np.diag(weights * residuals ** 2 / (1 - h_ii) ** 2)
+                V_robust = np.linalg.inv(XtWX) @ X_design.T @ omega @ X_design @ np.linalg.inv(XtWX)
+                se_slope = np.sqrt(V_robust[1, 1])
+
+                # Hypothesis test: H0: slope = 0
+                t_stat = slope / se_slope
+                p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
+
+                # Plot regression line
+                x_line = np.array([bin_x_means.min(), bin_x_means.max()])
+                y_line = intercept + slope * x_line
+                ax.plot(x_line, y_line, 'r-', linewidth=2, alpha=0.8, zorder=2, label='Fitted line')
+
+                # Add horizontal line at y=0 for improvement plots
+                if col_idx == 1:  # Improvement column
+                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5, zorder=1)
+
+                # Add statistics text
+                stats_text = f'Slope: {slope:.4f}\nSE: {se_slope:.4f}\nt-stat: {t_stat:.3f}\np-value: {p_value:.4f}'
+                if p_value < 0.001:
+                    stats_text += ' ***'
+                elif p_value < 0.01:
+                    stats_text += ' **'
+                elif p_value < 0.05:
+                    stats_text += ' *'
+
+                ax.text(0.02, 0.98, stats_text,
+                       transform=ax.transAxes, fontsize=9,
+                       verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+
+                # Labels and title
+                ax.set_xlabel(x_label, fontsize=11)
+                ax.set_ylabel(y_label_text, fontsize=11)
+                if row_idx == 0:
+                    ax.set_title(metric_name, fontsize=12, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--', zorder=0)
+
+                # Add lead time label on left side
+                if col_idx == 0:
+                    ax.text(-0.15, 0.5, f'Lead Time: {lead_time}h',
+                           transform=ax.transAxes, fontsize=12, fontweight='bold',
+                           verticalalignment='center', rotation=90)
+
         else:
-            raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
-
-        if y_metric == "improvement":
-            y_values = [p['improvement'] for p in patch_data]
-        elif y_metric == "original":
-            y_values = [p['rmse_original'] for p in patch_data]
-        else:
-            raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
-
-        # Group patches by continent
-        patches_by_continent = {}
-        for p in patch_data:
-            continent = p.get('region', 'unknown')
-            if continent not in patches_by_continent:
-                patches_by_continent[continent] = []
-            patches_by_continent[continent].append(p)
-
-        # Plot each continent separately
-        for continent, continent_patches in patches_by_continent.items():
-            # Extract x values based on metric
+            # Patch-level scatter (existing logic, but without continent colors and all three metrics)
+            # Extract x values
             if x_metric == "equator_distance":
-                continent_x = [p['distance_from_equator'] for p in continent_patches]
+                x_values = [p['distance_from_equator'] for p in patch_data]
+            elif x_metric == "sdor":
+                x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
+                patch_data = [p for p in patch_data if p['sdor'] is not None]
+                if not patch_data:
+                    print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+                    continue
             else:
-                continent_x = [p['sdor'] for p in continent_patches if p['sdor'] is not None]
-                continent_patches = [p for p in continent_patches if p['sdor'] is not None]
+                raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
 
-            # Extract y values based on metric
-            if y_metric == "improvement":
-                continent_y = [p['improvement'] for p in continent_patches]
-            else:
-                continent_y = [p['rmse_original'] for p in continent_patches]
+            # Extract y values for all three metrics
+            y_original = [p['rmse_original'] for p in patch_data]
+            y_improvement = [p['improvement'] for p in patch_data]
+            y_corrected = [p['rmse_corrected'] for p in patch_data]
 
-            # Skip if no data for this continent
-            if not continent_x or not continent_y:
-                continue
+            y_metrics = [y_original, y_improvement, y_corrected]
 
-            # Get color for this continent
-            color = continent_colors.get(continent, '#808080')  # Gray as default
-            label = continent.replace('_', ' ').title()
+            # Plot each metric
+            marker_size = 30
+            marker_edge = 0.3
 
-            # Plot this continent
-            ax.scatter(continent_x, continent_y,
-                      c=color,
-                      label=label,
-                      alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
+            for col_idx, (y_values, metric_name, y_label_text) in enumerate(zip(y_metrics, metric_names, y_labels)):
+                ax = axes[row_idx, col_idx]
 
-        # Add horizontal line at y=0 for improvement plots
-        if y_metric == "improvement":
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+                # Plot scatter
+                ax.scatter(x_values, y_values, c=point_color, alpha=0.6,
+                          s=marker_size, edgecolors='black', linewidth=marker_edge)
 
-        # Calculate and display correlation
-        if len(x_values) > 1 and len(y_values) > 1:
-            correlation = np.corrcoef(x_values, y_values)[0, 1]
-            ax.text(0.02, 0.98, f'r = {correlation:.3f}',
-                   transform=ax.transAxes, fontsize=10,
-                   verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                # Add horizontal line at y=0 for improvement plots
+                if col_idx == 1:  # Improvement column
+                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
-        # Labels and title
-        ax.set_xlabel(x_label, fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
-        ax.set_title(f'Lead Time: {lead_time}h', fontsize=13, fontweight='bold')
-        ax.grid(True, alpha=0.3, linestyle='--')
+                # Calculate and display correlation
+                if len(x_values) > 1 and len(y_values) > 1:
+                    correlation = np.corrcoef(x_values, y_values)[0, 1]
+                    ax.text(0.02, 0.98, f'r = {correlation:.3f}',
+                           transform=ax.transAxes, fontsize=10,
+                           verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-        # Add legend only to the first subplot
-        if idx == 0:
-            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+                # Labels and title
+                ax.set_xlabel(x_label, fontsize=11)
+                ax.set_ylabel(y_label_text, fontsize=11)
+                if row_idx == 0:
+                    ax.set_title(metric_name, fontsize=12, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+
+                # Add lead time label on left side
+                if col_idx == 0:
+                    ax.text(-0.15, 0.5, f'Lead Time: {lead_time}h',
+                           transform=ax.transAxes, fontsize=12, fontweight='bold',
+                           verticalalignment='center', rotation=90)
 
     # Add overall title
-    title = f'{model.upper()} - {variable.replace("_", " ").title()}\n'
-    title += f'{x_label} vs {y_label}'
-    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
+    plot_type_str = "Binscatter (Pixel-Level)" if binscatter else "Scatter (Patch-Level)"
+    title = f'{model.upper()} - {variable.replace("_", " ").title()} - {plot_type_str}\n'
+    title += f'{x_label} vs RMSE Metrics'
+    fig.suptitle(title, fontsize=15, fontweight='bold', y=0.995)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
 
     # Save figure
     x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
-    y_suffix = y_metric
-    filename = f"scatter_{x_suffix}_{variable}_{y_suffix}.png"
+    binscatter_suffix = "_binscatter" if binscatter else ""
+    filename = f"scatter_{x_suffix}_{variable}_all_metrics{binscatter_suffix}.png"
     save_path = os.path.join(out_folder, filename)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nSaved scatter plot to: {save_path}")
