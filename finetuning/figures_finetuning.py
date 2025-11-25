@@ -20,6 +20,7 @@ from matplotlib.colors import TwoSlopeNorm, Normalize
 from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
+from binsreg import binsreg
 
 import time
 from types import SimpleNamespace
@@ -3186,6 +3187,288 @@ def main():
     )
         
 
+def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da=None):
+    """
+    Extract pixel-level data from patches for binscatter analysis.
+
+    For each spatial pixel (0.25° grid cell), calculates RMSE across the time dimension.
+    This approach treats each pixel's time series as the unit of observation.
+
+    Parameters
+    ----------
+    patch_data : list of dict
+        List of patch dictionaries from load_region_data
+    variable : str
+        Variable name (e.g., "2m_temperature", "10m_wind_speed")
+    lead_time : int
+        Lead time in hours
+    x_metric : str
+        "equator_distance" or "sdor"
+    sdor_da : xarray.DataArray, optional
+        Standard deviation of orography data
+
+    Returns
+    -------
+    dict or None
+        Dictionary with keys: 'x', 'rmse_original', 'rmse_corrected', 'improvement'
+        Each value is a numpy array of pixel-level values.
+        Returns None if extraction fails.
+    """
+    print(f"\nExtracting pixel-level data for lead time {lead_time}h...")
+
+    x_values = []
+    rmse_original = []
+    rmse_corrected = []
+
+    var_suffix = f"_lt{lead_time}h"
+
+    for patch in patch_data:
+        ds = patch['ds']
+
+        # Get data arrays
+        ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+        original = ds[f"{variable}_original{var_suffix}"]
+        corrected = ds[f"{variable}_corrected{var_suffix}"]
+
+        # Get coordinates
+        lats = ds.latitude.values
+        lons = ds.longitude.values
+
+        # Get values
+        gt_vals = ground_truth.values
+        orig_vals = original.values
+        corr_vals = corrected.values
+
+        # Calculate RMSE across time for each spatial pixel
+        # Shape expected: (time, lat, lon)
+        for i, lat in enumerate(lats):
+            for j, lon in enumerate(lons):
+                # Get time series for this pixel
+                gt_pixel = gt_vals[:, i, j]
+                orig_pixel = orig_vals[:, i, j]
+                corr_pixel = corr_vals[:, i, j]
+
+                # Remove NaN values
+                mask = ~(np.isnan(gt_pixel) | np.isnan(orig_pixel) | np.isnan(corr_pixel))
+                if mask.sum() == 0:
+                    continue
+
+                gt_pixel = gt_pixel[mask]
+                orig_pixel = orig_pixel[mask]
+                corr_pixel = corr_pixel[mask]
+
+                # Calculate RMSE for this pixel across time
+                rmse_orig = np.sqrt(np.mean((orig_pixel - gt_pixel) ** 2))
+                rmse_corr = np.sqrt(np.mean((corr_pixel - gt_pixel) ** 2))
+
+                # Get x-metric value for this pixel
+                if x_metric == "equator_distance":
+                    x_val = abs(lat)
+                elif x_metric == "sdor":
+                    if sdor_da is not None and patch['sdor'] is not None:
+                        try:
+                            # Handle longitude coordinate system
+                            sdor_lon_min = float(sdor_da.longitude.min())
+                            pixel_lon = lon
+                            if sdor_lon_min >= 0 and pixel_lon < 0:
+                                pixel_lon += 360
+                            elif sdor_lon_min < 0 and pixel_lon > 180:
+                                pixel_lon -= 360
+
+                            # Get sdor value (nearest neighbor)
+                            x_val = float(sdor_da.sel(latitude=lat, longitude=pixel_lon, method='nearest').values)
+                            if np.isnan(x_val):
+                                continue
+                        except:
+                            continue
+                    else:
+                        continue
+                else:
+                    continue
+
+                x_values.append(x_val)
+                rmse_original.append(rmse_orig)
+                rmse_corrected.append(rmse_corr)
+
+    # Convert to numpy arrays
+    x_values = np.array(x_values)
+    rmse_original = np.array(rmse_original)
+    rmse_corrected = np.array(rmse_corrected)
+    improvement = (rmse_original - rmse_corrected) / rmse_original * 100
+
+    print(f"  Extracted {len(x_values)} pixels")
+
+    if len(x_values) == 0:
+        return None
+
+    return {
+        'x': x_values,
+        'rmse_original': rmse_original,
+        'rmse_corrected': rmse_corrected,
+        'improvement': improvement
+    }
+
+
+def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add_zero_line=False):
+    """
+    Create a binscatter plot using the binsreg package (Cattaneo et al., 2023).
+
+    Uses the official binsreg implementation with quantile-based binning,
+    confidence intervals, and hypothesis testing for the slope.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    x : np.ndarray
+        X values (independent variable)
+    y : np.ndarray
+        Y values (dependent variable)
+    n_bins : int
+        Number of quantile-based bins
+    x_label : str
+        Label for x-axis
+    y_label : str
+        Label for y-axis
+    color : str
+        Color for points
+    marker_size : float
+        Size of markers
+    add_zero_line : bool
+        Whether to add horizontal line at y=0
+    """
+    # Remove any remaining NaN values
+    valid_mask = ~(np.isnan(x) | np.isnan(y))
+    x = x[valid_mask]
+    y = y[valid_mask]
+
+    if len(x) < n_bins:
+        print(f"Warning: Not enough data points ({len(x)}) for {n_bins} bins. Using scatter plot.")
+        ax.scatter(x, y, c=color, alpha=0.6, s=marker_size/2, edgecolors='black', linewidth=0.2)
+        ax.set_xlabel(x_label, fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        return
+
+    # Create DataFrame for binsreg
+    df = pd.DataFrame({'x': x, 'y': y})
+
+    # Run binsreg with quantile-spaced bins
+    # Parameters following Cattaneo et al. (2023) recommendations:
+    # - nbins: number of bins
+    # - binspos: 'qs' for quantile-spaced bins (equal observations per bin)
+    # - dots: (0, 0) for point estimates at bin means
+    # - line: (3, 3) for linear fit line with CI
+    # - ci: (3, 3) for confidence intervals around dots
+    # - polyreg: 1 for global linear regression overlay
+    # - noplot: True to suppress automatic plotting (we plot manually)
+    try:
+        est = binsreg(
+            y='y',
+            x='x',
+            data=df,
+            nbins=n_bins,
+            binspos='qs',      # Quantile-spaced bins
+            dots=(0, 0),       # Point estimates at bin means
+            line=(3, 3),       # Linear fit with CI
+            ci=(3, 3),         # Confidence intervals for dots
+            polyreg=1,         # Global linear regression overlay
+            noplot=True        # Don't create automatic plot
+        )
+    except Exception as e:
+        print(f"Warning: binsreg failed ({e}). Using simple scatter plot.")
+        ax.scatter(x, y, c=color, alpha=0.6, s=marker_size/2, edgecolors='black', linewidth=0.2)
+        ax.set_xlabel(x_label, fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        return
+
+    # Extract binned data from the result
+    bins_data = est.data_plot[0]
+
+    # Get bin centers and means
+    bin_x = bins_data['x']
+    bin_y = bins_data['fit']
+
+    # Get confidence intervals
+    ci_l = bins_data['ci_l']
+    ci_r = bins_data['ci_r']
+
+    # Calculate error bars (convert CI to error bars)
+    yerr_lower = bin_y - ci_l
+    yerr_upper = ci_r - bin_y
+    yerr = np.array([yerr_lower, yerr_upper])
+
+    # Plot binscatter points with error bars
+    ax.errorbar(bin_x, bin_y, yerr=yerr,
+                fmt='o', color=color, markersize=np.sqrt(marker_size),
+                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
+                label='Bin means (95% CI)', zorder=3)
+
+    # Add regression line from polyreg results
+    if hasattr(est, 'data_poly') and len(est.data_poly) > 0:
+        poly_data = est.data_poly[0]
+        poly_x = poly_data['x']
+        poly_y = poly_data['fit']
+
+        # Sort for proper line plotting
+        sort_idx = np.argsort(poly_x)
+        ax.plot(poly_x[sort_idx], poly_y[sort_idx], 'r--',
+                linewidth=2, alpha=0.8, label='Linear fit', zorder=2)
+
+    # Extract regression statistics
+    # Perform simple OLS to get statistics
+    X_matrix = np.column_stack([np.ones(len(x)), x])
+    beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
+    intercept, slope = beta
+
+    # Calculate standard errors
+    y_pred = intercept + slope * x
+    residuals = y - y_pred
+    n = len(x)
+    dof = n - 2
+    mse = np.sum(residuals**2) / dof
+    se_slope = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[1, 1])
+
+    # t-statistic and p-value
+    t_stat = slope / se_slope
+    p_value = 2 * (1 - stats.t.cdf(np.abs(t_stat), dof))
+
+    # Determine significance stars
+    if p_value < 0.001:
+        sig_stars = '***'
+    elif p_value < 0.01:
+        sig_stars = '**'
+    elif p_value < 0.05:
+        sig_stars = '*'
+    else:
+        sig_stars = ''
+
+    # Add statistics text box
+    stats_text = f'β = {slope:.4f}{sig_stars}\n'
+    stats_text += f'SE = {se_slope:.4f}\n'
+    stats_text += f'p = {p_value:.4f}\n'
+    stats_text += f'n = {n:,}'
+
+    ax.text(0.02, 0.98, stats_text,
+            transform=ax.transAxes, fontsize=9,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+            family='monospace', zorder=4)
+
+    # Add zero line if requested
+    if add_zero_line:
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5, zorder=1)
+
+    # Styling
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(y_label, fontsize=12)
+    ax.grid(True, alpha=0.3, linestyle='--', zorder=0)
+
+    # Add legend
+    ax.legend(loc='best', fontsize=8, framealpha=0.9)
+
+
 def plot_scatter_forecast_improvement(
     dirs,
     model="pangu",
@@ -3339,192 +3622,36 @@ def plot_scatter_forecast_improvement(
             continue
 
         if binscatter:
-            # Pixel-level binscatter analysis
-            print(f"\nProcessing pixel-level data for lead time {lead_time}h...")
+            # Pixel-level binscatter analysis using helper functions
+            pixel_data = _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da)
 
-            # Extract pixel-level data
-            pixel_x_values = []
-            pixel_rmse_original = []
-            pixel_rmse_corrected = []
-
-            for patch in patch_data:
-                ds = patch['ds']
-                var_suffix = f"_lt{lead_time}h"
-
-                # Get data arrays
-                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
-                original = ds[f"{variable}_original{var_suffix}"]
-                corrected = ds[f"{variable}_corrected{var_suffix}"]
-
-                # Get coordinates
-                lats = ds.latitude.values
-                lons = ds.longitude.values
-
-                # Calculate RMSE for each pixel (across time dimension)
-                # Shape: (time, lat, lon) -> (lat, lon)
-                gt_vals = ground_truth.values
-                orig_vals = original.values
-                corr_vals = corrected.values
-
-                # Calculate RMSE across time for each pixel
-                for i, lat in enumerate(lats):
-                    for j, lon in enumerate(lons):
-                        # Get time series for this pixel
-                        gt_pixel = gt_vals[:, i, j]
-                        orig_pixel = orig_vals[:, i, j]
-                        corr_pixel = corr_vals[:, i, j]
-
-                        # Remove NaN values
-                        mask = ~(np.isnan(gt_pixel) | np.isnan(orig_pixel) | np.isnan(corr_pixel))
-                        if mask.sum() == 0:
-                            continue
-
-                        gt_pixel = gt_pixel[mask]
-                        orig_pixel = orig_pixel[mask]
-                        corr_pixel = corr_pixel[mask]
-
-                        # Calculate RMSE for this pixel
-                        rmse_orig = np.sqrt(np.mean((orig_pixel - gt_pixel) ** 2))
-                        rmse_corr = np.sqrt(np.mean((corr_pixel - gt_pixel) ** 2))
-
-                        # Get x-metric value for this pixel
-                        if x_metric == "equator_distance":
-                            x_val = abs(lat)
-                        elif x_metric == "sdor":
-                            if sdor_da is not None and patch['sdor'] is not None:
-                                # Get sdor value for this specific pixel
-                                try:
-                                    # Handle longitude coordinate system
-                                    sdor_lon_min = float(sdor_da.longitude.min())
-                                    pixel_lon = lon
-                                    if sdor_lon_min >= 0 and pixel_lon < 0:
-                                        pixel_lon += 360
-                                    elif sdor_lon_min < 0 and pixel_lon > 180:
-                                        pixel_lon -= 360
-
-                                    # Get sdor value (nearest neighbor)
-                                    x_val = float(sdor_da.sel(latitude=lat, longitude=pixel_lon, method='nearest').values)
-                                    if np.isnan(x_val):
-                                        continue
-                                except:
-                                    continue
-                            else:
-                                continue
-                        else:
-                            continue
-
-                        pixel_x_values.append(x_val)
-                        pixel_rmse_original.append(rmse_orig)
-                        pixel_rmse_corrected.append(rmse_corr)
-
-            # Convert to numpy arrays
-            pixel_x_values = np.array(pixel_x_values)
-            pixel_rmse_original = np.array(pixel_rmse_original)
-            pixel_rmse_corrected = np.array(pixel_rmse_corrected)
-            pixel_improvement = (pixel_rmse_original - pixel_rmse_corrected) / pixel_rmse_original * 100
-
-            print(f"  Found {len(pixel_x_values)} valid pixels")
-
-            if len(pixel_x_values) == 0:
+            if pixel_data is None or len(pixel_data['x']) == 0:
                 print(f"  No valid pixel data, skipping lead time {lead_time}h")
                 continue
 
             # Create binscatter for each metric
-            y_metrics = [pixel_rmse_original, pixel_improvement, pixel_rmse_corrected]
+            y_metrics = [pixel_data['rmse_original'], pixel_data['improvement'], pixel_data['rmse_corrected']]
+            marker_size = 40
 
             for col_idx, (y_data, metric_name, y_label_text) in enumerate(zip(y_metrics, metric_names, y_labels)):
                 ax = axes[row_idx, col_idx]
 
-                # Create quantile bins
-                bin_edges = np.percentile(pixel_x_values, np.linspace(0, 100, n_bins + 1))
-                bin_indices = np.digitize(pixel_x_values, bin_edges) - 1
-                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+                # Use helper function to plot binscatter
+                _plot_binscatter(
+                    ax=ax,
+                    x=pixel_data['x'],
+                    y=y_data,
+                    n_bins=n_bins,
+                    x_label=x_label,
+                    y_label=y_label_text,
+                    color=point_color,
+                    marker_size=marker_size,
+                    add_zero_line=(col_idx == 1)  # Add zero line for improvement column
+                )
 
-                # Calculate bin means and counts
-                bin_x_means = []
-                bin_y_means = []
-                bin_counts = []
-
-                for bin_idx in range(n_bins):
-                    mask = bin_indices == bin_idx
-                    if mask.sum() > 0:
-                        bin_x_means.append(pixel_x_values[mask].mean())
-                        bin_y_means.append(y_data[mask].mean())
-                        bin_counts.append(mask.sum())
-
-                bin_x_means = np.array(bin_x_means)
-                bin_y_means = np.array(bin_y_means)
-                bin_counts = np.array(bin_counts)
-
-                # Plot binned means
-                ax.scatter(bin_x_means, bin_y_means, c=point_color, alpha=0.7,
-                          s=50, edgecolors='black', linewidth=0.5, zorder=3)
-
-                # Weighted linear regression (weighted by bin counts)
-                weights = bin_counts
-                X_design = np.column_stack([np.ones_like(bin_x_means), bin_x_means])
-                W = np.diag(weights)
-
-                # Weighted least squares: beta = (X'WX)^-1 X'Wy
-                XtWX = X_design.T @ W @ X_design
-                XtWy = X_design.T @ W @ bin_y_means
-                beta = np.linalg.solve(XtWX, XtWy)
-                intercept, slope = beta
-
-                # Calculate fitted values and residuals
-                y_fitted = intercept + slope * bin_x_means
-                residuals = bin_y_means - y_fitted
-
-                # Calculate robust standard errors (HC3 - heteroskedasticity-consistent)
-                # Degrees of freedom
-                n_obs = len(bin_x_means)
-                df = n_obs - 2
-
-                # Residual variance
-                s_squared = np.sum(weights * residuals ** 2) / df
-
-                # Leverage (hat values)
-                H = X_design @ np.linalg.inv(XtWX) @ X_design.T @ W
-                h_ii = np.diag(H)
-
-                # HC3 robust standard errors
-                omega = np.diag(weights * residuals ** 2 / (1 - h_ii) ** 2)
-                V_robust = np.linalg.inv(XtWX) @ X_design.T @ omega @ X_design @ np.linalg.inv(XtWX)
-                se_slope = np.sqrt(V_robust[1, 1])
-
-                # Hypothesis test: H0: slope = 0
-                t_stat = slope / se_slope
-                p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
-
-                # Plot regression line
-                x_line = np.array([bin_x_means.min(), bin_x_means.max()])
-                y_line = intercept + slope * x_line
-                ax.plot(x_line, y_line, 'r-', linewidth=2, alpha=0.8, zorder=2, label='Fitted line')
-
-                # Add horizontal line at y=0 for improvement plots
-                if col_idx == 1:  # Improvement column
-                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5, zorder=1)
-
-                # Add statistics text
-                stats_text = f'Slope: {slope:.4f}\nSE: {se_slope:.4f}\nt-stat: {t_stat:.3f}\np-value: {p_value:.4f}'
-                if p_value < 0.001:
-                    stats_text += ' ***'
-                elif p_value < 0.01:
-                    stats_text += ' **'
-                elif p_value < 0.05:
-                    stats_text += ' *'
-
-                ax.text(0.02, 0.98, stats_text,
-                       transform=ax.transAxes, fontsize=9,
-                       verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
-
-                # Labels and title
-                ax.set_xlabel(x_label, fontsize=11)
-                ax.set_ylabel(y_label_text, fontsize=11)
+                # Add title to first row
                 if row_idx == 0:
                     ax.set_title(metric_name, fontsize=12, fontweight='bold')
-                ax.grid(True, alpha=0.3, linestyle='--', zorder=0)
 
                 # Add lead time label on left side
                 if col_idx == 0:
