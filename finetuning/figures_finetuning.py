@@ -29,8 +29,7 @@ from types import SimpleNamespace
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from helper_funcs import setup_directories
-from helper_funcs import generate_output_path
+from helper_funcs import setup_directories, generate_output_path
 from finetuning.process_forecasts import calculate_rmse, calculate_extreme_heat_rmse
 
 # Suppress Zarr warnings (e.g., for .DS_Store files)
@@ -160,8 +159,8 @@ def load_region_data(
     """
     Load and process zarr data for multiple regions.
 
-    This function consolidates the data loading logic that was previously duplicated
-    in map_global_improvements and plot_scatter_forecast_improvement.
+    This function consolidates the data loading logic for map_global_improvements
+    and plot_scatter_forecast_improvement. It returns a dictionary of patch data
 
     Parameters
     ----------
@@ -592,9 +591,6 @@ def map_global_improvements(
             except ValueError as e:
                 print(f"  ✗ Patch validation failed: {e}")
                 raise
-
-            # === OPTIMIZED GLOBAL RASTER APPROACH ===
-            # Instead of looping through patches, concatenate all datasets and compute RMSE once
 
             # Step 1: Collect all patch datasets
             print(f"  Concatenating {len(patch_data)} patches into global dataset...")
@@ -3007,8 +3003,6 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
             region_type = "climate_zones"
         elif any(r in topographic_region_colors for r in regions):
             region_type = "topographic_zones"
-        elif any(r in continent_region_colors for r in regions):
-            region_type = "continents"
         else:
             region_type = "geographic"
 
@@ -3036,28 +3030,26 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
 def main():
     dirs = setup_directories()
-    # plot_scatter_forecast_improvement(dirs=dirs, model="pangu", 
-    #                                 variable="2m_temperature",  
-    #                                 x_metric="equator_distance", 
-    #                                 binscatter = True)
 
 #=============================================
 # Global Improvement Plots
 #=============================================
-    # for map_type in ["original", "improvement"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         for model in ["pangu", "ifs"]:
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, y_metric=map_type, 
-    #                                             x_metric="equator_distance")
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, y_metric=map_type, 
-    #                                             x_metric="sdor")
-    #             for pixel_flag in [False, True]:
-    #                 map_global_improvements(dirs=dirs, model=model, 
-    #                                         variable=variable, map_type=map_type,
-    #                                         pixel_level=pixel_flag)
-    # exit()
+    for model in ["pangu", "ifs"]:
+        for variable in ["10m_wind_speed"]:
+            for binscatter in [True]:
+                # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                #                                 variable=variable, x_metric="equator_distance", 
+                #                                 binscatter=binscatter)
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, x_metric="sdor", 
+                                                binscatter=binscatter)
+            for map_type in ["original", "improvement"]:
+                for pixel_flag in [False, True]:
+                    # map_global_improvements(dirs=dirs, model=model, 
+                    #                         variable=variable, map_type=map_type,
+                    #                         pixel_level=pixel_flag)
+                    pass
+    exit()
 
 #=============================================
 # Binned RMSE Improvement Plots
@@ -3260,8 +3252,7 @@ def plot_scatter_forecast_improvement(
     nn_architecture="mlp",
     subregion="6x6",
     alternate_loss_fn=None,
-    binscatter=False,
-    n_bins=20,
+    binscatter=False
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
@@ -3310,9 +3301,6 @@ def plot_scatter_forecast_improvement(
     binscatter : bool, optional
         If True, create binscatter plots using pixel-level data with quantile-based binning.
         If False, use patch-level data (default: False)
-    n_bins : int, optional
-        Number of bins for binscatter (default: 20)
-
     Returns
     -------
     fig : matplotlib.figure.Figure
@@ -3357,6 +3345,14 @@ def plot_scatter_forecast_improvement(
         sdor_da=sdor_da
     )
 
+    import pickle
+    # save all_patch_data locally too many files for midway, not positive 
+    with open(os.path.join(dirs["processed"], "all_patch_data.pkl"), "wb") as f:
+        pickle.dump(all_patch_data, f)
+
+    with open(os.path.join(dirs["processed"], "all_patch_data.pkl"), "rb") as f:
+        all_patch_data = pickle.load(f)
+
     if all_patch_data is None:
         return None
 
@@ -3382,7 +3378,7 @@ def plot_scatter_forecast_improvement(
         axes = axes.reshape(1, -1)
 
     # Single color for all points
-    point_color = '#4472C4'  # Professional blue
+    point_color = '#4472C4'  
     marker_size = 20 if not binscatter else 40
     marker_edge = 0.2
 
@@ -3403,6 +3399,11 @@ def plot_scatter_forecast_improvement(
         if binscatter:
             # Extract pixel-level data for binscatter
             pixel_data = _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da)
+
+            # # save pixel_data for debugging
+            # import pickle
+            # with open(f"pixel_data_lt{lead_time}_{x_metric}.pkl", "wb") as f:
+            #         pickle.dump(pixel_data, f)
 
             if pixel_data is None or len(pixel_data['x']) == 0:
                 print(f"\nSkipping lead time {lead_time}h - no pixel data available")
@@ -3425,7 +3426,6 @@ def plot_scatter_forecast_improvement(
                     ax=ax,
                     x=pixel_data['x'],
                     y=y_values,
-                    n_bins=n_bins,
                     x_label=x_label,
                     y_label=y_labels[col_idx],
                     color=point_color,
@@ -3506,14 +3506,14 @@ def plot_scatter_forecast_improvement(
     title = f'{model.upper()} - {variable.replace("_", " ").title()}\n'
     title += f'{x_label} vs RMSE Metrics'
     if binscatter:
-        title += f' (Binscatter with {n_bins} bins)'
+        title += f' (Binscatter bins)'
     fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
 
     plt.tight_layout(rect=[0, 0, 1, 0.99])
 
     # Save figure
     x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
-    bin_suffix = f"_binscatter{n_bins}" if binscatter else ""
+    bin_suffix = f"_binscatter" if binscatter else ""
     filename = f"scatter_{x_suffix}_{variable}_all_metrics{bin_suffix}.png"
     save_path = os.path.join(out_folder, filename)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -3571,44 +3571,62 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
 
         if len(data_shape) == 3:
             # Data has time dimension: (time, lat, lon)
+            # Calculate pixel-level RMSE by averaging across time
             n_time, n_lat, n_lon = data_shape
 
-            # Create meshgrid for spatial coordinates
-            lon_grid, lat_grid = np.meshgrid(lons, lats)
+            # Calculate squared errors: (time, lat, lon)
+            orig_se = (original - ground_truth) ** 2
+            corr_se = (corrected - ground_truth) ** 2
 
-            # Broadcast to match time dimension: (time, lat, lon)
-            lat_grid_full = np.broadcast_to(lat_grid[np.newaxis, :, :], (n_time, n_lat, n_lon))
-            lon_grid_full = np.broadcast_to(lon_grid[np.newaxis, :, :], (n_time, n_lat, n_lon))
+            # Calculate RMSE for each pixel by taking sqrt of mean across time
+            # This gives us (lat, lon) arrays
+            pixel_rmse_original = np.sqrt(np.nanmean(orig_se, axis=0))
+            pixel_rmse_corrected = np.sqrt(np.nanmean(corr_se, axis=0))
+
+            # Calculate improvement percentage for each pixel
+            pixel_improvement = ((pixel_rmse_original - pixel_rmse_corrected) /
+                               (pixel_rmse_original + 1e-10)) * 100
+
+            # Create spatial grids (no time dimension needed)
+            lon_grid, lat_grid = np.meshgrid(lons, lats)
 
         elif len(data_shape) == 2:
             # Data has no time dimension: (lat, lon)
-            lon_grid_full, lat_grid_full = np.meshgrid(lons, lats)
+            # Calculate squared errors directly
+            orig_se = (original - ground_truth) ** 2
+            corr_se = (corrected - ground_truth) ** 2
+
+            # RMSE is just sqrt of squared error (no time averaging)
+            pixel_rmse_original = np.sqrt(orig_se)
+            pixel_rmse_corrected = np.sqrt(corr_se)
+
+            # Calculate improvement percentage
+            pixel_improvement = ((pixel_rmse_original - pixel_rmse_corrected) /
+                               (pixel_rmse_original + 1e-10)) * 100
+
+            # Create spatial grids
+            lon_grid, lat_grid = np.meshgrid(lons, lats)
 
         else:
             print(f"Warning: Unexpected data shape {data_shape}")
             continue
 
-        # Flatten arrays
-        gt_flat = ground_truth.flatten()
-        orig_flat = original.flatten()
-        corr_flat = corrected.flatten()
-        lat_flat = lat_grid_full.flatten()
-        lon_flat = lon_grid_full.flatten()
+        # Now flatten the pixel-level statistics (one value per spatial pixel)
+        pixel_rmse_original_flat = pixel_rmse_original.flatten()
+        pixel_rmse_corrected_flat = pixel_rmse_corrected.flatten()
+        pixel_improvement_flat = pixel_improvement.flatten()
+        lat_flat = lat_grid.flatten()
+        lon_flat = lon_grid.flatten()
 
         # Remove NaN values
-        mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-        gt_flat = gt_flat[mask]
-        orig_flat = orig_flat[mask]
-        corr_flat = corr_flat[mask]
+        mask = ~(np.isnan(pixel_rmse_original_flat) |
+                 np.isnan(pixel_rmse_corrected_flat) |
+                 np.isnan(pixel_improvement_flat))
+        pixel_rmse_original_flat = pixel_rmse_original_flat[mask]
+        pixel_rmse_corrected_flat = pixel_rmse_corrected_flat[mask]
+        pixel_improvement_flat = pixel_improvement_flat[mask]
         lat_flat = lat_flat[mask]
         lon_flat = lon_flat[mask]
-
-        # Calculate pixel-level RMSE (squared errors)
-        orig_se = (orig_flat - gt_flat) ** 2
-        corr_se = (corr_flat - gt_flat) ** 2
-
-        # Calculate pixel-level improvement percentage
-        pixel_improvement = ((orig_se - corr_se) / (orig_se + 1e-10)) * 100
 
         # Calculate x-metric values
         if x_metric == "equator_distance":
@@ -3627,18 +3645,18 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
             # Remove pixels with NaN sdor values
             valid_mask = ~np.isnan(x_pixel)
             x_pixel = x_pixel[valid_mask]
-            orig_se = orig_se[valid_mask]
-            corr_se = corr_se[valid_mask]
-            pixel_improvement = pixel_improvement[valid_mask]
+            pixel_rmse_original_flat = pixel_rmse_original_flat[valid_mask]
+            pixel_rmse_corrected_flat = pixel_rmse_corrected_flat[valid_mask]
+            pixel_improvement_flat = pixel_improvement_flat[valid_mask]
         else:
             print(f"Warning: Unknown x_metric '{x_metric}' or missing sdor_da")
             return None
 
         # Append to lists
         x_values.extend(x_pixel)
-        rmse_original.extend(np.sqrt(orig_se))
-        rmse_corrected.extend(np.sqrt(corr_se))
-        improvement.extend(pixel_improvement)
+        rmse_original.extend(pixel_rmse_original_flat)
+        rmse_corrected.extend(pixel_rmse_corrected_flat)
+        improvement.extend(pixel_improvement_flat)
 
     # Convert to numpy arrays
     result = {
@@ -3653,7 +3671,7 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
     return result
 
 
-def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add_zero_line=False):
+def _plot_binscatter(ax, x, y, x_label, y_label, color, marker_size, add_zero_line=False):
     """
     Create a binscatter plot using the binsreg package (Cattaneo et al., 2023).
 
@@ -3668,8 +3686,6 @@ def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add
         X values (independent variable)
     y : np.ndarray
         Y values (dependent variable)
-    n_bins : int
-        Number of quantile-based bins
     x_label : str
         Label for x-axis
     y_label : str
@@ -3686,77 +3702,183 @@ def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add
     x = x[valid_mask]
     y = y[valid_mask]
 
-    if len(x) < n_bins:
-        print(f"Warning: Not enough data points ({len(x)}) for {n_bins} bins. Using scatter plot.")
-        ax.scatter(x, y, c=color, alpha=0.6, s=marker_size/2, edgecolors='black', linewidth=0.2)
-        ax.set_xlabel(x_label, fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
-        ax.grid(True, alpha=0.3, linestyle='--')
-        return
+    # Optional: Check data characteristics (commented out for cleaner output)
+    # print(f"  Data diagnostics:")
+    # print(f"    - Total observations: {len(x):,}")
+    # print(f"    - Unique x values: {len(np.unique(x)):,}")
+    # print(f"    - X range: [{np.min(x):.2f}, {np.max(x):.2f}]")
+    # print(f"    - Y range: [{np.min(y):.2f}, {np.max(y):.2f}]")
 
     # Create a DataFrame for binsreg
+    print(f"  Creating DataFrame with {len(x):,} observations...")
     df = pd.DataFrame({'x': x, 'y': y})
 
-    # Run binsreg with quantile-spaced bins
+    # Run binsreg with automatic bin selection
+    # Setting nbins=None triggers automatic IMSE-optimal selection
     # Parameters following Cattaneo et al. (2023) recommendations:
-    # - nbins: number of bins
+    # - nbins: None for automatic IMSE-optimal selection
     # - binspos: 'qs' for quantile-spaced bins (equal observations per bin)
     # - dots: (0, 0) for point estimates at bin means
     # - line: (1, 1) for linear fit line
     # - ci: (1, 1) for confidence intervals around dots
     # - polyreg: 1 for global linear regression overlay
     # - noplot: True to suppress automatic plotting (we plot manually)
-    est = binsreg(
-        y='y',
-        x='x',
-        data=df,
-        nbins=n_bins,
-        binspos='qs',      # Quantile-spaced bins
-        dots=(0, 0),       # Point estimates at bin means
-        line=(1, 1),       # Linear fit line
-        ci=(1, 1),         # Confidence intervals for dots
-        polyreg=1,         # Global linear regression overlay
-        noplot=True        # Don't create automatic plot
-    )
+    #
+    # NOTE: When there are many repeated x values (e.g., sdor=0 for flat terrain),
+    # binsreg can fail to create dots/ci. We try first with automatic selection,
+    # then fall back to manual nbins if needed.
+    print(f"  Running binsreg with automatic bin selection (IMSE-optimal)...")
 
-    # Extract binned data from the result
-    bins_data = est.data_plot[0]  # First data series
+    # Try with automatic bin selection first
+    try:
+        est = binsreg(
+            y='y',
+            x='x',
+            data=df,
+            nbins=None,        # Automatic IMSE-optimal selection
+            binspos='qs',      # Quantile-spaced bins
+            dots=(0, 0),       # Point estimates at bin means
+            line=(1, 1),       # Linear fit line
+            ci=(1, 1),         # Confidence intervals for dots
+            polyreg=1,         # Global linear regression overlay
+            noplot=True        # Don't create automatic plot
+        )
 
-    # Get bin centers and means
-    bin_x = bins_data['x']
-    bin_y = bins_data['fit']
+        # Check if dots were actually created
+        if est.data_plot is None or len(est.data_plot) == 0 or est.data_plot[0].dots is None:
+            raise ValueError("binsreg did not create dots")
 
-    # Get confidence intervals
-    ci_l = bins_data['ci_l']
-    ci_r = bins_data['ci_r']
+    except (ValueError, Exception) as e:
+        print(f"  Using fixed 20 bins (automatic selection encountered issues)...")
+        # Fall back to fixed number of bins
+        # When data has many repeated x values (e.g., sdor=0 for flat terrain),
+        # automatic bin selection may fail
+        est = binsreg(
+            y='y',
+            x='x',
+            data=df,
+            nbins=20,          # Fixed 20 bins
+            binspos='qs',      # Quantile-spaced bins
+            dots=(0, 0),       # Point estimates at bin means
+            line=(1, 1),       # Linear fit line
+            ci=(1, 1),         # Confidence intervals for dots
+            polyreg=1,         # Global linear regression overlay
+            noplot=True        # Don't create automatic plot
+        )
+    print(f"  binsreg completed!")
+
+    # Get the data object (not a dict, but an object with DataFrame attributes)
+    data_obj = est.data_plot[0]
+
+    # Get binned points from .dots DataFrame
+    dots_df = data_obj.dots
+
+    if dots_df is None:
+        print(f"  binsreg dots not available, using manual binning fallback...")
+
+        # When binsreg fails to create dots (due to insufficient variation in x within bins),
+        # we manually bin the data using the bin endpoints from data_bin
+        if data_obj.data_bin is not None:
+
+            # Get bin endpoints
+            bin_info = data_obj.data_bin
+            n_bins = len(bin_info)
+
+            # Manually assign each observation to a bin and calculate statistics
+            bin_x = np.zeros(n_bins)
+            bin_y = np.zeros(n_bins)
+            ci_l = np.zeros(n_bins)
+            ci_r = np.zeros(n_bins)
+
+            for i in range(n_bins):
+                left = bin_info.iloc[i]['left_endpoint']
+                right = bin_info.iloc[i]['right.endpoint']
+
+                # Find observations in this bin
+                if i == n_bins - 1:
+                    # Last bin: include right endpoint
+                    mask = (x >= left) & (x <= right)
+                else:
+                    # Other bins: exclude right endpoint
+                    mask = (x >= left) & (x < right)
+
+                if np.sum(mask) > 0:
+                    # Calculate bin statistics
+                    x_bin = x[mask]
+                    y_bin = y[mask]
+
+                    bin_x[i] = np.mean(x_bin)
+                    bin_y[i] = np.mean(y_bin)
+
+                    # Calculate 95% CI
+                    if len(y_bin) > 1:
+                        se = np.std(y_bin, ddof=1) / np.sqrt(len(y_bin))
+                        ci_l[i] = bin_y[i] - 1.96 * se
+                        ci_r[i] = bin_y[i] + 1.96 * se
+                    else:
+                        ci_l[i] = bin_y[i]
+                        ci_r[i] = bin_y[i]
+                else:
+                    # Empty bin - use midpoint for x, set y to NaN
+                    bin_x[i] = (left + right) / 2
+                    bin_y[i] = np.nan
+                    ci_l[i] = np.nan
+                    ci_r[i] = np.nan
+
+            # Remove empty bins
+            valid_mask = ~np.isnan(bin_y)
+            bin_x = bin_x[valid_mask]
+            bin_y = bin_y[valid_mask]
+            ci_l = ci_l[valid_mask]
+            ci_r = ci_r[valid_mask]
+
+            print(f"  Extracted {len(bin_x)} binned points from manual binning")
+
+        else:
+            print(f"  ERROR: data_obj.data_bin is also None! Cannot create binscatter.")
+            return
+
+    else:
+        # Normal path: dots is available
+        bin_x = dots_df['x'].values
+        bin_y = dots_df['fit'].values
+
+        print(f"  Extracted {len(bin_x)} binned points")
+
+        # Get confidence intervals from .ci DataFrame
+        ci_df = data_obj.ci
+        ci_l = ci_df['ci_l'].values
+        ci_r = ci_df['ci_r'].values
+
+    # check that all ci values are positive
+    if np.any(ci_l < 0) or np.any(ci_r < 0):
+        print(f"  Warning: Negative confidence interval values detected.")
 
     # Calculate error bars (convert CI to error bars)
-    yerr_lower = bin_y - ci_l
-    yerr_upper = ci_r - bin_y
+    yerr_lower = np.abs(bin_y - ci_l)
+    yerr_upper = np.abs(ci_r - bin_y)
     yerr = np.array([yerr_lower, yerr_upper])
 
     # Plot binscatter points with error bars
     ax.errorbar(bin_x, bin_y, yerr=yerr,
-                fmt='o', color=color, markersize=np.sqrt(marker_size),
-                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
-                label='Bin means (95% CI)')
+            fmt='o', color=color, markersize=np.sqrt(marker_size),
+            ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
+            label='Bin means (95% CI)')
 
-    # Add regression line (extract from polyreg results)
-    if hasattr(est, 'data_poly') and len(est.data_poly) > 0:
-        poly_data = est.data_poly[0]
-        poly_x = poly_data['x']
-        poly_y = poly_data['fit']
+    print(f"  Plotted binned points with confidence intervals")
 
-        # Sort for proper line plotting
-        sort_idx = np.argsort(poly_x)
-        ax.plot(poly_x[sort_idx], poly_y[sort_idx], 'r--',
-                linewidth=2, alpha=0.8, label='Linear fit')
-
-    # Extract regression statistics
-    # Perform simple OLS to get statistics
+    # Calculate regression line manually (polyreg data not available with noplot=True)
+    # Perform OLS regression on the micro data
     X_matrix = np.column_stack([np.ones(len(x)), x])
     beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
     intercept, slope = beta
+
+    # Plot regression line
+    x_range = np.array([x.min(), x.max()])
+    y_range = intercept + slope * x_range
+    ax.plot(x_range, y_range, 'r--', linewidth=2, alpha=0.8, label='Linear fit')
+
+    print(f"  Added regression line (β = {slope:.4f})")
 
     # Calculate standard errors
     y_pred = intercept + slope * x
@@ -3787,10 +3909,10 @@ def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add
     stats_text += f'n = {n:,}'
 
     ax.text(0.02, 0.98, stats_text,
-            transform=ax.transAxes, fontsize=9,
-            verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
-            family='monospace')
+        transform=ax.transAxes, fontsize=9,
+        verticalalignment='top',
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+        family='monospace')
 
     # Add zero line if requested
     if add_zero_line:
@@ -3803,6 +3925,7 @@ def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add
 
     # Add legend
     ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
 
 
 
