@@ -3031,10 +3031,16 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 def main():
     dirs = setup_directories()
 
+    # # Create plot with equator distance
+    # fig = lead_time_compare_binscatter(
+    #     dirs=dirs,
+    #     model="ifs",
+    #     x_metric="equator_distance"
+    # )
     # Create plot with equator distance
-    fig = lead_time_compare_binscatter(
+    fig = model_compare_binscatter(
         dirs=dirs,
-        model="ifs",
+        variable="10m_wind_speed",
         x_metric="equator_distance"
     )
     exit()
