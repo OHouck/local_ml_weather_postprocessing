@@ -1767,7 +1767,7 @@ def _get_color_schemes():
         'unet': 'none'
     }
     
-    return region_colors, climate_region_colors, topographic_region_colors, continent_region_colors, model_markers, architecture_fillstyles
+    return region_colors, climate_region_colors, topographic_region_colors, model_markers, architecture_fillstyles
 
 
 def plot_rmse_improvement(csv_path, dirs, variable, model="pangu", 
@@ -1835,7 +1835,7 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     
     # Get color schemes
     region_colors, climate_region_colors, topographic_region_colors, \
-        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+        model_markers, architecture_fillstyles = _get_color_schemes()
     
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -2375,8 +2375,6 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
                 f"{nn_architecture}_{region_str}_{n_bins}bins.png")
         save_path = os.path.join(out_folder, fname)
 
-    plt.show()
-    exit()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -2435,7 +2433,7 @@ def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
 
     # Get color schemes
     region_colors, climate_region_colors, topographic_region_colors, \
-        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+        model_markers, architecture_fillstyles = _get_color_schemes()
 
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -2773,7 +2771,7 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
     # Get color schemes
     region_colors, climate_region_colors, topographic_region_colors, \
-        continent_region_colors, model_markers, architecture_fillstyles = _get_color_schemes()
+        model_markers, architecture_fillstyles = _get_color_schemes()
 
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -3038,37 +3036,37 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
 def main():
     dirs = setup_directories()
-    plot_scatter_forecast_improvement(dirs=dirs, model="pangu", 
-                                    variable="2m_temperature",  
-                                    x_metric="equator_distance", 
-                                    binscatter = True)
-    exit()
+    # plot_scatter_forecast_improvement(dirs=dirs, model="pangu", 
+    #                                 variable="2m_temperature",  
+    #                                 x_metric="equator_distance", 
+    #                                 binscatter = True)
 
 #=============================================
 # Global Improvement Plots
 #=============================================
-    for map_type in ["original", "improvement"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            for model in ["pangu", "ifs"]:
-                # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                #                                 variable=variable, y_metric=map_type, 
-                #                                 x_metric="equator_distance")
-                # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                #                                 variable=variable, y_metric=map_type, 
-                #                                 x_metric="sdor")
-                for pixel_flag in [False, True]:
-                    map_global_improvements(dirs=dirs, model=model, 
-                                            variable=variable, map_type=map_type,
-                                            pixel_level=pixel_flag)
-    exit()
+    # for map_type in ["original", "improvement"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         for model in ["pangu", "ifs"]:
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, y_metric=map_type, 
+    #                                             x_metric="equator_distance")
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, y_metric=map_type, 
+    #                                             x_metric="sdor")
+    #             for pixel_flag in [False, True]:
+    #                 map_global_improvements(dirs=dirs, model=model, 
+    #                                         variable=variable, map_type=map_type,
+    #                                         pixel_level=pixel_flag)
+    # exit()
 
 #=============================================
 # Binned RMSE Improvement Plots
 #=============================================
     dirs = setup_directories()
     var = "2m_temperature"
-    loss_train_on = "mse"
-    evaluation_loss = "rmse"
+    loss_train_on = "extreme_heat"
+    evaluation_loss = "extreme_heat"
+    lead_time = 216
     training_outptut_vars = ([var], [var])
     variable = var
     plot_rmse_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
@@ -3077,8 +3075,8 @@ def main():
                                 training_output_vars=training_outptut_vars,
                                 variable=variable,
                                 nn_architecture="mlp",
-                                lead_time=216,
-                                regions=["india", "ethiopia", "usa_south", "amazon"],
+                                lead_time=lead_time,
+                                regions=["india", "ethiopia"],
                                 subregion="6x6",
                                 n_bins=10,
                                 loss_trained_on=loss_train_on,
