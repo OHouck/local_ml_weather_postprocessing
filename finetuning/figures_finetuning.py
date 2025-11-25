@@ -3035,7 +3035,7 @@ def main():
 # Global Improvement Plots
 #=============================================
     for model in ["pangu", "ifs"]:
-        for variable in ["10m_wind_speed"]:
+        for variable in ["2m_temperature"]:
             for binscatter in [True]:
                 # plot_scatter_forecast_improvement(dirs=dirs, model=model, 
                 #                                 variable=variable, x_metric="equator_distance", 
