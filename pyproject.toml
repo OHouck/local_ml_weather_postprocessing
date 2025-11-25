@@ -15,6 +15,7 @@ dependencies = [
         "aurora",
         "azure-core",
         "azure-storage-blob",
+        "binsreg>=2.1.7",
         "cachetools",
         "cartopy",
         "cdsapi",

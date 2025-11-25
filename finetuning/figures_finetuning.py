@@ -21,6 +21,8 @@ from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats
 
+from binsreg import binsregselect, binsreg, binsqreg, binsglm, binstest, binspwc
+
 import time
 from types import SimpleNamespace
 
@@ -3036,6 +3038,11 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
 
 def main():
     dirs = setup_directories()
+    plot_scatter_forecast_improvement(dirs=dirs, model="pangu", 
+                                    variable="2m_temperature",  
+                                    x_metric="equator_distance", 
+                                    binscatter = True)
+    exit()
 
 #=============================================
 # Global Improvement Plots
@@ -3247,7 +3254,6 @@ def plot_scatter_forecast_improvement(
     regions=None,
     save_dir=None,
     x_metric="equator_distance",
-    y_metric="improvement",
     lead_times=None,
     train_start="2018-01-01",
     train_end="2021-12-31",
@@ -3256,10 +3262,17 @@ def plot_scatter_forecast_improvement(
     nn_architecture="mlp",
     subregion="6x6",
     alternate_loss_fn=None,
+    binscatter=False,
+    n_bins=20,
 ):
     """
     Create scatter plots showing relationship between geographic/topographic features and RMSE metrics.
-    Each point represents either a region 6x6 patch mean 
+
+    Creates three plots simultaneously: original RMSE, RMSE improvement, and corrected RMSE.
+
+    When binscatter=False: Each point represents a 6x6 patch mean.
+    When binscatter=True: Creates binscatter plots using pixel-level data, following best practices
+    from Cattaneo et al. (2023) "On Binscatter" (AER).
 
     Only processes zarr files that match the specified model configuration to ensure
     all patches are from the same training/testing setup.
@@ -3280,9 +3293,6 @@ def plot_scatter_forecast_improvement(
     x_metric : str, optional
         Metric to plot on x-axis: "equator_distance" (distance from equator in degrees)
         or "sdor" (standard deviation of orography). Default is "equator_distance".
-    y_metric : str, optional
-        Metric to plot on y-axis: "improvement" (percent improvement in RMSE)
-        or "original" (original forecast RMSE). Default is "improvement".
     lead_times : list, optional
         List of lead times to plot. If None, uses [24, 120, 216]
     train_start : str, optional
@@ -3299,6 +3309,11 @@ def plot_scatter_forecast_improvement(
         Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    binscatter : bool, optional
+        If True, create binscatter plots using pixel-level data with quantile-based binning.
+        If False, use patch-level data (default: False)
+    n_bins : int, optional
+        Number of bins for binscatter (default: 20)
 
     Returns
     -------
@@ -3316,14 +3331,9 @@ def plot_scatter_forecast_improvement(
         "sdor": "Standard Deviation of Orography (m)"
     }.get(x_metric, "Distance from Equator (degrees)")
 
-    y_label = {
-        "improvement": "RMSE Improvement (%)",
-        "original": "Original Forecast RMSE"
-    }.get(y_metric, "RMSE Improvement (%)")
-
     print(f"\nCreating forecast improvement scatter plot for {model.upper()} - {variable}")
     print(f"X-axis metric: {x_metric}")
-    print(f"Y-axis metric: {y_metric}")
+    print(f"Binscatter mode: {binscatter}")
 
     # Load sdor data if needed
     sdor_da = None
@@ -3368,129 +3378,434 @@ def plot_scatter_forecast_improvement(
         out_folder = save_dir
     os.makedirs(out_folder, exist_ok=True)
 
-    # Create scatter plot
-    fig, axes = plt.subplots(1, len(lead_times), figsize=(6 * len(lead_times), 5))
+    # Create figure with 3 columns (original, improvement, corrected) and rows for each lead time
+    fig, axes = plt.subplots(len(lead_times), 3, figsize=(18, 5 * len(lead_times)))
     if len(lead_times) == 1:
-        axes = [axes]
+        axes = axes.reshape(1, -1)
 
-    # Color map for continents
-    continent_colors = {
-        'asia': '#FF6B6B',           # Red
-        'africa': '#4ECDC4',         # Turquoise
-        'north_america': '#45B7D1',  # Blue
-        'south_america': '#FFA07A',  # Light Salmon
-        'europe': '#98D8C8',         # Mint
-        'oceania': '#F7DC6F'         # Yellow
-    }
+    # Single color for all points
+    point_color = '#4472C4'  # Professional blue
+    marker_size = 20 if not binscatter else 40
+    marker_edge = 0.2
 
-    for idx, lead_time in enumerate(lead_times):
-        ax = axes[idx]
+    # Y-axis labels for the three columns
+    y_labels = [
+        "Original Forecast RMSE",
+        "RMSE Improvement (%)",
+        "Corrected Forecast RMSE"
+    ]
+
+    for row_idx, lead_time in enumerate(lead_times):
         patch_data = all_patch_data[lead_time]
 
         if not patch_data:
             print(f"\nSkipping lead time {lead_time}h - no data available")
             continue
 
-        # Set marker size based on patch-level plotting
-        marker_size = 20
-        marker_edge = 0.2
+        if binscatter:
+            # Extract pixel-level data for binscatter
+            pixel_data = _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da)
 
-        # Region-mean scatter: use existing patch-level data
-        # Determine x and y values based on metrics
-        if x_metric == "equator_distance":
-            x_values = [p['distance_from_equator'] for p in patch_data]
-        elif x_metric == "sdor":
-            x_values = [p['sdor'] for p in patch_data if p['sdor'] is not None]
-            # Filter patch_data to only include patches with sdor values
-            patch_data = [p for p in patch_data if p['sdor'] is not None]
-            if not patch_data:
-                print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+            if pixel_data is None or len(pixel_data['x']) == 0:
+                print(f"\nSkipping lead time {lead_time}h - no pixel data available")
                 continue
+
+            # Create binscatter for each metric
+            for col_idx, y_metric in enumerate(['original', 'improvement', 'corrected']):
+                ax = axes[row_idx, col_idx]
+
+                # Get y values based on metric
+                if y_metric == 'original':
+                    y_values = pixel_data['rmse_original']
+                elif y_metric == 'improvement':
+                    y_values = pixel_data['improvement']
+                else:  # corrected
+                    y_values = pixel_data['rmse_corrected']
+
+                # Create binscatter
+                _plot_binscatter(
+                    ax=ax,
+                    x=pixel_data['x'],
+                    y=y_values,
+                    n_bins=n_bins,
+                    x_label=x_label,
+                    y_label=y_labels[col_idx],
+                    color=point_color,
+                    marker_size=marker_size,
+                    add_zero_line=(y_metric == 'improvement')
+                )
+
+                # Add title to first row
+                if row_idx == 0:
+                    ax.set_title(y_labels[col_idx], fontsize=13, fontweight='bold', pad=10)
+
+                # Add lead time label to first column
+                if col_idx == 0:
+                    ax.text(-0.15, 0.5, f'Lead Time: {lead_time}h',
+                           transform=ax.transAxes, fontsize=12, fontweight='bold',
+                           rotation=90, verticalalignment='center')
+
         else:
-            raise ValueError(f"Invalid x_metric: {x_metric}. Must be 'equator_distance' or 'sdor'.")
+            # Patch-level scatter plots
+            # Filter patches based on x_metric
+            if x_metric == "sdor":
+                patch_data = [p for p in patch_data if p['sdor'] is not None]
+                if not patch_data:
+                    print(f"\nSkipping lead time {lead_time}h - no patches with valid sdor values")
+                    continue
 
-        if y_metric == "improvement":
-            y_values = [p['improvement'] for p in patch_data]
-        elif y_metric == "original":
-            y_values = [p['rmse_original'] for p in patch_data]
-        else:
-            raise ValueError(f"Invalid y_metric: {y_metric}. Must be 'improvement' or 'original'.")
-
-        # Group patches by continent
-        patches_by_continent = {}
-        for p in patch_data:
-            continent = p.get('region', 'unknown')
-            if continent not in patches_by_continent:
-                patches_by_continent[continent] = []
-            patches_by_continent[continent].append(p)
-
-        # Plot each continent separately
-        for continent, continent_patches in patches_by_continent.items():
-            # Extract x values based on metric
+            # Extract x values
             if x_metric == "equator_distance":
-                continent_x = [p['distance_from_equator'] for p in continent_patches]
-            else:
-                continent_x = [p['sdor'] for p in continent_patches if p['sdor'] is not None]
-                continent_patches = [p for p in continent_patches if p['sdor'] is not None]
+                x_values = [p['distance_from_equator'] for p in patch_data]
+            else:  # sdor
+                x_values = [p['sdor'] for p in patch_data]
 
-            # Extract y values based on metric
-            if y_metric == "improvement":
-                continent_y = [p['improvement'] for p in continent_patches]
-            else:
-                continent_y = [p['rmse_original'] for p in continent_patches]
+            # Create scatter for each metric
+            for col_idx, y_metric in enumerate(['original', 'improvement', 'corrected']):
+                ax = axes[row_idx, col_idx]
 
-            # Skip if no data for this continent
-            if not continent_x or not continent_y:
-                continue
+                # Get y values based on metric
+                if y_metric == 'original':
+                    y_values = [p['rmse_original'] for p in patch_data]
+                elif y_metric == 'improvement':
+                    y_values = [p['improvement'] for p in patch_data]
+                else:  # corrected
+                    y_values = [p['rmse_corrected'] for p in patch_data]
 
-            # Get color for this continent
-            color = continent_colors.get(continent, '#808080')  # Gray as default
-            label = continent.replace('_', ' ').title()
+                # Plot scatter
+                ax.scatter(x_values, y_values,
+                          c=point_color,
+                          alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
 
-            # Plot this continent
-            ax.scatter(continent_x, continent_y,
-                      c=color,
-                      label=label,
-                      alpha=0.6, s=marker_size, edgecolors='black', linewidth=marker_edge)
+                # Add horizontal line at y=0 for improvement plots
+                if y_metric == 'improvement':
+                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
-        # Add horizontal line at y=0 for improvement plots
-        if y_metric == "improvement":
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+                # Calculate and display correlation
+                if len(x_values) > 1 and len(y_values) > 1:
+                    correlation = np.corrcoef(x_values, y_values)[0, 1]
+                    ax.text(0.02, 0.98, f'r = {correlation:.3f}',
+                           transform=ax.transAxes, fontsize=10,
+                           verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-        # Calculate and display correlation
-        if len(x_values) > 1 and len(y_values) > 1:
-            correlation = np.corrcoef(x_values, y_values)[0, 1]
-            ax.text(0.02, 0.98, f'r = {correlation:.3f}',
-                   transform=ax.transAxes, fontsize=10,
-                   verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                # Labels and styling
+                ax.set_xlabel(x_label, fontsize=12)
+                ax.set_ylabel(y_labels[col_idx], fontsize=12)
+                ax.grid(True, alpha=0.3, linestyle='--')
 
-        # Labels and title
-        ax.set_xlabel(x_label, fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
-        ax.set_title(f'Lead Time: {lead_time}h', fontsize=13, fontweight='bold')
-        ax.grid(True, alpha=0.3, linestyle='--')
+                # Add title to first row
+                if row_idx == 0:
+                    ax.set_title(y_labels[col_idx], fontsize=13, fontweight='bold', pad=10)
 
-        # Add legend only to the first subplot
-        if idx == 0:
-            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+                # Add lead time label to first column
+                if col_idx == 0:
+                    ax.text(-0.15, 0.5, f'Lead Time: {lead_time}h',
+                           transform=ax.transAxes, fontsize=12, fontweight='bold',
+                           rotation=90, verticalalignment='center')
 
     # Add overall title
     title = f'{model.upper()} - {variable.replace("_", " ").title()}\n'
-    title += f'{x_label} vs {y_label}'
-    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
+    title += f'{x_label} vs RMSE Metrics'
+    if binscatter:
+        title += f' (Binscatter with {n_bins} bins)'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
 
     # Save figure
     x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
-    y_suffix = y_metric
-    filename = f"scatter_{x_suffix}_{variable}_{y_suffix}.png"
+    bin_suffix = f"_binscatter{n_bins}" if binscatter else ""
+    filename = f"scatter_{x_suffix}_{variable}_all_metrics{bin_suffix}.png"
     save_path = os.path.join(out_folder, filename)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nSaved scatter plot to: {save_path}")
 
     return fig
+
+
+def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da=None):
+    """
+    Extract pixel-level data from patches for binscatter analysis.
+
+    Parameters
+    ----------
+    patch_data : list of dict
+        List of patch dictionaries from load_region_data
+    variable : str
+        Variable name
+    lead_time : int
+        Lead time in hours
+    x_metric : str
+        "equator_distance" or "sdor"
+    sdor_da : xarray.DataArray, optional
+        Standard deviation of orography data
+
+    Returns
+    -------
+    dict
+        Dictionary with keys: 'x', 'rmse_original', 'rmse_corrected', 'improvement'
+        Each value is a numpy array of pixel-level values
+    """
+    print(f"\nExtracting pixel-level data for lead time {lead_time}h...")
+
+    x_values = []
+    rmse_original = []
+    rmse_corrected = []
+    improvement = []
+
+    var_suffix = f"_lt{lead_time}h"
+
+    for patch in patch_data:
+        ds = patch['ds']
+
+        # Extract forecast and target data
+        ground_truth = ds[f"{variable}_ground_truth{var_suffix}"].values
+        original = ds[f"{variable}_original{var_suffix}"].values
+        corrected = ds[f"{variable}_corrected{var_suffix}"].values
+
+        # Get spatial coordinates
+        lats = ds.latitude.values
+        lons = ds.longitude.values
+
+        # Check shape of data - could be (time, lat, lon) or just (lat, lon)
+        data_shape = ground_truth.shape
+
+        if len(data_shape) == 3:
+            # Data has time dimension: (time, lat, lon)
+            n_time, n_lat, n_lon = data_shape
+
+            # Create meshgrid for spatial coordinates
+            lon_grid, lat_grid = np.meshgrid(lons, lats)
+
+            # Broadcast to match time dimension: (time, lat, lon)
+            lat_grid_full = np.broadcast_to(lat_grid[np.newaxis, :, :], (n_time, n_lat, n_lon))
+            lon_grid_full = np.broadcast_to(lon_grid[np.newaxis, :, :], (n_time, n_lat, n_lon))
+
+        elif len(data_shape) == 2:
+            # Data has no time dimension: (lat, lon)
+            lon_grid_full, lat_grid_full = np.meshgrid(lons, lats)
+
+        else:
+            print(f"Warning: Unexpected data shape {data_shape}")
+            continue
+
+        # Flatten arrays
+        gt_flat = ground_truth.flatten()
+        orig_flat = original.flatten()
+        corr_flat = corrected.flatten()
+        lat_flat = lat_grid_full.flatten()
+        lon_flat = lon_grid_full.flatten()
+
+        # Remove NaN values
+        mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+        gt_flat = gt_flat[mask]
+        orig_flat = orig_flat[mask]
+        corr_flat = corr_flat[mask]
+        lat_flat = lat_flat[mask]
+        lon_flat = lon_flat[mask]
+
+        # Calculate pixel-level RMSE (squared errors)
+        orig_se = (orig_flat - gt_flat) ** 2
+        corr_se = (corr_flat - gt_flat) ** 2
+
+        # Calculate pixel-level improvement percentage
+        pixel_improvement = ((orig_se - corr_se) / (orig_se + 1e-10)) * 100
+
+        # Calculate x-metric values
+        if x_metric == "equator_distance":
+            x_pixel = np.abs(lat_flat)
+        elif x_metric == "sdor" and sdor_da is not None:
+            # For each pixel, get corresponding sdor value
+            x_pixel = np.zeros(len(lat_flat))
+            for i, (lat, lon) in enumerate(zip(lat_flat, lon_flat)):
+                try:
+                    # Find nearest sdor value
+                    sdor_val = sdor_da.sel(latitude=lat, longitude=lon, method='nearest').values
+                    x_pixel[i] = float(sdor_val)
+                except Exception:
+                    x_pixel[i] = np.nan
+
+            # Remove pixels with NaN sdor values
+            valid_mask = ~np.isnan(x_pixel)
+            x_pixel = x_pixel[valid_mask]
+            orig_se = orig_se[valid_mask]
+            corr_se = corr_se[valid_mask]
+            pixel_improvement = pixel_improvement[valid_mask]
+        else:
+            print(f"Warning: Unknown x_metric '{x_metric}' or missing sdor_da")
+            return None
+
+        # Append to lists
+        x_values.extend(x_pixel)
+        rmse_original.extend(np.sqrt(orig_se))
+        rmse_corrected.extend(np.sqrt(corr_se))
+        improvement.extend(pixel_improvement)
+
+    # Convert to numpy arrays
+    result = {
+        'x': np.array(x_values),
+        'rmse_original': np.array(rmse_original),
+        'rmse_corrected': np.array(rmse_corrected),
+        'improvement': np.array(improvement)
+    }
+
+    print(f"  Extracted {len(result['x'])} pixels")
+
+    return result
+
+
+def _plot_binscatter(ax, x, y, n_bins, x_label, y_label, color, marker_size, add_zero_line=False):
+    """
+    Create a binscatter plot using the binsreg package (Cattaneo et al., 2023).
+
+    Uses the official binsreg implementation with quantile-based binning,
+    confidence intervals, and hypothesis testing for the slope.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    x : np.ndarray
+        X values (independent variable)
+    y : np.ndarray
+        Y values (dependent variable)
+    n_bins : int
+        Number of quantile-based bins
+    x_label : str
+        Label for x-axis
+    y_label : str
+        Label for y-axis
+    color : str
+        Color for points
+    marker_size : float
+        Size of markers
+    add_zero_line : bool
+        Whether to add horizontal line at y=0
+    """
+    # Remove any remaining NaN values
+    valid_mask = ~(np.isnan(x) | np.isnan(y))
+    x = x[valid_mask]
+    y = y[valid_mask]
+
+    if len(x) < n_bins:
+        print(f"Warning: Not enough data points ({len(x)}) for {n_bins} bins. Using scatter plot.")
+        ax.scatter(x, y, c=color, alpha=0.6, s=marker_size/2, edgecolors='black', linewidth=0.2)
+        ax.set_xlabel(x_label, fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        return
+
+    # Create a DataFrame for binsreg
+    df = pd.DataFrame({'x': x, 'y': y})
+
+    # Run binsreg with quantile-spaced bins
+    # Parameters following Cattaneo et al. (2023) recommendations:
+    # - nbins: number of bins
+    # - binspos: 'qs' for quantile-spaced bins (equal observations per bin)
+    # - dots: (0, 0) for point estimates at bin means
+    # - line: (1, 1) for linear fit line
+    # - ci: (1, 1) for confidence intervals around dots
+    # - polyreg: 1 for global linear regression overlay
+    # - noplot: True to suppress automatic plotting (we plot manually)
+    est = binsreg(
+        y='y',
+        x='x',
+        data=df,
+        nbins=n_bins,
+        binspos='qs',      # Quantile-spaced bins
+        dots=(0, 0),       # Point estimates at bin means
+        line=(1, 1),       # Linear fit line
+        ci=(1, 1),         # Confidence intervals for dots
+        polyreg=1,         # Global linear regression overlay
+        noplot=True        # Don't create automatic plot
+    )
+
+    # Extract binned data from the result
+    bins_data = est.data_plot[0]  # First data series
+
+    # Get bin centers and means
+    bin_x = bins_data['x']
+    bin_y = bins_data['fit']
+
+    # Get confidence intervals
+    ci_l = bins_data['ci_l']
+    ci_r = bins_data['ci_r']
+
+    # Calculate error bars (convert CI to error bars)
+    yerr_lower = bin_y - ci_l
+    yerr_upper = ci_r - bin_y
+    yerr = np.array([yerr_lower, yerr_upper])
+
+    # Plot binscatter points with error bars
+    ax.errorbar(bin_x, bin_y, yerr=yerr,
+                fmt='o', color=color, markersize=np.sqrt(marker_size),
+                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
+                label='Bin means (95% CI)')
+
+    # Add regression line (extract from polyreg results)
+    if hasattr(est, 'data_poly') and len(est.data_poly) > 0:
+        poly_data = est.data_poly[0]
+        poly_x = poly_data['x']
+        poly_y = poly_data['fit']
+
+        # Sort for proper line plotting
+        sort_idx = np.argsort(poly_x)
+        ax.plot(poly_x[sort_idx], poly_y[sort_idx], 'r--',
+                linewidth=2, alpha=0.8, label='Linear fit')
+
+    # Extract regression statistics
+    # Perform simple OLS to get statistics
+    X_matrix = np.column_stack([np.ones(len(x)), x])
+    beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
+    intercept, slope = beta
+
+    # Calculate standard errors
+    y_pred = intercept + slope * x
+    residuals = y - y_pred
+    n = len(x)
+    dof = n - 2
+    mse = np.sum(residuals**2) / dof
+    se_slope = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[1, 1])
+
+    # t-statistic and p-value
+    t_stat = slope / se_slope
+    p_value = 2 * (1 - stats.t.cdf(np.abs(t_stat), dof))
+
+    # Determine significance stars
+    if p_value < 0.001:
+        sig_stars = '***'
+    elif p_value < 0.01:
+        sig_stars = '**'
+    elif p_value < 0.05:
+        sig_stars = '*'
+    else:
+        sig_stars = ''
+
+    # Add statistics text box
+    stats_text = f'β = {slope:.4f}{sig_stars}\n'
+    stats_text += f'SE = {se_slope:.4f}\n'
+    stats_text += f'p = {p_value:.4f}\n'
+    stats_text += f'n = {n:,}'
+
+    ax.text(0.02, 0.98, stats_text,
+            transform=ax.transAxes, fontsize=9,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+            family='monospace')
+
+    # Add zero line if requested
+    if add_zero_line:
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+    # Styling
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(y_label, fontsize=12)
+    ax.grid(True, alpha=0.3, linestyle='--')
+
+    # Add legend
+    ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
 
 
 if __name__ == "__main__":
