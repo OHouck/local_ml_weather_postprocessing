@@ -1210,7 +1210,7 @@ def main():
             out_path = base_path.replace('.zarr', f'_{args.region}_bs{idx}.zarr')
 
 
-            # Uncomment to skip existing outputs
+            # Uncomment to skip existing outputs XX
             # if os.path.exists(out_path):
             #     print(f"Skipping already existing output: {out_path}")
             #     continue
