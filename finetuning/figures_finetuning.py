@@ -893,93 +893,140 @@ def map_global_improvements(
 
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
-                                        test_end, model, training_output_vars,
-                                        prediction_var, nn_architecture=["mlp"],
-                                        lead_time=None, simultaneous=False,
-                                        growing_season_only = False, alternate_loss_fn = None):
+                                        test_end, model, nn_architecture="mlp",
+                                        growing_season_only=False, alternate_loss_fn=None):
     """
-    Creates plot showing how RMSE changes when trained on different sizes of subregions.
+    Creates 2-panel plot showing RMSE improvement for different subregion sizes.
+    Compares center 4x4 region across different training region sizes.
+
+    Left panel: 10m_wind_speed
+    Right panel: 2m_temperature
+
+    Parameters:
+    -----------
+    dirs : dict
+        Dictionary with 'input' and 'fig' keys for data paths
+    train_start, train_end : str
+        Training date range (YYYY-MM-DD)
+    test_start, test_end : str
+        Testing date range (YYYY-MM-DD)
+    model : str
+        Model name (e.g., 'pangu')
+    nn_architecture : str
+        Architecture type ('mlp' or 'unet')
+    growing_season_only : bool
+        Whether to use growing season data only
+    alternate_loss_fn : str or None
+        Alternative loss function name
     """
+    from matplotlib.lines import Line2D
+
     input_folder = dirs['input']
-    training_vars, output_vars = training_output_vars
-    training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
-    output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
 
-    valid_lead_times = [24, 120, 216]
-    if lead_time not in valid_lead_times:
-        raise ValueError(f"Invalid lead time: {lead_time}. Must be one of {valid_lead_times}.")
-    
-    regions = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
-    subregions = ["2x2", "6x6", "10x10"]
-    degrees = [int(s.split('x')[0]) for s in subregions]
+    # Configuration matching run_region_size_experiments.sh
+    regions = ["finland", "ethiopia"]
+    subregions = ["12x12", "10x10", "8x8", "6x6", "4x4"]
+    lead_times = [24, 120, 216]
+    variables = ["2m_temperature", "10m_wind_speed"]  # Temperature on left, wind on right
 
-    # Store improvements for both models and architectures
-    improvements = {}
-    for arch in nn_architecture:
-        improvements[arch] = {
-            'pangu': {r: [] for r in regions},
-            'ifs': {r: [] for r in regions}
-        }
+    # Extract subregion sizes for plotting
+    subregion_sizes = [int(s.split('x')[0]) for s in subregions]
 
-    # Set leadtime arg for file naming
-    if simultaneous:
-        lead_time_hours = "_".join(str(lt) for lt in valid_lead_times)
-    else:
-        lead_time_hours = lead_time
+    # Color mapping for regions
+    region_colors = {'finland': '#1f77b4', 'ethiopia': '#ff7f0e'}
 
-    for arch in nn_architecture:
-        for region in regions:
-            print(f"Processing region: {region}, architecture: {arch}")
-            
-            # Cache central bounds - compute once per region
-            central_bounds = None
-            
-            for model_name in ['pangu', 'ifs']:
-                print(f"  Loading {model_name} data for {region}...")
-                
-                for sub in subregions:
-                    args = SimpleNamespace(
-                        model_name=model_name, region=region, subregion=sub,
-                        train_start=train_start, train_end=train_end,
-                        test_start=test_start, test_end=test_end,
-                        training_vars=training_vars, output_vars=output_vars,
-                        lead_time_hours=lead_time_hours,
-                        nn_architecture=arch,
-                        growing_season_only = growing_season_only,
-                        alternate_loss_fn = alternate_loss_fn
-                    )
-                    
-                    path = os.path.join(input_folder, generate_output_path(args))
-                    
+    # Line style mapping for lead times
+    linestyle_map = {24: 'solid', 120: 'dashed', 216: 'dotted'}
+
+    # Store improvements: improvements[variable][region][lead_time] = [(size, improvement), ...]
+    improvements = {var: {region: {lt: [] for lt in lead_times} for region in regions} for var in variables}
+
+    # Process each combination
+    for region in regions:
+        print(f"\nProcessing region: {region}")
+
+        # First, determine center 4x4 bounds from the 4x4 subregion file
+        central_bounds = None
+
+        # Load 4x4 subregion first to get the central bounds
+        for variable in variables:
+            if central_bounds is not None:
+                break  # Already found bounds from first variable
+
+            args_4x4 = SimpleNamespace(
+                model_name=model,
+                ground_truth_source="",
+                region=region,
+                subregion="4x4",
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                training_vars=[variable],
+                output_vars=[variable],
+                lead_time_hours=lead_times,
+                nn_architecture=nn_architecture,
+                growing_season_only=growing_season_only,
+                alternate_loss_fn=alternate_loss_fn
+            )
+
+            path_4x4 = os.path.join(input_folder, generate_output_path(args_4x4))
+
+            try:
+                with xr.open_zarr(path_4x4, chunks='auto') as ds:
+                    central_bounds = {
+                        'lat_min': float(ds.latitude.min()),
+                        'lat_max': float(ds.latitude.max()),
+                        'lon_min': float(ds.longitude.min()),
+                        'lon_max': float(ds.longitude.max())
+                    }
+                    print(f"  Central 4x4 bounds established: {central_bounds}")
+            except Exception as e:
+                print(f"  Warning: Could not load 4x4 file to establish bounds: {e}")
+
+        # If we couldn't establish bounds, skip this region
+        if central_bounds is None:
+            print(f"  Skipping region {region} - could not establish central bounds")
+            continue
+
+        # Now process all subregions with the established central bounds
+        for variable in variables:
+            print(f"  Variable: {variable}")
+
+            for subregion in subregions:
+                subregion_size = int(subregion.split('x')[0])
+                print(f"    Subregion: {subregion}")
+
+                # Build arguments once per subregion (same for all lead times)
+                args = SimpleNamespace(
+                    model_name=model,
+                    ground_truth_source="",
+                    region=region,
+                    subregion=subregion,
+                    train_start=train_start,
+                    train_end=train_end,
+                    test_start=test_start,
+                    test_end=test_end,
+                    training_vars=[variable],  # Training on same variable
+                    output_vars=[variable],
+                    lead_time_hours=lead_times,  # List of integers [24, 120, 216]
+                    nn_architecture=nn_architecture,
+                    growing_season_only=growing_season_only,
+                    alternate_loss_fn=alternate_loss_fn
+                )
+
+                path = os.path.join(input_folder, generate_output_path(args))
+
+                # Process each lead time from the same file
+                for lead_time in lead_times:
                     try:
-                        # Use optimized loading with auto chunks
                         with xr.open_zarr(path, chunks='auto') as ds:
-                            # Extract central bounds on first successful load
-                            if central_bounds is None:
-                                if sub == "2x2":
-                                    central_bounds = {
-                                        'lat_min': float(ds.latitude.min()),
-                                        'lat_max': float(ds.latitude.max()),
-                                        'lon_min': float(ds.longitude.min()),
-                                        'lon_max': float(ds.longitude.max())
-                                    }
-                                else:
-                                    # For larger subregions, extract central 2x2
-                                    lat_center = float((ds.latitude.min() + ds.latitude.max()) / 2)
-                                    lon_center = float((ds.longitude.min() + ds.longitude.max()) / 2)
-                                    central_bounds = {
-                                        'lat_min': lat_center - 1.0,
-                                        'lat_max': lat_center + 1.0,
-                                        'lon_min': lon_center - 1.0,
-                                        'lon_max': lon_center + 1.0
-                                    }
-                            
-                            # Extract data using helper function
+                            # Extract forecast data for this lead time
                             ground_truth, original, corrected, _ = extract_forecast_data(
-                                ds, prediction_var, lead_time
+                                ds, variable, lead_time
                             )
-                            
-                            # Single spatial slice operation
+
+                            # Subset to central 4x4 region
                             ds_subset = xr.Dataset({
                                 'ground_truth': ground_truth,
                                 'original': original,
@@ -988,117 +1035,89 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                 latitude=slice(central_bounds['lat_min'], central_bounds['lat_max']),
                                 longitude=slice(central_bounds['lon_min'], central_bounds['lon_max'])
                             )
-                            
-                            print(f"    Loading {sub} data...")
-                            start_time = time.time()
+
+                            # Load data into memory
                             data_loaded = ds_subset.load()
-                            load_time = time.time() - start_time
-                            print(f"    Load time for {sub}: {load_time:.2f}s")
-                            
-                            try:
-                                gt_n = data_loaded['ground_truth']
-                                orig_n = data_loaded['original']
-                                corr_n = data_loaded['corrected']
 
-                                # Fast numpy operations on loaded arrays
-                                rmse_orig = calculate_rmse(orig_n, gt_n)
-                                rmse_corr = calculate_rmse(corr_n, gt_n)
-                                pct_improvement = calculate_improvement_percentage(rmse_orig, rmse_corr)
-                                
-                                size = int(sub.split('x')[0])
-                                improvements[arch][model_name][region].append((size, pct_improvement))
-                                print(f"    {sub}: {pct_improvement:.2f}% improvement")
-                                
-                            except Exception as e:
-                                print(f"    Error computing metrics for {model_name}, {region}, {sub}: {e}")
+                            # Calculate RMSE metrics
+                            gt = data_loaded['ground_truth']
+                            orig = data_loaded['original']
+                            corr = data_loaded['corrected']
+
+                            rmse_orig = calculate_rmse(orig, gt)
+                            rmse_corr = calculate_rmse(corr, gt)
+                            pct_improvement = calculate_improvement_percentage(rmse_orig, rmse_corr)
+
+                            # Store result
+                            improvements[variable][region][lead_time].append(
+                                (subregion_size, pct_improvement)
+                            )
+                            print(f"      Lead time {lead_time}h: {pct_improvement:.2f}% improvement")
+
+                    except FileNotFoundError:
+                        print(f"      Warning: File not found for {region}, {subregion}, {variable}, {lead_time}h")
                     except Exception as e:
-                        print(f"    {model_name} data not found for {region}, {sub}: {e}")
+                        print(f"      Error processing {region}, {subregion}, {variable}, {lead_time}h: {e}")
 
-    print("Improvements collected:", improvements)
-    
-    # Plotting code remains the same...
-    region_colors = plt.get_cmap('Set1')
-    region_color_map = {region: region_colors(i) for i, region in enumerate(regions)}
-    ls_map = {24: 'solid', 120: 'solid', 216: 'solid'} # change if I want to plot multiple lead times
-    
-    model_markers = {'pangu': 'o', 'ifs': '^'}
-    arch_fillstyles = {'mlp': 'full', 'unet': 'none'}
-    
-    plt.figure(figsize=(12, 7))
-    
-    for arch in nn_architecture:
-        for model_name in ['pangu', 'ifs']:
-            for region in regions:
-                data = sorted(improvements[arch][model_name][region], key=lambda x: x[0])
+    # Create 2-panel figure
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Plot each variable in its own panel
+    for idx, variable in enumerate(variables):
+        ax = axes[idx]
+
+        # Plot lines for each region and lead time
+        for region in regions:
+            for lead_time in lead_times:
+                # Sort by subregion size and extract data
+                data = sorted(improvements[variable][region][lead_time], key=lambda x: x[0])
+
                 if not data:
                     continue
-                    
+
                 sizes, imps = zip(*data)
-                
-                region_label = region.replace('_', ' ').title()
-                if len(nn_architecture) > 1:
-                    label = f"{region_label} {model_name.upper()} {arch.upper()} ({lead_time}h)"
-                else:
-                    label = f"{region_label} {model_name.upper()} ({lead_time}h)"
-                
-                plt.ylim(-18, 35)
-                plt.plot(sizes, imps, 
-                        marker=model_markers[model_name],
-                        fillstyle=arch_fillstyles[arch],
-                        color=region_color_map[region], 
-                        linestyle=ls_map[lead_time],
-                        label=label,
-                        linewidth=2, markersize=15)
-    
-    plt.xticks(degrees, subregions)
-    plt.xlabel("Patch size (degrees)", fontsize=15)
-    plt.ylabel("RMSE % improvement\n(original − corrected)", fontsize=15)
-    
-    arch_str = "/".join([a.upper() for a in nn_architecture])
-    title = f"RMSE % Improvement by Patch Size ({arch_str}) - {lead_time}h Lead Time"
-    
-    plt.title(title, fontsize=15)
-    plt.grid(True, alpha=0.3)
-    
-    # Legend creation remains the same...
-    from matplotlib.lines import Line2D
-    
-    region_handles = [Line2D([0], [0], color=region_color_map[region], linewidth=3, 
-                            label=region.replace('_', ' ').title()) for region in regions]
-    
-    model_handles = [
-        Line2D([0], [0], color='black', marker='o', linestyle='none', markersize=12, label='Pangu'),
-        Line2D([0], [0], color='black', marker='^', linestyle='none', markersize=12, label='IFS')
-    ]
-    
-    if len(nn_architecture) > 1:
-        arch_handles = [Line2D([0], [0], color='black', marker='o', fillstyle=arch_fillstyles[arch],
-                              markersize=12, linestyle='none', label=arch.upper()) 
-                       for arch in nn_architecture]
-    
-    legend1 = plt.legend(handles=region_handles, title="Region", 
-                        loc='lower right', bbox_to_anchor=(1, 0))
-    legend2 = plt.legend(handles=model_handles, title="Model", 
-                        loc='lower right', bbox_to_anchor=(1, 0.35))
-    
-    if len(nn_architecture) > 1:
-        legend3 = plt.legend(handles=arch_handles, title="Architecture", 
-                            loc='lower right', bbox_to_anchor=(1, 0.55))
-        plt.gca().add_artist(legend3)
-    
-    plt.gca().add_artist(legend1)
-    plt.gca().add_artist(legend2)
-    
+
+                # Create label
+                region_label = region.capitalize()
+                label = f"{region_label}, {lead_time}h"
+
+                # Plot line
+                ax.plot(sizes, imps,
+                       color=region_colors[region],
+                       linestyle=linestyle_map[lead_time],
+                       linewidth=2.5,
+                       marker='o',
+                       markersize=8,
+                       label=label)
+
+        # Format panel
+        ax.set_xticks(subregion_sizes)
+        ax.set_xticklabels(subregions)
+        ax.set_xlabel("Training Region Size (degrees)", fontsize=13)
+        ax.set_ylabel("RMSE % Improvement\n(evaluated on center 4×4)", fontsize=13)
+        ax.grid(True, alpha=0.3)
+
+        # Set title based on variable
+        var_title = "10m Wind Speed" if variable == "10m_wind_speed" else "2m Temperature"
+        ax.set_title(var_title, fontsize=14, fontweight='bold')
+
+        # Add legend
+        ax.legend(fontsize=10, loc='best', framealpha=0.9)
+
+    # Overall title
+    fig.suptitle(f"RMSE Improvement by Training Region Size ({nn_architecture.upper()}, {model.upper()})",
+                fontsize=16, fontweight='bold', y=0.98)
+
     plt.tight_layout()
 
     # Save figure
     out_folder = os.path.join(dirs["fig"], model, "subregion")
     os.makedirs(out_folder, exist_ok=True)
-    
-    lead_times_suffix = f"_{lead_time}h"
-    arch_suffix = "_".join(nn_architecture)
-    fname = f"subregion_rmse_improvement_lt{lead_times_suffix}_{'_'.join(training_vars)}_{prediction_var}_{arch_suffix}.png"
-    plt.savefig(os.path.join(out_folder, fname), dpi=150, bbox_inches='tight')
+
+    fname = f"region_size_comparison_{nn_architecture}_{model}.png"
+    save_path = os.path.join(out_folder, fname)
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    print(f"\nFigure saved to: {save_path}")
     plt.close()
 
 def generate_map_plots(
@@ -4678,28 +4697,8 @@ def main():
     #                     )
 
     #=============================================
-    # Subregion Comparison Plots
+    # Subregion Comparison Plots (now done in its own python script)
     #=============================================
-    start = time.time()    
-    training_vars = "2m_temperature"
-    output_vars = "2m_temperature"
-    prediction_var = "2m_temperature"
-    generate_subregion_comparison_plots(
-        dirs = dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture=["mlp"],
-        lead_time=216,
-        simultaneous=True
-    )
-    end = time.time()
-    time_minutes = (end - start) / 60
-    print(f"Subregion comparison plots completed in {time_minutes:.2f} minutes.")
 
     #==============================================
     # Generate Maps

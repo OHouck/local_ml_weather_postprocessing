@@ -30,8 +30,8 @@ fi
 
 training_output_vars=(
     # Minimal: Use only the output variable for training
-    "2m_temperature|2m_temperature"
-    # "10m_wind_speed|10m_wind_speed"
+    # "2m_temperature|2m_temperature"
+    "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(12x12 10x10 8x8 6x6 4x4)
