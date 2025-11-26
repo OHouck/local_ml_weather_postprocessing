@@ -395,6 +395,13 @@ def load_optimal_hyperparameters(architecture, output_var):
     # Get the script's directory
     script_dir = Path(__file__).parent.parent
 
+    # argparse may provide output_vars as a list (nargs='+'); ensure we have a single string
+    if isinstance(output_var, (list, tuple)):
+        if len(output_var) == 0:
+            print("Warning: output_var list is empty")
+            return None
+        output_var = output_var[0]
+
     if output_var == "2m_temperature":
         results_file = script_dir / f"hyperopt_results_temp_{architecture}" / f"optimization_results_{architecture}.json"
     elif output_var == "10m_wind_speed":
@@ -1085,7 +1092,7 @@ def main():
     # LEGACY FLAG: Set to True to use global yearly files (legacy format)
     # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    USE_LEGACY_GLOBAL_DATA = True # <-- EDIT THIS FLAG
+    USE_LEGACY_GLOBAL_DATA = False # <-- EDIT THIS FLAG
     # ========================================================================
 
     dirs = setup_directories()

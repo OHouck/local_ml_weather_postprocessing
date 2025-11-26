@@ -3027,235 +3027,6 @@ def plot_error_cutoff(csv_path, dirs, variable, model="pangu",
     
     print(f"Error cutoff plot saved to: {save_path}")
 
-
-def main():
-    dirs = setup_directories()
-
-
-#=============================================
-# Main figure binscatter plots
-#=============================================
-
-    # # Create plot with equator distance
-    # for model in ["pangu", "ifs"]:
-    #     for x_metric in ["sdor", "equator_distance"]:
-    #         _ = lead_time_compare_binscatter(
-    #             dirs=dirs,
-    #             model=model,
-    #             x_metric=x_metric
-    #         )
-    
-    # # Create plot with equator distance
-    # for x_metric in ["sdor", "equator_distance"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         _ = model_compare_binscatter(
-    #             dirs=dirs,
-    #             variable=variable,
-    #             x_metric=x_metric
-    #         )
-#=============================================
-# Global Improvement Plots (scatter and maps for appendix)
-#=============================================
-    # for model in ["pangu", "ifs"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         for binscatter in [True]:
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="equator_distance", 
-    #                                             binscatter=binscatter)
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="sdor", 
-    #                                             binscatter=binscatter)
-    #         for map_type in ["original", "improvement"]:
-    #             for pixel_flag in [True]:
-    #                 map_global_improvements(dirs=dirs, model=model, 
-    #                                         variable=variable, map_type=map_type,
-    #                                         pixel_level=pixel_flag)
-
-#=============================================
-# Binned RMSE Improvement Plots
-#=============================================
-    # dirs = setup_directories()
-    # var = "2m_temperature"
-    # loss_train_on = "extreme_heat"
-    # evaluation_loss = "extreme_heat"
-    # lead_time = 216
-    # training_outptut_vars = ([var], [var])
-    # variable = var
-    # plot_rmse_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
-    #                             test_start="2022-01-01", test_end="2022-12-31",
-    #                             model="pangu",
-    #                             training_output_vars=training_outptut_vars,
-    #                             variable=variable,
-    #                             nn_architecture="mlp",
-    #                             lead_time=lead_time,
-    #                             regions=["india", "ethiopia"],
-    #                             subregion="6x6",
-    #                             n_bins=10,
-    #                             loss_trained_on=loss_train_on,
-    #                             evaluation_loss=evaluation_loss
-    #                             )
-
-
-#=============================================
-# Lead Time Plots (by region and lead time)
-#=============================================
-
-    # nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
-    # variable_list = ["2m_temperature", "10m_wind_speed"]
-    # model_list = ["ifs", "pangu"]
-    # geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
-    # climate_regions = ["tropical", "arid", "temperate"]
-    # topo_regions = ["flat", "hilly", "mountainous"]
-    # growing_season_flags = [False]
-    # stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
-    # for var in variable_list:
-    #     for model in model_list:
-    #         for gs_flag in growing_season_flags:
-    #             for regions in [geo_regions, climate_regions, topo_regions]:
-    #                 if regions == climate_regions or regions == topo_regions:
-    #                     subregion = "2x2"
-    #                 elif regions == geo_regions:
-    #                     subregion = "6x6"
-    #                 for loss_train_on in ["mse", "extreme_heat"]:
-    #                     if model == "aifs" and not gs_flag:
-    #                         # aifs results are only for growing season
-    #                         continue
-
-    #                     for evaluation_loss in ["rmse", "extreme_heat"]:
-    #                         plot_rmse_improvement(csv_path = stat_path,
-    #                             dirs=dirs,
-    #                             variable=var,
-    #                             model=model,
-    #                             regions=regions,
-    #                             subregion=subregion,
-    #                             nn_architectures=nn_architectures,
-    #                             growing_season_only=gs_flag,
-    #                             loss_trained_on=loss_train_on,
-    #                             evaluation_loss=evaluation_loss
-    #                         )
-    #                     plot_raw_forecast_values(csv_path = stat_path,
-    #                         dirs=dirs,
-    #                         variable=var,
-    #                         model=model,
-    #                         regions=regions,
-    #                         subregion=subregion,
-    #                         nn_architectures=nn_architectures,
-    #                         growing_season_only=gs_flag,
-    #                         loss_trained_on=loss_train_on
-    #                     )
-    #                     plot_error_cutoff(csv_path = stat_path,
-    #                         dirs=dirs,
-    #                         variable=var,
-    #                         model=model,
-    #                         regions=regions,
-    #                         subregion=subregion,
-    #                         nn_architectures=nn_architectures,
-    #                         growing_season_only=gs_flag,
-    #                         loss_trained_on=loss_train_on
-    #                     )
-
-    #=============================================
-    # Subregion Comparison Plots
-    #=============================================
-    start = time.time()    
-    generate_subregion_comparison_plots(
-        dirs = dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture=["mlp"],
-        lead_time=216,
-        simultaneous=True
-    )
-    end = time.time()
-    time_minutes = (end - start) / 60
-    print(f"Subregion comparison plots completed in {time_minutes:.2f} minutes.")
-
-    #==============================================
-    # Generate Maps
-    #============================================== 
-    regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
-    for region in regions:
-        # MLP maps
-        generate_map_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="2x2",
-            lead_time=24,
-            simultaneous=True
-        )
-
-        #===========================================
-        # Generate time series plots
-        #===========================================
-        generate_time_series_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="2x2",
-            lead_time=24,
-            simultaneous=True
-        )
-
-    #============================================
-    # summary stat tables
-    #============================================
-    print("Generating climate zone figure and table...")
-    # clear cache
-    load_zarr_cached.cache_clear()
-
-    generate_summary_stat_table(
-        dirs=dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture="mlp",
-        regions = ["tropical", "arid", "temperate"],
-        subregion="2x2",
-        bootstrap=True,
-        lead_times=[24, 120, 216],  
-        simultaneous=True
-    )
-    generate_summary_stat_table(
-        dirs=dirs,
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        model="pangu",
-        training_output_vars=(training_vars, output_vars),
-        prediction_var=prediction_var,
-        nn_architecture="mlp",
-        regions = ["india", "amazon", "ethiopia"],
-        subregion="2x2",
-        lead_times=[24, 120, 216],  # Multiple lead times
-        simultaneous=True
-    )
-        
-
 def plot_scatter_forecast_improvement(
     dirs,
     model="pangu",
@@ -4778,6 +4549,203 @@ def _plot_binscatter(ax, x, y, x_label, y_label, color, marker_size, add_zero_li
 
     # Add legend
     ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
+
+def main():
+    dirs = setup_directories()
+
+
+#=============================================
+# Main figure binscatter plots
+#=============================================
+
+    # # Create plot with equator distance
+    # for model in ["pangu", "ifs"]:
+    #     for x_metric in ["sdor", "equator_distance"]:
+    #         _ = lead_time_compare_binscatter(
+    #             dirs=dirs,
+    #             model=model,
+    #             x_metric=x_metric
+    #         )
+    
+    # # Create plot with equator distance
+    # for x_metric in ["sdor", "equator_distance"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         _ = model_compare_binscatter(
+    #             dirs=dirs,
+    #             variable=variable,
+    #             x_metric=x_metric
+    #         )
+#=============================================
+# Global Improvement Plots (scatter and maps for appendix)
+#=============================================
+    # for model in ["pangu", "ifs"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         for binscatter in [True]:
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, x_metric="equator_distance", 
+    #                                             binscatter=binscatter)
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, x_metric="sdor", 
+    #                                             binscatter=binscatter)
+    #         for map_type in ["original", "improvement"]:
+    #             for pixel_flag in [True]:
+    #                 map_global_improvements(dirs=dirs, model=model, 
+    #                                         variable=variable, map_type=map_type,
+    #                                         pixel_level=pixel_flag)
+
+#=============================================
+# Binned RMSE Improvement Plots
+#=============================================
+    # dirs = setup_directories()
+    # var = "2m_temperature"
+    # loss_train_on = "extreme_heat"
+    # evaluation_loss = "extreme_heat"
+    # lead_time = 216
+    # training_outptut_vars = ([var], [var])
+    # variable = var
+    # plot_rmse_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
+    #                             test_start="2022-01-01", test_end="2022-12-31",
+    #                             model="pangu",
+    #                             training_output_vars=training_outptut_vars,
+    #                             variable=variable,
+    #                             nn_architecture="mlp",
+    #                             lead_time=lead_time,
+    #                             regions=["india", "ethiopia"],
+    #                             subregion="6x6",
+    #                             n_bins=10,
+    #                             loss_trained_on=loss_train_on,
+    #                             evaluation_loss=evaluation_loss
+    #                             )
+
+
+#=============================================
+# Lead Time Plots (by region and lead time)
+#=============================================
+
+    # nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
+    # variable_list = ["2m_temperature", "10m_wind_speed"]
+    # model_list = ["ifs", "pangu"]
+    # geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
+    # climate_regions = ["tropical", "arid", "temperate"]
+    # topo_regions = ["flat", "hilly", "mountainous"]
+    # growing_season_flags = [False]
+    # stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
+    # for var in variable_list:
+    #     for model in model_list:
+    #         for gs_flag in growing_season_flags:
+    #             for regions in [geo_regions, climate_regions, topo_regions]:
+    #                 if regions == climate_regions or regions == topo_regions:
+    #                     subregion = "2x2"
+    #                 elif regions == geo_regions:
+    #                     subregion = "6x6"
+    #                 for loss_train_on in ["mse", "extreme_heat"]:
+    #                     if model == "aifs" and not gs_flag:
+    #                         # aifs results are only for growing season
+    #                         continue
+
+    #                     for evaluation_loss in ["rmse", "extreme_heat"]:
+    #                         plot_rmse_improvement(csv_path = stat_path,
+    #                             dirs=dirs,
+    #                             variable=var,
+    #                             model=model,
+    #                             regions=regions,
+    #                             subregion=subregion,
+    #                             nn_architectures=nn_architectures,
+    #                             growing_season_only=gs_flag,
+    #                             loss_trained_on=loss_train_on,
+    #                             evaluation_loss=evaluation_loss
+    #                         )
+    #                     plot_raw_forecast_values(csv_path = stat_path,
+    #                         dirs=dirs,
+    #                         variable=var,
+    #                         model=model,
+    #                         regions=regions,
+    #                         subregion=subregion,
+    #                         nn_architectures=nn_architectures,
+    #                         growing_season_only=gs_flag,
+    #                         loss_trained_on=loss_train_on
+    #                     )
+    #                     plot_error_cutoff(csv_path = stat_path,
+    #                         dirs=dirs,
+    #                         variable=var,
+    #                         model=model,
+    #                         regions=regions,
+    #                         subregion=subregion,
+    #                         nn_architectures=nn_architectures,
+    #                         growing_season_only=gs_flag,
+    #                         loss_trained_on=loss_train_on
+    #                     )
+
+    #=============================================
+    # Subregion Comparison Plots
+    #=============================================
+    start = time.time()    
+    training_vars = "2m_temperature"
+    output_vars = "2m_temperature"
+    prediction_var = "2m_temperature"
+    generate_subregion_comparison_plots(
+        dirs = dirs,
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        model="pangu",
+        training_output_vars=(training_vars, output_vars),
+        prediction_var=prediction_var,
+        nn_architecture=["mlp"],
+        lead_time=216,
+        simultaneous=True
+    )
+    end = time.time()
+    time_minutes = (end - start) / 60
+    print(f"Subregion comparison plots completed in {time_minutes:.2f} minutes.")
+
+    #==============================================
+    # Generate Maps
+    #============================================== 
+    regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
+    for region in regions:
+        # MLP maps
+        generate_map_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="2x2",
+            lead_time=24,
+            simultaneous=True
+        )
+
+        #===========================================
+        # Generate time series plots
+        #===========================================
+        generate_time_series_plots(
+            dirs=dirs,
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            test_start="2022-01-01",
+            test_end="2022-12-31",
+            model="pangu",
+            training_output_vars=(training_vars, output_vars),
+            prediction_var=prediction_var,
+            nn_architecture="mlp",
+            region=region,
+            subregion="2x2",
+            lead_time=24,
+            simultaneous=True
+        )
+
+    #============================================
+    # summary stat tables
+    #============================================
+
 
 
 
