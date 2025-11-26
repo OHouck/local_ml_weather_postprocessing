@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=mlp_finetune
 #SBATCH --account=pi-jfranke
-#SBATCH --output=hyperparam_2m_windspeed-%J.txt
-#SBATCH --error=hyperparam_2m_windspeed-%J.err
+#SBATCH --output=hyperparam_multivar_temperature-%J.txt
+#SBATCH --error=hyperparam_multivar_temperature-%J.err
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --time=12:00:00
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=80G
+#SBATCH --mem=120G
 
 # OPTIMIZATION NOTES:
 # - Removed --exclusive (don't waste node resources)
 # - Increased CPUs from 4 to 16 (better data loading parallelism)
-# - Increased memory from 64G to 80G (room for data caching ~20-30GB)
+# - Increased memory from 64G to 120G (room for data caching ~20-30GB)
 # - Data is now cached once and reused across all 100 trials (60-70% speedup)
 # - Expected runtime: 7-8 hours instead of 12 hours
 

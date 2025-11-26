@@ -512,3 +512,156 @@ Training with:
   patience: 20
   min_delta: 5.917022172596213e-05
 Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.148095, Val Loss: 0.146973, LR: 3.30e-04, Best Val: 0.146697, Patience: 1/20
+Epoch 20/750 - Train Loss: 0.143529, Val Loss: 0.145060, LR: 3.30e-04, Best Val: 0.142196, Patience: 3/20
+Epoch 30/750 - Train Loss: 0.141417, Val Loss: 0.140769, LR: 3.30e-04, Best Val: 0.140738, Patience: 5/20
+Epoch 40/750 - Train Loss: 0.136855, Val Loss: 0.141105, LR: 3.30e-04, Best Val: 0.138993, Patience: 4/20
+Epoch 50/750 - Train Loss: 0.131603, Val Loss: 0.138296, LR: 1.65e-04, Best Val: 0.138266, Patience: 1/20
+Epoch 60/750 - Train Loss: 0.127690, Val Loss: 0.137445, LR: 1.65e-04, Best Val: 0.137322, Patience: 2/20
+Epoch 70/750 - Train Loss: 0.123752, Val Loss: 0.137482, LR: 1.65e-04, Best Val: 0.136323, Patience: 1/20
+Epoch 80/750 - Train Loss: 0.124162, Val Loss: 0.137683, LR: 8.26e-05, Best Val: 0.136323, Patience: 11/20
+→ Early stopping at epoch 89. No improvement in 20 epochs.
+Training complete in 0.14 minutes
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Lead time 24h - MSE original: 1.042382, MSE corrected: 1.009084
+Lead time 120h - MSE original: 1.981151, MSE corrected: 1.700958
+Lead time 216h - MSE original: 3.125506, MSE corrected: 2.606046
+Test data loaded in 0.14 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/finetuning_output/pangu/africa/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp_africa_bs11.zarr
+time to save output: 0.01 minutes
+Total experiment time: 4.79 minutes
+Processing patch 12 with lat range (-18.0, -12.25) and lon range (24.0, 29.75)
+Max and min region_lon: 359.75, 0.0
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Data loaded in 3.64 minutes
+Using batch_size: 256
+DataLoader settings: num_workers=4, pin_memory=True
+  CPU cores available: 48
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 1024
+  MLP num_layers: 2
+  MLP dropout: 0.2443318284460679
+  MLP lead_time_embedding_dim: 8
+
+Training with:
+  lr: 0.00033049633451749834
+  weight_decay: 2.2070827571154726e-06
+  patience: 20
+  min_delta: 5.917022172596213e-05
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.110424, Val Loss: 0.110733, LR: 3.30e-04, Best Val: 0.110733, Patience: 0/20
+Epoch 20/750 - Train Loss: 0.106714, Val Loss: 0.109126, LR: 3.30e-04, Best Val: 0.105769, Patience: 2/20
+Epoch 30/750 - Train Loss: 0.103030, Val Loss: 0.111772, LR: 3.30e-04, Best Val: 0.105342, Patience: 2/20
+Epoch 40/750 - Train Loss: 0.099813, Val Loss: 0.105182, LR: 3.30e-04, Best Val: 0.104754, Patience: 7/20
+Epoch 50/750 - Train Loss: 0.096169, Val Loss: 0.105359, LR: 3.30e-04, Best Val: 0.103227, Patience: 9/20
+Epoch 60/750 - Train Loss: 0.091820, Val Loss: 0.103075, LR: 1.65e-04, Best Val: 0.102934, Patience: 4/20
+Epoch 70/750 - Train Loss: 0.090774, Val Loss: 0.102482, LR: 1.65e-04, Best Val: 0.102482, Patience: 0/20
+Epoch 80/750 - Train Loss: 0.088140, Val Loss: 0.103119, LR: 1.65e-04, Best Val: 0.102482, Patience: 10/20
+Epoch 90/750 - Train Loss: 0.086738, Val Loss: 0.103332, LR: 1.65e-04, Best Val: 0.102414, Patience: 6/20
+Epoch 100/750 - Train Loss: 0.083695, Val Loss: 0.103355, LR: 1.65e-04, Best Val: 0.102220, Patience: 8/20
+Epoch 110/750 - Train Loss: 0.081504, Val Loss: 0.107674, LR: 8.26e-05, Best Val: 0.102220, Patience: 18/20
+→ Early stopping at epoch 112. No improvement in 20 epochs.
+Training complete in 0.17 minutes
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Lead time 24h - MSE original: 0.915892, MSE corrected: 0.893930
+Lead time 120h - MSE original: 1.711486, MSE corrected: 1.249335
+Lead time 216h - MSE original: 2.958132, MSE corrected: 2.197282
+Test data loaded in 0.17 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/finetuning_output/pangu/africa/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp_africa_bs12.zarr
+time to save output: 0.37 minutes
+Total experiment time: 5.11 minutes
+Processing patch 13 with lat range (-18.0, -12.25) and lon range (30.0, 35.75)
+Max and min region_lon: 359.75, 0.0
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Data loaded in 3.73 minutes
+Using batch_size: 256
+DataLoader settings: num_workers=4, pin_memory=True
+  CPU cores available: 48
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 1024
+  MLP num_layers: 2
+  MLP dropout: 0.2443318284460679
+  MLP lead_time_embedding_dim: 8
+
+Training with:
+  lr: 0.00033049633451749834
+  weight_decay: 2.2070827571154726e-06
+  patience: 20
+  min_delta: 5.917022172596213e-05
+Using mixed precision training (AMP) for faster GPU training
+Epoch 10/750 - Train Loss: 0.134706, Val Loss: 0.144747, LR: 3.30e-04, Best Val: 0.142043, Patience: 1/20
+Epoch 20/750 - Train Loss: 0.130524, Val Loss: 0.143279, LR: 3.30e-04, Best Val: 0.139728, Patience: 2/20
+Epoch 30/750 - Train Loss: 0.122976, Val Loss: 0.135238, LR: 3.30e-04, Best Val: 0.134632, Patience: 2/20
+Epoch 40/750 - Train Loss: 0.122561, Val Loss: 0.134308, LR: 3.30e-04, Best Val: 0.132897, Patience: 9/20
+Epoch 50/750 - Train Loss: 0.111884, Val Loss: 0.133327, LR: 1.65e-04, Best Val: 0.130083, Patience: 3/20
+Epoch 60/750 - Train Loss: 0.111779, Val Loss: 0.130540, LR: 1.65e-04, Best Val: 0.129022, Patience: 3/20
+Epoch 70/750 - Train Loss: 0.107773, Val Loss: 0.130276, LR: 1.65e-04, Best Val: 0.128665, Patience: 6/20
+Epoch 80/750 - Train Loss: 0.102836, Val Loss: 0.129300, LR: 8.26e-05, Best Val: 0.128420, Patience: 2/20
+Epoch 90/750 - Train Loss: 0.101212, Val Loss: 0.127679, LR: 8.26e-05, Best Val: 0.127679, Patience: 0/20
+Epoch 100/750 - Train Loss: 0.099152, Val Loss: 0.127745, LR: 8.26e-05, Best Val: 0.127679, Patience: 10/20
+Epoch 110/750 - Train Loss: 0.096632, Val Loss: 0.128089, LR: 4.13e-05, Best Val: 0.127442, Patience: 5/20
+Epoch 120/750 - Train Loss: 0.095229, Val Loss: 0.127704, LR: 2.07e-05, Best Val: 0.127442, Patience: 15/20
+Epoch 130/750 - Train Loss: 0.094661, Val Loss: 0.127561, LR: 2.07e-05, Best Val: 0.127280, Patience: 9/20
+Epoch 140/750 - Train Loss: 0.094183, Val Loss: 0.127624, LR: 1.03e-05, Best Val: 0.127280, Patience: 19/20
+→ Early stopping at epoch 141. No improvement in 20 epochs.
+Training complete in 0.21 minutes
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Lead time 24h - MSE original: 0.756574, MSE corrected: 0.731764
+Lead time 120h - MSE original: 1.225485, MSE corrected: 0.970293
+Lead time 216h - MSE original: 2.124003, MSE corrected: 1.684583
+Test data loaded in 0.22 minutes
+Computing all variables before saving...
+Forecasts saved to /project/jfranke/ozma/forecast_data/processed/finetuning_output/pangu/africa/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp_africa_bs13.zarr
+time to save output: 0.01 minutes
+Total experiment time: 4.86 minutes
+Processing patch 14 with lat range (-18.0, -12.25) and lon range (36.0, 41.75)
+Max and min region_lon: 359.75, 0.0
+  ✗ Regional data not found
+  ✓ Only basic variables needed - trying global data files...
+  ✓ Successfully loaded from global data files
+  ✓ Data loaded into memory successfully
+======================================================================
+
+Data loaded in 3.71 minutes
+Using batch_size: 256
+DataLoader settings: num_workers=4, pin_memory=True
+  CPU cores available: 48
+Using SimpleMLP with 3 lead times
+  MLP hidden_dim: 1024
+  MLP num_layers: 2
+  MLP dropout: 0.2443318284460679
+  MLP lead_time_embedding_dim: 8
+
+Training with:
+  lr: 0.00033049633451749834
+  weight_decay: 2.2070827571154726e-06
+  patience: 20
+  min_delta: 5.917022172596213e-05
+Using mixed precision training (AMP) for faster GPU training

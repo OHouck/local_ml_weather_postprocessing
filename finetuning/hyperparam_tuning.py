@@ -617,9 +617,9 @@ if __name__ == "__main__":
     config = SimpleNamespace(
         model_name="pangu",
         training_vars=[
-            "10m_wind_speed"
+            "2m_temperature", "temperature_1000hPa", "specific_humidity_1000hPa",
         ],
-        output_vars=["10m_wind_speed"],
+        output_vars=["2m_temperature"],
         train_start="2018-01-01",
         train_end="2021-12-31",
         region='india',
@@ -651,7 +651,7 @@ if __name__ == "__main__":
         data_dir=data_dir,
         architecture="mlp",
         max_evals=100,
-        output_dir="hyperopt_results_wind_speed_mlp",
+        output_dir="hyperopt_results_multivar_temperature_mlp",
         device=device,
         random_seed=42,
         resume=False # Set to True to continue from previous runs
@@ -664,7 +664,7 @@ if __name__ == "__main__":
         data_dir=data_dir,
         architecture="unet",
         max_evals=100,
-        output_dir="hyperopt_results_wind_speed_unet",
+        output_dir="hyperopt_results_multivar_temperature_unet",
         device=device,
         random_seed=42,
         resume=False
