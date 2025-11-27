@@ -52,13 +52,12 @@ training_output_vars=(
     # "10m_wind_speed|10m_wind_speed"
 )
 
-subregions=(12x12)
+subregions=(6x6)
 # regions=("tropical" "temperate" "arid")
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
-regions=("finland")
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
-# regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("ifs")
