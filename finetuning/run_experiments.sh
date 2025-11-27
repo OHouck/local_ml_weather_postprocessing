@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=run_experiments_ifs_mlp
+#SBATCH --job-name=run_experiments_pangu_mlp
 #SBATCH --account=pi-jfranke
-#SBATCH --output=run_experiments_ifs_mlp%J.txt
+#SBATCH --output=run_experiments_pangu_mlp%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=120G
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8 
 # lat must be between -90 and 90
@@ -57,10 +57,15 @@ subregions=(6x6)
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
+<<<<<<< HEAD
 regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+=======
+# regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+regions=("asia" "europe" "north_america" "south_america" "oceania")
+>>>>>>> 5574525fc20f00342eaaff239685e3762f697eba
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
-model_names=("ifs")
+model_names=("pangu")
 loss_functions=("mse")
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
