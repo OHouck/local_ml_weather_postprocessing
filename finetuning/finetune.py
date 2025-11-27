@@ -468,37 +468,52 @@ def parse_args():
 # ------------------------------
 # Region grid and patch helpers
 # ------------------------------
+
+# Region center points (lat, lon in degrees)
+REGION_CENTERS = {
+    'india': (22.0, 77.0),
+    'usa_south': (35.0, 260.0),  # -100 + 360
+    'amazon': (-5.0, 295.0),  # -65 + 360
+    'british_columbia': (53.125, 235.0),  # -125 + 360, using 53.125 to match previous 48.25-58 range
+    'pakistan': (29.5, 65.0),
+    'ethiopia': (9.0, 39.0),
+    'corn_belt': (41.0, 270.0),  # -90 + 360
+    'finland': (65.0, 29.0),
+}
+
 def get_region_grid(args):
     """
-    Return full region latitude and longitude arrays (unmasked bounding box).
+    Return full region latitude and longitude arrays based on center point and subregion size.
+
+    For standard regions, uses the center point defined in REGION_CENTERS and expands based
+    on the subregion argument (e.g., '6x6' means 6 degrees in each direction from center).
+
+    For special regions (global, climate zones, etc.), returns full global grid.
     """
-    # region bounds mapping
-    if args.region == "india":
-        lat0, lat1 = 17, 27
-        lon0, lon1 = 72, 82
-    elif args.region == "usa_south":
-        lat0, lat1 = 30, 40
-        lon0, lon1 = -105 + 360, -95 + 360
-    elif args.region == "amazon":
-        lat0, lat1 = -10, 0
-        lon0, lon1 = -70 + 360, -60 + 360
-    elif args.region == "british_columbia":
-        lat0, lat1 = 48.25, 58 # needs to be 48.25 until data is redownloaded
-        lon0, lon1 = -130 + 360, -120 + 360
-    elif args.region == "pakistan":
-        lat0, lat1 = 25, 34
-        lon0, lon1 = 60, 70
-    elif args.region == "ethiopia":
-        lat0, lat1 = 4, 14
-        lon0, lon1 = 34, 44
-    elif args.region == "corn_belt":
-        lat0, lat1 = 36, 46
-        lon0, lon1 = -95 + 360, -85 + 360
-    elif args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
+    # Handle special regions that use full global grid
+    if args.region == "global" or args.region in CLIMATE_ZONE_MAP or args.region in TOPO_ZONE_MAP or args.region in CONTINENT_MAP:
         lat0, lat1 = -90, 90
         lon0, lon1 = 0, 360
-    else:
-        raise ValueError(f"Unknown region '{args.region}'")
+        lat_values = np.arange(lat0, lat1, 0.25)
+        lon_values = np.arange(lon0, lon1, 0.25)
+        return lat_values, lon_values
+
+    # Get center point for region
+    if args.region not in REGION_CENTERS:
+        raise ValueError(f"Unknown region '{args.region}'. Available regions: {list(REGION_CENTERS.keys())}")
+
+    lat_center, lon_center = REGION_CENTERS[args.region]
+
+    # Parse subregion size (e.g., '6x6' -> 6 degrees lat, 6 degrees lon)
+    deg_lat, deg_lon = map(int, args.subregion.split('x'))
+
+    # Calculate bounds: center +/- half the subregion size
+    lat0 = lat_center - (deg_lat / 2)
+    lat1 = lat_center + (deg_lat / 2)
+    lon0 = lon_center - (deg_lon / 2)
+    lon1 = lon_center + (deg_lon / 2)
+
+    # Generate lat/lon arrays at 0.25 degree resolution
     lat_values = np.arange(lat0, lat1, 0.25)
     lon_values = np.arange(lon0, lon1, 0.25)
 

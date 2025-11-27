@@ -49,7 +49,7 @@ training_output_vars=(
     # Full: Use all 6 variables for training (best performance from experiments)
     # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
 
-    "10m_wind_speed|10m_wind_speed"
+    # "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(6x6)
