@@ -9,8 +9,9 @@ Data inputs:
 Post-processed zarr files from finetuning output directory structure. 
 These are all created by finetune.py with different runs managed by run_experiments.sh
 
-The helper functions all_patch_data, and _extract_pixel_level_data are used
-as data processing functions. 
+The helper function all_patch_data is used
+as a data processing function but i have saved the output anad commented it out 
+so it shouldn't have to be used. 
 
 """
 
