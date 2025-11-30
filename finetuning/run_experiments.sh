@@ -57,8 +57,12 @@ subregions=(6x6)
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
+<<<<<<< HEAD
+regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+=======
 # regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 regions=("asia" "europe" "north_america" "south_america" "oceania")
+>>>>>>> 5574525fc20f00342eaaff239685e3762f697eba
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
