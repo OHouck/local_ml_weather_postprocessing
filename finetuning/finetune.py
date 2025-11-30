@@ -381,12 +381,13 @@ class UNet(nn.Module):
 # ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
-def load_optimal_hyperparameters(architecture, output_var):
+def load_optimal_hyperparameters(architecture, training_vars, output_var):
     """
     Load optimal hyperparameters from hyperopt results.
     
     Args:
         architecture: 'mlp' or 'unet'
+        training_vars: List of input variable names
         output_var: Output variable name 
     
     Returns:
@@ -402,10 +403,16 @@ def load_optimal_hyperparameters(architecture, output_var):
             return None
         output_var = output_var[0]
 
+    # if using multiple training variables, use those hyperopt results
+    if len(training_vars) > 1:
+        multi_flag = "_multivar"
+    else:
+        multi_flag = ""
+
     if output_var == "2m_temperature":
-        results_file = script_dir / f"hyperopt_results_temp_{architecture}" / f"optimization_results_{architecture}.json"
+        results_file = script_dir / f"hyperopt_results{multi_flag}_temperature_{architecture}" / f"optimization_results_{architecture}.json"
     elif output_var == "10m_wind_speed":
-        results_file = script_dir / f"hyperopt_results_wind_{architecture}" / f"optimization_results_{architecture}.json"
+        results_file = script_dir / f"hyperopt_results{multi_flag}_wind_{architecture}" / f"optimization_results_{architecture}.json"
     else:
         print(f"Warning: No hyperparameter results available for output variable '{output_var}'")
         return None
@@ -1116,7 +1123,7 @@ def main():
     args = parse_args()
     
     # Load optimal hyperparameters based on architecture
-    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.output_vars)
+    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
         if args.nn_architecture == 'mlp':

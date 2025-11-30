@@ -44,23 +44,13 @@ training_output_vars=(
     "2m_temperature|2m_temperature"
 
     # partial:use 3 vars
-    # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
-
-    # Full: Use all 6 variables for training (best performance from experiments)
-    # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
-
-    "10m_wind_speed|10m_wind_speed"
+    "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
 )
 
 subregions=(6x6)
-# regions=("tropical" "temperate" "arid")
-# regions=("flat" "mountainous" "hilly")
-# subregions=(2x2)
-# regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
-# regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
-regions=("north_america" "south_america" "oceania")
+regions=("india")
 all_lead_times=(24 120 216)
-nn_architectures=("mlp")
+nn_architectures=("mlp" "unet")
 model_names=("pangu")
 loss_functions=("mse")
 # Define bootstrap regions
