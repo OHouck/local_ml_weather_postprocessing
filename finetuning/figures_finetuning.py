@@ -2069,8 +2069,239 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    
+
     print(f"RMSE improvement plot saved to: {save_path}")
+
+
+def plot_arch_experiment_results(
+    dirs,
+    model="pangu",
+    region="india",
+    subregion="6x6",
+    variable="2m_temperature",
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    save_path=None
+):
+    """
+    Plot RMSE improvement for architecture experiments directly from zarr files.
+
+    Designed for experiments from run_arch_experiments.sh which tests:
+    - MLP with single variable (minimal)
+    - MLP with 3 variables (partial)
+    - UNet with single variable (minimal)
+    - UNet with 3 variables (partial)
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories from setup_directories()
+    model : str
+        Model name: "pangu", "ifs", etc. (default: "pangu")
+    region : str
+        Region name (default: "india")
+    subregion : str
+        Patch size identifier (default: "6x6")
+    variable : str
+        Variable to plot (default: "2m_temperature")
+    train_start : str
+        Training start date (default: "2018-01-01")
+    train_end : str
+        Training end date (default: "2021-12-31")
+    test_start : str
+        Test start date (default: "2022-01-01")
+    test_end : str
+        Test end date (default: "2022-12-31")
+    save_path : str
+        Custom save path. If None, auto-generates based on parameters
+
+    Returns
+    -------
+    None
+        Saves plot to file
+    """
+    input_folder = dirs['input']
+
+    # Define the experiment configurations from run_arch_experiments.sh
+    experiments = [
+        {
+            'name': 'MLP (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'color': '#1f77b4',  # Blue
+            'hatch': None
+        },
+        {
+            'name': 'MLP (2m Temperature + 1000hPa Temperature and Specific Humidity)',
+            'architecture': 'mlp',
+            'training_vars': [variable, f'temperature_1000hPa', f'specific_humidity_1000hPa'],
+            'output_vars': [variable],
+            'color': '#1f77b4',  # Blue
+            'hatch': '//'
+        },
+        {
+            'name': 'UNet (2m Temperature)',
+            'architecture': 'unet',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'color': '#ff7f0e',  # Orange
+            'hatch': None
+        },
+        {
+            'name': 'UNet (2m Temperature + 1000hPa Temperature and Specific Humidity)',
+            'architecture': 'unet',
+            'training_vars': [variable, f'temperature_1000hPa', f'specific_humidity_1000hPa'],
+            'output_vars': [variable],
+            'color': '#ff7f0e',  # Orange
+            'hatch': '//'
+        }
+    ]
+
+    lead_times = [24, 120, 216]  # Hours
+    lead_times_days = [lt / 24 for lt in lead_times]  # Convert to days for x-axis
+
+    # Storage for results
+    results = {exp['name']: {lt: None for lt in lead_times} for exp in experiments}
+
+    # Load data for each experiment
+    for exp in experiments:
+        print(f"\nProcessing {exp['name']}...")
+
+        # Build args for generate_output_path
+        args = SimpleNamespace(
+            model_name=model,
+            region=region,
+            subregion=subregion,
+            train_start=train_start,
+            train_end=train_end,
+            test_start=test_start,
+            test_end=test_end,
+            training_vars=exp['training_vars'],
+            output_vars=exp['output_vars'],
+            lead_time_hours=lead_times,
+            nn_architecture=exp['architecture'],
+            growing_season_only=False,
+            alternate_loss_fn=None,
+            ground_truth_source=""
+        )
+
+        zarr_path = os.path.join(input_folder, generate_output_path(args))
+        print(f"  Loading: {zarr_path}")
+
+        try:
+            ds = load_zarr_cached(zarr_path)
+
+            # Calculate RMSE improvement for each lead time
+            for lead_time in lead_times:
+                ground_truth, original, corrected, _ = extract_forecast_data(ds, variable, lead_time)
+
+                # Flatten arrays and remove NaNs
+                gt_flat = ground_truth.values.flatten()
+                orig_flat = original.values.flatten()
+                corr_flat = corrected.values.flatten()
+
+                # Remove NaN values
+                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                gt_flat = gt_flat[mask]
+                orig_flat = orig_flat[mask]
+                corr_flat = corr_flat[mask]
+
+                # Calculate RMSE
+                rmse_original = calculate_rmse(orig_flat, gt_flat)
+                rmse_corrected = calculate_rmse(corr_flat, gt_flat)
+                pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
+
+                results[exp['name']][lead_time] = pct_improvement
+                print(f"    {lead_time}h: {pct_improvement:.2f}% improvement")
+
+        except FileNotFoundError:
+            print(f"  Warning: File not found for {exp['name']}")
+        except Exception as e:
+            print(f"  Error loading {exp['name']}: {e}")
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Calculate bar width and positions
+    n_experiments = len(experiments)
+    bar_width = 0.6 / n_experiments
+
+    # Plot bars for each experiment
+    for exp_idx, exp in enumerate(experiments):
+        # Get improvement values for this experiment
+        improvements = [results[exp['name']][lt] for lt in lead_times]
+
+        # Skip if no data
+        if all(v is None for v in improvements):
+            print(f"Warning: No data for {exp['name']}")
+            continue
+
+        # Replace None with 0 for plotting
+        improvements = [v if v is not None else 0 for v in improvements]
+
+        # Calculate x positions for this experiment
+        x_pos = np.arange(len(lead_times)) + (exp_idx - n_experiments/2 + 0.5) * bar_width
+
+        # Plot bars
+        bars = ax.bar(
+            x_pos,
+            improvements,
+            width=bar_width,
+            color=exp['color'],
+            alpha=0.8,
+            edgecolor='black',
+            linewidth=0.5,
+            hatch=exp['hatch'],
+            label=exp['name'],
+            zorder=3
+        )
+
+    # Set axes
+    ax.set_ylim(-2.5, 15)
+    ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+
+    # X-axis: lead time in days
+    ax.set_xticks(range(len(lead_times)))
+    ax.set_xticklabels([f"{d:.0f}" for d in lead_times_days])
+    ax.set_xlabel("Forecast Lead Time (days)", fontsize=20)
+
+    # Title
+    title_parts = [
+        f"Architecture Comparison: RMSE Improvement for {variable.replace('_', ' ').title()}",
+        f"Model: {model.upper()}, Region: {region.replace('_', ' ').title()}, Patch Size: {subregion}"
+    ]
+    ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
+
+    # Grid and styling
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
+    ax.tick_params(axis='both', labelsize=16)
+
+    # Legend
+    ax.legend(fontsize=14, loc='upper right', framealpha=0.95, edgecolor='gray')
+
+    # Remove top and right spines
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+
+    # Save figure
+    if save_path is None:
+        out_folder = os.path.join(dirs["fig"], model, "architecture_comparison")
+        os.makedirs(out_folder, exist_ok=True)
+
+        fname = f"arch_comparison_{variable}_{region}_{subregion}.png"
+        save_path = os.path.join(out_folder, fname)
+
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"\nArchitecture comparison plot saved to: {save_path}")
 
 
 def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_start, test_end,
