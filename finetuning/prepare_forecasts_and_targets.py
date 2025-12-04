@@ -942,8 +942,9 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
             ds = ds.assign_coords(time=pd.to_datetime(ds.time.values, unit='ns'))
 
         # Select spatial subset (this is the key difference from new loading)
-        # Use method='nearest' to handle floating-point coordinate mismatches
-        ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest').sortby('latitude')
+        # Use method='nearest' with tight tolerance to handle floating-point mismatches
+        # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+        ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01).sortby('latitude')
         datasets.append(ds)
 
     # Concatenate along time dimension, allowing overlaps
@@ -1110,8 +1111,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 ds = ds.sel(prediction_timedelta=lead_times_td)
 
                 # Select region if needed (data is already regional, but may need sub-region)
-                # Use method='nearest' to handle floating-point coordinate mismatches
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                 forecast_datasets.append(ds)
 
             # Combine years
@@ -1130,8 +1132,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
                 # Select region if needed
-                # Use method='nearest' to handle floating-point coordinate mismatches
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                 target_datasets.append(ds)
 
             # Combine years
@@ -1180,8 +1183,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                     ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
                     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                     ds = ds.sel(prediction_timedelta=lead_times_td)
-                    # Use method='nearest' to handle floating-point coordinate mismatches
-                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                    # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                    # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                     forecast_datasets.append(ds)
 
                 forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
@@ -1193,8 +1197,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 for year in years_needed:
                     file_path = get_data_path(data_dir, target, args.region, year)
                     ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                    # Use method='nearest' to handle floating-point coordinate mismatches
-                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                    # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                    # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                     target_datasets.append(ds)
 
                 obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
@@ -1244,8 +1249,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
                 lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                 ds = ds.sel(prediction_timedelta=lead_times_td)
-                # Use method='nearest' to handle floating-point coordinate mismatches
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                 forecast_datasets.append(ds)
 
             forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
@@ -1257,8 +1263,9 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             for year in years_needed:
                 file_path = get_data_path(data_dir, target, args.region, year)
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                # Use method='nearest' to handle floating-point coordinate mismatches
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest')
+                # Use method='nearest' with tight tolerance to handle floating-point mismatches
+                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
+                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
                 target_datasets.append(ds)
 
             obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
