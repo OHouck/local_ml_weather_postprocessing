@@ -43,6 +43,8 @@ def generate_output_path(args):
         model_str = "mlp"
     elif args.nn_architecture == 'unet':
         model_str = "unet"
+    elif args.nn_architecture == 'transformer':
+        model_str = "transformer"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:
