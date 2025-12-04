@@ -4809,40 +4809,41 @@ def main():
 # Main figure binscatter plots
 #=============================================
 
-    # # Create plot with equator distance
-    # for model in ["pangu", "ifs"]:
-    #     for x_metric in ["sdor", "equator_distance"]:
-    #         _ = lead_time_compare_binscatter(
-    #             dirs=dirs,
-    #             model=model,
-    #             x_metric=x_metric
-    #         )
+    # overlaying lead times for single model
+    for model in ["ifs"]:
+        for x_metric in ["sdor", "equator_distance"]:
+            _ = lead_time_compare_binscatter(
+                dirs=dirs,
+                model=model,
+                x_metric=x_metric
+            )
     
-    # # Create plot with equator distance
-    # for x_metric in ["sdor", "equator_distance"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         _ = model_compare_binscatter(
-    #             dirs=dirs,
-    #             variable=variable,
-    #             x_metric=x_metric
-    #         )
+    # Create plot comparing model binscatters
+    for x_metric in ["sdor", "equator_distance"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            _ = model_compare_binscatter(
+                dirs=dirs,
+                variable=variable,
+                x_metric=x_metric
+            )
 #=============================================
 # Global Improvement Plots (scatter and maps for appendix)
 #=============================================
-    # for model in ["pangu", "ifs"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         for binscatter in [True]:
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="equator_distance", 
-    #                                             binscatter=binscatter)
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="sdor", 
-    #                                             binscatter=binscatter)
-    #         for map_type in ["original", "improvement"]:
-    #             for pixel_flag in [True]:
-    #                 map_global_improvements(dirs=dirs, model=model, 
-    #                                         variable=variable, map_type=map_type,
-    #                                         pixel_level=pixel_flag)
+    for model in ["ifs"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            for binscatter in [True]:
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, x_metric="equator_distance", 
+                                                binscatter=binscatter)
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, x_metric="sdor", 
+                                                binscatter=binscatter)
+            for map_type in ["original", "improvement"]:
+                for pixel_flag in [True]:
+                    map_global_improvements(dirs=dirs, model=model, 
+                                            variable=variable, map_type=map_type,
+                                            pixel_level=pixel_flag)
+    exit()
 
 #=============================================
 # Binned RMSE Improvement Plots

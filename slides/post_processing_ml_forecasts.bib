@@ -17,6 +17,24 @@
   file = {/Users/ohouck/Zotero/storage/Y6JSDCYU/Araujo and Andrade - 2022 - Post-Processing Air Temperature Weather Forecast Using Artificial Neural Networks with Measurements.pdf}
 }
 
+@article{benbouallegueRiseDataDrivenWeather2024,
+  title = {The {{Rise}} of {{Data-Driven Weather Forecasting}}: {{A First Statistical Assessment}} of {{Machine Learning}}--{{Based Weather Forecasts}} in an {{Operational-Like Context}}},
+  shorttitle = {The {{Rise}} of {{Data-Driven Weather Forecasting}}},
+  author = {Ben Bouall{\`e}gue, Zied and Clare, Mariana C. A. and Magnusson, Linus and Gasc{\'o}n, Estibaliz and {Maier-Gerber}, Michael and Janou{\v s}ek, Martin and Rodwell, Mark and Pinault, Florian and Dramsch, Jesper S. and Lang, Simon T. K. and Raoult, Baudouin and Rabier, Florence and Chevallier, Matthieu and Sandu, Irina and Dueben, Peter and Chantry, Matthew and Pappenberger, Florian},
+  year = 2024,
+  month = jun,
+  journal = {Bulletin of the American Meteorological Society},
+  volume = {105},
+  number = {6},
+  pages = {E864-E883},
+  issn = {0003-0007, 1520-0477},
+  doi = {10.1175/BAMS-D-23-0162.1},
+  urldate = {2025-12-02},
+  abstract = {Abstract             Data-driven modeling based on machine learning (ML) is showing enormous potential for weather forecasting. Rapid progress has been made with impressive results for some applications. The uptake of ML methods could be a game changer for the incremental progress in traditional numerical weather prediction (NWP) known as the ``quiet revolution'' of weather forecasting. The computational cost of running a forecast with standard NWP systems greatly hinders the improvements that can be made by increasing model resolution and ensemble sizes. An emerging new generation of ML models, developed using high-quality reanalysis datasets like ERA5 for training, allows forecasts that require much lower computational costs and that are highly competitive in terms of accuracy. Here, we compare for the first time ML-generated forecasts with standard NWP-based forecasts in an operational-like context, initialized from the same initial conditions. Focusing on deterministic forecasts, we apply common forecast verification tools to assess to what extent a data-driven forecast produced with one of the recently developed ML models (PanguWeather) matches the quality and attributes of a forecast from one of the leading global NWP systems (the ECMWF IFS). The results are very promising, with comparable accuracy for both global metrics and extreme events, when verified against both the operational IFS analysis and synoptic observations. Overly smooth forecasts, increasing bias with forecast lead time, and poor performance in predicting tropical cyclone intensity are identified as current drawbacks of ML-based forecasts. A new NWP paradigm is emerging relying on inference from ML models and state-of-the-art analysis and reanalysis datasets for forecast initialization and model training.},
+  copyright = {http://www.ametsoc.org/PUBSReuseLicenses},
+  file = {/Users/ohouck/Zotero/storage/M22WY4TE/Ben Bouallègue et al. - 2024 - The Rise of Data-Driven Weather Forecasting A First Statistical Assessment of Machine Learning–Base.pdf}
+}
+
 @article{biAccurateMediumrangeGlobal2023,
   title = {Accurate Medium-Range Global Weather Forecasting with {{3D}} Neural Networks},
   author = {Bi, Kaifeng and Xie, Lingxi and Zhang, Hengheng and Chen, Xin and Gu, Xiaotao and Tian, Qi},
@@ -190,6 +208,19 @@
   file = {/Users/ohouck/Zotero/storage/AUYA4SUR/Keane et al. - 2025 - Mid‐Latitude Versus Tropical Scales of Predictability and Their Implications for Forecasting.pdf}
 }
 
+@misc{langAIFSECMWFsDatadriven2024,
+  title = {{{AIFS}} -- {{ECMWF}}'s Data-Driven Forecasting System},
+  author = {Lang, Simon and Alexe, Mihai and Chantry, Matthew and Dramsch, Jesper and Pinault, Florian and Raoult, Baudouin and Clare, Mariana C. A. and Lessig, Christian and {Maier-Gerber}, Michael and Magnusson, Linus and Bouall{\`e}gue, Zied Ben and Nemesio, Ana Prieto and Dueben, Peter D. and Brown, Andrew and Pappenberger, Florian and Rabier, Florence},
+  year = 2024,
+  publisher = {arXiv},
+  doi = {10.48550/ARXIV.2406.01465},
+  urldate = {2025-12-02},
+  abstract = {Machine learning-based weather forecasting models have quickly emerged as a promising methodology for accurate medium-range global weather forecasting. Here, we introduce the Artificial Intelligence Forecasting System (AIFS), a data driven forecast model developed by the European Centre for Medium-Range Weather Forecasts (ECMWF). AIFS is based on a graph neural network (GNN) encoder and decoder, and a sliding window transformer processor, and is trained on ECMWF's ERA5 re-analysis and ECMWF's operational numerical weather prediction (NWP) analyses. It has a flexible and modular design and supports several levels of parallelism to enable training on high-resolution input data. AIFS forecast skill is assessed by comparing its forecasts to NWP analyses and direct observational data. We show that AIFS produces highly skilled forecasts for upper-air variables, surface weather parameters and tropical cyclone tracks. AIFS is run four times daily alongside ECMWF's physics-based NWP model and forecasts are available to the public under ECMWF's open data policy.},
+  copyright = {Creative Commons Attribution Share Alike 4.0 International},
+  keywords = {Atmospheric and Oceanic Physics (physics.ao-ph),FOS: Physical sciences},
+  file = {/Users/ohouck/Zotero/storage/8TGP439D/Lang et al. - 2024 - AIFS -- ECMWF's data-driven forecasting system.pdf}
+}
+
 @misc{leclercImprovingPredictionsConvective2025,
   title = {Improving {{Predictions}} of {{Convective Storm Wind Gusts}} through {{Statistical Post-Processing}} of {{Neural Weather Models}}},
   author = {Leclerc, Antoine and Koch, Erwan and Feldmann, Monika and Nerini, Daniele and Beucler, Tom},
@@ -200,6 +231,20 @@
   abstract = {Issuing timely severe weather warnings helps mitigate potentially disastrous consequences. Recent advancements in Neural Weather Models (NWMs) offer a computationally inexpensive and fast approach for forecasting atmospheric environments on a 0.25{$^\circ$} global grid. For thunderstorms, these environments can be empirically post-processed to predict wind gust distributions at specific locations. With the Pangu-Weather NWM, we apply a hierarchy of statistical and deep learning post-processing methods to forecast hourly wind gusts up to three days ahead. To ensure statistical robustness, we constrain our probabilistic forecasts using generalised extreme-value distributions across five regions in Switzerland. Using a convolutional neural network to post-process the predicted atmospheric environment's spatial patterns yields the best results, outperforming direct forecasting approaches across lead times and wind gust speeds. Our results confirm the added value of NWMs for extreme wind forecasting, especially for designing more responsive early-warning systems.},
   copyright = {Creative Commons Attribution 4.0 International},
   keywords = {Atmospheric and Oceanic Physics (physics.ao-ph),FOS: Computer and information sciences,FOS: Physical sciences,Machine Learning (cs.LG)}
+}
+
+@article{liConvolutionalNeuralNetworkbased2022,
+  title = {Convolutional Neural Network-Based Statistical Post-Processing of Ensemble Precipitation Forecasts},
+  author = {Li, Wentao and Pan, Baoxiang and Xia, Jiangjiang and Duan, Qingyun},
+  year = 2022,
+  month = feb,
+  journal = {Journal of Hydrology},
+  volume = {605},
+  pages = {127301},
+  issn = {00221694},
+  doi = {10.1016/j.jhydrol.2021.127301},
+  urldate = {2025-12-02},
+  langid = {english}
 }
 
 @misc{linsenmeierGlobalInequalitiesWeather2023a,
