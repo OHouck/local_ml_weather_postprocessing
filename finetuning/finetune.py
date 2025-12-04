@@ -428,12 +428,13 @@ class EarthSpecificAttention(nn.Module):
         # Initialize bias table
         nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
 
-    def forward(self, x):
+    def forward(self, x, has_cls_token=True):
         """
         Args:
-            x: [batch_size, num_patches, dim]
+            x: [batch_size, num_tokens, dim] where num_tokens may include a CLS token
+            has_cls_token: Whether the first token is a CLS token (default: True)
         Returns:
-            Output: [batch_size, num_patches, dim]
+            Output: [batch_size, num_tokens, dim]
         """
         B, N, C = x.shape
 
@@ -445,10 +446,32 @@ class EarthSpecificAttention(nn.Module):
         attn = (q @ k.transpose(-2, -1)) * self.scale  # [B, num_heads, N, N]
 
         # Add Earth-Specific Position Bias
-        relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.view(-1)
-        ].view(N, N, -1)  # [N, N, num_heads]
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # [num_heads, N, N]
+        # The relative_position_index is computed for spatial positions only (num_patches x num_patches)
+        num_spatial = self.spatial_shape[0] * self.spatial_shape[1]
+
+        if has_cls_token and N == num_spatial + 1:
+            # Handle CLS token: create bias matrix with zeros for CLS interactions
+            # Get spatial position bias
+            spatial_bias = self.relative_position_bias_table[
+                self.relative_position_index.view(-1)
+            ].view(num_spatial, num_spatial, -1)  # [num_spatial, num_spatial, num_heads]
+            spatial_bias = spatial_bias.permute(2, 0, 1).contiguous()  # [num_heads, num_spatial, num_spatial]
+
+            # Create full bias matrix [num_heads, N, N] with zeros for CLS token
+            relative_position_bias = torch.zeros(
+                self.num_heads, N, N,
+                device=spatial_bias.device,
+                dtype=spatial_bias.dtype
+            )
+            # Fill in the spatial token interactions (exclude CLS token at position 0)
+            relative_position_bias[:, 1:, 1:] = spatial_bias
+        else:
+            # No CLS token, apply bias to all tokens
+            relative_position_bias = self.relative_position_bias_table[
+                self.relative_position_index.view(-1)
+            ].view(N, N, -1)  # [N, N, num_heads]
+            relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # [num_heads, N, N]
+
         attn = attn + relative_position_bias.unsqueeze(0)  # [B, num_heads, N, N]
 
         attn = F.softmax(attn, dim=-1)
