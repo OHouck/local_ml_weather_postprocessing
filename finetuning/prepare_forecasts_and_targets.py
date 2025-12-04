@@ -142,6 +142,57 @@ def get_data_path(data_dir, data_source, region, year):
     return os.path.join(model_dir, filename)
 
 
+def get_actual_coordinates(file_path, requested_lat, requested_lon, tolerance=0.15):
+    """
+    Get the actual coordinates from a zarr file that are closest to requested coordinates.
+
+    This handles cases where the downloaded data has a different grid than the idealized
+    coordinates from get_region_grid().
+
+    Parameters:
+    -----------
+    file_path : str
+        Path to zarr file
+    requested_lat : np.ndarray
+        Requested latitude values
+    requested_lon : np.ndarray
+        Requested longitude values
+    tolerance : float
+        Maximum distance (in degrees) to search for nearest coordinates (default: 0.15)
+
+    Returns:
+    --------
+    tuple : (actual_lat, actual_lon) - Arrays of actual coordinates from the file
+    """
+    # Open the file to get actual coordinates
+    ds = xr.open_zarr(file_path, chunks=None, consolidated=True)
+
+    # Get the bounds of requested region
+    lat_min, lat_max = requested_lat.min(), requested_lat.max()
+    lon_min, lon_max = requested_lon.min(), requested_lon.max()
+
+    # Expand bounds slightly to ensure we capture all needed points
+    lat_min -= tolerance
+    lat_max += tolerance
+    lon_min -= tolerance
+    lon_max += tolerance
+
+    # Get actual coordinates from file that fall within expanded bounds
+    actual_lat = ds.latitude.values
+    actual_lon = ds.longitude.values
+
+    # Filter to region
+    lat_mask = (actual_lat >= lat_min) & (actual_lat <= lat_max)
+    lon_mask = (actual_lon >= lon_min) & (actual_lon <= lon_max)
+
+    actual_lat_subset = actual_lat[lat_mask]
+    actual_lon_subset = actual_lon[lon_mask]
+
+    ds.close()
+
+    return actual_lat_subset, actual_lon_subset
+
+
 def get_global_data_path(data_dir, data_source, year):
     """
     Get the file path for a global data file (legacy format).
@@ -1098,8 +1149,13 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # ====================================================================
         if forecast_all_exist and target_all_exist:
             print(f"  ✓ All regional data files exist with required variables")
-            print(f"\n  Loading forecast data from regional files...")
 
+            # Get actual coordinates from the first file to ensure we use coordinates that exist
+            first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
+            actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
+            print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+
+            print(f"\n  Loading forecast data from regional files...")
             forecast_datasets = []
             for year in years_needed:
                 file_path = get_data_path(data_dir, args.model_name, args.region, year)
@@ -1110,10 +1166,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                 ds = ds.sel(prediction_timedelta=lead_times_td)
 
-                # Select region if needed (data is already regional, but may need sub-region)
-                # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                # Select using actual coordinates from the data (no tolerance needed - exact match)
+                ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                 forecast_datasets.append(ds)
 
             # Combine years
@@ -1131,10 +1185,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 print(f"    Loading {year} from {file_path}")
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
-                # Select region if needed
-                # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                # Select using actual coordinates from the data (no tolerance needed - exact match)
+                ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                 target_datasets.append(ds)
 
             # Combine years
@@ -1177,15 +1229,20 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
                 # Reload the data we just downloaded
                 print(f"\n  Loading newly downloaded data...")
+
+                # Get actual coordinates from first file
+                first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
+                actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
+                print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+
                 forecast_datasets = []
                 for year in years_needed:
                     file_path = get_data_path(data_dir, args.model_name, args.region, year)
                     ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
                     lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                     ds = ds.sel(prediction_timedelta=lead_times_td)
-                    # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                    # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                    # Select using actual coordinates from the data
+                    ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                     forecast_datasets.append(ds)
 
                 forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
@@ -1197,9 +1254,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 for year in years_needed:
                     file_path = get_data_path(data_dir, target, args.region, year)
                     ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                    # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                    # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                    ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                    # Select using actual coordinates from the data
+                    ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                     target_datasets.append(ds)
 
                 obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
@@ -1243,15 +1299,20 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
 
             # Load the data we just downloaded
             print(f"\n  Loading newly downloaded data...")
+
+            # Get actual coordinates from first file
+            first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
+            actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
+            print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+
             forecast_datasets = []
             for year in years_needed:
                 file_path = get_data_path(data_dir, args.model_name, args.region, year)
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
                 lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                 ds = ds.sel(prediction_timedelta=lead_times_td)
-                # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                # Select using actual coordinates from the data
+                ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                 forecast_datasets.append(ds)
 
             forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
@@ -1263,9 +1324,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             for year in years_needed:
                 file_path = get_data_path(data_dir, target, args.region, year)
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                # Use method='nearest' with tight tolerance to handle floating-point mismatches
-                # Tolerance of 0.01 degrees ensures we only match truly close coordinates
-                ds = ds.sel(latitude=lat_values, longitude=lon_values, method='nearest', tolerance=0.01)
+                # Select using actual coordinates from the data
+                ds = ds.sel(latitude=actual_lat, longitude=actual_lon)
                 target_datasets.append(ds)
 
             obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
