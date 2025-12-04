@@ -379,6 +379,289 @@ class UNet(nn.Module):
         return x
 
 # ------------------------------
+# Pangu-Weather Inspired Transformer for Regional Post-processing
+# ------------------------------
+class EarthSpecificAttention(nn.Module):
+    """
+    Multi-head self-attention with Earth-Specific Position Bias (ESB).
+
+    The ESB is a learnable bias term added to attention scores, independently
+    learned for each spatial position to capture Earth-specific patterns.
+    """
+    def __init__(self, dim, num_heads=8, dropout=0.1, spatial_shape=(24, 24)):
+        super(EarthSpecificAttention, self).__init__()
+        assert dim % num_heads == 0, "dim must be divisible by num_heads"
+
+        self.dim = dim
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.spatial_shape = spatial_shape
+
+        # Linear projections for Q, K, V
+        self.qkv = nn.Linear(dim, dim * 3, bias=False)
+        self.proj = nn.Linear(dim, dim)
+        self.dropout = nn.Dropout(dropout)
+
+        # Earth-Specific Position Bias: learnable bias for each spatial position pair
+        # For a 24x24 grid, we have 576 positions
+        num_positions = spatial_shape[0] * spatial_shape[1]
+        # We use relative position bias similar to Swin Transformer
+        # This is more parameter-efficient than full pairwise bias
+        self.relative_position_bias_table = nn.Parameter(
+            torch.zeros((2 * spatial_shape[0] - 1) * (2 * spatial_shape[1] - 1), num_heads)
+        )
+
+        # Get relative position index
+        coords_h = torch.arange(spatial_shape[0])
+        coords_w = torch.arange(spatial_shape[1])
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij'))
+        coords_flatten = torch.flatten(coords, 1)
+        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+        relative_coords = relative_coords.permute(1, 2, 0).contiguous()
+        relative_coords[:, :, 0] += spatial_shape[0] - 1
+        relative_coords[:, :, 1] += spatial_shape[1] - 1
+        relative_coords[:, :, 0] *= 2 * spatial_shape[1] - 1
+        relative_position_index = relative_coords.sum(-1)
+        self.register_buffer("relative_position_index", relative_position_index)
+
+        # Initialize bias table
+        nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
+
+    def forward(self, x):
+        """
+        Args:
+            x: [batch_size, num_patches, dim]
+        Returns:
+            Output: [batch_size, num_patches, dim]
+        """
+        B, N, C = x.shape
+
+        # Generate Q, K, V
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each: [B, num_heads, N, head_dim]
+
+        # Scaled dot-product attention
+        attn = (q @ k.transpose(-2, -1)) * self.scale  # [B, num_heads, N, N]
+
+        # Add Earth-Specific Position Bias
+        relative_position_bias = self.relative_position_bias_table[
+            self.relative_position_index.view(-1)
+        ].view(N, N, -1)  # [N, N, num_heads]
+        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # [num_heads, N, N]
+        attn = attn + relative_position_bias.unsqueeze(0)  # [B, num_heads, N, N]
+
+        attn = F.softmax(attn, dim=-1)
+        attn = self.dropout(attn)
+
+        # Apply attention to values
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.dropout(x)
+
+        return x
+
+
+class PanguTransformerBlock(nn.Module):
+    """
+    Transformer block with Earth-Specific Attention, layer norm, and feed-forward network.
+    Follows the structure of Pangu-Weather's 3D Earth-Specific Transformer blocks.
+    """
+    def __init__(self, dim, num_heads=8, mlp_ratio=4.0, dropout=0.1, spatial_shape=(24, 24)):
+        super(PanguTransformerBlock, self).__init__()
+
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = EarthSpecificAttention(dim, num_heads, dropout, spatial_shape)
+        self.norm2 = nn.LayerNorm(dim)
+
+        # Feed-forward network (MLP)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, mlp_hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(mlp_hidden_dim, dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        """
+        Args:
+            x: [batch_size, num_patches, dim]
+        Returns:
+            Output: [batch_size, num_patches, dim]
+        """
+        # Attention with residual connection
+        x = x + self.attn(self.norm1(x))
+
+        # Feed-forward with residual connection
+        x = x + self.mlp(self.norm2(x))
+
+        return x
+
+
+class PanguTransformer(nn.Module):
+    """
+    Simplified Pangu-Weather inspired transformer for regional weather post-processing.
+
+    Designed for 6x6 degree regions (24x24 grid at 0.25 degree resolution).
+    Uses patch embedding, Earth-Specific attention, and transformer blocks to learn
+    spatial patterns in weather forecasts.
+
+    Architecture:
+        1. Patch embedding: Convert input features to patch tokens
+        2. Add temporal embeddings (lead time, day of year)
+        3. Stack of Pangu Transformer blocks with Earth-Specific attention
+        4. Output projection to predict correction
+
+    Args:
+        input_dim: Flattened input dimension (n_vars * n_lat * n_lon)
+        hidden_dim: Dimension of transformer embeddings (default: 256)
+        num_layers: Number of transformer blocks (default: 4)
+        num_heads: Number of attention heads (default: 8)
+        output_dim: Flattened output dimension
+        n_lat, n_lon: Spatial dimensions (default: 24x24 for 6x6 degrees)
+        n_input_vars: Number of input variables
+        n_output_vars: Number of output variables
+        n_lead_times: Number of distinct lead times
+        lead_time_embedding_dim: Dimension of lead time embedding
+        dropout_rate: Dropout rate
+        mlp_ratio: Ratio of MLP hidden dim to embedding dim (default: 4.0)
+    """
+    def __init__(self, input_dim, hidden_dim=256, num_layers=4, num_heads=8,
+                 output_dim=1, n_lat=24, n_lon=24, n_input_vars=1, n_output_vars=1,
+                 n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1,
+                 mlp_ratio=4.0):
+        super(PanguTransformer, self).__init__()
+
+        # Store dimensions
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim = hidden_dim
+        self.n_lat = n_lat
+        self.n_lon = n_lon
+        self.n_input_vars = n_input_vars
+        self.n_output_vars = n_output_vars
+        self.n_lead_times = n_lead_times
+        self.num_patches = n_lat * n_lon
+
+        # Patch embedding: linear projection of input variables at each spatial location
+        # Each "patch" is actually a single grid point with all its variables
+        self.patch_embed = nn.Linear(n_input_vars, hidden_dim)
+
+        # Temporal conditioning embeddings
+        self.lead_time_embedding = None
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+
+        # Day-of-year features (2D: sin and cos) projected to embedding space
+        temporal_dim = 2  # sin and cos of day of year
+        if n_lead_times > 1:
+            temporal_dim += lead_time_embedding_dim
+        self.temporal_proj = nn.Linear(temporal_dim, hidden_dim)
+
+        # Learnable CLS token for aggregating spatial information
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_dim))
+
+        # Positional embedding for spatial locations + CLS token
+        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches + 1, hidden_dim))
+        self.pos_drop = nn.Dropout(dropout_rate)
+
+        # Transformer blocks
+        self.blocks = nn.ModuleList([
+            PanguTransformerBlock(
+                dim=hidden_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=dropout_rate,
+                spatial_shape=(n_lat, n_lon)
+            )
+            for _ in range(num_layers)
+        ])
+
+        # Output norm
+        self.norm = nn.LayerNorm(hidden_dim)
+
+        # Output head: project back to spatial output
+        # We'll use all patch tokens (not just CLS) to reconstruct the spatial field
+        self.output_head = nn.Linear(hidden_dim, n_output_vars)
+
+        # Initialize weights
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
+        """
+        Forward pass through Pangu-inspired transformer.
+
+        Args:
+            x: Input tensor [batch_size, input_dim] (flattened)
+            lead_time_idx: Lead time indices [batch_size]
+            day_of_year_features: Day-of-year sin/cos features [batch_size, 2]
+
+        Returns:
+            Output tensor [batch_size, output_dim] (flattened correction)
+        """
+        batch_size = x.shape[0]
+
+        # Reshape input to spatial format: [B, n_vars, H, W]
+        x = x.view(batch_size, self.n_input_vars, self.n_lat, self.n_lon)
+
+        # Rearrange to [B, H, W, n_vars] then flatten spatial dimensions
+        x = x.permute(0, 2, 3, 1)  # [B, H, W, n_vars]
+        x = x.reshape(batch_size, self.num_patches, self.n_input_vars)  # [B, H*W, n_vars]
+
+        # Patch embedding: [B, num_patches, hidden_dim]
+        x = self.patch_embed(x)
+
+        # Prepare temporal conditioning
+        temporal_features = []
+        if day_of_year_features is not None:
+            temporal_features.append(day_of_year_features)
+
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            lead_time_emb = self.lead_time_embedding(lead_time_idx)
+            temporal_features.append(lead_time_emb)
+
+        # Project temporal features and add to patches
+        if temporal_features:
+            temporal_emb = torch.cat(temporal_features, dim=1)  # [B, temporal_dim]
+            temporal_emb = self.temporal_proj(temporal_emb)  # [B, hidden_dim]
+            temporal_emb = temporal_emb.unsqueeze(1)  # [B, 1, hidden_dim]
+            x = x + temporal_emb  # Broadcast to all patches
+
+        # Add CLS token
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # [B, 1, hidden_dim]
+        x = torch.cat([cls_tokens, x], dim=1)  # [B, num_patches+1, hidden_dim]
+
+        # Add positional embedding
+        x = x + self.pos_embed
+        x = self.pos_drop(x)
+
+        # Apply transformer blocks
+        for block in self.blocks:
+            x = block(x)
+
+        # Normalize
+        x = self.norm(x)
+
+        # Remove CLS token and get patch tokens for spatial reconstruction
+        x = x[:, 1:, :]  # [B, num_patches, hidden_dim]
+
+        # Project to output variables
+        x = self.output_head(x)  # [B, num_patches, n_output_vars]
+
+        # Reshape back to spatial format
+        x = x.reshape(batch_size, self.n_lat, self.n_lon, self.n_output_vars)
+        x = x.permute(0, 3, 1, 2)  # [B, n_output_vars, H, W]
+
+        # Flatten to match expected output shape
+        x = x.reshape(batch_size, -1)  # [B, n_output_vars * H * W]
+
+        return x
+
+
+# ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
 def load_optimal_hyperparameters(architecture, training_vars, output_var):
@@ -451,7 +734,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet'])
+    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet', 'transformer'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
@@ -465,10 +748,20 @@ def parse_args():
                     help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
     parser.add_argument('--mlp_dropout', type=float, default=0.25,
                         help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
-    parser.add_argument('--unet_hidden_dim', type=int, default=64, 
+    parser.add_argument('--unet_hidden_dim', type=int, default=64,
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
+    parser.add_argument('--transformer_hidden_dim', type=int, default=256,
+                        help='Hidden dimension (embedding size) for Transformer (default: 256)')
+    parser.add_argument('--transformer_num_layers', type=int, default=4,
+                        help='Number of transformer blocks (default: 4)')
+    parser.add_argument('--transformer_num_heads', type=int, default=8,
+                        help='Number of attention heads for Transformer (default: 8)')
+    parser.add_argument('--transformer_mlp_ratio', type=float, default=4.0,
+                        help='MLP expansion ratio in transformer blocks (default: 4.0)')
+    parser.add_argument('--transformer_dropout', type=float, default=0.1,
+                        help='Dropout rate for Transformer (default: 0.1)')
 
     return parser.parse_args()
 
@@ -1006,14 +1299,38 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     # Use optimal lead time embedding dimension if available
     lead_time_emb_dim = args.optimal_lead_time_embedding_dim if args.optimal_lead_time_embedding_dim else 4
-    
-    if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
+
+    if hasattr(args, 'nn_architecture') and args.nn_architecture == 'transformer':
+        print(f"Using PanguTransformer with {n_lead_times} lead times")
+        print(f"  Transformer hidden_dim: {args.transformer_hidden_dim}")
+        print(f"  Transformer num_layers: {args.transformer_num_layers}")
+        print(f"  Transformer num_heads: {args.transformer_num_heads}")
+        print(f"  Transformer mlp_ratio: {args.transformer_mlp_ratio}")
+        print(f"  Transformer dropout: {args.transformer_dropout}")
+        print(f"  Transformer lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = PanguTransformer(
+            input_dim=input_dim,
+            hidden_dim=args.transformer_hidden_dim,
+            num_layers=args.transformer_num_layers,
+            num_heads=args.transformer_num_heads,
+            output_dim=output_dim,
+            n_lat=n_lat,
+            n_lon=n_lon,
+            n_input_vars=n_training_vars,
+            n_output_vars=n_output_vars,
+            n_lead_times=n_lead_times,
+            lead_time_embedding_dim=lead_time_emb_dim,
+            dropout_rate=args.transformer_dropout,
+            mlp_ratio=args.transformer_mlp_ratio
+        ).to(device)
+        num_epochs = 500
+    elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
         print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                     n_lead_times=n_lead_times, 
+                     n_lead_times=n_lead_times,
                      lead_time_embedding_dim=lead_time_emb_dim,
                      dropout_rate=args.unet_dropout).to(device)
         num_epochs = 500
