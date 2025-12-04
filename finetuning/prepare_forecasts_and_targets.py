@@ -142,55 +142,76 @@ def get_data_path(data_dir, data_source, region, year):
     return os.path.join(model_dir, filename)
 
 
-def get_actual_coordinates(file_path, requested_lat, requested_lon, tolerance=0.15):
+def get_common_coordinates(file_paths, requested_lat, requested_lon, tolerance=0.15):
     """
-    Get the actual coordinates from a zarr file that are closest to requested coordinates.
+    Get coordinates that exist in ALL provided files and match the requested region.
 
-    This handles cases where the downloaded data has a different grid than the idealized
-    coordinates from get_region_grid().
+    This handles cases where different year files may have slightly different grids.
 
     Parameters:
     -----------
-    file_path : str
-        Path to zarr file
+    file_paths : list of str
+        List of paths to zarr files
     requested_lat : np.ndarray
         Requested latitude values
     requested_lon : np.ndarray
         Requested longitude values
     tolerance : float
-        Maximum distance (in degrees) to search for nearest coordinates (default: 0.15)
+        Maximum distance (in degrees) to search for coordinates (default: 0.15)
 
     Returns:
     --------
-    tuple : (actual_lat, actual_lon) - Arrays of actual coordinates from the file
+    tuple : (common_lat, common_lon) - Arrays of coordinates that exist in ALL files
     """
-    # Open the file to get actual coordinates
-    ds = xr.open_zarr(file_path, chunks=None, consolidated=True)
-
     # Get the bounds of requested region
-    lat_min, lat_max = requested_lat.min(), requested_lat.max()
-    lon_min, lon_max = requested_lon.min(), requested_lon.max()
+    lat_min, lat_max = requested_lat.min() - tolerance, requested_lat.max() + tolerance
+    lon_min, lon_max = requested_lon.min() - tolerance, requested_lon.max() + tolerance
 
-    # Expand bounds slightly to ensure we capture all needed points
-    lat_min -= tolerance
-    lat_max += tolerance
-    lon_min -= tolerance
-    lon_max += tolerance
+    # Collect coordinates from all files
+    all_coords = []
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            continue
 
-    # Get actual coordinates from file that fall within expanded bounds
-    actual_lat = ds.latitude.values
-    actual_lon = ds.longitude.values
+        ds = xr.open_zarr(file_path, chunks=None, consolidated=True)
 
-    # Filter to region
-    lat_mask = (actual_lat >= lat_min) & (actual_lat <= lat_max)
-    lon_mask = (actual_lon >= lon_min) & (actual_lon <= lon_max)
+        # Get coordinates within region
+        actual_lat = ds.latitude.values
+        actual_lon = ds.longitude.values
 
-    actual_lat_subset = actual_lat[lat_mask]
-    actual_lon_subset = actual_lon[lon_mask]
+        lat_mask = (actual_lat >= lat_min) & (actual_lat <= lat_max)
+        lon_mask = (actual_lon >= lon_min) & (actual_lon <= lon_max)
 
-    ds.close()
+        lat_subset = actual_lat[lat_mask]
+        lon_subset = actual_lon[lon_mask]
 
-    return actual_lat_subset, actual_lon_subset
+        all_coords.append({
+            'lat': set(np.round(lat_subset, 6)),  # Round to avoid FP precision issues
+            'lon': set(np.round(lon_subset, 6))
+        })
+
+        ds.close()
+
+    if not all_coords:
+        raise ValueError("No valid files found to extract coordinates")
+
+    # Find intersection of coordinates across all files
+    common_lat = all_coords[0]['lat']
+    common_lon = all_coords[0]['lon']
+
+    for coords in all_coords[1:]:
+        common_lat = common_lat.intersection(coords['lat'])
+        common_lon = common_lon.intersection(coords['lon'])
+
+    # Convert back to sorted arrays
+    common_lat = np.array(sorted(common_lat))
+    common_lon = np.array(sorted(common_lon))
+
+    if len(common_lat) == 0 or len(common_lon) == 0:
+        raise ValueError(f"No common coordinates found across all files! "
+                        f"Files may have incompatible grids.")
+
+    return common_lat, common_lon
 
 
 def get_global_data_path(data_dir, data_source, year):
@@ -1150,10 +1171,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         if forecast_all_exist and target_all_exist:
             print(f"  ✓ All regional data files exist with required variables")
 
-            # Get actual coordinates from the first file to ensure we use coordinates that exist
-            first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
-            actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
-            print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+            # Get common coordinates from ALL files to ensure compatibility across years
+            forecast_files = [get_data_path(data_dir, args.model_name, args.region, year)
+                            for year in years_needed]
+            target_files = [get_data_path(data_dir, target, args.region, year)
+                          for year in years_needed]
+            all_files = forecast_files + target_files
+
+            actual_lat, actual_lon = get_common_coordinates(all_files, lat_values, lon_values)
+            print(f"  Using common coordinates across all files: {len(actual_lat)} lat x {len(actual_lon)} lon points")
 
             print(f"\n  Loading forecast data from regional files...")
             forecast_datasets = []
@@ -1230,10 +1256,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 # Reload the data we just downloaded
                 print(f"\n  Loading newly downloaded data...")
 
-                # Get actual coordinates from first file
-                first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
-                actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
-                print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+                # Get common coordinates from ALL files
+                forecast_files = [get_data_path(data_dir, args.model_name, args.region, year)
+                                for year in years_needed]
+                target_files = [get_data_path(data_dir, target, args.region, year)
+                              for year in years_needed]
+                all_files = forecast_files + target_files
+
+                actual_lat, actual_lon = get_common_coordinates(all_files, lat_values, lon_values)
+                print(f"  Using common coordinates across all files: {len(actual_lat)} lat x {len(actual_lon)} lon points")
 
                 forecast_datasets = []
                 for year in years_needed:
@@ -1300,10 +1331,15 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             # Load the data we just downloaded
             print(f"\n  Loading newly downloaded data...")
 
-            # Get actual coordinates from first file
-            first_file = get_data_path(data_dir, args.model_name, args.region, years_needed[0])
-            actual_lat, actual_lon = get_actual_coordinates(first_file, lat_values, lon_values)
-            print(f"  Using actual coordinates from data: {len(actual_lat)} lat x {len(actual_lon)} lon points")
+            # Get common coordinates from ALL files
+            forecast_files = [get_data_path(data_dir, args.model_name, args.region, year)
+                            for year in years_needed]
+            target_files = [get_data_path(data_dir, target, args.region, year)
+                          for year in years_needed]
+            all_files = forecast_files + target_files
+
+            actual_lat, actual_lon = get_common_coordinates(all_files, lat_values, lon_values)
+            print(f"  Using common coordinates across all files: {len(actual_lat)} lat x {len(actual_lon)} lon points")
 
             forecast_datasets = []
             for year in years_needed:
