@@ -49,7 +49,7 @@ training_output_vars=(
     # Full: Use all 6 variables for training (best performance from experiments)
     # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
 
-    "10m_wind_speed|10m_wind_speed"
+    # "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(6x6)
@@ -58,11 +58,12 @@ subregions=(6x6)
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 # regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
-regions=("north_america" "south_america" "oceania")
+# regions=("north_america" "south_america" "oceania")
+regions=("india" "usa_south" "ethiopia" "corn_belt")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
-loss_functions=("mse")
+loss_functions=("extreme_heat_loss")
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
@@ -140,7 +141,7 @@ for region in "${regions[@]}"; do
 
                         if [[ "$loss_function" == "extreme_heat_loss" ]]; then
                             # only both doing this for 2m_temperature and for geographic regions
-                            if [[ "$variable" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
+                            if [[ "$output_vars" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
                                 cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                             fi
                         fi

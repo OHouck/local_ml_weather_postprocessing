@@ -925,7 +925,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
 
     # Configuration matching run_region_size_experiments.sh
     regions = ["finland", "ethiopia"]
-    subregions = ["12x12", "10x10", "8x8", "6x6", "4x4"]
+    subregions = ["20x20","15x15", "10x10", "8x8", "6x6", "4x4"]
     lead_times = [24, 120, 216]
     variables = ["2m_temperature", "10m_wind_speed"]  # Temperature on left, wind on right
 
@@ -1116,6 +1116,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
 
     fname = f"region_size_comparison_{nn_architecture}_{model}.png"
     save_path = os.path.join(out_folder, fname)
+    
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     print(f"\nFigure saved to: {save_path}")
     plt.close()
@@ -2304,20 +2305,23 @@ def plot_arch_experiment_results(
     print(f"\nArchitecture comparison plot saved to: {save_path}")
 
 
-def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_start, test_end,
-                                         model, training_output_vars, variable, lead_time,
-                                         regions=None, subregion="6x6",
-                                         nn_architecture="mlp", loss_trained_on="mse",
-                                         evaluation_loss="rmse",
-                                         n_bins=10, growing_season_only=False,
-                                         ground_truth_source="",
-                                         save_path=None):
+def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, test_end,
+                                    model, training_output_vars, variable, lead_time,
+                                    regions=None, subregion="6x6",
+                                    nn_architecture="mlp", loss_trained_on="mse",
+                                    metric="rmse",
+                                    n_bins=10, growing_season_only=False,
+                                    ground_truth_source="",
+                                    save_path=None):
     """
-    Plot RMSE improvement (or other metrics) binned by weather variable values.
+    Plot forecast performance metrics binned by weather variable values.
 
-    Creates a line plot with RMSE improvement (or other metric) on y-axis and
-    binned weather variable values on x-axis. Each region gets its own line.
-    Includes a translucent histogram at the bottom showing data density.
+    Creates a line plot with the chosen metric on y-axis and binned weather
+    variable values on x-axis. Visual encoding:
+    - Color = Region
+    - Line style = Loss function trained on (solid, dashed, etc.)
+    - Filled markers = Corrected forecasts
+    - Hollow markers = Original forecasts
 
     Parameters
     ----------
@@ -2346,17 +2350,20 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
         Patch size identifier (default: "6x6")
     nn_architecture : str
         Architecture used: "mlp" or "unet"
-    evaluation_loss : str
-        Evaluation loss function. Options:
-        - "rmse_pct_improvement": RMSE percentage improvement (default)
-        - "extreme_heat": Extreme heat RMSE percentage improvement (uses weighted loss function)
-        Additional metrics can be added as needed
+    loss_trained_on : str or list
+        Loss function(s) used for training. Can be a single string or list of strings.
+        Options: "mse", "extreme_heat", etc.
+        Example: ["mse", "extreme_heat"] to compare models trained with different loss functions
+    metric : str
+        Metric to plot on y-axis. Options:
+        - "rmse": RMSE percentage improvement (default)
+        - "extreme_heat_rmse": Extreme heat weighted RMSE percentage improvement
+        - "raw_error": Mean raw prediction error (prediction - ground_truth)
+        - "error_difference": Difference between original and corrected error
     n_bins : int
         Number of bins for weather variable (default: 10)
     growing_season_only : bool
         Whether to use results from model trained only on growing season
-    alternate_loss_fn : str or None
-        Alternate loss function used (e.g., "extreme_heat_loss")
     ground_truth_source : str
         Ground truth source identifier (default: "")
     save_path : str
@@ -2372,12 +2379,28 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
     training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
     output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
 
+    # Convert loss_trained_on to list if it's a single value
+    if not isinstance(loss_trained_on, (list, tuple)):
+        loss_trained_on_list = [loss_trained_on]
+    else:
+        loss_trained_on_list = list(loss_trained_on)
+
+    # Validate metric
+    valid_metrics = ["rmse", "extreme_heat_rmse", "raw_error", "error_difference"]
+    if metric not in valid_metrics:
+        raise ValueError(
+            f"metric must be one of {valid_metrics}. Got: {metric}"
+        )
+
     # If regions not specified, use standard regions
     if regions is None:
         regions = ["usa_south", "british_columbia", "ethiopia", "amazon", "india"]
 
     # Get color schemes
     region_colors, climate_region_colors, topographic_region_colors, _, _ = _get_color_schemes()
+
+    # Define line styles for different loss functions
+    line_styles = ['-', '--', '-.', ':']
 
     # Create figure with gridspec for main plot and histogram
     fig = plt.figure(figsize=(14, 10))
@@ -2393,145 +2416,224 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
 
     # First pass: Load all data and calculate global min/max
     global_min, global_max = float('inf'), float('-inf')
-    loaded_data = {}  # Cache loaded data to avoid redundant loading
+    loaded_data = {}  # Cache loaded data: loaded_data[(region, loss_trained)] = {...}
 
     for region in regions:
+        for loss_trained in loss_trained_on_list:
+            # Build path using generate_output_path
+            if loss_trained == "extreme_heat":
+                alternate_loss_fn = "extreme_heat_loss"
+            else:
+                alternate_loss_fn = None
 
-        # Build path using generate_output_path
-        if loss_trained_on == "extreme_heat":
-            alternate_loss_fn= "extreme_heat_loss"
-        else:
-            alternate_loss_fn = None
-        args = SimpleNamespace(
-            model_name=model,
-            region=region,
-            subregion=subregion,
-            train_start=train_start,
-            train_end=train_end,
-            test_start=test_start,
-            test_end=test_end,
-            training_vars=training_vars,
-            output_vars=output_vars,
-            alternate_loss_fn=alternate_loss_fn,
-            lead_time_hours=[24, 120, 216], # XX change if adding more lead times
-            nn_architecture=nn_architecture,
-            growing_season_only=growing_season_only,
-            ground_truth_source=ground_truth_source
-        )
+            args = SimpleNamespace(
+                model_name=model,
+                region=region,
+                subregion=subregion,
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                training_vars=training_vars,
+                output_vars=output_vars,
+                alternate_loss_fn=alternate_loss_fn,
+                lead_time_hours=[24, 120, 216], # XX change if adding more lead times
+                nn_architecture=nn_architecture,
+                growing_season_only=growing_season_only,
+                ground_truth_source=ground_truth_source
+            )
 
-        zarr_path = os.path.join(input_folder, generate_output_path(args))
-        print(f"Loading data from: {zarr_path}")
+            zarr_path = os.path.join(input_folder, generate_output_path(args))
+            print(f"Loading data for {region}, trained on {loss_trained}, evaluated with {metric}")
+            print(f"  Path: {zarr_path}")
 
-        try:
-            ds = load_zarr_cached(zarr_path)
-            ground_truth, original, corrected, mean_corrected = extract_forecast_data(ds, variable, lead_time)
-        except Exception as e:
-            print(f"Warning: Could not load data for region {region}: {e}")
-            continue
+            try:
+                ds = load_zarr_cached(zarr_path)
+                ground_truth, original, corrected, mean_corrected = extract_forecast_data(ds, variable, lead_time)
+            except Exception as e:
+                print(f"Warning: Could not load data for region {region}, loss {loss_trained}: {e}")
+                continue
 
-        # Flatten arrays
-        gt_flat = ground_truth.values.flatten()
-        orig_flat = original.values.flatten()
-        corr_flat = corrected.values.flatten()
+            # Flatten arrays
+            gt_flat = ground_truth.values.flatten()
+            orig_flat = original.values.flatten()
+            corr_flat = corrected.values.flatten()
 
-        # Remove NaN values
-        valid_mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-        gt_flat = gt_flat[valid_mask]
-        orig_flat = orig_flat[valid_mask]
-        corr_flat = corr_flat[valid_mask]
+            # Remove NaN values
+            valid_mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+            gt_flat = gt_flat[valid_mask]
+            orig_flat = orig_flat[valid_mask]
+            corr_flat = corr_flat[valid_mask]
 
-        # Convert temperature from Kelvin to Celsius if needed
-        if is_temperature:
-            gt_flat = gt_flat - 273.15
-            orig_flat = orig_flat - 273.15
-            corr_flat = corr_flat - 273.15
+            # Convert temperature from Kelvin to Celsius if needed
+            if is_temperature:
+                gt_flat = gt_flat - 273.15
+                orig_flat = orig_flat - 273.15
+                corr_flat = corr_flat - 273.15
 
-        # Store data for this region (for calculating global bins and histogram)
-        loaded_data[region] = {
-            'gt': gt_flat,
-            'orig': orig_flat,
-            'corr': corr_flat
-        }
+            # Store data for this combination
+            key = (region, loss_trained)
+            loaded_data[key] = {
+                'gt': gt_flat,
+                'orig': orig_flat,
+                'corr': corr_flat
+            }
 
-        # Update global min/max
-        global_min = min(global_min, gt_flat.min())
-        global_max = max(global_max, gt_flat.max())
+            # Update global min/max (use all ground truth data to determine bins)
+            global_min = min(global_min, gt_flat.min())
+            global_max = max(global_max, gt_flat.max())
 
     # Create bins with equal spacing based on global min/max
     bin_edges = np.linspace(global_min, global_max, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     # Second pass: Calculate metrics and plot using cached data
-    for region in regions:
-        if region not in loaded_data:
-            continue
-
-        gt_flat = loaded_data[region]['gt']
-        orig_flat = loaded_data[region]['orig']
-        corr_flat = loaded_data[region]['corr']
-
-        # Store for histogram (per region)
-        region_histogram_data[region] = gt_flat
-
-        # Bin the data
-        bin_indices = np.digitize(gt_flat, bin_edges) - 1
-        bin_indices = np.clip(bin_indices, 0, n_bins - 1)  # Handle edge cases
-
-        # Calculate metric for each bin
-        metric_values = []
-        for i in range(n_bins):
-            bin_mask = bin_indices == i
-
-            if np.sum(bin_mask) == 0:
-                metric_values.append(np.nan)
+    # Iterate over regions and loss functions
+    for region_idx, region in enumerate(regions):
+        for loss_idx, loss_trained in enumerate(loss_trained_on_list):
+            key = (region, loss_trained)
+            if key not in loaded_data:
                 continue
 
-            gt_bin = gt_flat[bin_mask]
-            orig_bin = orig_flat[bin_mask]
-            corr_bin = corr_flat[bin_mask]
+            gt_flat = loaded_data[key]['gt']
+            orig_flat = loaded_data[key]['orig']
+            corr_flat = loaded_data[key]['corr']
 
-            if evaluation_loss == "rmse":
-                rmse_orig = np.sqrt(np.mean((orig_bin - gt_bin) ** 2))
-                rmse_corr = np.sqrt(np.mean((corr_bin - gt_bin) ** 2))
+            # Store for histogram (per region, aggregating across loss functions)
+            if region not in region_histogram_data:
+                region_histogram_data[region] = gt_flat
+            # For multiple loss functions, we can use any of them since gt_flat should be the same
 
-                if rmse_orig == 0:
-                    improvement = 0
-                else:
-                    improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
-                metric_values.append(improvement)
+            # Bin the data
+            bin_indices = np.digitize(gt_flat, bin_edges) - 1
+            bin_indices = np.clip(bin_indices, 0, n_bins - 1)  # Handle edge cases
 
-            elif evaluation_loss == "extreme_heat":
-                # Calculate extreme heat RMSE using the weighted loss function
-                rmse_orig_extreme = calculate_extreme_heat_rmse(orig_bin, gt_bin)
-                rmse_corr_extreme = calculate_extreme_heat_rmse(corr_bin, gt_bin)
+            # Calculate metric for each bin
+            metric_values_orig = []
+            metric_values_corr = []
 
-                if rmse_orig_extreme == 0:
-                    improvement = 0
-                else:
-                    improvement = (rmse_orig_extreme - rmse_corr_extreme) / rmse_orig_extreme * 100
-                metric_values.append(improvement)
+            for i in range(n_bins):
+                bin_mask = bin_indices == i
+
+                if np.sum(bin_mask) == 0:
+                    metric_values_orig.append(np.nan)
+                    metric_values_corr.append(np.nan)
+                    continue
+
+                gt_bin = gt_flat[bin_mask]
+                orig_bin = orig_flat[bin_mask]
+                corr_bin = corr_flat[bin_mask]
+
+                if metric == "rmse":
+                    # Calculate RMSE improvement
+                    rmse_orig = np.sqrt(np.mean((orig_bin - gt_bin) ** 2))
+                    rmse_corr = np.sqrt(np.mean((corr_bin - gt_bin) ** 2))
+
+                    if rmse_orig == 0:
+                        improvement = 0
+                    else:
+                        improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                    metric_values_corr.append(improvement)
+                    # For improvement metrics, we don't plot original
+                    metric_values_orig.append(np.nan)
+
+                elif metric == "extreme_heat_rmse":
+                    # Calculate extreme heat RMSE using the weighted loss function
+                    rmse_orig_extreme = calculate_extreme_heat_rmse(orig_bin, gt_bin)
+                    rmse_corr_extreme = calculate_extreme_heat_rmse(corr_bin, gt_bin)
+
+                    if rmse_orig_extreme == 0:
+                        improvement = 0
+                    else:
+                        improvement = (rmse_orig_extreme - rmse_corr_extreme) / rmse_orig_extreme * 100
+                    metric_values_corr.append(improvement)
+                    # For improvement metrics, we don't plot original
+                    metric_values_orig.append(np.nan)
+
+                elif metric == "raw_error":
+                    # Calculate mean raw error (prediction - ground_truth)
+                    orig_error = np.mean(orig_bin - gt_bin)
+                    corr_error = np.mean(corr_bin - gt_bin)
+                    metric_values_orig.append(orig_error)
+                    metric_values_corr.append(corr_error)
+
+                elif metric == "error_difference":
+                    # Calculate difference between original and corrected error
+                    orig_error = np.mean(np.abs(orig_bin - gt_bin))
+                    corr_error = np.mean(np.abs(corr_bin - gt_bin))
+                    # Difference: positive means corrected is better (lower error)
+                    error_diff = orig_error - corr_error
+                    metric_values_orig.append(orig_error)
+                    metric_values_corr.append(error_diff)  # Store difference in corr
+
+            # Get color for region
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            elif region in topographic_region_colors:
+                color = topographic_region_colors[region]
             else:
-                raise ValueError(f"Unknown metric: {evaluation_loss}")
+                color = region_colors.get(region, '#1f77b4')
 
-        # Get color for region
-        if region in climate_region_colors:
-            color = climate_region_colors[region]
-        elif region in topographic_region_colors:
-            color = topographic_region_colors[region]
-        else:
-            color = region_colors.get(region, '#1f77b4')
+            # Get line style for this loss function
+            linestyle = line_styles[loss_idx % len(line_styles)]
 
-        # Plot line
-        ax_main.plot(bin_centers, metric_values, marker='o', linewidth=2.5,
-                    markersize=8, color=color, label=region.replace('_', ' ').title(),
-                    alpha=0.9)
+            # Plot based on metric type
+            # For improvement metrics, only plot corrected (improvement values)
+            if metric in ["rmse", "extreme_heat_rmse"]:
+                ax_main.plot(bin_centers, metric_values_corr, marker='o', linewidth=2.5,
+                            markersize=8, color=color, linestyle=linestyle,
+                            markerfacecolor=color, markeredgecolor=color,
+                            alpha=0.9)
+
+            elif metric == "error_difference":
+                # For error difference, only plot the difference (stored in corr)
+                ax_main.plot(bin_centers, metric_values_corr, marker='o', linewidth=2.5,
+                            markersize=8, color=color, linestyle=linestyle,
+                            markerfacecolor=color, markeredgecolor=color,
+                            alpha=0.9)
+
+            elif metric == "raw_error":
+                # Plot both original (hollow) and corrected (filled)
+                # Original forecast - hollow circles
+                ax_main.plot(bin_centers, metric_values_orig, marker='o', linewidth=2.5,
+                            markersize=8, color=color, linestyle=linestyle,
+                            markerfacecolor='none', markeredgecolor=color, markeredgewidth=2,
+                            alpha=0.9)
+
+                # Corrected forecast - filled circles
+                ax_main.plot(bin_centers, metric_values_corr, marker='o', linewidth=2.5,
+                            markersize=8, color=color, linestyle=linestyle,
+                            markerfacecolor=color, markeredgecolor=color,
+                            alpha=0.9)
 
     # Set up main axis
-    if evaluation_loss == "rmse":
+    # Determine ylabel and reference line based on metric
+    if metric == "rmse":
         ax_main.set_ylabel("RMSE Improvement (%)", fontsize=18)
         ax_main.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-    elif evaluation_loss == "extreme_heat":
+
+    elif metric == "extreme_heat_rmse":
         ax_main.set_ylabel("Extreme Heat RMSE Improvement (%)", fontsize=18)
+        ax_main.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+
+    elif metric == "raw_error":
+        if is_temperature:
+            unit = "°C"
+        elif "wind" in variable:
+            unit = "m/s"
+        else:
+            unit = ""
+        ax_main.set_ylabel(f"Mean Prediction Error ({unit})" if unit else "Mean Prediction Error", fontsize=18)
+        ax_main.axhline(y=0, color='black', linestyle='-', alpha=0.7, linewidth=1.5)
+
+    elif metric == "error_difference":
+        if is_temperature:
+            unit = "°C"
+        elif "wind" in variable:
+            unit = "m/s"
+        else:
+            unit = ""
+        ax_main.set_ylabel(f"Error Reduction ({unit})" if unit else "Error Reduction", fontsize=18)
         ax_main.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
 
     ax_main.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
@@ -2541,14 +2643,60 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
     # Title
     regions_str = ", ".join([r.replace('_', ' ').title() for r in regions])
     var_display = variable.replace('_', ' ').title()
-    title = f"{evaluation_loss.replace('_', ' ').title()} by {var_display} Value\n"
+
+    # Create title based on metric
+    if metric == "rmse":
+        title = f"RMSE Improvement by {var_display} Value\n"
+    elif metric == "extreme_heat_rmse":
+        title = f"Extreme Heat RMSE Improvement by {var_display} Value\n"
+    elif metric == "raw_error":
+        title = f"Mean Prediction Error by {var_display} Value\n"
+    elif metric == "error_difference":
+        title = f"Error Reduction by {var_display} Value\n"
+
     title += f"Model: {model.upper()}, Lead Time: {lead_time}h, Architecture: {nn_architecture.upper()}"
     if len(regions) <= 3:
         title += f"\nRegions: {regions_str}"
     ax_main.set_title(title, fontsize=18, pad=15)
 
-    # Legend
-    ax_main.legend(loc='best', fontsize=14, framealpha=0.95, edgecolor='gray')
+    # Create simplified legend showing visual encodings
+    from matplotlib.lines import Line2D
+    legend_elements = []
+
+    # Add region colors (one example for each unique region)
+    for region in regions:
+        if region in climate_region_colors:
+            color = climate_region_colors[region]
+        elif region in topographic_region_colors:
+            color = topographic_region_colors[region]
+        else:
+            color = region_colors.get(region, '#1f77b4')
+        legend_elements.append(Line2D([0], [0], color=color, linewidth=2.5,
+                                     label=region.replace('_', ' ').title()))
+
+    # Add separator
+    legend_elements.append(Line2D([0], [0], color='none', label=''))
+
+    # Add line style indicators for loss functions
+    for loss_idx, loss_trained in enumerate(loss_trained_on_list):
+        linestyle = line_styles[loss_idx % len(line_styles)]
+        legend_elements.append(Line2D([0], [0], color='gray', linestyle=linestyle,
+                                     linewidth=2.5, label=f"Trained on {loss_trained}"))
+
+    # Add marker type indicators if showing both original and corrected
+    if metric == "raw_error":
+        legend_elements.append(Line2D([0], [0], color='none', label=''))
+        legend_elements.append(Line2D([0], [0], marker='o', color='gray', linewidth=0,
+                                     markersize=8, markerfacecolor='none',
+                                     markeredgecolor='gray', markeredgewidth=2,
+                                     label="Original forecast"))
+        legend_elements.append(Line2D([0], [0], marker='o', color='gray', linewidth=0,
+                                     markersize=8, markerfacecolor='gray',
+                                     markeredgecolor='gray',
+                                     label="Corrected forecast"))
+
+    ax_main.legend(handles=legend_elements, loc='best', fontsize=12,
+                  framealpha=0.95, edgecolor='gray', ncol=1)
 
     # Remove x-axis labels from main plot (shared with histogram)
     plt.setp(ax_main.get_xticklabels(), visible=False)
@@ -2610,6 +2758,8 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
 
         if len(regions) == 1:
             region_str = regions[0]
+        elif len(regions) == 2:
+            region_str = "_".join(regions)
         elif any(r in climate_region_colors for r in regions):
             region_str = "climate_zones"
         elif any(r in topographic_region_colors for r in regions):
@@ -2617,14 +2767,22 @@ def plot_rmse_improvement_by_weather_bin(dirs, train_start, train_end, test_star
         else:
             region_str = "multi_region"
 
-        fname = (f"binned_{evaluation_loss}_trained_on_{loss_trained_on}_{variable}_lt{lead_time}h_{model}_"
+        # Create string for loss functions
+        if len(loss_trained_on_list) == 1:
+            loss_trained_str = loss_trained_on_list[0]
+        else:
+            loss_trained_str = "_".join(loss_trained_on_list)
+
+        # Create filename based on metric type
+        fname = (f"binned_{metric}_trained_on_{loss_trained_str}_{variable}_lt{lead_time}h_{model}_"
                 f"{nn_architecture}_{region_str}_{n_bins}bins.png")
+
         save_path = os.path.join(out_folder, fname)
 
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"Binned RMSE improvement plot saved to: {save_path}")
+    print(f"Binned analysis plot saved to: {save_path}")
 
 
 def plot_raw_forecast_values(csv_path, dirs, variable, model="pangu",
@@ -4809,65 +4967,64 @@ def main():
 # Main figure binscatter plots
 #=============================================
 
-    # overlaying lead times for single model
-    for model in ["ifs"]:
-        for x_metric in ["sdor", "equator_distance"]:
-            _ = lead_time_compare_binscatter(
-                dirs=dirs,
-                model=model,
-                x_metric=x_metric
-            )
+    # # overlaying lead times for single model
+    # for model in ["pangu", "ifs"]:
+    #     for x_metric in ["sdor", "equator_distance"]:
+    #         _ = lead_time_compare_binscatter(
+    #             dirs=dirs,
+    #             model=model,
+    #             x_metric=x_metric
+    #         )
     
-    # Create plot comparing model binscatters
-    for x_metric in ["sdor", "equator_distance"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            _ = model_compare_binscatter(
-                dirs=dirs,
-                variable=variable,
-                x_metric=x_metric
-            )
+    # # Create plot comparing model binscatters
+    # for x_metric in ["sdor", "equator_distance"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         _ = model_compare_binscatter(
+    #             dirs=dirs,
+    #             variable=variable,
+    #             x_metric=x_metric
+    #         )
 #=============================================
 # Global Improvement Plots (scatter and maps for appendix)
 #=============================================
-    for model in ["ifs"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            for binscatter in [True]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, x_metric="equator_distance", 
-                                                binscatter=binscatter)
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, x_metric="sdor", 
-                                                binscatter=binscatter)
-            for map_type in ["original", "improvement"]:
-                for pixel_flag in [True]:
-                    map_global_improvements(dirs=dirs, model=model, 
-                                            variable=variable, map_type=map_type,
-                                            pixel_level=pixel_flag)
-    exit()
+    # for model in ["pangu", "ifs"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         for binscatter in [True]:
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, x_metric="equator_distance", 
+    #                                             binscatter=binscatter)
+    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+    #                                             variable=variable, x_metric="sdor", 
+    #                                             binscatter=binscatter)
+    #         for map_type in ["original", "improvement"]:
+    #             for pixel_flag in [True]:
+    #                 map_global_improvements(dirs=dirs, model=model, 
+    #                                         variable=variable, map_type=map_type,
+    #                                         pixel_level=pixel_flag)
 
 #=============================================
 # Binned RMSE Improvement Plots
 #=============================================
-    # dirs = setup_directories()
-    # var = "2m_temperature"
-    # loss_train_on = "extreme_heat"
-    # evaluation_loss = "extreme_heat"
-    # lead_time = 216
-    # training_outptut_vars = ([var], [var])
-    # variable = var
-    # plot_rmse_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
-    #                             test_start="2022-01-01", test_end="2022-12-31",
-    #                             model="pangu",
-    #                             training_output_vars=training_outptut_vars,
-    #                             variable=variable,
-    #                             nn_architecture="mlp",
-    #                             lead_time=lead_time,
-    #                             regions=["india", "ethiopia"],
-    #                             subregion="6x6",
-    #                             n_bins=10,
-    #                             loss_trained_on=loss_train_on,
-    #                             evaluation_loss=evaluation_loss
-    #                             )
+    dirs = setup_directories()
+    var = "2m_temperature"
+    loss_train_on = ["extreme_heat", "mse"]
+    metric = "error_difference"  
+    lead_time =216  # 9 days
+    training_outptut_vars = ([var], [var])
+    variable = var
+    plot_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
+                                test_start="2022-01-01", test_end="2022-12-31",
+                                model="pangu",
+                                training_output_vars=training_outptut_vars,
+                                variable=variable,
+                                nn_architecture="mlp",
+                                lead_time=lead_time,
+                                regions=["india", "ethiopia"],
+                                subregion="6x6",
+                                n_bins=10,
+                                loss_trained_on=loss_train_on,
+                                metric=metric
+                                )
 
 
 #=============================================
@@ -4935,43 +5092,43 @@ def main():
     #==============================================
     # Generate Maps
     #============================================== 
-    regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
-    for region in regions:
-        # MLP maps
-        generate_map_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="2x2",
-            lead_time=24,
-            simultaneous=True
-        )
+    # regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
+    # for region in regions:
+    #     # MLP maps
+    #     generate_map_plots(
+    #         dirs=dirs,
+    #         train_start="2018-01-01",
+    #         train_end="2021-12-31",
+    #         test_start="2022-01-01",
+    #         test_end="2022-12-31",
+    #         model="pangu",
+    #         training_output_vars=(training_vars, output_vars),
+    #         prediction_var=prediction_var,
+    #         nn_architecture="mlp",
+    #         region=region,
+    #         subregion="2x2",
+    #         lead_time=24,
+    #         simultaneous=True
+    #     )
 
         #===========================================
         # Generate time series plots
         #===========================================
-        generate_time_series_plots(
-            dirs=dirs,
-            train_start="2018-01-01",
-            train_end="2021-12-31",
-            test_start="2022-01-01",
-            test_end="2022-12-31",
-            model="pangu",
-            training_output_vars=(training_vars, output_vars),
-            prediction_var=prediction_var,
-            nn_architecture="mlp",
-            region=region,
-            subregion="2x2",
-            lead_time=24,
-            simultaneous=True
-        )
+        # generate_time_series_plots(
+        #     dirs=dirs,
+        #     train_start="2018-01-01",
+        #     train_end="2021-12-31",
+        #     test_start="2022-01-01",
+        #     test_end="2022-12-31",
+        #     model="pangu",
+        #     training_output_vars=(training_vars, output_vars),
+        #     prediction_var=prediction_var,
+        #     nn_architecture="mlp",
+        #     region=region,
+        #     subregion="2x2",
+        #     lead_time=24,
+        #     simultaneous=True
+        # )
 
     #============================================
     # summary stat tables

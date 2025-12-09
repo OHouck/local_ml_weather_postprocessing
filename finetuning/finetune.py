@@ -593,29 +593,38 @@ def quantile_loss(preds, targets, quantile=0.95):
 
 def extreme_heat_loss(preds, targets, std_out, mean_out):
     """
-    up-weight loss for negative errors (under-predictions) above 25C in 
-    proportion to coefficents on mortality curve in fatal errors shrader paper
+    Penalizes errors at extreme temperatures more heavily since they
+    are more damaging. Upweights errors when target temperature is above 25C or 30C.
+
+    Weighting scheme:
+    - T <= 25C: weight = 1.0 (baseline)
+    - 25C < T <= 30C: weight = 21.0 (20x additional penalty)
+    - T > 30C: weight = 101.0 (100x additional penalty)
 
     preds: (batch_size, n_features) in normalized units
     targets: (batch_size, n_features) in normalized units
+    std_out: standard deviation for denormalization
+    mean_out: mean for denormalization
     """
 
-    # un-normalize 
+    # un-normalize
     preds = preds * std_out + mean_out
     targets = targets * std_out + mean_out
 
-    # convert to Celsius from Kelvin for easier thresholding 
+    # convert to Celsius from Kelvin for easier thresholding
     targets_c = targets - 273.15
     preds_c = preds - 273.15
     errors = targets_c - preds_c
     squared_errors = errors**2
+
+    # Create weights based on target temperature
     weights = torch.ones_like(errors)
+    weights = weights + ((targets_c > 25) & (targets_c <= 30)).float() * 5  # 6x total for 25-30C
+    weights = weights + (targets_c > 30).float() * 10  # 11x total for >30C
 
-    weights += ((targets_c > 25) & (targets_c <= 30)).float() * (errors < 0).float() * 2
-    weights += (targets_c > 30) * (errors < 0).float() * 10 
-
-    weights = weights / weights.sum()  # sum to 1 for interpretability with MSE
-    weighted_mse = (weights * squared_errors).sum()
+    # Compute weighted MSE (mean over batch, not sum)
+    # This keeps the loss magnitude similar to standard MSE for interpretability
+    weighted_mse = (weights * squared_errors).mean()
 
     return weighted_mse
 
