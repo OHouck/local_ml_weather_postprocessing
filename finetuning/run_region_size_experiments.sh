@@ -31,11 +31,11 @@ fi
 training_output_vars=(
     # Minimal: Use only the output variable for training
     "2m_temperature|2m_temperature"
-    # "10m_wind_speed|10m_wind_speed"
+    "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(20x20 15x15 10x10 8x8 6x6 4x4)
-regions=("finland" "ethiopia")
+regions=("finland" "amazon")
 all_lead_times=(24 120 216)
 nn_architecture="mlp"
 model_name="pangu"

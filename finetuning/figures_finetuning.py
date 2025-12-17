@@ -924,7 +924,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     input_folder = dirs['input']
 
     # Configuration matching run_region_size_experiments.sh
-    regions = ["finland", "ethiopia"]
+    regions = ["finland", "amazon"]
     subregions = ["20x20","15x15", "10x10", "8x8", "6x6", "4x4"]
     lead_times = [24, 120, 216]
     variables = ["2m_temperature", "10m_wind_speed"]  # Temperature on left, wind on right
@@ -933,7 +933,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     subregion_sizes = [int(s.split('x')[0]) for s in subregions]
 
     # Color mapping for regions
-    region_colors = {'finland': '#1f77b4', 'ethiopia': '#ff7f0e'}
+    region_colors = {'finland': '#1f77b4', 'amazon': '#009E73'}
 
     # Line style mapping for lead times
     linestyle_map = {24: 'solid', 120: 'dashed', 216: 'dotted'}
@@ -1744,9 +1744,9 @@ def _get_color_schemes():
     region_colors = {
         'india': '#E69F00',
         'usa_south': '#56B4E9',
-        'british_columbia': '#009E73',
+        'british_columbia': '#CC79A7',
         'corn_belt': '#90EE90', 
-        'amazon': '#CC79A7',
+        'amazon': '#009E73',
         'ethiopia': '#D55E00',
     }
     
@@ -3624,11 +3624,13 @@ def plot_scatter_forecast_improvement(
                     ax=ax,
                     x=pixel_data['x'],
                     y=y_values,
+                    color=point_color,
+                    label='',  # Label not needed for standalone plot
                     x_label=x_label,
                     y_label=y_labels[col_idx],
-                    color=point_color,
                     marker_size=marker_size,
-                    add_zero_line=(y_metric == 'improvement')
+                    add_zero_line=(y_metric == 'improvement'),
+                    add_styling=True
                 )
 
                 # Add title to first row
@@ -3855,7 +3857,7 @@ def lead_time_compare_binscatter(
 
             # Plot Original RMSE (Column 0)
             ax_original = axes[row_idx, 0]
-            _plot_binscatter_overlay(
+            _plot_binscatter(
                 ax=ax_original,
                 x=pixel_data['x'],
                 y=pixel_data['rmse_original'],
@@ -3867,7 +3869,7 @@ def lead_time_compare_binscatter(
 
             # Plot RMSE Improvement (Column 1)
             ax_improvement = axes[row_idx, 1]
-            _plot_binscatter_overlay(
+            _plot_binscatter(
                 ax=ax_improvement,
                 x=pixel_data['x'],
                 y=pixel_data['improvement'],
@@ -4103,7 +4105,7 @@ def model_compare_binscatter(
                 y_values = pixel_data['rmse_corrected']
 
             # Plot binscatter
-            _plot_binscatter_model_overlay(
+            _plot_binscatter(
                 ax=ax,
                 x=pixel_data['x'],
                 y=y_values,
@@ -4147,9 +4149,21 @@ def model_compare_binscatter(
     return fig
 
 
-def _plot_binscatter_model_overlay(ax, x, y, color, label, position_idx, is_first=False):
+def _plot_binscatter(ax, x, y, color, label,
+                     nbins=None,
+                     x_label=None,
+                     y_label=None,
+                     marker_size=6,
+                     position_idx=None,
+                     lead_time=None,
+                     is_first=False,
+                     add_zero_line=False,
+                     add_styling=False):
     """
-    Add a binscatter plot with regression line to an existing axes (for overlaying multiple models).
+    Create a binscatter plot with cubic polynomial fit.
+
+    Uses quantile-based binning (via binsreg), confidence intervals around bin means,
+    and fits a cubic polynomial to the bin means to capture non-linear relationships.
 
     Parameters
     ----------
@@ -4160,13 +4174,31 @@ def _plot_binscatter_model_overlay(ax, x, y, color, label, position_idx, is_firs
     y : np.ndarray
         Y values (dependent variable)
     color : str
-        Color for this model
+        Color for this series
     label : str
-        Label for this model (e.g., "Pangu Original", "IFS Original")
-    position_idx : int
-        Index for positioning text boxes (0, 1, 2, ...)
-    is_first : bool
-        Whether this is the first model being plotted (for initialization)
+        Label for this series
+    nbins : int or None, default=None
+        Number of bins. If None, uses automatic IMSE-optimal selection
+    x_label : str, optional
+        Label for x-axis (only used if add_styling=True)
+    y_label : str, optional
+        Label for y-axis (only used if add_styling=True)
+    marker_size : float, default=6
+        Size of markers (for add_styling=True, will be square-rooted)
+    position_idx : int, optional
+        Index for positioning text boxes (for overlay plots, currently unused)
+    lead_time : int, optional
+        Lead time in hours (for overlay plots, currently unused)
+    is_first : bool, default=False
+        Whether this is the first series being plotted
+    add_zero_line : bool, default=False
+        Whether to add horizontal line at y=0 (only if is_first=True)
+    add_styling : bool, default=False
+        Whether to add axis labels, grid, and legend (for standalone plots)
+
+    Returns
+    -------
+    None
     """
     # Remove any remaining NaN values
     valid_mask = ~(np.isnan(x) | np.isnan(y))
@@ -4182,21 +4214,19 @@ def _plot_binscatter_model_overlay(ax, x, y, color, label, position_idx, is_firs
     # Create a DataFrame for binsreg
     df = pd.DataFrame({'x': x, 'y': y})
 
-    # Run binsreg with automatic bin selection
-    print(f"  Running binsreg...")
+    # Run binsreg to create bins and confidence intervals
+    print(f"  Running binsreg for binning...")
 
-    # Try with automatic bin selection first
     try:
+        # Try with automatic or specified bin selection
         est = binsreg(
             y='y',
             x='x',
             data=df,
-            nbins=None,        # Automatic IMSE-optimal selection
+            nbins=nbins,       # Automatic IMSE-optimal if None, else fixed
             binspos='qs',      # Quantile-spaced bins
             dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
+            ci=(3, 3),         # Confidence intervals (cubic)
             noplot=True        # Don't create automatic plot
         )
 
@@ -4213,9 +4243,7 @@ def _plot_binscatter_model_overlay(ax, x, y, color, label, position_idx, is_firs
             nbins=20,          # Fixed 20 bins
             binspos='qs',      # Quantile-spaced bins
             dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
+            ci=(3, 3),         # Confidence intervals (cubic)
             noplot=True        # Don't create automatic plot
         )
 
@@ -4292,266 +4320,48 @@ def _plot_binscatter_model_overlay(ax, x, y, color, label, position_idx, is_firs
     yerr = np.array([yerr_lower, yerr_upper])
 
     # Plot binscatter points with error bars
+    scatter_label = label if not add_styling else 'Bin means (95% CI)'
+    actual_marker_size = np.sqrt(marker_size) if add_styling else marker_size
     ax.errorbar(bin_x, bin_y, yerr=yerr,
-                fmt='o', color=color, markersize=6,
+                fmt='o', color=color,
+                markersize=actual_marker_size,
                 ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
-                label=label)
+                label=scatter_label)
 
-    # Calculate regression line manually
-    X_matrix = np.column_stack([np.ones(len(x)), x])
-    beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
-    intercept, slope = beta
+    # Fit a cubic polynomial to the bin means
+    if len(bin_x) >= 4:  # Need at least 4 points to fit a cubic
+        # Fit cubic polynomial: y = a*x^3 + b*x^2 + c*x + d
+        coeffs = np.polyfit(bin_x, bin_y, deg=3)
 
-    # Plot regression line
-    x_range = np.array([x.min(), x.max()])
-    y_range = intercept + slope * x_range
-    ax.plot(x_range, y_range, '--', color=color, linewidth=2, alpha=0.8)
+        # Create smooth x values for plotting the curve
+        x_smooth = np.linspace(bin_x.min(), bin_x.max(), 200)
+        y_smooth = np.polyval(coeffs, x_smooth)
 
-    # Calculate standard errors
-    y_pred = intercept + slope * x
-    residuals = y - y_pred
-    n = len(x)
-    dof = n - 2
-    mse = np.sum(residuals**2) / dof
-    se_slope = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[1, 1])
+        # Plot cubic fit line
+        line_label = 'Cubic fit' if add_styling else None
+        line_style = 'r--' if add_styling else '--'
+        line_color = None if add_styling else color
+        ax.plot(x_smooth, y_smooth, line_style, color=line_color,
+                linewidth=2, alpha=0.8, label=line_label)
 
-    # t-statistic and p-value
-    t_stat = slope / se_slope
-    p_value = 2 * (1 - stats.t.cdf(np.abs(t_stat), dof))
-
-    # Determine significance stars
-    if p_value < 0.001:
-        sig_stars = '***'
-    elif p_value < 0.01:
-        sig_stars = '**'
-    elif p_value < 0.05:
-        sig_stars = '*'
+        print(f"  Plotted cubic polynomial fit to {len(bin_x)} bin means")
     else:
-        sig_stars = ''
+        print(f"  Warning: Need at least 4 bins to fit cubic polynomial, only have {len(bin_x)}")
 
-    # Add statistics text (format: β with stars, SE in parentheses)
-    stats_text = f'{label}: β={slope:.4f}{sig_stars} (SE: {se_slope:.4f})'
-
-    # Position text boxes vertically stacked based on position_idx
-    y_positions = [0.98, 0.90, 0.82]
-    y_pos = y_positions[position_idx] if position_idx < len(y_positions) else 0.98 - (position_idx * 0.08)
-
-    ax.text(0.02, y_pos, stats_text,
-            transform=ax.transAxes, fontsize=9,
-            verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor=color, alpha=0.3),
-            family='monospace')
-
-    print(f"  Completed {label}: β={slope:.4f}{sig_stars}, SE={se_slope:.4f}")
-
-
-def _plot_binscatter_overlay(ax, x, y, color, label, lead_time, is_first=False, add_zero_line=False):
-    """
-    Add a binscatter plot with regression line to an existing axes (for overlaying multiple lead times).
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to plot on
-    x : np.ndarray
-        X values (independent variable)
-    y : np.ndarray
-        Y values (dependent variable)
-    color : str
-        Color for this lead time
-    label : str
-        Label for this lead time (e.g., "1 day", "5 days")
-    lead_time : int
-        Lead time in hours (used for determining marker style)
-    is_first : bool
-        Whether this is the first lead time being plotted (for initialization)
-    add_zero_line : bool
-        Whether to add horizontal line at y=0
-    """
-    # Remove any remaining NaN values
-    valid_mask = ~(np.isnan(x) | np.isnan(y))
-    x = x[valid_mask]
-    y = y[valid_mask]
-
-    if len(x) == 0:
-        print(f"  Warning: No valid data for {label}")
-        return
-
-    print(f"  Processing {label}: {len(x):,} observations")
-
-    # Create a DataFrame for binsreg
-    df = pd.DataFrame({'x': x, 'y': y})
-
-    # Run binsreg with automatic bin selection
-    print(f"  Running binsreg...")
-
-    # Try with automatic bin selection first
-    try:
-        est = binsreg(
-            y='y',
-            x='x',
-            data=df,
-            nbins=None,        # Automatic IMSE-optimal selection
-            binspos='qs',      # Quantile-spaced bins
-            dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
-            noplot=True        # Don't create automatic plot
-        )
-
-        # Check if dots were actually created
-        if est.data_plot is None or len(est.data_plot) == 0 or est.data_plot[0].dots is None:
-            raise ValueError("binsreg did not create dots")
-
-    except (ValueError, Exception) as e:
-        print(f"  Using fixed 20 bins...")
-        est = binsreg(
-            y='y',
-            x='x',
-            data=df,
-            nbins=20,          # Fixed 20 bins
-            binspos='qs',      # Quantile-spaced bins
-            dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
-            noplot=True        # Don't create automatic plot
-        )
-
-    # Get the data object
-    data_obj = est.data_plot[0]
-
-    # Get binned points from .dots DataFrame
-    dots_df = data_obj.dots
-
-    if dots_df is None:
-        # Manual binning fallback (same as in _plot_binscatter)
-        print(f"  Using manual binning fallback...")
-
-        if data_obj.data_bin is not None:
-            bin_info = data_obj.data_bin
-            n_bins = len(bin_info)
-
-            bin_x = np.zeros(n_bins)
-            bin_y = np.zeros(n_bins)
-            ci_l = np.zeros(n_bins)
-            ci_r = np.zeros(n_bins)
-
-            for i in range(n_bins):
-                left = bin_info.iloc[i]['left_endpoint']
-                right = bin_info.iloc[i]['right.endpoint']
-
-                if i == n_bins - 1:
-                    mask = (x >= left) & (x <= right)
-                else:
-                    mask = (x >= left) & (x < right)
-
-                if np.sum(mask) > 0:
-                    x_bin = x[mask]
-                    y_bin = y[mask]
-
-                    bin_x[i] = np.mean(x_bin)
-                    bin_y[i] = np.mean(y_bin)
-
-                    if len(y_bin) > 1:
-                        se = np.std(y_bin, ddof=1) / np.sqrt(len(y_bin))
-                        ci_l[i] = bin_y[i] - 1.96 * se
-                        ci_r[i] = bin_y[i] + 1.96 * se
-                    else:
-                        ci_l[i] = bin_y[i]
-                        ci_r[i] = bin_y[i]
-                else:
-                    bin_x[i] = (left + right) / 2
-                    bin_y[i] = np.nan
-                    ci_l[i] = np.nan
-                    ci_r[i] = np.nan
-
-            # Remove empty bins
-            valid_mask = ~np.isnan(bin_y)
-            bin_x = bin_x[valid_mask]
-            bin_y = bin_y[valid_mask]
-            ci_l = ci_l[valid_mask]
-            ci_r = ci_r[valid_mask]
-        else:
-            print(f"  ERROR: Cannot create binscatter")
-            return
-    else:
-        # Normal path: dots is available
-        bin_x = dots_df['x'].values
-        bin_y = dots_df['fit'].values
-
-        # Get confidence intervals from .ci DataFrame
-        ci_df = data_obj.ci
-        ci_l = ci_df['ci_l'].values
-        ci_r = ci_df['ci_r'].values
-
-    # Calculate error bars
-    yerr_lower = np.abs(bin_y - ci_l)
-    yerr_upper = np.abs(ci_r - bin_y)
-    yerr = np.array([yerr_lower, yerr_upper])
-
-    # Plot binscatter points with error bars
-    ax.errorbar(bin_x, bin_y, yerr=yerr,
-                fmt='o', color=color, markersize=6,
-                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
-                label=label)
-
-    # Calculate regression line manually
-    X_matrix = np.column_stack([np.ones(len(x)), x])
-    beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
-    intercept, slope = beta
-
-    # Plot regression line
-    x_range = np.array([x.min(), x.max()])
-    y_range = intercept + slope * x_range
-    ax.plot(x_range, y_range, '--', color=color, linewidth=2, alpha=0.8)
-
-    # Calculate standard errors
-    y_pred = intercept + slope * x
-    residuals = y - y_pred
-    n = len(x)
-    dof = n - 2
-    mse = np.sum(residuals**2) / dof
-    se_slope = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[1, 1])
-
-    # t-statistic and p-value
-    t_stat = slope / se_slope
-    p_value = 2 * (1 - stats.t.cdf(np.abs(t_stat), dof))
-
-    # Determine significance stars
-    if p_value < 0.001:
-        sig_stars = '***'
-    elif p_value < 0.01:
-        sig_stars = '**'
-    elif p_value < 0.05:
-        sig_stars = '*'
-    else:
-        sig_stars = ''
-
-    # Add statistics text (format as requested: β with stars, SE in parentheses)
-    stats_text = f'{label}: β={slope:.4f}{sig_stars} (SE: {se_slope:.4f})'
-
-    # Position text boxes vertically stacked based on lead time
-    # Use lead time to determine vertical position (1 day at top, 5 days middle, 9 days bottom)
-    if lead_time == 24:  # 1 day
-        y_pos = 0.98
-    elif lead_time == 120:  # 5 days
-        y_pos = 0.90
-    else:  # 216 hours = 9 days
-        y_pos = 0.82
-
-    ax.text(0.02, y_pos, stats_text,
-            transform=ax.transAxes, fontsize=9,
-            verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor=color, alpha=0.3),
-            family='monospace')
-
-    # Add zero line if requested (only once, on first call)
+    # Add zero line if requested
     if add_zero_line and is_first:
         ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
-    print(f"  Completed {label}: β={slope:.4f}{sig_stars}, SE={se_slope:.4f}")
+    # Add styling if requested (for standalone plots)
+    if add_styling:
+        if x_label:
+            ax.set_xlabel(x_label, fontsize=12)
+        if y_label:
+            ax.set_ylabel(y_label, fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
+    print(f"  Completed {label}")
 
 
 def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da=None):
@@ -4703,265 +4513,8 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
     return result
 
 
-def _plot_binscatter(ax, x, y, x_label, y_label, color, marker_size, add_zero_line=False):
-    """
-    Create a binscatter plot using the binsreg package (Cattaneo et al., 2023).
-
-    Uses the official binsreg implementation with quantile-based binning,
-    confidence intervals, and hypothesis testing for the slope.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to plot on
-    x : np.ndarray
-        X values (independent variable)
-    y : np.ndarray
-        Y values (dependent variable)
-    x_label : str
-        Label for x-axis
-    y_label : str
-        Label for y-axis
-    color : str
-        Color for points
-    marker_size : float
-        Size of markers
-    add_zero_line : bool
-        Whether to add horizontal line at y=0
-    """
-    # Remove any remaining NaN values
-    valid_mask = ~(np.isnan(x) | np.isnan(y))
-    x = x[valid_mask]
-    y = y[valid_mask]
-
-    # Optional: Check data characteristics (commented out for cleaner output)
-    # print(f"  Data diagnostics:")
-    # print(f"    - Total observations: {len(x):,}")
-    # print(f"    - Unique x values: {len(np.unique(x)):,}")
-    # print(f"    - X range: [{np.min(x):.2f}, {np.max(x):.2f}]")
-    # print(f"    - Y range: [{np.min(y):.2f}, {np.max(y):.2f}]")
-
-    # Create a DataFrame for binsreg
-    print(f"  Creating DataFrame with {len(x):,} observations...")
-    df = pd.DataFrame({'x': x, 'y': y})
-
-    # Run binsreg with automatic bin selection
-    # Setting nbins=None triggers automatic IMSE-optimal selection
-    # Parameters following Cattaneo et al. (2023) recommendations:
-    # - nbins: None for automatic IMSE-optimal selection
-    # - binspos: 'qs' for quantile-spaced bins (equal observations per bin)
-    # - dots: (0, 0) for point estimates at bin means
-    # - line: (1, 1) for linear fit line
-    # - ci: (1, 1) for confidence intervals around dots
-    # - polyreg: 1 for global linear regression overlay
-    # - noplot: True to suppress automatic plotting (we plot manually)
-    #
-    # NOTE: When there are many repeated x values (e.g., sdor=0 for flat terrain),
-    # binsreg can fail to create dots/ci. We try first with automatic selection,
-    # then fall back to manual nbins if needed.
-    print(f"  Running binsreg with automatic bin selection (IMSE-optimal)...")
-
-    # Try with automatic bin selection first
-    try:
-        est = binsreg(
-            y='y',
-            x='x',
-            data=df,
-            nbins=None,        # Automatic IMSE-optimal selection
-            binspos='qs',      # Quantile-spaced bins
-            dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
-            noplot=True        # Don't create automatic plot
-        )
-
-        # Check if dots were actually created
-        if est.data_plot is None or len(est.data_plot) == 0 or est.data_plot[0].dots is None:
-            raise ValueError("binsreg did not create dots")
-
-    except (ValueError, Exception) as e:
-        print(f"  Using fixed 20 bins (automatic selection encountered issues)...")
-        # Fall back to fixed number of bins
-        # When data has many repeated x values (e.g., sdor=0 for flat terrain),
-        # automatic bin selection may fail
-        est = binsreg(
-            y='y',
-            x='x',
-            data=df,
-            nbins=20,          # Fixed 20 bins
-            binspos='qs',      # Quantile-spaced bins
-            dots=(0, 0),       # Point estimates at bin means
-            line=(1, 1),       # Linear fit line
-            ci=(1, 1),         # Confidence intervals for dots
-            polyreg=1,         # Global linear regression overlay
-            noplot=True        # Don't create automatic plot
-        )
-    print(f"  binsreg completed!")
-
-    # Get the data object (not a dict, but an object with DataFrame attributes)
-    data_obj = est.data_plot[0]
-
-    # Get binned points from .dots DataFrame
-    dots_df = data_obj.dots
-
-    if dots_df is None:
-        print(f"  binsreg dots not available, using manual binning fallback...")
-
-        # When binsreg fails to create dots (due to insufficient variation in x within bins),
-        # we manually bin the data using the bin endpoints from data_bin
-        if data_obj.data_bin is not None:
-
-            # Get bin endpoints
-            bin_info = data_obj.data_bin
-            n_bins = len(bin_info)
-
-            # Manually assign each observation to a bin and calculate statistics
-            bin_x = np.zeros(n_bins)
-            bin_y = np.zeros(n_bins)
-            ci_l = np.zeros(n_bins)
-            ci_r = np.zeros(n_bins)
-
-            for i in range(n_bins):
-                left = bin_info.iloc[i]['left_endpoint']
-                right = bin_info.iloc[i]['right.endpoint']
-
-                # Find observations in this bin
-                if i == n_bins - 1:
-                    # Last bin: include right endpoint
-                    mask = (x >= left) & (x <= right)
-                else:
-                    # Other bins: exclude right endpoint
-                    mask = (x >= left) & (x < right)
-
-                if np.sum(mask) > 0:
-                    # Calculate bin statistics
-                    x_bin = x[mask]
-                    y_bin = y[mask]
-
-                    bin_x[i] = np.mean(x_bin)
-                    bin_y[i] = np.mean(y_bin)
-
-                    # Calculate 95% CI
-                    if len(y_bin) > 1:
-                        se = np.std(y_bin, ddof=1) / np.sqrt(len(y_bin))
-                        ci_l[i] = bin_y[i] - 1.96 * se
-                        ci_r[i] = bin_y[i] + 1.96 * se
-                    else:
-                        ci_l[i] = bin_y[i]
-                        ci_r[i] = bin_y[i]
-                else:
-                    # Empty bin - use midpoint for x, set y to NaN
-                    bin_x[i] = (left + right) / 2
-                    bin_y[i] = np.nan
-                    ci_l[i] = np.nan
-                    ci_r[i] = np.nan
-
-            # Remove empty bins
-            valid_mask = ~np.isnan(bin_y)
-            bin_x = bin_x[valid_mask]
-            bin_y = bin_y[valid_mask]
-            ci_l = ci_l[valid_mask]
-            ci_r = ci_r[valid_mask]
-
-            print(f"  Extracted {len(bin_x)} binned points from manual binning")
-
-        else:
-            print(f"  ERROR: data_obj.data_bin is also None! Cannot create binscatter.")
-            return
-
-    else:
-        # Normal path: dots is available
-        bin_x = dots_df['x'].values
-        bin_y = dots_df['fit'].values
-
-        print(f"  Extracted {len(bin_x)} binned points")
-
-        # Get confidence intervals from .ci DataFrame
-        ci_df = data_obj.ci
-        ci_l = ci_df['ci_l'].values
-        ci_r = ci_df['ci_r'].values
-
-    # check that all ci values are positive
-    if np.any(ci_l < 0) or np.any(ci_r < 0):
-        print(f"  Warning: Negative confidence interval values detected.")
-
-    # Calculate error bars (convert CI to error bars)
-    yerr_lower = np.abs(bin_y - ci_l)
-    yerr_upper = np.abs(ci_r - bin_y)
-    yerr = np.array([yerr_lower, yerr_upper])
-
-    # Plot binscatter points with error bars
-    ax.errorbar(bin_x, bin_y, yerr=yerr,
-            fmt='o', color=color, markersize=np.sqrt(marker_size),
-            ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
-            label='Bin means (95% CI)')
-
-    print(f"  Plotted binned points with confidence intervals")
-
-    # Calculate regression line manually (polyreg data not available with noplot=True)
-    # Perform OLS regression on the micro data
-    X_matrix = np.column_stack([np.ones(len(x)), x])
-    beta = np.linalg.lstsq(X_matrix, y, rcond=None)[0]
-    intercept, slope = beta
-
-    # Plot regression line
-    x_range = np.array([x.min(), x.max()])
-    y_range = intercept + slope * x_range
-    ax.plot(x_range, y_range, 'r--', linewidth=2, alpha=0.8, label='Linear fit')
-
-    print(f"  Added regression line (β = {slope:.4f})")
-
-    # Calculate standard errors
-    y_pred = intercept + slope * x
-    residuals = y - y_pred
-    n = len(x)
-    dof = n - 2
-    mse = np.sum(residuals**2) / dof
-    se_slope = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[1, 1])
-
-    # t-statistic and p-value
-    t_stat = slope / se_slope
-    p_value = 2 * (1 - stats.t.cdf(np.abs(t_stat), dof))
-
-    # Determine significance stars
-    if p_value < 0.001:
-        sig_stars = '***'
-    elif p_value < 0.01:
-        sig_stars = '**'
-    elif p_value < 0.05:
-        sig_stars = '*'
-    else:
-        sig_stars = ''
-
-    # Add statistics text box
-    stats_text = f'β = {slope:.4f}{sig_stars}\n'
-    stats_text += f'SE = {se_slope:.4f}\n'
-    stats_text += f'p = {p_value:.4f}\n'
-    stats_text += f'n = {n:,}'
-
-    ax.text(0.02, 0.98, stats_text,
-        transform=ax.transAxes, fontsize=9,
-        verticalalignment='top',
-        bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
-        family='monospace')
-
-    # Add zero line if requested
-    if add_zero_line:
-        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
-
-    # Styling
-    ax.set_xlabel(x_label, fontsize=12)
-    ax.set_ylabel(y_label, fontsize=12)
-    ax.grid(True, alpha=0.3, linestyle='--')
-
-    # Add legend
-    ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
-
-
 def main():
     dirs = setup_directories()
-
 
 #=============================================
 # Main figure binscatter plots
@@ -4987,20 +4540,21 @@ def main():
 #=============================================
 # Global Improvement Plots (scatter and maps for appendix)
 #=============================================
-    # for model in ["pangu", "ifs"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         for binscatter in [True]:
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="equator_distance", 
-    #                                             binscatter=binscatter)
-    #             plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-    #                                             variable=variable, x_metric="sdor", 
-    #                                             binscatter=binscatter)
+    for model in ["pangu", "ifs"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            for binscatter in [True]:
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, x_metric="equator_distance", 
+                                                binscatter=binscatter)
+                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
+                                                variable=variable, x_metric="sdor", 
+                                                binscatter=binscatter)
     #         for map_type in ["original", "improvement"]:
     #             for pixel_flag in [True]:
     #                 map_global_improvements(dirs=dirs, model=model, 
     #                                         variable=variable, map_type=map_type,
     #                                         pixel_level=pixel_flag)
+    exit()
 
 #=============================================
 # Binned RMSE Improvement Plots
