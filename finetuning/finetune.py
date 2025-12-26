@@ -129,6 +129,119 @@ class SimpleMLP(nn.Module):
 # ------------------------------
 # U-Net definition with lead time and day-of-year encoding
 # ------------------------------
+class ChannelAttention(nn.Module):
+    """Squeeze-and-Excitation block for channel attention."""
+    def __init__(self, channels, reduction=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channels, channels // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // reduction, channels, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
+class AttentionGate(nn.Module):
+    """Attention gate for skip connections in U-Net."""
+    def __init__(self, F_g, F_l, F_int):
+        """
+        Args:
+            F_g: Number of feature channels in gating signal (decoder features)
+            F_l: Number of feature channels in skip connection (encoder features)
+            F_int: Number of intermediate feature channels
+        """
+        super(AttentionGate, self).__init__()
+
+        self.W_g = nn.Sequential(
+            nn.Conv2d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(F_int)
+        )
+
+        self.W_x = nn.Sequential(
+            nn.Conv2d(F_l, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(F_int)
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv2d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g, x):
+        """
+        Args:
+            g: Gating signal from decoder [B, F_g, H, W]
+            x: Skip connection from encoder [B, F_l, H, W]
+        Returns:
+            Attention-weighted skip connection [B, F_l, H, W]
+        """
+        # Ensure spatial dimensions match
+        if g.shape[2:] != x.shape[2:]:
+            g = F.interpolate(g, size=x.shape[2:], mode='bilinear', align_corners=False)
+
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)
+
+        return x * psi
+
+
+class ResidualConvBlock(nn.Module):
+    """Convolutional block with residual connection and channel attention."""
+    def __init__(self, in_channels, out_channels, dropout_rate=0.1, use_se=True):
+        super(ResidualConvBlock, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout2d(dropout_rate)
+
+        # Squeeze-and-Excitation channel attention
+        self.use_se = use_se
+        if use_se:
+            self.se = ChannelAttention(out_channels, reduction=max(4, out_channels // 16))
+
+        # Residual connection
+        self.residual = None
+        if in_channels != out_channels:
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        residual = x if self.residual is None else self.residual(x)
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.use_se:
+            out = self.se(out)
+
+        out = out + residual
+        out = self.relu(out)
+
+        return out
+
+
 class UNet(nn.Module):
     """
     U-Net architecture with channel concatenation conditioning for weather forecast bias correction.
@@ -137,7 +250,8 @@ class UNet(nn.Module):
 
     def __init__(self, input_dim, hidden_dim=128, output_dim=1,
                  n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
-                 n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1):
+                 n_lead_times=1, lead_time_embedding_dim=16, dropout_rate=0.1,
+                 use_attention=False, use_residual=False):
         """
         Initialize U-Net with concatenation-based conditioning.
 
@@ -150,6 +264,8 @@ class UNet(nn.Module):
             n_lead_times: Number of distinct lead times
             lead_time_embedding_dim: Dimension of lead time embedding
             dropout_rate: Dropout rate for conv blocks
+            use_attention: Use attention gates and SE blocks (default: False)
+            use_residual: Use residual connections in conv blocks (default: False)
         """
         super(UNet, self).__init__()
 
@@ -159,6 +275,8 @@ class UNet(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_lead_times = n_lead_times
         self.dropout_rate = dropout_rate
+        self.use_attention = use_attention
+        self.use_residual = use_residual
 
         # Spatial dimensions
         if n_lat is None or n_lon is None or n_input_vars is None:
@@ -214,17 +332,24 @@ class UNet(nn.Module):
         return min(max_pools + 1, 5)
     
     def _make_conv_block(self, in_channels, out_channels):
-        """Create a convolutional block with two conv layers, batch norm, and dropout."""
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True), # briefly tried leaky ReLU and got worse results
-            nn.Dropout2d(self.dropout_rate),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Dropout2d(self.dropout_rate)
-        )
+        """Create a convolutional block with optional residual connections and SE attention."""
+        if self.use_residual or self.use_attention:
+            # Use residual block with optional SE attention
+            return ResidualConvBlock(in_channels, out_channels,
+                                   dropout_rate=self.dropout_rate,
+                                   use_se=self.use_attention)
+        else:
+            # Original basic conv block
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(self.dropout_rate),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(self.dropout_rate)
+            )
     
     def _make_upconv(self, in_channels, out_channels):
         """Create upsampling layer using transposed convolution."""
@@ -257,6 +382,7 @@ class UNet(nn.Module):
         """Build the decoder (upsampling) path."""
         self.decoders = nn.ModuleList()
         self.upconvs = nn.ModuleList()
+        self.attention_gates = nn.ModuleList() if self.use_attention else None
 
         for i in range(self.num_levels - 1):
             # Calculate channel numbers
@@ -269,6 +395,12 @@ class UNet(nn.Module):
 
             # Add upconvolution
             self.upconvs.append(self._make_upconv(in_ch, out_ch))
+
+            # Add attention gate if enabled
+            if self.use_attention:
+                # Attention gate: g (gating signal from decoder), x (skip connection from encoder)
+                F_int = out_ch // 2  # Intermediate channels
+                self.attention_gates.append(AttentionGate(F_g=out_ch, F_l=skip_ch, F_int=F_int))
 
             # Add decoder block (takes concatenated skip connection)
             combined_ch = out_ch + skip_ch
@@ -351,6 +483,10 @@ class UNet(nn.Module):
                 w_end = w_start + x.shape[3]
 
                 skip_connection = skip_connection[:, :, h_start:h_end, w_start:w_end]
+
+            # Apply attention gate if enabled
+            if self.use_attention:
+                skip_connection = self.attention_gates[i](g=x, x=skip_connection)
 
             # Concatenate with skip connection
             x = torch.cat([x, skip_connection], dim=1)
@@ -777,6 +913,10 @@ def parse_args():
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
+    parser.add_argument('--unet_use_attention', action='store_true',
+                        help='Use attention gates and SE blocks in UNet (default: False)')
+    parser.add_argument('--unet_use_residual', action='store_true',
+                        help='Use residual connections in UNet conv blocks (default: False)')
     parser.add_argument('--transformer_hidden_dim', type=int, default=256,
                         help='Hidden dimension (embedding size) for Transformer (default: 256)')
     parser.add_argument('--transformer_num_layers', type=int, default=4,
@@ -1352,12 +1492,16 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
+        print(f"  UNet use_attention: {args.unet_use_attention}")
+        print(f"  UNet use_residual: {args.unet_use_residual}")
         print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
                      n_lead_times=n_lead_times,
                      lead_time_embedding_dim=lead_time_emb_dim,
-                     dropout_rate=args.unet_dropout).to(device)
+                     dropout_rate=args.unet_dropout,
+                     use_attention=args.unet_use_attention,
+                     use_residual=args.unet_use_residual).to(device)
         num_epochs = 500
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times")
