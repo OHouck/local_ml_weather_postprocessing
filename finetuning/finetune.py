@@ -654,12 +654,13 @@ class PanguTransformer(nn.Module):
             temporal_emb = temporal_emb.unsqueeze(1)  # [B, 1, hidden_dim]
             x = x + temporal_emb  # Broadcast to all patches
 
-        # Add CLS token
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # [B, 1, hidden_dim]
-        x = torch.cat([cls_tokens, x], dim=1)  # [B, num_patches+1, hidden_dim]
+        # Skip CLS token for speed - not needed for dense prediction
+        # cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        # x = torch.cat([cls_tokens, x], dim=1)
 
-        # Add positional embedding
-        x = x + self.pos_embed
+        # Add positional embedding (only for patches, not CLS)
+        pos_embed_patches = self.pos_embed[:, 1:, :]  # Skip CLS position
+        x = x + pos_embed_patches
         x = self.pos_drop(x)
 
         # Apply transformer blocks
@@ -669,8 +670,8 @@ class PanguTransformer(nn.Module):
         # Normalize
         x = self.norm(x)
 
-        # Remove CLS token and get patch tokens for spatial reconstruction
-        x = x[:, 1:, :]  # [B, num_patches, hidden_dim]
+        # No need to remove CLS token since we didn't add it
+        # x = x[:, 1:, :]
 
         # Project to output variables
         x = self.output_head(x)  # [B, num_patches, n_output_vars]
