@@ -897,7 +897,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                         growing_season_only=False, alternate_loss_fn=None):
     """
     Creates 2-panel plot showing RMSE improvement for different subregion sizes.
-    Compares center 4x4 region across different training region sizes.
+    Compares center 6x6 region across different training region sizes.
 
     Left panel: 10m_wind_speed
     Right panel: 2m_temperature
@@ -924,8 +924,8 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     input_folder = dirs['input']
 
     # Configuration matching run_region_size_experiments.sh
-    regions = ["finland", "ethiopia"]
-    subregions = ["12x12", "10x10", "8x8", "6x6", "4x4"]
+    regions = ["finland", "amazon"]
+    subregions = ["20x20", "15x15", "10x10", "8x8", "6x6"]
     lead_times = [24, 120, 216]
     variables = ["2m_temperature", "10m_wind_speed"]  # Temperature on left, wind on right
 
@@ -933,7 +933,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     subregion_sizes = [int(s.split('x')[0]) for s in subregions]
 
     # Color mapping for regions
-    region_colors = {'finland': '#1f77b4', 'ethiopia': '#ff7f0e'}
+    region_colors = {'finland': '#1f77b4', 'ethiopia': '#ff7f0e', 'amazon': '#2ca02c'} 
 
     # Line style mapping for lead times
     linestyle_map = {24: 'solid', 120: 'dashed', 216: 'dotted'}
@@ -945,7 +945,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     for region in regions:
         print(f"\nProcessing region: {region}")
 
-        # First, determine center 4x4 bounds from the 4x4 subregion file
+        # First, determine center 6x6 bounds from the 6x6 subregion file
         central_bounds = None
 
         # Load 4x4 subregion first to get the central bounds
@@ -953,11 +953,11 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
             if central_bounds is not None:
                 break  # Already found bounds from first variable
 
-            args_4x4 = SimpleNamespace(
+            args_6x6 = SimpleNamespace(
                 model_name=model,
                 ground_truth_source="",
                 region=region,
-                subregion="4x4",
+                subregion="6x6",
                 train_start=train_start,
                 train_end=train_end,
                 test_start=test_start,
@@ -970,19 +970,19 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 alternate_loss_fn=alternate_loss_fn
             )
 
-            path_4x4 = os.path.join(input_folder, generate_output_path(args_4x4))
+            path_6x6 = os.path.join(input_folder, generate_output_path(args_6x6))
 
             try:
-                with xr.open_zarr(path_4x4, chunks='auto') as ds:
+                with xr.open_zarr(path_6x6, chunks='auto') as ds:
                     central_bounds = {
                         'lat_min': float(ds.latitude.min()),
                         'lat_max': float(ds.latitude.max()),
                         'lon_min': float(ds.longitude.min()),
                         'lon_max': float(ds.longitude.max())
                     }
-                    print(f"  Central 4x4 bounds established: {central_bounds}")
+                    print(f"  Central 6x6 bounds established: {central_bounds}")
             except Exception as e:
-                print(f"  Warning: Could not load 4x4 file to establish bounds: {e}")
+                print(f"  Warning: Could not load 6x6 file to establish bounds: {e}")
 
         # If we couldn't establish bounds, skip this region
         if central_bounds is None:
@@ -1094,7 +1094,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
         ax.set_xticks(subregion_sizes)
         ax.set_xticklabels(subregions)
         ax.set_xlabel("Training Region Size (degrees)", fontsize=13)
-        ax.set_ylabel("RMSE % Improvement\n(evaluated on center 4×4)", fontsize=13)
+        ax.set_ylabel("RMSE % Improvement\n(evaluated on center 6x6)", fontsize=13)
         ax.grid(True, alpha=0.3)
 
         # Set title based on variable

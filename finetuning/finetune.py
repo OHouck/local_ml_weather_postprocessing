@@ -405,7 +405,6 @@ class EarthSpecificAttention(nn.Module):
 
         # Earth-Specific Position Bias: learnable bias for each spatial position pair
         # For a 24x24 grid, we have 576 positions
-        num_positions = spatial_shape[0] * spatial_shape[1]
         # We use relative position bias similar to Swin Transformer
         # This is more parameter-efficient than full pairwise bias
         self.relative_position_bias_table = nn.Parameter(
@@ -415,17 +414,17 @@ class EarthSpecificAttention(nn.Module):
         # Get relative position index
         coords_h = torch.arange(spatial_shape[0])
         coords_w = torch.arange(spatial_shape[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij'))
-        coords_flatten = torch.flatten(coords, 1)
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-        relative_coords[:, :, 0] += spatial_shape[0] - 1
-        relative_coords[:, :, 1] += spatial_shape[1] - 1
-        relative_coords[:, :, 0] *= 2 * spatial_shape[1] - 1
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij')) 
+        coords_flatten = torch.flatten(coords, 1) # [2, N]
+        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :] # [2, N, N]
+        relative_coords = relative_coords.permute(1, 2, 0).contiguous() # [N, N, 2]
+        relative_coords[:, :, 0] += spatial_shape[0] - 1 # shift to start from 0
+        relative_coords[:, :, 1] += spatial_shape[1] - 1 # shift to start from 0
+        relative_coords[:, :, 0] *= 2 * spatial_shape[1] - 1 
         relative_position_index = relative_coords.sum(-1)
         self.register_buffer("relative_position_index", relative_position_index)
 
-        # Initialize bias table
+        # Initialize bias table with truncated normal distribution
         nn.init.trunc_normal_(self.relative_position_bias_table, std=0.02)
 
     def forward(self, x, has_cls_token=True):
@@ -467,6 +466,8 @@ class EarthSpecificAttention(nn.Module):
             relative_position_bias[:, 1:, 1:] = spatial_bias
         else:
             # No CLS token, apply bias to all tokens
+
+            assert N == num_spatial, f"Expected {num_spatial} tokens but got {N}"
             relative_position_bias = self.relative_position_bias_table[
                 self.relative_position_index.view(-1)
             ].view(N, N, -1)  # [N, N, num_heads]
