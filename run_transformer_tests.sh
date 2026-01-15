@@ -31,12 +31,12 @@ NC='\033[0m' # No Color
 
 # Configuration
 # Uncomment for local Mac development:
-# DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
-# OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/transformer_tests"
+DATA_DIR="/Users/ohouck/globus/forecast_data/raw"
+OUTPUT_DIR="/Users/ohouck/globus/forecast_data/processed/transformer_tests"
 
 # Server configuration:
-DATA_DIR="/project/jfranke/ozma/forecast_data/raw"
-OUTPUT_DIR="/project/jfranke/ozma/forecast_data/processed/transformer_tests"
+# DATA_DIR="/project/jfranke/ozma/forecast_data/raw"
+# OUTPUT_DIR="/project/jfranke/ozma/forecast_data/processed/transformer_tests"
 REGION=india
 SUBREGION=6x6
 MODEL=pangu
@@ -50,9 +50,10 @@ TEST_START=2022-01-01
 TEST_END=2022-12-31
 
 # Full variable set (best performance)
-TRAINING_VARS="2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa"
+TRAINING_VARS="2m_temperature temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa"
+# TRAINING_VARS="2m_temperature" 
 OUTPUT_VARS="2m_temperature"
-LEAD_TIMES="24 72 144"
+LEAD_TIMES="24 120 216"  # in hours
 
 # Create output directory
 mkdir -p ${OUTPUT_DIR}
