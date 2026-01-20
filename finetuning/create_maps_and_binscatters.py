@@ -10,7 +10,7 @@ Post-processed zarr files from finetuning output directory structure.
 These are all created by finetune.py with different runs managed by run_experiments.sh
 
 The helper function all_patch_data is used
-as a data processing function but i have saved the output anad commented it out 
+as a data processing function but i have saved the output and commented it out 
 so it shouldn't have to be used. 
 
 """
@@ -30,6 +30,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from pathlib import Path
+from binsreg import binsregselect, binsreg, binsqreg, binsglm, binstest, binspwc
+from figures_finetuning import _extract_pixel_level_data
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path
 
@@ -516,11 +518,7 @@ def map_global_improvements(
     # )
 
     import pickle
-    # # save all_patch_data locally too many files for midway, not positive 
-    # with open(os.path.join(dirs["processed"], "all_patch_data.pkl"), "wb") as f:
-    #     pickle.dump(all_patch_data, f)
-
-    with open(os.path.join(dirs["processed"], "all_patch_data.pkl"), "rb") as f:
+    with open(os.path.join(dirs["processed"], f"{model}_{variable}_patch_data.pkl"), "rb") as f:
         all_patch_data = pickle.load(f)
 
     if all_patch_data is None:
@@ -734,6 +732,7 @@ def map_global_improvements(
             vmax = max(values)
 
             # Create colormap based on map type
+            # XX where color ramp is set. This could be improved!
             if map_type == "improvement":
                 norm = plt.Normalize(vmin=vmin, vmax=vmax)
                 cmap = plt.cm.Blues
@@ -855,7 +854,6 @@ def map_global_improvements(
 
         save_path = os.path.join(out_folder, fname)
         plt.show()
-        exit()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"  Saved: {save_path}")
 
@@ -874,24 +872,713 @@ def map_global_improvements(
     return figs
 
 
+
+def lead_time_compare_binscatter(
+    dirs,
+    model="pangu",
+    x_metric="equator_distance",
+    regions=None,
+    save_dir=None,
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="6x6",
+    alternate_loss_fn=None
+):
+    """
+    Create 2x2 binscatter comparison across lead times.
+
+    Creates a figure with 4 panels arranged in a 2x2 grid:
+    - Row 1: 2m_temperature
+    - Row 2: 10m_wind_speed
+    - Column 1: Original RMSE vs x_metric
+    - Column 2: RMSE percent improvement vs x_metric
+
+    Each panel overlays 3 lead times (1, 5, 9 days) with different colors,
+    each with its own binscatter dots and linear regression line.
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    model : str
+        Model to use: "pangu" or "ifs"
+    x_metric : str
+        Metric to plot on x-axis: "equator_distance" or "sdor"
+    regions : list, optional
+        List of regions to include. If None, uses default continents
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "6x6")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure
+    """
+
+    # Lead times in hours and their labels in days
+    lead_times = [24, 120, 216]
+    lead_time_labels = {24: "1 day", 120: "5 days", 216: "9 days"}
+
+    # Variables for each row
+    variables = ["2m_temperature", "10m_wind_speed"]
+
+    # Colors for each lead time
+    colors = {24: '#1f77b4', 120: '#ff7f0e', 216: '#2ca02c'}  # Blue, Orange, Green
+
+    # Determine axis labels
+    x_label = {
+        "equator_distance": "Distance from Equator (degrees)",
+        "sdor": "Standard Deviation of Orography (m)"
+    }.get(x_metric, "Distance from Equator (degrees)")
+
+    print(f"\nCreating lead time comparison binscatter for {model.upper()}")
+    print(f"X-axis metric: {x_metric}")
+    print(f"Lead times: {lead_times} hours = {[lead_time_labels[lt] for lt in lead_times]}")
+
+    # Load sdor data if needed
+    sdor_da = None
+    if x_metric == "sdor":
+        era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
+        sdor_da = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
+        print(f"Loaded sdor data from {era5_static_path}")
+
+    # Create figure with 2x2 grid
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # Process each variable (row)
+    for row_idx, variable in enumerate(variables):
+        print(f"\n{'='*60}")
+        print(f"Processing {variable}")
+        print(f"{'='*60}")
+
+        # Load region data for this variable
+        # all_patch_data = load_region_data(
+        #     dirs=dirs,
+        #     model=model,
+        #     variable=variable,
+        #     regions=regions,
+        #     train_start=train_start,
+        #     train_end=train_end,
+        #     test_start=test_start,
+        #     test_end=test_end,
+        #     nn_architecture=nn_architecture,
+        #     subregion=subregion,
+        #     alternate_loss_fn=alternate_loss_fn,
+        #     lead_times=lead_times,
+        #     sdor_da=sdor_da
+        # )
+
+        import pickle
+        with open(os.path.join(dirs["processed"], f"{model}_{variable}_patch_data.pkl"), "rb") as f:
+            all_patch_data = pickle.load(f)
+
+
+        if all_patch_data is None:
+            print(f"Warning: No data available for {variable}")
+            continue
+
+        # Process each lead time
+        for lead_time in lead_times:
+            patch_data = all_patch_data[lead_time]
+
+            if not patch_data:
+                print(f"\nSkipping lead time {lead_time}h - no data available")
+                continue
+
+            # Extract pixel-level data for binscatter. (dataloading function from figures_finetuning.py)
+            pixel_data = _extract_pixel_level_data(
+                patch_data, variable, lead_time, x_metric, sdor_da
+            )
+
+            if pixel_data is None or len(pixel_data['x']) == 0:
+                print(f"\nSkipping lead time {lead_time}h - no pixel data available")
+                continue
+
+            # Plot Original RMSE (Column 0)
+            ax_original = axes[row_idx, 0]
+            _plot_binscatter(
+                ax=ax_original,
+                x=pixel_data['x'],
+                y=pixel_data['rmse_original'],
+                color=colors[lead_time],
+                label=lead_time_labels[lead_time],
+                lead_time=lead_time,
+                is_first=(lead_time == lead_times[0])
+            )
+
+            # Plot RMSE Improvement (Column 1)
+            ax_improvement = axes[row_idx, 1]
+            _plot_binscatter(
+                ax=ax_improvement,
+                x=pixel_data['x'],
+                y=pixel_data['improvement'],
+                color=colors[lead_time],
+                label=lead_time_labels[lead_time],
+                lead_time=lead_time,
+                is_first=(lead_time == lead_times[0]),
+                add_zero_line=True
+            )
+
+        # Set labels and titles for this row
+        variable_title = variable.replace("_", " ").title()
+
+        # Original RMSE panel
+        axes[row_idx, 0].set_xlabel(x_label, fontsize=12)
+        axes[row_idx, 0].set_ylabel("Original Forecast RMSE", fontsize=12)
+        axes[row_idx, 0].grid(True, alpha=0.3, linestyle='--')
+        if row_idx == 0:
+            axes[row_idx, 0].set_title("Original RMSE", fontsize=13, fontweight='bold', pad=10)
+        axes[row_idx, 0].text(-0.12, 0.5, variable_title,
+                             transform=axes[row_idx, 0].transAxes, fontsize=12, fontweight='bold',
+                             rotation=90, verticalalignment='center')
+
+        # Improvement panel
+        axes[row_idx, 1].set_xlabel(x_label, fontsize=12)
+        axes[row_idx, 1].set_ylabel("RMSE Improvement (%)", fontsize=12)
+        axes[row_idx, 1].grid(True, alpha=0.3, linestyle='--')
+        if row_idx == 0:
+            axes[row_idx, 1].set_title("RMSE Improvement", fontsize=13, fontweight='bold', pad=10)
+
+        # Add legend to first row
+        if row_idx == 0:
+            axes[row_idx, 1].legend(loc='upper right', fontsize=10, framealpha=0.9)
+
+    # Add overall title
+    title = f'{model.upper()} - Lead Time Comparison\n'
+    title += f'{x_label} vs RMSE Metrics'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    # Determine output directory
+    if save_dir is None:
+        out_folder = os.path.join(dirs["fig"], model, "lead_time_comparison")
+    else:
+        out_folder = save_dir
+    os.makedirs(out_folder, exist_ok=True)
+
+    # Save figure
+    x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
+    filename = f"lead_time_compare_binscatter_{x_suffix}.png"
+    save_path = os.path.join(out_folder, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\nSaved lead time comparison plot to: {save_path}")
+
+    return fig
+
+
+def model_compare_binscatter(
+    dirs,
+    variable="2m_temperature",
+    x_metric="equator_distance",
+    regions=None,
+    save_dir=None,
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="6x6",
+    alternate_loss_fn=None
+):
+    """
+    Create 1x3 binscatter comparison across models (Pangu original, IFS original, Pangu corrected).
+
+    Creates a figure with 3 panels arranged in a 1x3 grid:
+    - Column 1: 1 day lead time (24h)
+    - Column 2: 5 days lead time (120h)
+    - Column 3: 9 days lead time (216h)
+
+    Each panel shows RMSE vs x_metric with three binscatters:
+    - Original Pangu forecast
+    - Original IFS forecast
+    - Corrected Pangu forecast
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories
+    variable : str
+        Variable to plot: "2m_temperature" or "10m_wind_speed"
+    x_metric : str
+        Metric to plot on x-axis: "equator_distance" or "sdor"
+    regions : list, optional
+        List of regions to include. If None, uses default continents
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "6x6")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure
+    """
+
+    # Lead times in hours and their labels in days
+    lead_times = [24, 120, 216]
+    lead_time_labels = {24: "1 day", 120: "5 days", 216: "9 days"}
+
+    # Models and their colors
+    model_info = [
+        {'model': 'pangu', 'type': 'original', 'label': 'Pangu Original', 'color': '#1f77b4'},  # Blue
+        {'model': 'ifs', 'type': 'original', 'label': 'IFS Original', 'color': '#ff7f0e'},      # Orange
+        {'model': 'pangu', 'type': 'corrected', 'label': 'Pangu Corrected', 'color': '#2ca02c'} # Green
+    ]
+
+    # Determine axis labels
+    x_label = {
+        "equator_distance": "Distance from Equator (degrees)",
+        "sdor": "Standard Deviation of Orography (m)"
+    }.get(x_metric, "Distance from Equator (degrees)")
+
+    variable_title = variable.replace("_", " ").title()
+
+    print(f"\nCreating model comparison binscatter for {variable}")
+    print(f"X-axis metric: {x_metric}")
+    print(f"Models: Pangu Original, IFS Original, Pangu Corrected")
+
+    # Load sdor data if needed
+    sdor_da = None
+    if x_metric == "sdor":
+        era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
+        sdor_da = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
+        print(f"Loaded sdor data from {era5_static_path}")
+
+    # Create figure with 1x3 grid
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    # Load data for both models
+    print(f"\n{'='*60}")
+    print(f"Loading data for Pangu and IFS models")
+    print(f"{'='*60}")
+
+    # Load Pangu data
+    # pangu_data = load_region_data(
+    #     dirs=dirs,
+    #     model='pangu',
+    #     variable=variable,
+    #     regions=regions,
+    #     train_start=train_start,
+    #     train_end=train_end,
+    #     test_start=test_start,
+    #     test_end=test_end,
+    #     nn_architecture=nn_architecture,
+    #     subregion=subregion,
+    #     alternate_loss_fn=alternate_loss_fn,
+    #     lead_times=lead_times,
+    #     sdor_da=sdor_da
+    # )
+
+    
+
+    # # Load IFS data
+    # ifs_data = load_region_data(
+    #     dirs=dirs,
+    #     model='ifs',
+    #     variable=variable,
+    #     regions=regions,
+    #     train_start=train_start,
+    #     train_end=train_end,
+    #     test_start=test_start,
+    #     test_end=test_end,
+    #     nn_architecture=nn_architecture,
+    #     subregion=subregion,
+    #     alternate_loss_fn=alternate_loss_fn,
+    #     lead_times=lead_times,
+    #     sdor_da=sdor_da
+    # )
+
+    import pickle
+    with open(os.path.join(dirs["processed"], f"pangu_{variable}_patch_data.pkl"), "rb") as f:
+        pangu_data = pickle.load(f)
+    with open(os.path.join(dirs["processed"], f"ifs_{variable}_patch_data.pkl"), "rb") as f:
+        ifs_data = pickle.load(f)
+
+    if pangu_data is None or ifs_data is None:
+        print(f"Error: Could not load data for both models")
+        return None
+
+    # Process each lead time (column)
+    for col_idx, lead_time in enumerate(lead_times):
+        print(f"\n{'='*60}")
+        print(f"Processing lead time: {lead_time_labels[lead_time]}")
+        print(f"{'='*60}")
+
+        ax = axes[col_idx]
+
+        # Plot each model type
+        for idx, model_spec in enumerate(model_info):
+            model_name = model_spec['model']
+            model_type = model_spec['type']
+            label = model_spec['label']
+            color = model_spec['color']
+
+            # Get the appropriate data
+            if model_name == 'pangu':
+                patch_data = pangu_data[lead_time]
+            else:  # ifs
+                patch_data = ifs_data[lead_time]
+
+            if not patch_data:
+                print(f"\nSkipping {label} - no data available")
+                continue
+
+            # Extract pixel-level data for binscatter
+            pixel_data = _extract_pixel_level_data(
+                patch_data, variable, lead_time, x_metric, sdor_da
+            )
+
+            if pixel_data is None or len(pixel_data['x']) == 0:
+                print(f"\nSkipping {label} - no pixel data available")
+                continue
+
+            # Select the appropriate y values based on model type
+            if model_type == 'original':
+                y_values = pixel_data['rmse_original']
+            else:  # corrected
+                y_values = pixel_data['rmse_corrected']
+
+            # Plot binscatter
+            _plot_binscatter(
+                ax=ax,
+                x=pixel_data['x'],
+                y=y_values,
+                color=color,
+                label=label,
+                position_idx=idx,
+                is_first=(idx == 0)
+            )
+
+        # Set labels and title for this panel
+        ax.set_xlabel(x_label, fontsize=12)
+        ax.set_ylabel("RMSE", fontsize=12)
+        ax.set_title(lead_time_labels[lead_time], fontsize=13, fontweight='bold', pad=10)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # Add legend to last panel
+        if col_idx == 2:
+            ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+
+    # Add overall title
+    title = f'{variable_title} - Model Comparison\n'
+    title += f'{x_label} vs RMSE'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=1.00)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # Determine output directory
+    if save_dir is None:
+        out_folder = os.path.join(dirs["fig"], "model_comparison")
+    else:
+        out_folder = save_dir
+    os.makedirs(out_folder, exist_ok=True)
+
+    # Save figure
+    x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
+    filename = f"model_compare_binscatter_{variable}_{x_suffix}.png"
+    save_path = os.path.join(out_folder, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\nSaved model comparison plot to: {save_path}")
+
+    return fig
+
+
+def _plot_binscatter(ax, x, y, color, label,
+                     nbins=None,
+                     x_label=None,
+                     y_label=None,
+                     marker_size=6,
+                     position_idx=None,
+                     lead_time=None,
+                     is_first=False,
+                     add_zero_line=False,
+                     add_styling=False):
+    """
+    Create a binscatter plot with cubic polynomial fit.
+
+    Uses quantile-based binning (via binsreg), confidence intervals around bin means,
+    and fits a cubic polynomial to the bin means to capture non-linear relationships.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    x : np.ndarray
+        X values (independent variable)
+    y : np.ndarray
+        Y values (dependent variable)
+    color : str
+        Color for this series
+    label : str
+        Label for this series
+    nbins : int or None, default=None
+        Number of bins. If None, uses automatic IMSE-optimal selection
+    x_label : str, optional
+        Label for x-axis (only used if add_styling=True)
+    y_label : str, optional
+        Label for y-axis (only used if add_styling=True)
+    marker_size : float, default=6
+        Size of markers (for add_styling=True, will be square-rooted)
+    position_idx : int, optional
+        Index for positioning text boxes (for overlay plots, currently unused)
+    lead_time : int, optional
+        Lead time in hours (for overlay plots, currently unused)
+    is_first : bool, default=False
+        Whether this is the first series being plotted
+    add_zero_line : bool, default=False
+        Whether to add horizontal line at y=0 (only if is_first=True)
+    add_styling : bool, default=False
+        Whether to add axis labels, grid, and legend (for standalone plots)
+
+    Returns
+    -------
+    None
+    """
+    # Remove any remaining NaN values
+    valid_mask = ~(np.isnan(x) | np.isnan(y))
+    x = x[valid_mask]
+    y = y[valid_mask]
+
+    if len(x) == 0:
+        print(f"  Warning: No valid data for {label}")
+        return
+
+    print(f"  Processing {label}: {len(x):,} observations")
+
+    # Create a DataFrame for binsreg
+    df = pd.DataFrame({'x': x, 'y': y})
+
+    # Run binsreg to create bins and confidence intervals
+    print(f"  Running binsreg for binning...")
+
+    try:
+        # Try with automatic or specified bin selection
+        est = binsreg(
+            y='y',
+            x='x',
+            data=df,
+            nbins=nbins,       # Automatic IMSE-optimal if None, else fixed
+            binspos='qs',      # Quantile-spaced bins
+            dots=(0, 0),       # Point estimates at bin means
+            ci=(3, 3),         # Confidence intervals (cubic)
+            noplot=True        # Don't create automatic plot
+        )
+
+        # Check if dots were actually created
+        if est.data_plot is None or len(est.data_plot) == 0 or est.data_plot[0].dots is None:
+            raise ValueError("binsreg did not create dots")
+
+    except (ValueError, Exception) as e:
+        print(f"  Using fixed 20 bins...")
+        est = binsreg(
+            y='y',
+            x='x',
+            data=df,
+            nbins=20,          # Fixed 20 bins
+            binspos='qs',      # Quantile-spaced bins
+            dots=(0, 0),       # Point estimates at bin means
+            ci=(3, 3),         # Confidence intervals (cubic)
+            noplot=True        # Don't create automatic plot
+        )
+
+    # Get the data object
+    data_obj = est.data_plot[0]
+
+    # Get binned points from .dots DataFrame
+    dots_df = data_obj.dots
+
+    if dots_df is None:
+        # Manual binning fallback
+        print(f"  Using manual binning fallback...")
+
+        if data_obj.data_bin is not None:
+            bin_info = data_obj.data_bin
+            n_bins = len(bin_info)
+
+            bin_x = np.zeros(n_bins)
+            bin_y = np.zeros(n_bins)
+            ci_l = np.zeros(n_bins)
+            ci_r = np.zeros(n_bins)
+
+            for i in range(n_bins):
+                left = bin_info.iloc[i]['left_endpoint']
+                right = bin_info.iloc[i]['right.endpoint']
+
+                if i == n_bins - 1:
+                    mask = (x >= left) & (x <= right)
+                else:
+                    mask = (x >= left) & (x < right)
+
+                if np.sum(mask) > 0:
+                    x_bin = x[mask]
+                    y_bin = y[mask]
+
+                    bin_x[i] = np.mean(x_bin)
+                    bin_y[i] = np.mean(y_bin)
+
+                    if len(y_bin) > 1:
+                        se = np.std(y_bin, ddof=1) / np.sqrt(len(y_bin))
+                        ci_l[i] = bin_y[i] - 1.96 * se
+                        ci_r[i] = bin_y[i] + 1.96 * se
+                    else:
+                        ci_l[i] = bin_y[i]
+                        ci_r[i] = bin_y[i]
+                else:
+                    bin_x[i] = (left + right) / 2
+                    bin_y[i] = np.nan
+                    ci_l[i] = np.nan
+                    ci_r[i] = np.nan
+
+            # Remove empty bins
+            valid_mask = ~np.isnan(bin_y)
+            bin_x = bin_x[valid_mask]
+            bin_y = bin_y[valid_mask]
+            ci_l = ci_l[valid_mask]
+            ci_r = ci_r[valid_mask]
+        else:
+            print(f"  ERROR: Cannot create binscatter")
+            return
+    else:
+        # Normal path: dots is available
+        bin_x = dots_df['x'].values
+        bin_y = dots_df['fit'].values
+
+        # Get confidence intervals from .ci DataFrame
+        ci_df = data_obj.ci
+        ci_l = ci_df['ci_l'].values
+        ci_r = ci_df['ci_r'].values
+
+    # Calculate error bars
+    yerr_lower = np.abs(bin_y - ci_l)
+    yerr_upper = np.abs(ci_r - bin_y)
+    yerr = np.array([yerr_lower, yerr_upper])
+
+    # Plot binscatter points with error bars
+    scatter_label = label if not add_styling else 'Bin means (95% CI)'
+    actual_marker_size = np.sqrt(marker_size) if add_styling else marker_size
+    ax.errorbar(bin_x, bin_y, yerr=yerr,
+                fmt='o', color=color,
+                markersize=actual_marker_size,
+                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
+                label=scatter_label)
+
+    # Fit a cubic polynomial to the bin means
+    if len(bin_x) >= 4:  # Need at least 4 points to fit a cubic
+        # Fit cubic polynomial: y = a*x^3 + b*x^2 + c*x + d
+        coeffs = np.polyfit(bin_x, bin_y, deg=3)
+
+        # Create smooth x values for plotting the curve
+        x_smooth = np.linspace(bin_x.min(), bin_x.max(), 200)
+        y_smooth = np.polyval(coeffs, x_smooth)
+
+        # Plot cubic fit line
+        line_label = 'Cubic fit' if add_styling else None
+        line_style = 'r--' if add_styling else '--'
+        line_color = None if add_styling else color
+        ax.plot(x_smooth, y_smooth, line_style, color=line_color,
+                linewidth=2, alpha=0.8, label=line_label)
+
+        print(f"  Plotted cubic polynomial fit to {len(bin_x)} bin means")
+    else:
+        print(f"  Warning: Need at least 4 bins to fit cubic polynomial, only have {len(bin_x)}")
+
+    # Add zero line if requested
+    if add_zero_line and is_first:
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+    # Add styling if requested (for standalone plots)
+    if add_styling:
+        if x_label:
+            ax.set_xlabel(x_label, fontsize=12)
+        if y_label:
+            ax.set_ylabel(y_label, fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
+    print(f"  Completed {label}")
+
+
 def main():
+
 
     dirs = setup_directories()
 
-    map_global_improvements(dirs=dirs, model="pangu", variable="10m_wind_speed",
-                            map_type="improvement", pixel_level=False)
-    exit()
+    # load in forecast data and save as pickle files
+    # only needs to be run once
+    # for model in ["pangu", "ifs"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         patch_data = load_region_data(
+    #             dirs=dirs,
+    #             model=model,
+    #             variable=variable
+    #         )
+    #         # save to pickle for use in plotting
+
+    #         import pickle
+    #         with open(os.path.join(dirs["processed"], f"{model}_{variable}_patch_data.pkl"), "wb") as f:
+    #             pickle.dump(patch_data, f)
+
 
     #=============================================
-    # Global Improvement Plots
+    # Global Improvement Map Plots
     #=============================================
     for model in ["pangu", "ifs"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             for map_type in ["original", "improvement"]:
-                for pixel_flag in [False, True]:
+                for pixel_flag in [False, True]: # if the map is pixel-level or region-mean
                     map_global_improvements(dirs=dirs, model=model, 
                                             variable=variable, map_type=map_type,
                                             pixel_level=pixel_flag)
+    #=============================================
+    # Binscatter Plots
+    #=============================================
+    # overlaying lead times for single model: Currently plot used for main paper 
+    for model in ["pangu", "ifs"]:
+        for x_metric in ["sdor", "equator_distance"]:
+            _ = lead_time_compare_binscatter(
+                dirs=dirs,
+                model=model,
+                x_metric=x_metric
+            )
+    
+    # Create plot comparing model binscatters: Currently in Appendix
+    for x_metric in ["sdor", "equator_distance"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            _ = model_compare_binscatter(
+                dirs=dirs,
+                variable=variable,
+                x_metric=x_metric
+            )
 
 if __name__ == "__main__":
     main()

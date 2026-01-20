@@ -27,21 +27,23 @@ def main():
     train_end = "2021-12-31"
     test_start = "2022-01-01"
     test_end = "2022-12-31"
-    model = "pangu"
+    model = "ifs"
     nn_architecture = "mlp"
 
-    # Generate plots
-    generate_subregion_comparison_plots(
-        dirs=dirs,
-        train_start=train_start,
-        train_end=train_end,
-        test_start=test_start,
-        test_end=test_end,
-        model=model,
-        nn_architecture=nn_architecture,
-        growing_season_only=False,
-        alternate_loss_fn=None
-    )
+    for var in ["2m_temperature", "10m_wind_speed"]:
+        # Generate plots
+        generate_subregion_comparison_plots(
+            dirs=dirs,
+            train_start=train_start,
+            train_end=train_end,
+            test_start=test_start,
+            test_end=test_end,
+            model=model,
+            variable=var,
+            nn_architecture=nn_architecture,
+            growing_season_only=False,
+            alternate_loss_fn=None
+        )
 
     print("\n" + "=" * 80)
     print("Plot generation complete!")
