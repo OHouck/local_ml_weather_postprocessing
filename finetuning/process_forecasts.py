@@ -45,17 +45,18 @@ def calculate_rmse(predictions, ground_truth):
 
 def calculate_extreme_heat_rmse(preds, targets):
     """
-    up-weight loss fro negative errors for high temperature values
+    Up-weight loss for negative errors for high temperature values.
+
+    Args:
+        preds: Predictions in Celsius
+        targets: Targets in Celsius
     """
-    # convert to C
-    targets_c = targets - 273.15
-    preds_c = preds - 273.15
-    errors = preds_c - targets_c
-    weights =np.ones_like(errors)
+    errors = preds - targets
+    weights = np.ones_like(errors)
 
     # Add penalties for under-prediction at high temps
-    weights += ((targets_c > 25) & (targets_c < 30) & (errors < 0)).astype(float) * 2
-    weights += ((targets_c >= 30) & (errors < 0)).astype(float) * 10
+    weights += ((targets > 25) & (targets < 30) & (errors < 0)).astype(float) * 2
+    weights += ((targets >= 30) & (errors < 0)).astype(float) * 10
 
     squared_errors = errors ** 2
 
@@ -63,6 +64,30 @@ def calculate_extreme_heat_rmse(preds, targets):
     weighted_mse = (weights * squared_errors).sum()
 
     return float(np.sqrt(weighted_mse))
+
+
+def calculate_mortality_weighted_rmse(preds, targets):
+    """
+    Convert temperatures to mortality using polynomial approx of Carleton et al 2022.
+
+    Args:
+        preds: Predictions in Celsius
+        targets: Targets in Celsius
+    """
+    def mortality_dose_response(temp_c):
+        delta = temp_c - 22.0
+        mortality_estimate = (0.04 * (delta ** 2)) - (0.00125 * (delta ** 3))
+        return mortality_estimate
+
+    # convert from temperature to relative death rate
+    mortality_targets = mortality_dose_response(targets)
+    mortality_preds = mortality_dose_response(preds)
+
+    errors = mortality_preds - mortality_targets
+    errors_squared = errors ** 2
+
+    rmse = float(np.sqrt(errors_squared.mean()))
+    return rmse
 
 def calculate_improvement_percentage(rmse_original, rmse_corrected):
     """Calculate percentage improvement in RMSE."""
