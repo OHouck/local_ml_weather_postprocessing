@@ -746,22 +746,22 @@ def main():
 
     # Get ERA5 Standard Deviation of Orthography from static variables
     # Downloaded to initialize aurora model
-    era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
-    sdor = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
-    print("Original sdor shape:", sdor.shape)
+    # era5_static_path = os.path.join(dirs["raw"], "era5_static.nc")
+    # sdor = xr.open_dataset(era5_static_path, engine="netcdf4")["sdor"]
+    # print("Original sdor shape:", sdor.shape)
 
     # Bin topography into 3 zones
-    topo_zones = bin_topography(sdor, dirs)
-    print("Topographic zones shape:", topo_zones.shape)
-    print("Unique zones:", np.unique(topo_zones.values[~np.isnan(topo_zones.values)]))
+    # topo_zones = bin_topography(sdor, dirs)
+    # print("Topographic zones shape:", topo_zones.shape)
+    # print("Unique zones:", np.unique(topo_zones.values[~np.isnan(topo_zones.values)]))
 
     # Save topographic zones
-    topo_zones_path = os.path.join(dirs["processed"], "topo_zones_0p25.nc")
-    topo_zones.to_netcdf(topo_zones_path)
-    print(f"Saved topographic zones to {topo_zones_path}")
+    # topo_zones_path = os.path.join(dirs["processed"], "topo_zones_0p25.nc")
+    # topo_zones.to_netcdf(topo_zones_path)
+    # print(f"Saved topographic zones to {topo_zones_path}")
 
     # regrid koppen-geiger climate zones to 0.25°
-    regrid_and_save_climate_zones(dirs)
+    # regrid_and_save_climate_zones(dirs)
 
     # sample and save climate zone patches for bootstrapping
     # create_climate_zone_patches(dirs) # uncomment if need to resample patches
@@ -770,7 +770,7 @@ def main():
     # create_topographic_zone_patches(topo_zones, dirs) # uncomment to sample topo patches
 
     # create global land patches divided by continent
-    create_global_land_patches(dirs, patch_size_deg=6, land_threshold=0.5) # uncomment to create continental patches
+    # create_global_land_patches(dirs, patch_size_deg=6, land_threshold=0.5) # uncomment to create continental patches
     # plot global land patches by continent
     plot_global_land_patches(dirs)  # uncomment to plot continental patches
     exit()

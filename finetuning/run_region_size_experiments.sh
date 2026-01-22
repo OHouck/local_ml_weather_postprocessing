@@ -37,7 +37,7 @@ training_output_vars=(
 subregions=(20x20 15x15 10x10 8x8 6x6 4x4)
 regions=("finland" "amazon")
 all_lead_times=(24 120 216)
-nn_architecture="mlp"
+nn_architecture="unet"
 model_name="pangu"
 
 for region in "${regions[@]}"; do
