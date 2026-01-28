@@ -21,6 +21,7 @@ dependencies = [
         "cdsapi",
         "certifi",
         "cffi",
+        "cfgrib>=0.9.15.1",
         "cftime",
         "charset-normalizer",
         "click",

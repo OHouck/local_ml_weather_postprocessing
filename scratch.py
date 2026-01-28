@@ -2,7 +2,7 @@
 import xarray as xr
 import zarr
 import numpy as np
-path = "/Users/ohouck/globus/forecast_data/processed/finetuning_output/pangu/hilly/train_10m_wind_speed_test_10m_wind_speed_dim2x2_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp_hilly_bs37.zarr"
+path = "/Users/ohouck/Downloads/OneDrive_1_1-28-2026/data_2023.nc"
 
 #print versions of xarray and zarr
 print("xarray version:", xr.__version__)
