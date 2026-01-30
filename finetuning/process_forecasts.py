@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
+from finetuning.custom_loss_fns import extreme_heat_loss, mortality_weighted_loss
 
 @lru_cache(maxsize=256)
 def load_zarr_cached(file_path):
@@ -37,57 +38,15 @@ def extract_forecast_data(ds, prediction_var, lead_time):
 
 
 #=========================
-# loss functions functions
+# loss/metric functions
 #=========================
 def calculate_rmse(predictions, ground_truth):
     """Calculate RMSE between predictions and ground truth."""
-    return float(np.sqrt(((predictions- ground_truth) ** 2).mean()))
+    return float(np.sqrt(((predictions - ground_truth) ** 2).mean()))
 
-def calculate_extreme_heat_rmse(preds, targets):
-    """
-    Up-weight loss for negative errors for high temperature values.
-
-    Args:
-        preds: Predictions in Celsius
-        targets: Targets in Celsius
-    """
-    errors = preds - targets
-    weights = np.ones_like(errors)
-
-    # Add penalties for under-prediction at high temps
-    weights += ((targets > 25) & (targets < 30) & (errors < 0)).astype(float) * 2
-    weights += ((targets >= 30) & (errors < 0)).astype(float) * 10
-
-    squared_errors = errors ** 2
-
-    weights = weights / weights.sum()  # sum to 1 for interpretability
-    weighted_mse = (weights * squared_errors).sum()
-
-    return float(np.sqrt(weighted_mse))
-
-
-def calculate_mortality_weighted_rmse(preds, targets):
-    """
-    Convert temperatures to mortality using polynomial approx of Carleton et al 2022.
-
-    Args:
-        preds: Predictions in Celsius
-        targets: Targets in Celsius
-    """
-    def mortality_dose_response(temp_c):
-        delta = temp_c - 22.0
-        mortality_estimate = (0.04 * (delta ** 2)) - (0.00125 * (delta ** 3))
-        return mortality_estimate
-
-    # convert from temperature to relative death rate
-    mortality_targets = mortality_dose_response(targets)
-    mortality_preds = mortality_dose_response(preds)
-
-    errors = mortality_preds - mortality_targets
-    errors_squared = errors ** 2
-
-    rmse = float(np.sqrt(errors_squared.mean()))
-    return rmse
+# extreme_heat_loss and mortality_weighted_loss are imported from
+# finetuning.custom_loss_fns - use with is_normalized=False, return_rmse=True
+# for evaluation on Celsius data
 
 def calculate_improvement_percentage(rmse_original, rmse_corrected):
     """Calculate percentage improvement in RMSE."""
@@ -300,8 +259,8 @@ def calculate_and_save_statistics(
                                         rmse_corrected = calculate_rmse(corr_flat, gt_flat)
                                         rmse_pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
 
-                                        rmse_og_extreme_heat = calculate_extreme_heat_rmse(orig_flat, gt_flat) 
-                                        rmse_corr_extreme_heat = calculate_extreme_heat_rmse(corr_flat, gt_flat) 
+                                        rmse_og_extreme_heat = extreme_heat_loss(orig_flat, gt_flat, is_normalized=False, return_rmse=True)
+                                        rmse_corr_extreme_heat = extreme_heat_loss(corr_flat, gt_flat, is_normalized=False, return_rmse=True) 
                                         rmse_pct_improvement_extreme_heat = (rmse_og_extreme_heat - rmse_corr_extreme_heat) / rmse_og_extreme_heat * 100 if rmse_og_extreme_heat and rmse_corr_extreme_heat else None   
 
                                         # Remove NaN values - fixed logic here

@@ -30,7 +30,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path
-from finetuning.process_forecasts import calculate_rmse, calculate_extreme_heat_rmse, calculate_mortality_weighted_rmse
+from finetuning.process_forecasts import calculate_rmse
+from finetuning.custom_loss_fns import extreme_heat_loss, mortality_weighted_loss
 
 # Suppress Zarr warnings (e.g., for .DS_Store files)
 import warnings
@@ -2553,8 +2554,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
 
                     elif metric == "extreme_heat_rmse":
                         # Calculate extreme heat RMSE using the weighted loss function
-                        rmse_orig_extreme = calculate_extreme_heat_rmse(orig_bin, gt_bin)
-                        rmse_corr_extreme = calculate_extreme_heat_rmse(corr_bin, gt_bin)
+                        rmse_orig_extreme = extreme_heat_loss(orig_bin, gt_bin, is_normalized=False, return_rmse=True)
+                        rmse_corr_extreme = extreme_heat_loss(corr_bin, gt_bin, is_normalized=False, return_rmse=True)
 
                         if rmse_orig_extreme == 0:
                             improvement = 0
@@ -2565,8 +2566,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                         metric_values_orig.append(np.nan)
                     elif metric == "mortality_weighted_rmse":
                         # Calculate mortality weighted RMSE using the weighted loss function
-                        rmse_orig_mortality = calculate_mortality_weighted_rmse(orig_bin, gt_bin)
-                        rmse_corr_mortality = calculate_mortality_weighted_rmse(corr_bin, gt_bin)
+                        rmse_orig_mortality = mortality_weighted_loss(orig_bin, gt_bin, is_normalized=False, return_rmse=True)
+                        rmse_corr_mortality = mortality_weighted_loss(corr_bin, gt_bin, is_normalized=False, return_rmse=True)
 
                         if rmse_orig_mortality == 0:
                             improvement = 0

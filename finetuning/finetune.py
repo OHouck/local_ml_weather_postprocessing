@@ -51,6 +51,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
 from finetuning.prepare_forecasts_and_targets import load_forecasts
+from finetuning.custom_loss_fns import (
+    mortality_weighted_loss, extreme_heat_loss, quantile_loss
+)
 
 # print(f"NumPy version: {np.__version__}")
 # print(f"PyTorch version: {torch.__version__}")
@@ -584,86 +587,6 @@ def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_
     return dataloader
 
 
-def quantile_loss(preds, targets, quantile=0.95):
-    """
-    Quantile loss (pinball loss)
-    """
-    errors = targets - preds
-    # if positive error, use quantile * error, else (quantile - 1) * error
-    return torch.max((quantile - 1) * errors, quantile*errors).mean()
-
-def mortality_weighted_loss(preds, targets, std_out, mean_out):
-    """
-    converts the 2m temperature preditions into change in death rate relative to reference temperature
-    using a rough approxmiation from Figure 4c from Carleton et al. 2022
-
-    preds: (batch_size, n_features) in normalized units
-    targets: (batch_size, n_features) in normalized units
-    std_out: standard deviation for denormalization
-    mean_out: mean for denormalization
-    """
-
-    # un-normalize
-    preds = preds * std_out + mean_out
-    targets = targets * std_out + mean_out
-
-    # convert to Celsius from Kelvin for easier thresholding
-    targets_c = targets - 273.15
-    preds_c = preds - 273.15
-
-    def mortality_dose_response(temp_c):
-        delta = temp_c - 22.0
-        mortality_estimate = 0.04 * torch.pow(delta, 2) - 0.00125 * torch.pow(delta, 3)
-        return mortality_estimate
-
-    # convert from temperature to relative death rate
-    moratility_targets = mortality_dose_response(targets_c)
-    moratility_preds = mortality_dose_response(preds_c)
-    
-    errors = moratility_targets - moratility_preds
-    squared_errors = errors**2
-
-    mse = squared_errors.mean()
-    return mse 
-
-def extreme_heat_loss(preds, targets, std_out, mean_out):
-    """
-    Penalizes errors at extreme temperatures more heavily since they
-    are more damaging. Upweights errors when target temperature is above 25C or 30C.
-
-    Weighting scheme:
-    - T <= 25C: weight = 1.0 (baseline)
-    - 25C < T <= 30C: weight = 21.0 (20x additional penalty)
-    - T > 30C: weight = 101.0 (100x additional penalty)
-
-    preds: (batch_size, n_features) in normalized units
-    targets: (batch_size, n_features) in normalized units
-    std_out: standard deviation for denormalization
-    mean_out: mean for denormalization
-    """
-
-    # un-normalize
-    preds = preds * std_out + mean_out
-    targets = targets * std_out + mean_out
-
-    # convert to Celsius from Kelvin for easier thresholding
-    targets_c = targets - 273.15
-    preds_c = preds - 273.15
-    errors = targets_c - preds_c
-    squared_errors = errors**2
-
-    # Create weights based on target temperature
-    weights = torch.ones_like(errors)
-    weights = weights + ((targets_c > 25) & (targets_c <= 30)).float() * 5  # 6x total for 25-30C
-    weights = weights + (targets_c > 30).float() * 10  # 11x total for >30C
-
-    # Compute weighted MSE (mean over batch, not sum)
-    # This keeps the loss magnitude similar to standard MSE for interpretability
-    weighted_mse = (weights * squared_errors).mean()
-
-    return weighted_mse
-
-
 def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 weight_decay=0,
                 stats_out=None, alternate_loss_fn=None,
@@ -690,21 +613,26 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         min_lr: Minimum learning rate (floor for scheduler)
     """
 
+    # Loss functions that require denormalization (is_normalized=True)
+    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss"}
+
     loss_functions = {
         "extreme_heat_loss": extreme_heat_loss,
-        "mortality_weighted_loss": mortality_weighted_loss
-        # Add other loss functions here if needed
+        "mortality_weighted_loss": mortality_weighted_loss,
+        "quantile_loss": quantile_loss
     }
 
-    if alternate_loss_fn is None: # use mse if not specified
+    if alternate_loss_fn is None:  # use mse if not specified
         use_custom_loss = False
         criterion = nn.MSELoss()
     else:
         use_custom_loss = True
         criterion = loss_functions[alternate_loss_fn]
 
-    # convert stats to torch tensors to un-normalize if needed
-    if alternate_loss_fn in {"extreme_heat_loss", "mortality_weighted_loss"} and stats_out is not None:
+    # convert stats to torch tensors for denormalization if needed
+    mean_out = None
+    std_out = None
+    if alternate_loss_fn in NORMALIZED_LOSS_FNS and stats_out is not None:
         mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
         std_out = torch.from_numpy(stats_out['std']).float().to(device)
 
@@ -758,9 +686,10 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                     # Add predicted error to output forecast to get final prediction
                     preds = fc_output_batch + pred_error
 
-                    # some custom loss functions need un-normalized values
-                    if alternate_loss_fn in {"extreme_heat_loss", "mortality_weighted_loss"}:
-                        loss = criterion(preds, y_batch, std_out, mean_out)
+                    # Custom loss functions use is_normalized=True since inputs are normalized
+                    if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                        loss = criterion(preds, y_batch, is_normalized=True,
+                                        std_out=std_out, mean_out=mean_out)
                     else:
                         loss = criterion(preds, y_batch)
 
@@ -772,8 +701,9 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                 preds = fc_output_batch + pred_error
 
-                if alternate_loss_fn in {"extreme_heat_loss", "mortality_weighted_loss"}:
-                    loss = criterion(preds, y_batch, std_out, mean_out)
+                if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                    loss = criterion(preds, y_batch, is_normalized=True,
+                                    std_out=std_out, mean_out=mean_out)
                 else:
                     loss = criterion(preds, y_batch)
 
@@ -799,16 +729,18 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                         pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                         preds = fc_output_batch + pred_error
 
-                        if alternate_loss_fn in {"extreme_heat_loss", "mortality_weighted_loss"}:
-                            loss = criterion(preds, y_batch, std_out, mean_out)
+                        if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                            loss = criterion(preds, y_batch, is_normalized=True,
+                                            std_out=std_out, mean_out=mean_out)
                         else:
                             loss = criterion(preds, y_batch)
                 else:
                     pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                     preds = fc_output_batch + pred_error
 
-                    if alternate_loss_fn in {"extreme_heat_loss", "mortality_weighted_loss"}:
-                        loss = criterion(preds, y_batch, std_out, mean_out)
+                    if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                        loss = criterion(preds, y_batch, is_normalized=True,
+                                        std_out=std_out, mean_out=mean_out)
                     else:
                         loss = criterion(preds, y_batch)
 
