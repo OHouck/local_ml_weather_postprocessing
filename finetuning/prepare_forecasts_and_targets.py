@@ -1405,3 +1405,301 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             day_of_year_features_combined, all_times, forecast_ds.latitude.values,
             forecast_ds.longitude.values, n_lat, n_lon,
             n_training_vars, n_output_vars, training_mean_forecast_error)
+
+
+def load_forecasts_classification(data_dir, args, lat_values, lon_values, train=True,
+                                  label_generator=None, threshold_celsius=35.0,
+                                  use_legacy_global_data=False):
+    """
+    Load forecast data for classification mode (e.g., heatwave duration classification).
+
+    Unlike load_forecasts(), each sample is a (timestamp, pixel) pair with all lead times
+    concatenated as features. This is designed for classification loss functions where
+    we predict heatwave duration class from all lead time forecasts.
+
+    The key differences from load_forecasts():
+    - Input shape: [n_timestamps × n_pixels, n_vars × n_lead_times] instead of
+                   [n_timestamps × n_lead_times, n_vars × n_lat × n_lon]
+    - Returns labels instead of observations for the target variable
+    - Each sample is a single pixel with all lead times, not all pixels with one lead time
+
+    Parameters:
+    -----------
+    data_dir : str
+        Directory containing data
+    args : object
+        Arguments object (same as load_forecasts)
+    lat_values : np.ndarray
+        Latitude values for region
+    lon_values : np.ndarray
+        Longitude values for region
+    train : bool
+        If True, load training data. If False, load test data
+    label_generator : callable
+        Function to generate labels from observations.
+        Signature: label_generator(obs, lead_time_days, threshold_celsius) -> labels
+        Example: generate_heatwave_labels from custom_loss_fns
+    threshold_celsius : float
+        Temperature threshold for label generation (default 35.0 for heatwave)
+    use_legacy_global_data : bool
+        If True, use legacy global data loading
+
+    Returns:
+    --------
+    tuple : (fc_concat, labels, day_of_year_features, times,
+             lat_u, lon_u, n_lat, n_lon, n_vars, n_lead_times)
+        fc_concat: [n_timestamps × n_pixels, n_vars × n_lead_times] forecast features
+        labels: [n_timestamps × n_pixels] class labels
+        day_of_year_features: [n_timestamps × n_pixels, 2] sin/cos features
+        times: [n_timestamps] time values (not expanded per pixel)
+        lat_u, lon_u: coordinate arrays
+        n_lat, n_lon: spatial dimensions
+        n_vars: number of training variables
+        n_lead_times: number of lead times
+    """
+    # Import label generator if not provided
+    if label_generator is None:
+        from finetuning.custom_loss_fns import generate_heatwave_labels
+        label_generator = generate_heatwave_labels
+
+    # Determine time period
+    if train:
+        ver_str = "train"
+    else:
+        ver_str = "test"
+
+    time_start = getattr(args, f"{ver_str}_start")
+    time_end = getattr(args, f"{ver_str}_end")
+
+    # Create time range
+    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+
+    # Only keep growing season dates if requested
+    if args.growing_season_only:
+        time_values = time_values[
+            (((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15))) &
+            (time_values.month <= 10))
+        ]
+
+    time_values_np = time_values.to_numpy()
+
+    # Determine target dataset name
+    if args.ground_truth_source == "":
+        if args.model_name == "pangu":
+            target = "era5"
+        elif args.model_name == "ifs":
+            target = "hres_t0"
+        elif args.model_name == "aifs":
+            target = "era5"
+        else:
+            raise ValueError(f"Unknown model_name '{args.model_name}' and no ground_truth_source provided")
+    else:
+        target = args.ground_truth_source
+
+    # Determine years needed
+    min_year = min(time_values_np).astype('datetime64[Y]').astype(int) + 1970
+    max_year = max(time_values_np).astype('datetime64[Y]').astype(int) + 1970
+    years_needed = list(range(min_year, max_year + 1))
+
+    print(f"\n{'='*70}")
+    print(f"LOADING {'TRAINING' if train else 'TEST'} DATA (CLASSIFICATION MODE)")
+    print(f"{'='*70}")
+    print(f"  Model: {args.model_name}")
+    print(f"  Region: {args.region}")
+    print(f"  Years: {years_needed}")
+
+    # Prepare variable lists
+    forecast_vars = [v for v in args.training_vars if v != "10m_wind_speed"]
+    if "10m_wind_speed" in args.training_vars:
+        forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
+
+    # For classification, we need the output variable for label generation
+    # but we don't use it as model output (model outputs class logits)
+    output_var = args.output_vars[0]  # Typically '2m_temperature' for heatwave
+
+    # Load data using similar logic to load_forecasts
+    # This section loads forecast_ds and obs_ds
+    if use_legacy_global_data:
+        print(f"  [LEGACY MODE] Loading global yearly data files...")
+        forecast_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np,
+                                                          data_dir, args.model_name)
+        obs_ds = load_combined_dataset_legacy_global(lat_values, lon_values, time_values_np,
+                                                     data_dir, target)
+    else:
+        # Check if regional data exists
+        forecast_status = check_data_exists(data_dir, args.model_name, args.region,
+                                           years_needed, forecast_vars)
+        target_status = check_data_exists(data_dir, target, args.region,
+                                         years_needed, [output_var])
+
+        forecast_all_exist = all(status['exists'] and not status['missing_vars']
+                                for status in forecast_status.values())
+        target_all_exist = all(status['exists'] and not status['missing_vars']
+                              for status in target_status.values())
+
+        if forecast_all_exist and target_all_exist:
+            print(f"  ✓ All regional data files exist")
+
+            # Load forecast data
+            forecast_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, args.model_name, args.region, year)
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+                ds = ds.sel(prediction_timedelta=lead_times_td)
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                forecast_datasets.append(ds)
+
+            forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
+            forecast_ds = forecast_ds.sortby('time')
+            _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+            forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+
+            # Load target data
+            target_datasets = []
+            for year in years_needed:
+                file_path = get_data_path(data_dir, target, args.region, year)
+                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                target_datasets.append(ds)
+
+            obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
+            obs_ds = obs_ds.sortby('time')
+            _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
+            obs_ds = obs_ds.isel(time=sorted(unique_indices))
+        else:
+            raise FileNotFoundError(
+                f"Regional data not found for classification mode. "
+                f"Please ensure data exists for {args.model_name} and {target} in {args.region}."
+            )
+
+    # Process data
+    if "10m_wind_speed" in args.training_vars:
+        forecast_ds["10m_wind_speed"] = np.sqrt(
+            forecast_ds["10m_u_component_of_wind"]**2 +
+            forecast_ds["10m_v_component_of_wind"]**2
+        )
+
+    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+
+    # Select common times
+    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
+    common_times = np.intersect1d(common_times, time_values_np)
+    forecast_ds = forecast_ds.sel(time=common_times)
+    obs_ds = obs_ds.sel(time=common_times)
+
+    # Get dimensions
+    n_time = len(common_times)
+    n_lead_times = len(lead_times_td)
+    n_lat = len(forecast_ds.latitude)
+    n_lon = len(forecast_ds.longitude)
+    n_vars = len(args.training_vars)
+    n_pixels = n_lat * n_lon
+
+    print(f"  Time steps: {n_time}")
+    print(f"  Lead times: {n_lead_times}")
+    print(f"  Grid: {n_lat} x {n_lon} = {n_pixels} pixels")
+    print(f"  Training vars: {n_vars}")
+
+    # ========================================================================
+    # RESHAPE FOR CLASSIFICATION: Each sample = (timestamp, pixel) with all lead times
+    # ========================================================================
+
+    # Step 1: Get forecast data as [n_time, n_lead_times, n_vars, n_lat, n_lon]
+    forecast_arrays = []
+    for var in args.training_vars:
+        arr = forecast_ds[var].values  # [n_time, n_lead_times, n_lat, n_lon]
+        forecast_arrays.append(arr)
+    # Stack variables: [n_vars, n_time, n_lead_times, n_lat, n_lon]
+    forecast_stack = np.stack(forecast_arrays, axis=0)
+    # Transpose to: [n_time, n_lat, n_lon, n_vars, n_lead_times]
+    forecast_stack = forecast_stack.transpose(1, 3, 4, 0, 2)
+    # Reshape to: [n_time, n_lat, n_lon, n_vars * n_lead_times]
+    forecast_flat = forecast_stack.reshape(n_time, n_lat, n_lon, n_vars * n_lead_times)
+    # Reshape to: [n_time * n_pixels, n_vars * n_lead_times]
+    fc_concat = forecast_flat.reshape(n_time * n_pixels, n_vars * n_lead_times)
+
+    # Step 2: Get observations for label generation
+    # Shape: [n_time, n_lat, n_lon] - we need to expand to [n_time, n_lead_times, n_lat, n_lon]
+    # The observation at each timestamp should be matched with each lead time's valid time
+    # For simplicity, we expand the observation to all lead times
+    obs_arr = obs_ds[output_var].values  # [n_time, n_lat, n_lon]
+
+    # Expand observations to match lead times for each timestamp
+    # This creates [n_time, n_lead_times, n_lat, n_lon]
+    # where obs[t, lt, :, :] is the observation at valid_time = init_time[t] + lead_time[lt]
+    obs_expanded = np.zeros((n_time, n_lead_times, n_lat, n_lon))
+
+    # For each lead time, we need to look up the observation at the valid time
+    # valid_time = init_time + lead_time
+    for lt_idx, lt in enumerate(args.lead_time_hours):
+        # Calculate valid times for this lead time
+        valid_times = common_times + np.timedelta64(lt, 'h')
+
+        # Find observations at these valid times
+        for t_idx, vt in enumerate(valid_times):
+            if vt in obs_ds.time.values:
+                obs_expanded[t_idx, lt_idx, :, :] = obs_ds[output_var].sel(time=vt).values
+            else:
+                # If valid time is outside available data, use NaN
+                obs_expanded[t_idx, lt_idx, :, :] = np.nan
+
+    # Transpose to: [n_time, n_lat, n_lon, n_lead_times] for label generation
+    obs_for_labels = obs_expanded.transpose(0, 2, 3, 1)  # [n_time, n_lat, n_lon, n_lead_times]
+    # Reshape to: [n_time * n_pixels, n_lead_times]
+    obs_for_labels_flat = obs_for_labels.reshape(n_time * n_pixels, n_lead_times)
+
+    # Convert observations from Kelvin to Celsius for label generation
+    obs_for_labels_celsius = obs_for_labels_flat - 273.15
+
+    # Reshape for label generator: [n_samples, n_lead_times, 1] -> treat each pixel independently
+    # Actually, the label generator expects [n_timestamps, n_lead_times, n_spatial]
+    # We can treat each (timestamp, pixel) as a single timestamp with 1 spatial point
+    obs_3d = obs_for_labels_celsius.reshape(n_time * n_pixels, n_lead_times, 1)
+
+    # Step 3: Generate labels
+    lead_time_days = [lt / 24.0 for lt in args.lead_time_hours]
+    labels_3d = label_generator(obs_3d, lead_time_days, threshold_celsius=threshold_celsius)
+    # labels_3d shape: [n_time * n_pixels, 1] -> squeeze to [n_time * n_pixels]
+    labels = labels_3d.squeeze()
+
+    # Step 4: Create day-of-year features
+    # Each pixel for a given timestamp has the same day-of-year
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
+    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
+    day_of_year_sin = np.sin(day_of_year_rad)
+    day_of_year_cos = np.cos(day_of_year_rad)
+    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)  # [n_time, 2]
+    # Repeat for each pixel: [n_time, 2] -> [n_time * n_pixels, 2]
+    day_of_year_features = np.repeat(day_of_year_features, n_pixels, axis=0)
+
+    # Step 5: Remove samples with NaN in forecasts
+    valid_mask = ~np.isnan(fc_concat).any(axis=1)
+    # Also check for NaN labels (from missing valid time observations)
+    if isinstance(labels, np.ndarray):
+        valid_mask = valid_mask & ~np.isnan(labels.astype(float))
+
+    fc_concat = fc_concat[valid_mask]
+    labels = labels[valid_mask]
+    day_of_year_features = day_of_year_features[valid_mask]
+
+    # Convert labels to int64
+    if isinstance(labels, np.ndarray):
+        labels = labels.astype(np.int64)
+
+    print(f"  Samples after NaN removal: {len(fc_concat)}")
+    print(f"  Input shape: {fc_concat.shape}")
+    print(f"  Labels shape: {labels.shape}")
+
+    # Print class distribution
+    unique, counts = np.unique(labels, return_counts=True)
+    print(f"  Class distribution:")
+    for cls, cnt in zip(unique, counts):
+        print(f"    Class {cls}: {cnt} ({100*cnt/len(labels):.1f}%)")
+
+    print(f"{'='*70}\n")
+
+    return (fc_concat, labels, day_of_year_features, common_times,
+            forecast_ds.latitude.values, forecast_ds.longitude.values,
+            n_lat, n_lon, n_vars, n_lead_times)

@@ -50,7 +50,7 @@ all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
 # loss_functions=("extreme_heat_loss" "mortality_weighted_loss")
-loss_functions=("mortality_weighted_loss")
+loss_functions=("heatwave_loss")
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -111,11 +111,12 @@ for region in "${regions[@]}"; do
                             --nn_architecture=\"$nn_architecture\""
                         
                         # Add growing_season_only flag if model_name is aifs
-                        if [[ "$model_name" == "aifs" ]]; then
+                        # skip winter months for heatwave loss
+                        if [[ "$model_name" == "aifs" || "$loss_function" == "heatwave_loss" ]]; then
                             cmd="$cmd --growing_season_only"
                         fi
 
-                        if [[ "$loss_function" == "extreme_heat_loss" || "$loss_function" == "mortality_weighted_loss" ]]; then
+                        if [[ "$loss_function" == "extreme_heat_loss" || "$loss_function" == "mortality_weighted_loss" || "$loss_function" == "heatwave_loss" ]]; then
                             cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                         fi
                         # Execute command

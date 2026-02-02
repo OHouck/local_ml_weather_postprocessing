@@ -50,9 +50,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
-from finetuning.prepare_forecasts_and_targets import load_forecasts
+from finetuning.prepare_forecasts_and_targets import load_forecasts, load_forecasts_classification
 from finetuning.custom_loss_fns import (
-    mortality_weighted_loss, extreme_heat_loss, quantile_loss
+    mortality_weighted_loss, extreme_heat_loss, quantile_loss,
+    heatwave_loss, HeatWaveBatchSampler,
+    CLASSIFICATION_LOSS_FNS, N_CLASSES, DEFAULT_CLASS_WEIGHTS, LABEL_GENERATORS
 )
 
 # print(f"NumPy version: {np.__version__}")
@@ -128,6 +130,79 @@ class SimpleMLP(nn.Module):
             x = torch.cat([x, lead_time_emb], dim=-1)
 
         return self.net(x)
+
+
+# ------------------------------
+# Classifier MLP for classification-based loss functions (e.g., heatwave_loss)
+# ------------------------------
+class ClassifierMLP(nn.Module):
+    """
+    Generic MLP classifier for weather event classification.
+
+    Designed to be reusable for any classification task (heatwave duration, drought severity, etc.)
+    Unlike SimpleMLP which predicts temperature corrections, this outputs class logits.
+
+    Input: Concatenated forecasts from all lead times for a single pixel
+           [batch_size, n_vars × n_lead_times]
+           Plus day-of-year features [batch_size, 2]
+
+    Output: Logits for n_classes [batch_size, n_classes]
+
+    For heatwave classification:
+        Class 0: No heatwave (0 days above threshold)
+        Class 1: Short heatwave (1-2 days)
+        Class 2: Medium heatwave (3-5 days)
+        Class 3: Long heatwave (6+ days)
+    """
+
+    def __init__(self, input_dim, n_classes, hidden_dim=512,
+                 num_hidden_layers=4, dropout_rate=0.3):
+        """
+        Initialize the classifier.
+
+        Args:
+            input_dim: Number of input features (n_vars × n_lead_times for a single pixel)
+            n_classes: Number of output classes (e.g., 4 for heatwave duration)
+            hidden_dim: Hidden layer size (default 512)
+            num_hidden_layers: Number of hidden layers (default 4)
+            dropout_rate: Dropout probability (default 0.3)
+        """
+        super(ClassifierMLP, self).__init__()
+
+        self.n_classes = n_classes
+
+        # Day-of-year features (sin/cos) - 2 features added to input
+        actual_input_dim = input_dim + 2
+
+        # Build network layers
+        layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
+        if dropout_rate > 0:
+            layers.append(nn.Dropout(dropout_rate))
+
+        for _ in range(num_hidden_layers - 1):
+            layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
+            if dropout_rate > 0:
+                layers.append(nn.Dropout(dropout_rate))
+
+        # Output layer produces logits for each class (no softmax - handled by CrossEntropyLoss)
+        layers.append(nn.Linear(hidden_dim, n_classes))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x, day_of_year_features=None):
+        """
+        Forward pass.
+
+        Args:
+            x: Input features [batch_size, n_vars × n_lead_times]
+            day_of_year_features: [batch_size, 2] sin/cos encoding of day-of-year
+
+        Returns:
+            logits: [batch_size, n_classes] raw scores for each class
+        """
+        if day_of_year_features is not None:
+            x = torch.cat([x, day_of_year_features], dim=-1)
+        return self.net(x)
+
 
 # ------------------------------
 # U-Net definition with lead time and day-of-year encoding
@@ -459,8 +534,8 @@ def parse_args():
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
                         help='Filter data to growing season days only')
-    parser.add_argument('--alternate_loss_fn', type=str, default=None, 
-                        choices=['quantile_loss', 'extreme_heat_loss', 'mortality_weighted_loss'],)
+    parser.add_argument('--alternate_loss_fn', type=str, default=None,
+                        choices=['quantile_loss', 'extreme_heat_loss', 'mortality_weighted_loss', 'heatwave_loss'],)
 
     # Architecture hyperparameters
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
@@ -469,7 +544,7 @@ def parse_args():
                     help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
     parser.add_argument('--mlp_dropout', type=float, default=0.25,
                         help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
-    parser.add_argument('--unet_hidden_dim', type=int, default=64, 
+    parser.add_argument('--unet_hidden_dim', type=int, default=64,
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
@@ -587,11 +662,128 @@ def create_dataloader(forecast_input_data, forecast_output_data, obs_data, lead_
     return dataloader
 
 
+def create_heatwave_dataloader(forecast_input_data, forecast_output_data, obs_data,
+                               lead_time_indices, day_of_year_features,
+                               n_lead_times, batch_size_timestamps, device=None):
+    """
+    Create a PyTorch DataLoader with HeatWaveBatchSampler for grouped timestamp batching.
+    Required for heatwave_loss since we need all lead times for each timestamp together.
+
+    Filters out incomplete timestamp groups (due to NaN removal) before creating the loader.
+
+    Args:
+        forecast_input_data: Training variables forecast [n_samples, n_features]
+        forecast_output_data: Output variables forecast [n_samples, n_output_features]
+        obs_data: Observations for output variables [n_samples, n_output_features]
+        lead_time_indices: Lead time index for each sample [n_samples]
+        day_of_year_features: Day-of-year sin/cos features [n_samples, 2]
+        n_lead_times: Number of lead times per timestamp
+        batch_size_timestamps: Number of timestamps per batch (actual batch size = this * n_lead_times)
+        device: Device being used (for optimization settings)
+
+    Returns:
+        DataLoader with HeatWaveBatchSampler
+    """
+    n_samples = forecast_input_data.shape[0]
+
+    dataset = torch.utils.data.TensorDataset(
+        torch.from_numpy(forecast_input_data).float(),
+        torch.from_numpy(forecast_output_data).float(),
+        torch.from_numpy(obs_data).float(),
+        torch.from_numpy(lead_time_indices).long(),
+        torch.from_numpy(day_of_year_features).float()
+    )
+
+    # Create batch sampler that ensures complete timestamp groups
+    batch_sampler = HeatWaveBatchSampler(
+        n_samples=n_samples,
+        n_lead_times=n_lead_times,
+        lead_time_indices=lead_time_indices,
+        batch_size_timestamps=batch_size_timestamps,
+        shuffle=True
+    )
+
+    # Optimize DataLoader based on device
+    pin_memory = False
+    num_workers = 0
+    if device is not None and device.type == 'cuda':
+        cpu_count = os.cpu_count() or 1
+        if cpu_count <= 2:
+            num_workers = 0
+            pin_memory = True
+        else:
+            num_workers = min(cpu_count - 1, 4)
+            pin_memory = True
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_sampler=batch_sampler,
+        pin_memory=pin_memory,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0
+    )
+
+    print(f"HeatWave DataLoader: {batch_sampler.n_valid_timestamps} valid timestamps, "
+          f"{len(batch_sampler)} batches of {batch_size_timestamps} timestamps each")
+
+    return dataloader
+
+
+def create_classification_dataloader(forecast_data, labels, day_of_year_features,
+                                     batch_size, device=None, shuffle=True):
+    """
+    Create DataLoader for classification tasks (e.g., heatwave duration classification).
+
+    Unlike create_heatwave_dataloader, this doesn't need HeatWaveBatchSampler because
+    each sample is already a complete (timestamp, pixel) unit with all lead times concatenated.
+
+    Args:
+        forecast_data: Concatenated forecasts [n_samples, n_vars × n_lead_times]
+        labels: Class labels [n_samples] (integer class indices)
+        day_of_year_features: Day-of-year sin/cos features [n_samples, 2]
+        batch_size: Number of samples per batch
+        device: Device being used (for optimization settings)
+        shuffle: Whether to shuffle data (default True)
+
+    Returns:
+        DataLoader yielding (forecast_data, labels, day_of_year_features) tuples
+    """
+    dataset = torch.utils.data.TensorDataset(
+        torch.from_numpy(forecast_data).float(),
+        torch.from_numpy(labels).long(),
+        torch.from_numpy(day_of_year_features).float()
+    )
+
+    # Optimize DataLoader based on device
+    pin_memory = False
+    num_workers = 0
+    if device is not None and device.type == 'cuda':
+        cpu_count = os.cpu_count() or 1
+        if cpu_count <= 2:
+            num_workers = 0
+            pin_memory = True
+        else:
+            num_workers = min(cpu_count - 1, 4)
+            pin_memory = True
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        pin_memory=pin_memory,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0
+    )
+
+    return dataloader
+
+
 def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 weight_decay=0,
                 stats_out=None, alternate_loss_fn=None,
                 patience=50, min_delta=1e-5,
-                scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7):
+                scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                n_lead_times=None, lead_time_days=None):
     """
     Train the model over multiple epochs with ReduceLROnPlateau and early stopping.
     Uses mixed precision training for CUDA devices to improve speed.
@@ -600,7 +792,7 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         model: PyTorch model to train
         train_loader: DataLoader for training data
         valid_loader: DataLoader for validation data
-        epochs: Maximum number of epochs1 to train
+        epochs: Maximum number of epochs to train
         lr: Initial learning rate
         device: Device to train on (cpu/cuda/mps)
         weight_decay: L2 regularization weight
@@ -611,15 +803,18 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         scheduler_patience: Number of epochs with no improvement before reducing LR
         scheduler_factor: Factor by which to reduce learning rate (new_lr = lr * factor)
         min_lr: Minimum learning rate (floor for scheduler)
+        n_lead_times: Number of lead times (required for heatwave_loss)
+        lead_time_days: List of lead time values in days (required for heatwave_loss)
     """
 
     # Loss functions that require denormalization (is_normalized=True)
-    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss"}
+    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss", "heatwave_loss"}
 
     loss_functions = {
         "extreme_heat_loss": extreme_heat_loss,
         "mortality_weighted_loss": mortality_weighted_loss,
-        "quantile_loss": quantile_loss
+        "quantile_loss": quantile_loss,
+        "heatwave_loss": heatwave_loss
     }
 
     if alternate_loss_fn is None:  # use mse if not specified
@@ -687,7 +882,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                     preds = fc_output_batch + pred_error
 
                     # Custom loss functions use is_normalized=True since inputs are normalized
-                    if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                    if alternate_loss_fn == "heatwave_loss":
+                        loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                        is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                        lead_time_days=lead_time_days)
+                    elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
                         loss = criterion(preds, y_batch, is_normalized=True,
                                         std_out=std_out, mean_out=mean_out)
                     else:
@@ -701,7 +900,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                 preds = fc_output_batch + pred_error
 
-                if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                if alternate_loss_fn == "heatwave_loss":
+                    loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                    is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                    lead_time_days=lead_time_days)
+                elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
                     loss = criterion(preds, y_batch, is_normalized=True,
                                     std_out=std_out, mean_out=mean_out)
                 else:
@@ -729,7 +932,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                         pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                         preds = fc_output_batch + pred_error
 
-                        if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                        if alternate_loss_fn == "heatwave_loss":
+                            loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                            is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                            lead_time_days=lead_time_days)
+                        elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
                             loss = criterion(preds, y_batch, is_normalized=True,
                                             std_out=std_out, mean_out=mean_out)
                         else:
@@ -738,7 +945,11 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                     pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                     preds = fc_output_batch + pred_error
 
-                    if alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                    if alternate_loss_fn == "heatwave_loss":
+                        loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                        is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                        lead_time_days=lead_time_days)
+                    elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
                         loss = criterion(preds, y_batch, is_normalized=True,
                                         std_out=std_out, mean_out=mean_out)
                     else:
@@ -778,6 +989,423 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     # Load best weights
     model.load_state_dict(best_model_wts)
     return model, training_time_minutes
+
+
+def train_classifier(model, train_loader, valid_loader, epochs, lr, device,
+                     class_weights=None, weight_decay=0,
+                     patience=50, min_delta=1e-5,
+                     scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                     loss_type="cross_entropy", focal_gamma=2.0):
+    """
+    Train classification model (e.g., ClassifierMLP) with configurable loss function.
+
+    Args:
+        model: PyTorch classification model to train
+        train_loader: DataLoader yielding (features, labels, doy_features)
+        valid_loader: DataLoader for validation
+        epochs: Maximum number of epochs
+        lr: Initial learning rate
+        device: Device to train on (cpu/cuda/mps)
+        class_weights: Per-class weights for loss function (e.g., [1, 2, 3, 4])
+        weight_decay: L2 regularization weight
+        patience: Early stopping patience (epochs without improvement)
+        min_delta: Minimum change in validation loss to qualify as improvement
+        scheduler_patience: Number of epochs with no improvement before reducing LR
+        scheduler_factor: Factor by which to reduce learning rate
+        min_lr: Minimum learning rate floor
+        loss_type: Type of loss function - "cross_entropy" or "focal" (default: "cross_entropy")
+        focal_gamma: Focusing parameter for focal loss (default: 2.0). Higher values
+                     focus more on hard examples. Only used if loss_type="focal".
+
+    Returns:
+        model: Trained model with best weights
+        training_time_minutes: Training duration in minutes
+        metrics: Dict with final training and validation metrics
+    """
+    # Setup loss function based on loss_type
+    if loss_type == "focal":
+        from finetuning.custom_loss_fns import focal_loss
+        # For focal loss, class_weights are used as alpha parameter
+        alpha = class_weights
+        def criterion(logits, labels):
+            return focal_loss(logits, labels, alpha=alpha, gamma=focal_gamma, device=device)
+        print(f"  Using focal loss with gamma={focal_gamma}, alpha={alpha}")
+    else:
+        # Standard cross-entropy loss
+        if class_weights is not None:
+            weights = torch.tensor(class_weights, dtype=torch.float32, device=device)
+            criterion = nn.CrossEntropyLoss(weight=weights)
+        else:
+            criterion = nn.CrossEntropyLoss()
+
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=scheduler_factor,
+        patience=scheduler_patience, min_lr=min_lr
+    )
+
+    # Setup mixed precision for CUDA
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+    non_blocking = device.type == 'cuda'
+
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    best_model_wts = copy.deepcopy(model.state_dict())
+
+    train_start_time = time.time()
+
+    for epoch in range(1, epochs + 1):
+        # --- Training step ---
+        model.train()
+        train_loss = 0.0
+        train_correct = 0
+        train_total = 0
+
+        for X_batch, labels_batch, doy_batch in train_loader:
+            X_batch = X_batch.to(device, non_blocking=non_blocking)
+            labels_batch = labels_batch.to(device, non_blocking=non_blocking)
+            doy_batch = doy_batch.to(device, non_blocking=non_blocking)
+
+            optimizer.zero_grad()
+
+            if use_amp:
+                with torch.amp.autocast("cuda"):
+                    logits = model(X_batch, doy_batch)
+                    loss = criterion(logits, labels_batch)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                logits = model(X_batch, doy_batch)
+                loss = criterion(logits, labels_batch)
+                loss.backward()
+                optimizer.step()
+
+            train_loss += loss.item() * X_batch.size(0)
+            preds = logits.argmax(dim=1)
+            train_correct += (preds == labels_batch).sum().item()
+            train_total += X_batch.size(0)
+
+        train_loss /= train_total
+        train_acc = train_correct / train_total
+
+        # --- Validation step ---
+        model.eval()
+        val_loss = 0.0
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for X_batch, labels_batch, doy_batch in valid_loader:
+                X_batch = X_batch.to(device, non_blocking=non_blocking)
+                labels_batch = labels_batch.to(device, non_blocking=non_blocking)
+                doy_batch = doy_batch.to(device, non_blocking=non_blocking)
+
+                if use_amp:
+                    with torch.amp.autocast('cuda'):
+                        logits = model(X_batch, doy_batch)
+                        loss = criterion(logits, labels_batch)
+                else:
+                    logits = model(X_batch, doy_batch)
+                    loss = criterion(logits, labels_batch)
+
+                val_loss += loss.item() * X_batch.size(0)
+                preds = logits.argmax(dim=1)
+                val_correct += (preds == labels_batch).sum().item()
+                val_total += X_batch.size(0)
+
+        val_loss /= val_total
+        val_acc = val_correct / val_total
+
+        # --- Learning rate scheduling ---
+        scheduler.step(val_loss)
+
+        # --- Early stopping check ---
+        if val_loss + min_delta < best_val_loss:
+            best_val_loss = val_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        # Print progress every 10 epochs
+        if epoch % 10 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Epoch {epoch}/{epochs} - "
+                  f"Train Loss: {train_loss:.6f}, Train Acc: {train_acc:.4f}, "
+                  f"Val Loss: {val_loss:.6f}, Val Acc: {val_acc:.4f}, "
+                  f"LR: {current_lr:.2e}, Patience: {epochs_without_improvement}/{patience}")
+
+        # Check for early stopping
+        if epochs_without_improvement >= patience:
+            print(f"→ Early stopping at epoch {epoch}. No improvement in {patience} epochs.")
+            break
+
+    # Calculate training time
+    train_end_time = time.time()
+    training_time_minutes = (train_end_time - train_start_time) / 60.0
+
+    # Load best weights
+    model.load_state_dict(best_model_wts)
+
+    metrics = {
+        'train_loss': train_loss,
+        'train_acc': train_acc,
+        'val_loss': best_val_loss,
+        'val_acc': val_acc,
+    }
+
+    return model, training_time_minutes, metrics
+
+
+def find_optimal_thresholds(model, val_loader, device, n_classes, default_class=0):
+    """
+    Find optimal probability thresholds for each class using validation data.
+
+    For rare-class over-prediction problems, we want thresholds that:
+    - Require higher confidence to predict rare classes
+    - Reduce false positives for rare classes
+
+    The optimization uses F0.5 score which favors precision over recall,
+    helping to minimize false positives for rare classes.
+
+    Args:
+        model: Trained classifier model
+        val_loader: Validation DataLoader
+        device: Torch device
+        n_classes: Number of classes
+        default_class: Class to default to when no threshold is met (default: 0)
+
+    Returns:
+        thresholds: numpy array [n_classes] of optimal probability thresholds
+    """
+    model.eval()
+    all_probs = []
+    all_labels = []
+
+    # Collect all predictions and labels from validation set
+    with torch.no_grad():
+        for X_batch, labels_batch, doy_batch in val_loader:
+            X_batch = X_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            logits = model(X_batch, doy_batch)
+            probs = torch.softmax(logits, dim=1).cpu().numpy()
+            all_probs.append(probs)
+            all_labels.extend(labels_batch.numpy())
+
+    all_probs = np.vstack(all_probs)  # [n_samples, n_classes]
+    all_labels = np.array(all_labels)
+
+    # Initialize thresholds - default class uses low threshold, rare classes use higher
+    thresholds = np.ones(n_classes) * 0.5
+
+    # For the default/majority class, use a lower threshold (easier to predict)
+    thresholds[default_class] = 0.3
+
+    print(f"\n  Finding optimal thresholds on validation set...")
+
+    # For each rare class (not the default), find optimal threshold
+    for cls in range(n_classes):
+        if cls == default_class:
+            continue  # Skip default class
+
+        # Count samples of this class
+        n_class_samples = (all_labels == cls).sum()
+        if n_class_samples == 0:
+            print(f"    Class {cls}: No samples in validation set, using default threshold 0.5")
+            continue
+
+        best_threshold = 0.5
+        best_f_score = -float('inf')
+
+        # Try different thresholds
+        for thresh in np.arange(0.30, 0.95, 0.05):
+            # Predict: use argmax but only if probability exceeds threshold
+            # Otherwise default to the default_class
+            preds = np.argmax(all_probs, axis=1).copy()
+
+            # For samples where max prob class is this class but prob < threshold,
+            # change prediction to default class
+            mask = (preds == cls) & (all_probs[:, cls] < thresh)
+            preds[mask] = default_class
+
+            # Compute precision and recall for this class
+            true_positives = ((preds == cls) & (all_labels == cls)).sum()
+            false_positives = ((preds == cls) & (all_labels != cls)).sum()
+            false_negatives = ((preds != cls) & (all_labels == cls)).sum()
+
+            precision = true_positives / (true_positives + false_positives + 1e-8)
+            recall = true_positives / (true_positives + false_negatives + 1e-8)
+
+            # F0.5 score - weights precision higher than recall (beta < 1)
+            # This favors fewer false positives over catching all true positives
+            beta = 0.5
+            f_score = (1 + beta**2) * (precision * recall) / (beta**2 * precision + recall + 1e-8)
+
+            if f_score > best_f_score:
+                best_f_score = f_score
+                best_threshold = thresh
+
+        thresholds[cls] = best_threshold
+        print(f"    Class {cls}: threshold={best_threshold:.2f}, F0.5={best_f_score:.4f}")
+
+    return thresholds
+
+
+def predict_with_thresholds(model, data_loader, device, thresholds, default_class=0):
+    """
+    Make predictions using class-specific probability thresholds.
+
+    For rare class problems, this prevents over-prediction by requiring
+    higher confidence for rare class predictions.
+
+    Args:
+        model: Trained classifier model
+        data_loader: DataLoader
+        device: Torch device
+        thresholds: numpy array [n_classes] of probability thresholds
+        default_class: Class to predict when no class exceeds its threshold
+
+    Returns:
+        predictions: numpy array [n_samples] of predicted class labels
+        probabilities: numpy array [n_samples, n_classes] of class probabilities
+    """
+    model.eval()
+    all_preds = []
+    all_probs = []
+
+    with torch.no_grad():
+        for X_batch, labels_batch, doy_batch in data_loader:
+            X_batch = X_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            logits = model(X_batch, doy_batch)
+            probs = torch.softmax(logits, dim=1).cpu().numpy()
+            all_probs.append(probs)
+
+            # For each sample, find class with max probability that exceeds threshold
+            for i in range(probs.shape[0]):
+                # Get argmax prediction
+                argmax_cls = np.argmax(probs[i])
+
+                # Check if the argmax class exceeds its threshold
+                if probs[i, argmax_cls] >= thresholds[argmax_cls]:
+                    all_preds.append(argmax_cls)
+                else:
+                    # No class confident enough - default to majority class
+                    all_preds.append(default_class)
+
+    return np.array(all_preds), np.vstack(all_probs)
+
+
+def evaluate_classifier(model, test_loader, device, n_classes, class_names=None,
+                        thresholds=None, default_class=0):
+    """
+    Evaluate classification model and print detailed metrics.
+
+    Args:
+        model: Trained ClassifierMLP model
+        test_loader: DataLoader for test data
+        device: Torch device
+        n_classes: Number of classes
+        class_names: Optional list of class names for display
+        thresholds: Optional numpy array [n_classes] of probability thresholds.
+                    If provided, uses threshold-based prediction instead of argmax.
+        default_class: Class to default to when using thresholds and no class
+                       exceeds its threshold (default: 0)
+
+    Returns:
+        dict with:
+        - overall_accuracy: float
+        - per_class_accuracy: [n_classes] array
+        - confusion_matrix: [n_classes, n_classes] array
+        - class_counts: [n_classes] true label distribution
+    """
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for X_batch, labels_batch, doy_batch in test_loader:
+            X_batch = X_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            logits = model(X_batch, doy_batch)
+
+            if thresholds is not None:
+                # Use threshold-based prediction
+                probs = torch.softmax(logits, dim=1).cpu().numpy()
+                for i in range(probs.shape[0]):
+                    argmax_cls = np.argmax(probs[i])
+                    if probs[i, argmax_cls] >= thresholds[argmax_cls]:
+                        all_preds.append(argmax_cls)
+                    else:
+                        all_preds.append(default_class)
+            else:
+                # Simple argmax prediction
+                preds = logits.argmax(dim=1).cpu().numpy()
+                all_preds.extend(preds)
+
+            all_labels.extend(labels_batch.numpy())
+
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+
+    # Compute metrics
+    overall_acc = (all_preds == all_labels).mean()
+
+    # Confusion matrix
+    confusion = np.zeros((n_classes, n_classes), dtype=np.int64)
+    for true, pred in zip(all_labels, all_preds):
+        confusion[true, pred] += 1
+
+    # Per-class accuracy (recall)
+    per_class_acc = confusion.diagonal() / confusion.sum(axis=1).clip(min=1)
+
+    # Per-class precision
+    per_class_precision = confusion.diagonal() / confusion.sum(axis=0).clip(min=1)
+
+    # Default class names
+    if class_names is None:
+        class_names = [f"Class {i}" for i in range(n_classes)]
+
+    # Print results
+    print(f"\n{'='*60}")
+    if thresholds is not None:
+        print("CLASSIFICATION RESULTS (with probability thresholds)")
+        print(f"  Thresholds: {[f'{t:.2f}' for t in thresholds]}")
+    else:
+        print("CLASSIFICATION RESULTS")
+    print(f"{'='*60}")
+    print(f"  Overall Accuracy: {overall_acc:.4f} ({int(overall_acc * len(all_labels))}/{len(all_labels)})")
+    print(f"\n  Per-Class Metrics:")
+    print(f"    {'Class':<15} {'Recall':>8} {'Precision':>10} {'N':>8}")
+    print(f"    {'-'*15} {'-'*8} {'-'*10} {'-'*8}")
+    for i, name in enumerate(class_names):
+        count = confusion[i].sum()
+        print(f"    {name:<15} {per_class_acc[i]:>8.4f} {per_class_precision[i]:>10.4f} {count:>8}")
+
+    print(f"\n  Confusion Matrix:")
+    print(f"    {'':15} | " + " | ".join(f"{name:>8}" for name in class_names))
+    print(f"    {'-'*15}-+-" + "-+-".join(["-"*8] * n_classes))
+    for i, name in enumerate(class_names):
+        row = " | ".join(f"{confusion[i, j]:>8}" for j in range(n_classes))
+        print(f"    {name:15} | {row}")
+
+    print(f"{'='*60}\n")
+
+    return {
+        'overall_accuracy': overall_acc,
+        'per_class_accuracy': per_class_acc,
+        'per_class_precision': per_class_precision,
+        'confusion_matrix': confusion,
+        'class_counts': confusion.sum(axis=1),
+        'thresholds_used': thresholds
+    }
 
 
 def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device):
@@ -931,9 +1559,192 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
     """
-    Run experiment with multiple lead times 
+    Run experiment with multiple lead times.
+
+    Automatically detects classification mode when alternate_loss_fn is in CLASSIFICATION_LOSS_FNS
+    (e.g., 'heatwave_loss'). In classification mode:
+    - Uses ClassifierMLP instead of SimpleMLP
+    - Each sample is a (timestamp, pixel) with all lead times concatenated
+    - Uses weighted cross-entropy loss instead of MSE
+    - Outputs class predictions instead of temperature corrections
     """
     start_time = time.time()
+
+    # Check if this is a classification task
+    is_classification = (args.alternate_loss_fn is not None and
+                        args.alternate_loss_fn in CLASSIFICATION_LOSS_FNS)
+
+    # ========================================================================
+    # CLASSIFICATION MODE (e.g., heatwave_loss)
+    # ========================================================================
+    if is_classification:
+        print(f"\n{'='*70}")
+        print(f"CLASSIFICATION MODE: {args.alternate_loss_fn}")
+        print(f"{'='*70}")
+
+        # Check for UNet (not supported in classification mode)
+        if hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
+            raise ValueError("UNet is not supported for classification mode. Use MLP instead.")
+
+        # Get classification-specific configuration
+        from finetuning.custom_loss_fns import (
+            DEFAULT_FOCAL_GAMMA, compute_class_weights
+        )
+
+        n_classes = N_CLASSES[args.alternate_loss_fn]
+        label_generator = LABEL_GENERATORS[args.alternate_loss_fn]
+        lead_time_days = [lt / 24.0 for lt in args.lead_time_hours]
+
+        # Classification defaults: use focal loss and probability thresholds
+        # These are the recommended settings for imbalanced classification problems
+        # - Focal loss down-weights easy (majority class) examples
+        # - Probability thresholds require higher confidence for rare class predictions
+        loss_type = "focal"
+        focal_gamma = DEFAULT_FOCAL_GAMMA.get(args.alternate_loss_fn, 2.0)
+        use_probability_thresholds = True  # Default: use thresholds to reduce false positives
+
+        # Class weights: use defaults from registry
+        class_weights = DEFAULT_CLASS_WEIGHTS[args.alternate_loss_fn]
+
+        # Class names for display
+        class_names = ["No HW (0d)", "Short (1-2d)", "Medium (3-5d)", "Long (6+d)"]
+
+        # Load training data in classification format
+        (fc_concat, labels, day_of_year_features, train_times, lat_u, lon_u,
+         n_lat, n_lon, n_vars, n_lead_times) = load_forecasts_classification(
+            data_dir, args, lat_vals, lon_vals, train=True,
+            label_generator=label_generator,
+            threshold_celsius=32.0,
+            use_legacy_global_data=use_legacy_global_data
+        )
+
+        loading_time = time.time()
+        print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
+
+        print(f"  Using default class weights: {class_weights}")
+
+        # Normalize forecast data
+        stats = {'mean': fc_concat.mean(0), 'std': fc_concat.std(0) + 1e-8}
+        fc_norm = (fc_concat - stats['mean']) / stats['std']
+
+        # Split train/validation
+        n_samples = len(fc_norm)
+        idx = np.arange(n_samples)
+        np.random.shuffle(idx)
+        split = int(0.8 * n_samples)
+        t_idx, v_idx = idx[:split], idx[split:]
+
+        # Use optimal batch size if available
+        batch_size = args.optimal_batch_size if args.optimal_batch_size else 128
+        print(f"Using batch_size: {batch_size}")
+
+        # Create classification dataloaders
+        train_loader = create_classification_dataloader(
+            fc_norm[t_idx], labels[t_idx], day_of_year_features[t_idx],
+            batch_size=batch_size, device=device, shuffle=True
+        )
+        val_loader = create_classification_dataloader(
+            fc_norm[v_idx], labels[v_idx], day_of_year_features[v_idx],
+            batch_size=batch_size, device=device, shuffle=False
+        )
+
+        print(f"Train samples: {len(t_idx)}, Val samples: {len(v_idx)}")
+
+        # Create classifier model
+        input_dim = n_vars * n_lead_times
+        print(f"\nUsing ClassifierMLP for {n_classes}-class classification")
+        print(f"  Input dim: {input_dim} (n_vars={n_vars} × n_lead_times={n_lead_times})")
+        print(f"  Hidden dim: {args.mlp_hidden_dim}")
+        print(f"  Num layers: {args.mlp_num_layers}")
+        print(f"  Dropout: {args.mlp_dropout}")
+        print(f"  Loss type: {loss_type}" + (f" (gamma={focal_gamma})" if loss_type == "focal" else ""))
+        print(f"  Class weights: {[f'{w:.2f}' for w in class_weights] if class_weights else 'None'}")
+        print(f"  Probability thresholds: {'enabled' if use_probability_thresholds else 'disabled'}")
+
+        model = ClassifierMLP(
+            input_dim=input_dim,
+            n_classes=n_classes,
+            hidden_dim=args.mlp_hidden_dim,
+            num_hidden_layers=args.mlp_num_layers,
+            dropout_rate=args.mlp_dropout
+        ).to(device)
+
+        # Use optimal training hyperparameters if available
+        lr = args.optimal_lr if args.optimal_lr else 1e-4
+        weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 1e-5
+        patience = args.optimal_patience if args.optimal_patience else 50
+        min_delta = args.optimal_min_delta if args.optimal_min_delta else 1e-5
+
+        print(f"\nTraining with:")
+        print(f"  lr: {lr}")
+        print(f"  weight_decay: {weight_decay}")
+        print(f"  patience: {patience}")
+        print(f"  loss_type: {loss_type}")
+
+        # Train classifier
+        model, training_time_minutes, train_metrics = train_classifier(
+            model, train_loader, val_loader,
+            epochs=500, lr=lr,
+            device=device,
+            class_weights=class_weights,
+            weight_decay=weight_decay,
+            patience=patience,
+            min_delta=min_delta,
+            loss_type=loss_type,
+            focal_gamma=focal_gamma
+        )
+        print(f"Training complete in {training_time_minutes:.2f} minutes")
+        print(f"  Final train accuracy: {train_metrics['train_acc']:.4f}")
+        print(f"  Final val accuracy: {train_metrics['val_acc']:.4f}")
+
+        # Load test data
+        load_time = time.time()
+        (test_fc_concat, test_labels, test_doy_features, test_times, _, _,
+         _, _, _, _) = load_forecasts_classification(
+            data_dir, args, lat_vals, lon_vals, train=False,
+            label_generator=label_generator,
+            threshold_celsius=35.0,
+            use_legacy_global_data=use_legacy_global_data
+        )
+
+        # Normalize test data using training stats
+        test_fc_norm = (test_fc_concat - stats['mean']) / stats['std']
+
+        # Create test dataloader
+        test_loader = create_classification_dataloader(
+            test_fc_norm, test_labels, test_doy_features,
+            batch_size=batch_size, device=device, shuffle=False
+        )
+
+        print(f"Test data loaded in {(time.time() - load_time) / 60:.2f} minutes")
+
+        # Find optimal thresholds on validation set if enabled
+        thresholds = None
+        if use_probability_thresholds:
+            thresholds = find_optimal_thresholds(
+                model, val_loader, device, n_classes, default_class=0
+            )
+            print(f"\n  Optimal thresholds: {[f'{t:.2f}' for t in thresholds]}")
+
+        # Evaluate classifier (with or without thresholds)
+        test_metrics = evaluate_classifier(
+            model, test_loader, device, n_classes,
+            class_names=class_names,
+            thresholds=thresholds,
+            default_class=0
+        )
+
+        end_time = time.time()
+        total_time_minutes = (end_time - start_time) / 60
+        print(f"Total experiment time: {total_time_minutes:.2f} minutes")
+
+        # Note: Classification mode doesn't save corrected forecasts (no temperature output)
+        # Could save class predictions if needed in future
+        return
+
+    # ========================================================================
+    # REGRESSION MODE (standard temperature correction)
+    # ========================================================================
 
     # Load training data
     (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
@@ -954,17 +1765,23 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # normalize target observations using forecasts to be corrected
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-    # Split train/validation
-    n_train = len(fc)
-    idx = np.arange(n_train)
-    np.random.shuffle(idx)
-    split = int(0.8 * n_train)
-    t_idx, v_idx = idx[:split], idx[split:]
-
     # Use optimal batch size if available, otherwise default to 128
     batch_size = args.optimal_batch_size if args.optimal_batch_size else 128
     print(f"Using batch_size: {batch_size}")
-    
+
+    # Compute n_lead_times and lead_time_days
+    n_lead_times = len(args.lead_time_hours)
+    lead_time_days = [lt / 24 for lt in args.lead_time_hours]
+
+    # Split train/validation
+    n_samples = len(fc)
+
+    # Standard random split
+    idx = np.arange(n_samples)
+    np.random.shuffle(idx)
+    split = int(0.8 * n_samples)
+    t_idx, v_idx = idx[:split], idx[split:]
+
     train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
                                     lead_time_indices[t_idx], day_of_year_features[t_idx],
                                     batch_size=batch_size, device=device)
@@ -980,18 +1797,17 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Initialize model
     input_dim = n_training_vars * n_lat * n_lon
     output_dim = n_output_vars * n_lat * n_lon
-    n_lead_times = len(args.lead_time_hours)
 
     # Use optimal lead time embedding dimension if available
     lead_time_emb_dim = args.optimal_lead_time_embedding_dim if args.optimal_lead_time_embedding_dim else 4
-    
-    if hasattr(args, 'nn_architecture') and args.nn_architecture== 'unet':
+
+    if hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
         print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
         model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                      n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                     n_lead_times=n_lead_times, 
+                     n_lead_times=n_lead_times,
                      lead_time_embedding_dim=lead_time_emb_dim,
                      dropout_rate=args.unet_dropout).to(device)
         num_epochs = 500
@@ -1001,10 +1817,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         print(f"  MLP num_layers: {args.mlp_num_layers}")
         print(f"  MLP dropout: {args.mlp_dropout}")
         print(f"  MLP lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = SimpleMLP(input_dim = input_dim,
-                          hidden_dim = args.mlp_hidden_dim,
-                          output_dim = output_dim,
-                          num_hidden_layers= args.mlp_num_layers,
+        model = SimpleMLP(input_dim=input_dim,
+                          hidden_dim=args.mlp_hidden_dim,
+                          output_dim=output_dim,
+                          num_hidden_layers=args.mlp_num_layers,
                           n_lead_times=n_lead_times,
                           lead_time_embedding_dim=lead_time_emb_dim,
                           dropout_rate=args.mlp_dropout
@@ -1016,25 +1832,27 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 5.210913466175803e-06
     patience = args.optimal_patience if args.optimal_patience else 50
     min_delta = args.optimal_min_delta if args.optimal_min_delta else 1e-5
-    
+
     print(f"\nTraining with:")
     print(f"  lr: {lr}")
     print(f"  weight_decay: {weight_decay}")
     print(f"  patience: {patience}")
     print(f"  min_delta: {min_delta}")
-    
+
     # Train model
     model, training_time_minutes = train_model(model, train_loader, val_loader,
                                                 epochs=num_epochs, lr=lr,
                                                 device=device,
                                                 weight_decay=weight_decay,
-                                                stats_out=stats_out, # used to un-normalize outputs for some loss fns
+                                                stats_out=stats_out,
                                                 alternate_loss_fn=args.alternate_loss_fn,
-                                                patience=patience,  # Early stopping: stop after N epochs without improvement
-                                                min_delta=min_delta,  # Minimum improvement to qualify as progress
-                                                scheduler_patience=10,  # Reduce LR after 10 epochs without improvement
-                                                scheduler_factor=0.5,  # Reduce LR by half when plateau detected
-                                                min_lr=1e-7  # Minimum learning rate floor
+                                                patience=patience,
+                                                min_delta=min_delta,
+                                                scheduler_patience=10,
+                                                scheduler_factor=0.5,
+                                                min_lr=1e-7,
+                                                n_lead_times=n_lead_times,
+                                                lead_time_days=lead_time_days
                                               )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
@@ -1052,7 +1870,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                 test_day_of_year_features, device)
     corrected = (corrected * stats_out['std']) + stats_out['mean']
 
-    # Calculate MSE per lead time and month
+    # Calculate MSE per lead time
     for lt_idx, lead_time in enumerate(args.lead_time_hours):
         mask = test_lead_time_indices == lt_idx
         if mask.sum() > 0:
@@ -1062,7 +1880,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
 
-            
+
     save_start_time = time.time()
     # Save results
     save_output(
