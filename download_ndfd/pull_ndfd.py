@@ -351,7 +351,10 @@ def main():
     example_element = 'maxt'
     example_month = 1
     example_nc_dir = os.path.join(output_dir, example_element, str(year), f"{example_month:02d}")
+    print(example_nc_dir)
     example_nc_files = list(Path(example_nc_dir).glob("*_texas.nc"))
+    num_files = len(example_nc_files)
+    print(f"\nFound {num_files} example Texas NetCDF files for {example_element}")
     if example_nc_files:
         example_nc_file = example_nc_files[0]
         print(f"\nPlotting example forecast from: {example_nc_file}")
