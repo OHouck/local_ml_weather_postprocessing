@@ -45,12 +45,12 @@ training_output_vars=(
 )
 
 subregions=(6x6)
-regions=("india")
+regions=("corn_belt")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
-# loss_functions=("extreme_heat_loss" "mortality_weighted_loss")
-loss_functions=("heatwave_loss")
+# loss_functions=("extreme_heat_loss" "mortality_weighted_loss" heatwave_loss)
+loss_functions=("mortality_weighted_loss")
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -112,7 +112,7 @@ for region in "${regions[@]}"; do
                         
                         # Add growing_season_only flag if model_name is aifs
                         # skip winter months for heatwave loss
-                        if [[ "$model_name" == "aifs" || "$loss_function" == "heatwave_loss" ]]; then
+                        if [[ "$model_name" == "aifs" || "$loss_function" == "heatwave_loss" || "$loss_function" == "mortality_weighted_loss"  || "$loss_function" == "extreme_heat_loss" ]]; then
                             cmd="$cmd --growing_season_only"
                         fi
 

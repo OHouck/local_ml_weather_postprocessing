@@ -41,13 +41,13 @@ fi
 #
 training_output_vars=(
     # Minimal: Use only the output variable for training
-    "2m_temperature|2m_temperature"
+    # "2m_temperature|2m_temperature"
 
     # partial:use 3 vars
     # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
 
     # Full: Use all 6 variables for training (best performance from experiments)
-    # "2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa|2m_temperature"
+    "2m_temperature 10m_wind_speed|2m_temperature 10m_wind_speed"
 
     # "10m_wind_speed|10m_wind_speed"
 )
@@ -59,11 +59,12 @@ subregions=(6x6)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 # regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 # regions=("north_america" "south_america" "oceania")
-regions=("india" "usa_south" "ethiopia" "corn_belt")
-all_lead_times=(24 120 216)
+regions=("usa_south")
+# all_lead_times=(24 120 216)
+all_lead_times=(24)
 nn_architectures=("mlp")
 model_names=("pangu")
-loss_functions=("extreme_heat_loss")
+loss_functions=("joint_temp_wind_loss") # options: mse, extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
@@ -88,6 +89,10 @@ for region in "${regions[@]}"; do
                     for loss_function in "${loss_functions[@]}"; do
                         # Skip incompatible combinations
                         if [[ "$loss_function" == "extreme_heat_loss" && "$output_vars" != "2m_temperature" ]]; then
+                            continue
+                        fi
+                        # joint_temp_wind_loss requires both 2m_temperature and 10m_wind_speed as outputs
+                        if [[ "$loss_function" == "joint_temp_wind_loss" && ("$output_vars" != *"2m_temperature"* || "$output_vars" != *"10m_wind_speed"*) ]]; then
                             continue
                         fi
                         # Determine train/test dates based on model_name

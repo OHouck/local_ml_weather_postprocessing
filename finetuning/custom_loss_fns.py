@@ -213,6 +213,91 @@ def extreme_heat_loss(preds, targets, is_normalized, std_out=None, mean_out=None
     return weighted_mse
 
 
+def joint_temp_wind_loss(preds, targets, is_normalized, std_out=None, mean_out=None,
+                         return_rmse=False, n_output_vars=2, n_lat=None, n_lon=None):
+    """
+    Joint loss for simultaneous temperature and wind speed correction.
+
+    Separates the flattened prediction/target vectors into per-variable components,
+    computes MSE for each variable independently, then returns a weighted combination.
+    Both variables are denormalized to physical units before computing the loss so that
+    the weighting is meaningful across different physical scales.
+
+    The flattened feature ordering must be [variable, latitude, longitude], which is
+    the ordering produced by load_forecasts() after the dimension fix. Variable 0 is
+    expected to be 2m_temperature (Kelvin) and variable 1 is 10m_wind_speed (m/s).
+
+    Args:
+        preds: Predictions [batch_size, n_output_vars * n_lat * n_lon]
+               (torch.Tensor or np.ndarray)
+        targets: Ground truth [batch_size, n_output_vars * n_lat * n_lon]
+                 (same type as preds)
+        is_normalized: bool - True if inputs are normalized, False if in physical units
+        std_out: Standard deviation for denormalization [n_output_vars * n_lat * n_lon]
+                 (required if is_normalized=True)
+        mean_out: Mean for denormalization [n_output_vars * n_lat * n_lon]
+                  (required if is_normalized=True)
+        return_rmse: If True, return RMSE instead of MSE
+        n_output_vars: Number of output variables (default 2)
+        n_lat: Number of latitude points (required)
+        n_lon: Number of longitude points (required)
+
+    Returns:
+        Weighted loss value (torch.Tensor if inputs are tensors, float otherwise)
+    """
+    ops, _, _ = _get_ops(preds)
+
+    if n_lat is None or n_lon is None:
+        raise ValueError("n_lat and n_lon are required for joint_temp_wind_loss")
+
+    if is_normalized:
+        if std_out is None or mean_out is None:
+            raise ValueError("std_out and mean_out required when is_normalized=True")
+        preds = preds * std_out + mean_out
+        targets = targets * std_out + mean_out
+
+    # Reshape to (batch, n_output_vars, n_lat, n_lon)
+    batch_size = preds.shape[0]
+    if _is_torch_tensor(preds):
+        preds_4d = preds.view(batch_size, n_output_vars, n_lat, n_lon)
+        targets_4d = targets.view(batch_size, n_output_vars, n_lat, n_lon)
+    else:
+        preds_4d = preds.reshape(batch_size, n_output_vars, n_lat, n_lon)
+        targets_4d = targets.reshape(batch_size, n_output_vars, n_lat, n_lon)
+
+    # Per-variable errors: variable 0 = temperature, variable 1 = wind speed
+    # Shape of each: [batch_size, n_lat, n_lon]
+    temp_errors = preds_4d[:, 0] - targets_4d[:, 0]
+    wind_errors = preds_4d[:, 1] - targets_4d[:, 1]
+
+    # Per-pixel same-sign check: raw weight = 2 if same sign, 1 if different
+    same_sign = (temp_errors * wind_errors) > 0
+    if _is_torch_tensor(same_sign):
+        pixel_weights = 1.0 + same_sign.float()
+    else:
+        pixel_weights = 1.0 + same_sign.astype(float)
+
+    # Normalize weights to sum to 1 across all pixels in the batch
+    pixel_weights = pixel_weights / pixel_weights.sum()
+
+    # Weighted MSE per variable (weights sum to 1, so result is comparable to plain MSE)
+    temp_se = temp_errors ** 2
+    wind_se = wind_errors ** 2
+    weighted_temp_mse = (pixel_weights * temp_se).sum()
+    weighted_wind_mse = (pixel_weights * wind_se).sum()
+
+    # Equal weighting between the two variables
+    weighted_loss = (weighted_temp_mse + weighted_wind_mse) / 2.0
+
+    if return_rmse:
+        if _is_torch_tensor(weighted_loss):
+            return ops.sqrt(weighted_loss)
+        else:
+            return float(np.sqrt(weighted_loss))
+
+    return weighted_loss
+
+
 def quantile_loss(preds, targets, quantile=0.95):
     """
     Quantile loss (pinball loss) for asymmetric error penalization.

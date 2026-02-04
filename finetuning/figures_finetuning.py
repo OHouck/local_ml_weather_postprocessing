@@ -252,15 +252,11 @@ def load_region_data(
                 # Load dataset
                 ds = xr.open_zarr(zarr_file, consolidated=False)
 
-                # Get spatial bounds
+                # Get spatial bounds (keep original coordinate system from dataset)
                 lat_min = float(ds.latitude.min())
                 lat_max = float(ds.latitude.max())
                 lon_min = float(ds.longitude.min())
                 lon_max = float(ds.longitude.max())
-
-                # Convert longitude to 0-360 if needed
-                lon_min_360 = lon_min + 360 if lon_min < 0 else lon_min
-                lon_max_360 = lon_max + 360 if lon_max < 0 else lon_max
 
                 # Calculate center latitude for distance from equator
                 center_lat = (lat_min + lat_max) / 2
@@ -348,11 +344,12 @@ def load_region_data(
                     pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
 
                     # Store patch data for this lead time
+                    # Use original longitude coordinates to match ds coordinates
                     all_patch_data[lead_time].append({
                         'lat_min': lat_min,
                         'lat_max': lat_max,
-                        'lon_min': lon_min_360,
-                        'lon_max': lon_max_360,
+                        'lon_min': lon_min,
+                        'lon_max': lon_max,
                         'improvement': pct_improvement,
                         'region': region,
                         'rmse_original': rmse_original,
@@ -581,8 +578,9 @@ def map_global_improvements(
         ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.3, edgecolor='gray', zorder=2)
 
         if pixel_level:
-            # Pixel-level plotting: create global gridded dataset and plot as raster
-            print(f"  Creating global gridded dataset for pixel-level plotting...")
+            # Pixel-level plotting: plot each patch individually to avoid smearing artifacts
+            # (Using combine_by_coords creates sparse grids that cause pcolormesh interpolation issues)
+            print(f"  Pixel-level plotting with per-patch rendering...")
 
             # Validate that patches are non-overlapping
             print(f"  Validating that patches are non-overlapping tiles...")
@@ -593,97 +591,102 @@ def map_global_improvements(
                 print(f"  ✗ Patch validation failed: {e}")
                 raise
 
-            # Step 1: Collect all patch datasets
-            print(f"  Concatenating {len(patch_data)} patches into global dataset...")
-            patch_datasets = []
+            # Step 1: First pass - compute per-patch plot data and global statistics
+            print(f"  Computing RMSE for {len(patch_data)} patches...")
+            var_suffix = f"_lt{lead_time}h"
+
+            patch_plot_data = []  # Store computed plot data for each patch
+            all_values = []  # Collect all values for global statistics
 
             for patch in patch_data:
                 ds = patch['ds']
-                var_suffix = f"_lt{lead_time}h"
 
-                # Extract only the variables needed for this lead time
-                ds_subset = ds[[
-                    f"{variable}_ground_truth{var_suffix}",
-                    f"{variable}_original{var_suffix}",
-                    f"{variable}_corrected{var_suffix}"
-                ]]
+                # Extract data for this lead time
+                ground_truth = ds[f"{variable}_ground_truth{var_suffix}"]
+                original = ds[f"{variable}_original{var_suffix}"]
+                corrected = ds[f"{variable}_corrected{var_suffix}"]
 
-                patch_datasets.append(ds_subset)
+                # Compute pixel-wise RMSE over time dimension
+                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
+                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
 
-            # Step 2: Combine all patches into a single global dataset
-            # combine_by_coords automatically handles non-overlapping spatial tiles
-            global_ds = xr.combine_by_coords(patch_datasets, combine_attrs='drop_conflicts')
+                # Select the appropriate data to plot based on map_type
+                if map_type == "improvement":
+                    patch_values = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
+                elif map_type == "original":
+                    patch_values = rmse_original_pixel
+                elif map_type == "corrected":
+                    patch_values = rmse_corrected_pixel
+                else:
+                    raise ValueError(f"Invalid map_type: {map_type}. Must be 'improvement', 'original', or 'corrected'.")
 
-            print(f"  Global grid: {len(global_ds.latitude)} latitudes × {len(global_ds.longitude)} longitudes")
+                # Store patch data for plotting
+                patch_plot_data.append({
+                    'values': patch_values,
+                    'lats': ds.latitude.values,
+                    'lons': ds.longitude.values,
+                    'lat_min': patch['lat_min'],
+                    'lat_max': patch['lat_max'],
+                    'lon_min': patch['lon_min'],
+                    'lon_max': patch['lon_max']
+                })
 
-            # Step 3: Single vectorized RMSE calculation for all pixels at once
-            print(f"  Computing RMSE for all pixels in single operation...")
-            var_suffix = f"_lt{lead_time}h"
+                # Collect non-NaN values for global statistics
+                valid_values = patch_values.values[~np.isnan(patch_values.values)]
+                all_values.extend(valid_values.flatten())
 
-            ground_truth = global_ds[f"{variable}_ground_truth{var_suffix}"]
-            original = global_ds[f"{variable}_original{var_suffix}"]
-            corrected = global_ds[f"{variable}_corrected{var_suffix}"]
-
-            # Compute pixel-wise RMSE over time dimension in one vectorized operation
-            # Shape: (time, lat, lon) -> (lat, lon)
-            rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
-            rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
-
-            # Select the appropriate data to plot based on map_type
-            if map_type == "improvement":
-                # Compute improvement percentage for each pixel (single operation)
-                plot_data = ((rmse_original_pixel - rmse_corrected_pixel) / rmse_original_pixel * 100)
-            elif map_type == "original":
-                plot_data = rmse_original_pixel
-            elif map_type == "corrected":
-                plot_data = rmse_corrected_pixel
-            else:
-                raise ValueError(f"Invalid map_type: {map_type}. Must be 'improvement', 'original', or 'corrected'.")
-
-            # Extract coordinates for plotting
-            unique_lats = global_ds.latitude.values
-            unique_lons = global_ds.longitude.values
-
-            # Calculate statistics using nanXXX functions (faster than masking)
-            n_pixels = int(np.count_nonzero(~np.isnan(plot_data.values)))
+            # Convert to numpy array for statistics
+            all_values = np.array(all_values)
+            n_pixels = len(all_values)
 
             if n_pixels == 0:
                 print(f"  No valid pixel data for lead time {lead_time}h!")
                 continue
 
-            # Use nanXXX functions - they're optimized and faster than manual masking
-            vmin = float(np.nanmin(plot_data.values))
-            vmax = float(np.nanmax(plot_data.values))
-            mean_val = float(np.nanmean(plot_data.values))
-            median_val = float(np.nanmedian(plot_data.values))
-            std_val = float(np.nanstd(plot_data.values))
+            # Calculate global statistics
+            vmin = float(np.min(all_values))
+            vmax = float(np.max(all_values))
+            mean_val = float(np.mean(all_values))
+            median_val = float(np.median(all_values))
+            std_val = float(np.std(all_values))
 
             print(f"  Pixel range: {vmin:.1f} to {vmax:.1f}")
             print(f"  Valid pixels: {n_pixels}")
 
-            # Create colormap based on map type
+            # Step 2: Create colormap with global range (consistent across all patches)
             if map_type == "improvement":
-                norm = plt.Normalize(vmin=vmin, vmax=vmax)
-                cmap = plt.cm.Blues# Red for negative, Blue for positive
+                # Use diverging colormap centered at 0 to show both improvements and degradations
+                if vmin >= 0:
+                    # All positive improvements - use sequential blue colormap
+                    norm = Normalize(vmin=vmin, vmax=vmax)
+                    cmap = plt.cm.Blues
+                elif vmax <= 0:
+                    # All negative (degradation) - use sequential red colormap
+                    norm = Normalize(vmin=vmin, vmax=vmax)
+                    cmap = plt.cm.Reds_r  # Reversed so darker = more negative
+                else:
+                    # Mixed positive and negative - use diverging colormap centered at 0
+                    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+                    cmap = plt.cm.RdBu  # Red for negative (worse), Blue for positive (better)
             else:
                 # For RMSE values (original or corrected), use single-color gradient
-                norm = plt.Normalize(vmin=vmin, vmax=vmax)
+                norm = Normalize(vmin=vmin, vmax=vmax)
                 cmap = plt.cm.YlOrRd  # Yellow to Red for RMSE values
 
-            # Step 4: Single plot call using pcolormesh (much faster than per-pixel plotting)
-            print(f"  Plotting global {metric_name} raster...")
+            # Step 3: Plot each patch individually (avoids sparse grid interpolation artifacts)
+            print(f"  Plotting {len(patch_plot_data)} patches individually...")
 
-            # Use pcolormesh for proper georeferencing - it handles DataArrays directly
-            mesh = ax.pcolormesh(
-                plot_data.longitude,
-                plot_data.latitude,
-                plot_data.values,
-                transform=ccrs.PlateCarree(),
-                cmap=cmap,
-                norm=norm,
-                shading='auto',
-                zorder=1
-            )
+            for patch_info in patch_plot_data:
+                ax.pcolormesh(
+                    patch_info['lons'],
+                    patch_info['lats'],
+                    patch_info['values'].values,
+                    transform=ccrs.PlateCarree(),
+                    cmap=cmap,
+                    norm=norm,
+                    shading='nearest',  # Use 'nearest' to avoid interpolation artifacts
+                    zorder=1
+                )
 
             # Add black boxes showing patch boundaries (optimized with LineCollection)
             print(f"  Adding patch boundary boxes...")
@@ -756,11 +759,22 @@ def map_global_improvements(
 
             # Create colormap based on map type
             if map_type == "improvement":
-                norm = plt.Normalize(vmin=vmin, vmax=vmax)
-                cmap = plt.cm.Blues
+                # Use diverging colormap centered at 0 to show both improvements and degradations
+                if vmin >= 0:
+                    # All positive improvements - use sequential blue colormap
+                    norm = Normalize(vmin=vmin, vmax=vmax)
+                    cmap = plt.cm.Blues
+                elif vmax <= 0:
+                    # All negative (degradation) - use sequential red colormap
+                    norm = Normalize(vmin=vmin, vmax=vmax)
+                    cmap = plt.cm.Reds_r  # Reversed so darker = more negative
+                else:
+                    # Mixed positive and negative - use diverging colormap centered at 0
+                    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+                    cmap = plt.cm.RdBu  # Red for negative (worse), Blue for positive (better)
             else:
                 # For RMSE values, use sequential colormap
-                norm = plt.Normalize(vmin=vmin, vmax=vmax)
+                norm = Normalize(vmin=vmin, vmax=vmax)
                 cmap = plt.cm.YlOrRd
 
             # Plot each patch as a colored rectangle
@@ -4610,11 +4624,11 @@ def main():
                 plot_scatter_forecast_improvement(dirs=dirs, model=model, 
                                                 variable=variable, x_metric="sdor", 
                                                 binscatter=binscatter)
-    #         for map_type in ["original", "improvement"]:
-    #             for pixel_flag in [True]:
-    #                 map_global_improvements(dirs=dirs, model=model, 
-    #                                         variable=variable, map_type=map_type,
-    #                                         pixel_level=pixel_flag)
+            for map_type in ["original", "improvement"]:
+                for pixel_flag in [True]:
+                    map_global_improvements(dirs=dirs, model=model, 
+                                            variable=variable, map_type=map_type,
+                                            pixel_level=pixel_flag)
     exit()
 
 #=============================================

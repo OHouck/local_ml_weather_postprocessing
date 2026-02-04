@@ -53,7 +53,7 @@ from helper_funcs import generate_output_path
 from finetuning.prepare_forecasts_and_targets import load_forecasts, load_forecasts_classification
 from finetuning.custom_loss_fns import (
     mortality_weighted_loss, extreme_heat_loss, quantile_loss,
-    heatwave_loss, HeatWaveBatchSampler,
+    heatwave_loss, HeatWaveBatchSampler, joint_temp_wind_loss,
     CLASSIFICATION_LOSS_FNS, N_CLASSES, DEFAULT_CLASS_WEIGHTS, LABEL_GENERATORS
 )
 
@@ -459,27 +459,29 @@ class UNet(nn.Module):
 # ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
-def load_optimal_hyperparameters(architecture, training_vars, output_var):
+def load_optimal_hyperparameters(architecture, training_vars, output_vars):
     """
     Load optimal hyperparameters from hyperopt results.
-    
+
     Args:
         architecture: 'mlp' or 'unet'
         training_vars: List of input variable names
-        output_var: Output variable name 
-    
+        output_vars: Output variable name(s) - string or list of strings
+
     Returns:
         Dictionary of optimal hyperparameters, or None if file not found
     """
     # Get the script's directory
     script_dir = Path(__file__).parent.parent
 
-    # argparse may provide output_vars as a list (nargs='+'); ensure we have a single string
-    if isinstance(output_var, (list, tuple)):
-        if len(output_var) == 0:
-            print("Warning: output_var list is empty")
+    # Normalize output_vars to a list
+    if isinstance(output_vars, str):
+        output_vars = [output_vars]
+    elif isinstance(output_vars, (list, tuple)):
+        if len(output_vars) == 0:
+            print("Warning: output_vars list is empty")
             return None
-        output_var = output_var[0]
+        output_vars = list(output_vars)
 
     # if using multiple training variables, use those hyperopt results
     if len(training_vars) > 1:
@@ -487,18 +489,36 @@ def load_optimal_hyperparameters(architecture, training_vars, output_var):
     else:
         multi_flag = ""
 
-    if output_var == "2m_temperature":
-        results_file = script_dir / f"hyperopt_results{multi_flag}_temperature_{architecture}" / f"optimization_results_{architecture}.json"
-    elif output_var == "10m_wind_speed":
-        results_file = script_dir / f"hyperopt_results{multi_flag}_wind_{architecture}" / f"optimization_results_{architecture}.json"
+    # Map variable names to hyperopt result keys
+    VAR_KEY_MAP = {
+        "2m_temperature": "temperature",
+        "10m_wind_speed": "wind",
+    }
+
+    # For multiple output variables, try joint results first
+    if len(output_vars) > 1:
+        results_file = script_dir / f"hyperopt_results{multi_flag}_joint_{architecture}" / f"optimization_results_{architecture}.json"
+        if not results_file.exists():
+            # Fall back to first output variable's results
+            fallback_var = output_vars[0]
+            output_key = VAR_KEY_MAP.get(fallback_var)
+            if output_key is None:
+                print(f"Warning: No hyperparameter results available for output variables {output_vars}")
+                return None
+            print(f"Warning: No joint hyperparameter results found for {output_vars}. "
+                  f"Falling back to results for '{fallback_var}'")
+            results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
     else:
-        print(f"Warning: No hyperparameter results available for output variable '{output_var}'")
-        return None
-    
+        output_key = VAR_KEY_MAP.get(output_vars[0])
+        if output_key is None:
+            print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
+            return None
+        results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+
     if not results_file.exists():
         print(f"Warning: Hyperparameter file not found at {results_file}")
         return None
-    
+
     try:
         with open(results_file, 'r') as f:
             results = json.load(f)
@@ -535,7 +555,8 @@ def parse_args():
     parser.add_argument('--growing_season_only', action='store_true',
                         help='Filter data to growing season days only')
     parser.add_argument('--alternate_loss_fn', type=str, default=None,
-                        choices=['quantile_loss', 'extreme_heat_loss', 'mortality_weighted_loss', 'heatwave_loss'],)
+                        choices=['quantile_loss', 'extreme_heat_loss', 'mortality_weighted_loss',
+                                 'heatwave_loss', 'joint_temp_wind_loss'],)
 
     # Architecture hyperparameters
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
@@ -783,7 +804,8 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
                 stats_out=None, alternate_loss_fn=None,
                 patience=50, min_delta=1e-5,
                 scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
-                n_lead_times=None, lead_time_days=None):
+                n_lead_times=None, lead_time_days=None,
+                n_output_vars=1, n_lat=None, n_lon=None):
     """
     Train the model over multiple epochs with ReduceLROnPlateau and early stopping.
     Uses mixed precision training for CUDA devices to improve speed.
@@ -805,16 +827,21 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
         min_lr: Minimum learning rate (floor for scheduler)
         n_lead_times: Number of lead times (required for heatwave_loss)
         lead_time_days: List of lead time values in days (required for heatwave_loss)
+        n_output_vars: Number of output variables (required for joint_temp_wind_loss)
+        n_lat: Number of latitude points (required for joint_temp_wind_loss)
+        n_lon: Number of longitude points (required for joint_temp_wind_loss)
     """
 
     # Loss functions that require denormalization (is_normalized=True)
-    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss", "heatwave_loss"}
+    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss", "heatwave_loss",
+                           "joint_temp_wind_loss"}
 
     loss_functions = {
         "extreme_heat_loss": extreme_heat_loss,
         "mortality_weighted_loss": mortality_weighted_loss,
         "quantile_loss": quantile_loss,
-        "heatwave_loss": heatwave_loss
+        "heatwave_loss": heatwave_loss,
+        "joint_temp_wind_loss": joint_temp_wind_loss
     }
 
     if alternate_loss_fn is None:  # use mse if not specified
@@ -823,6 +850,13 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     else:
         use_custom_loss = True
         criterion = loss_functions[alternate_loss_fn]
+
+        # Bind spatial parameters for joint_temp_wind_loss so it can be called
+        # with the same signature as other normalized loss functions
+        if alternate_loss_fn == "joint_temp_wind_loss":
+            from functools import partial
+            criterion = partial(criterion, n_output_vars=n_output_vars,
+                                n_lat=n_lat, n_lon=n_lon)
 
     # convert stats to torch tensors for denormalization if needed
     mean_out = None
@@ -1852,7 +1886,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                                 scheduler_factor=0.5,
                                                 min_lr=1e-7,
                                                 n_lead_times=n_lead_times,
-                                                lead_time_days=lead_time_days
+                                                lead_time_days=lead_time_days,
+                                                n_output_vars=n_output_vars,
+                                                n_lat=n_lat,
+                                                n_lon=n_lon
                                               )
     print(f"Training complete in {training_time_minutes:.2f} minutes")
 
@@ -1870,13 +1907,25 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                                 test_day_of_year_features, device)
     corrected = (corrected * stats_out['std']) + stats_out['mean']
 
-    # Calculate MSE per lead time
+    # Calculate MSE per lead time (aggregate and per-variable)
     for lt_idx, lead_time in enumerate(args.lead_time_hours):
         mask = test_lead_time_indices == lt_idx
         if mask.sum() > 0:
             mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
             mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
             print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
+
+            # Per-variable breakdown when predicting multiple output variables
+            if n_output_vars > 1:
+                n_masked = mask.sum()
+                orig_reshaped = test_fc_output[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+                obs_reshaped = test_obs[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+                corr_reshaped = corrected[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+
+                for var_idx, var_name in enumerate(args.output_vars):
+                    var_mse_orig = np.mean((orig_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
+                    var_mse_corr = np.mean((corr_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
+                    print(f"  {var_name}: MSE original: {var_mse_orig:.6f}, MSE corrected: {var_mse_corr:.6f}")
 
     print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
 

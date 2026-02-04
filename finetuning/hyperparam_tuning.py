@@ -33,6 +33,11 @@ from typing import Dict, Any
 # Import model classes and utilities from finetune.py
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from finetuning.finetune import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid
+from finetuning.custom_loss_fns import (
+    mortality_weighted_loss, extreme_heat_loss, quantile_loss,
+    heatwave_loss, joint_temp_wind_loss
+)
+from functools import partial
 from helper_funcs import setup_directories
 
 
@@ -99,7 +104,10 @@ def create_unet_search_space():
     }
 
 
-def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, device):
+def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, device,
+                               alternate_loss_fn=None, stats_out=None,
+                               n_output_vars=1, n_lat=None, n_lon=None,
+                               n_lead_times=None, lead_time_days=None):
     """
     Train model with early stopping, mixed precision, and GPU optimizations.
 
@@ -109,13 +117,48 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         valid_loader: Validation data loader
         hyperparams: Dictionary of hyperparameters
         device: torch device
+        alternate_loss_fn: Name of custom loss function to use (None = MSE)
+        stats_out: Statistics for denormalizing outputs (for custom losses)
+        n_output_vars: Number of output variables (required for joint_temp_wind_loss)
+        n_lat: Number of latitude points (required for joint_temp_wind_loss)
+        n_lon: Number of longitude points (required for joint_temp_wind_loss)
+        n_lead_times: Number of lead times (required for heatwave_loss)
+        lead_time_days: List of lead time values in days (required for heatwave_loss)
 
     Returns:
         tuple: (best_val_loss, num_epochs_trained)
     """
     import time
 
-    criterion = nn.MSELoss()
+    # Loss functions that require denormalization (is_normalized=True)
+    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss", "heatwave_loss",
+                           "joint_temp_wind_loss"}
+
+    loss_functions = {
+        "extreme_heat_loss": extreme_heat_loss,
+        "mortality_weighted_loss": mortality_weighted_loss,
+        "quantile_loss": quantile_loss,
+        "heatwave_loss": heatwave_loss,
+        "joint_temp_wind_loss": joint_temp_wind_loss
+    }
+
+    if alternate_loss_fn is None:
+        use_custom_loss = False
+        criterion = nn.MSELoss()
+    else:
+        use_custom_loss = True
+        criterion = loss_functions[alternate_loss_fn]
+
+        if alternate_loss_fn == "joint_temp_wind_loss":
+            criterion = partial(criterion, n_output_vars=n_output_vars,
+                                n_lat=n_lat, n_lon=n_lon)
+
+    # Convert stats to torch tensors for denormalization if needed
+    mean_out = None
+    std_out = None
+    if alternate_loss_fn in NORMALIZED_LOSS_FNS and stats_out is not None:
+        mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
+        std_out = torch.from_numpy(stats_out['std']).float().to(device)
     optimizer = optim.Adam(
         model.parameters(),
         lr=hyperparams['learning_rate'],
@@ -169,7 +212,16 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
                     pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                     # Apply error to output forecast
                     preds = fc_output_batch + pred_error
-                    loss = criterion(preds, y_batch)
+
+                    if alternate_loss_fn == "heatwave_loss":
+                        loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                        is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                        lead_time_days=lead_time_days)
+                    elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                        loss = criterion(preds, y_batch, is_normalized=True,
+                                        std_out=std_out, mean_out=mean_out)
+                    else:
+                        loss = criterion(preds, y_batch)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -178,7 +230,17 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
                 # Standard training for CPU/MPS
                 pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                 preds = fc_output_batch + pred_error
-                loss = criterion(preds, y_batch)
+
+                if alternate_loss_fn == "heatwave_loss":
+                    loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                    is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                    lead_time_days=lead_time_days)
+                elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                    loss = criterion(preds, y_batch, is_normalized=True,
+                                    std_out=std_out, mean_out=mean_out)
+                else:
+                    loss = criterion(preds, y_batch)
+
                 loss.backward()
                 optimizer.step()
 
@@ -201,11 +263,29 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
                     with torch.amp.autocast("cuda"):
                         pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                         preds = fc_output_batch + pred_error
-                        loss = criterion(preds, y_batch)
+
+                        if alternate_loss_fn == "heatwave_loss":
+                            loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                            is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                            lead_time_days=lead_time_days)
+                        elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                            loss = criterion(preds, y_batch, is_normalized=True,
+                                            std_out=std_out, mean_out=mean_out)
+                        else:
+                            loss = criterion(preds, y_batch)
                 else:
                     pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
                     preds = fc_output_batch + pred_error
-                    loss = criterion(preds, y_batch)
+
+                    if alternate_loss_fn == "heatwave_loss":
+                        loss = criterion(preds, y_batch, lead_time_batch, n_lead_times,
+                                        is_normalized=True, std_out=std_out, mean_out=mean_out,
+                                        lead_time_days=lead_time_days)
+                    elif alternate_loss_fn in NORMALIZED_LOSS_FNS:
+                        loss = criterion(preds, y_batch, is_normalized=True,
+                                        std_out=std_out, mean_out=mean_out)
+                    else:
+                        loss = criterion(preds, y_batch)
 
                 val_loss += loss.item() * fc_output_batch.size(0)
 
@@ -347,6 +427,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         n_lon = cached_data['n_lon']
         n_training_vars = cached_data['n_training_vars']
         n_output_vars = cached_data['n_output_vars']
+        stats_out = cached_data['stats_out']
     else:
         print(f"  Loading training data (slow path - no cache)")
         # Get region grid
@@ -424,8 +505,17 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         raise ValueError(f"Unknown architecture: {architecture}")
 
     # Train model
+    alternate_loss_fn = getattr(args, 'alternative_loss_fn', None)
+    lead_time_days = [h // 24 for h in args.lead_time_hours] if hasattr(args, 'lead_time_hours') else None
     val_loss, epochs_trained = train_with_early_stopping(
-        model, train_loader, val_loader, hyperparams, device
+        model, train_loader, val_loader, hyperparams, device,
+        alternate_loss_fn=alternate_loss_fn,
+        stats_out=stats_out,
+        n_output_vars=n_output_vars,
+        n_lat=n_lat,
+        n_lon=n_lon,
+        n_lead_times=n_lead_times,
+        lead_time_days=lead_time_days
     )
 
     print(f"  Validation loss: {val_loss:.6f} (trained {epochs_trained} epochs)")
@@ -617,15 +707,15 @@ if __name__ == "__main__":
     config = SimpleNamespace(
         model_name="pangu",
         training_vars=[
-            "2m_temperature", "temperature_1000hPa", "specific_humidity_1000hPa",
-        ],
-        output_vars=["2m_temperature"],
+            "2m_temperature", "10m_wind_speed"],
+        output_vars=["2m_temperature", "10m_wind_speed"],
         train_start="2018-01-01",
         train_end="2021-12-31",
-        region='india',
+        region='usa_south',
         subregion='6x6',
         ground_truth_source='',  # Will default to era5 for pangu
-        lead_time_hours=[24, 120, 216],
+        lead_time_hours=[24],
+        alternate_loss_fn ="joint_temp_wind_loss",  # Custom loss for temp + wind
         growing_season_only=False
     )
 
@@ -650,23 +740,23 @@ if __name__ == "__main__":
         args=config,
         data_dir=data_dir,
         architecture="mlp",
-        max_evals=100,
-        output_dir="hyperopt_results_multivar_temperature_mlp",
+        max_evals=1,
+        output_dir="hyperopt_results_joint_wind_temperature_24h_mlp",
         device=device,
         random_seed=42,
         resume=False # Set to True to continue from previous runs
     )
     print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
 
-    # Optionally optimize UNet architecture
-    unet_results = optimize_hyperparameters(
-        args=config,
-        data_dir=data_dir,
-        architecture="unet",
-        max_evals=100,
-        output_dir="hyperopt_results_multivar_temperature_unet",
-        device=device,
-        random_seed=42,
-        resume=False
-    )
-    print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")
+    # # Optionally optimize UNet architecture
+    # unet_results = optimize_hyperparameters(
+    #     args=config,
+    #     data_dir=data_dir,
+    #     architecture="unet",
+    #     max_evals=100,
+    #     output_dir="hyperopt_results_multivar_temperature_unet",
+    #     device=device,
+    #     random_seed=42,
+    #     resume=False
+    # )
+    # print(f"UNet optimization finished with best loss: {unet_results['best_loss']:.6f}")

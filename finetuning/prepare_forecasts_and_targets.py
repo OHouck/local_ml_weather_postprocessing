@@ -1290,7 +1290,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     # ========================================================================
 
     # Create wind speed if needed
-    if "10m_wind_speed" in args.training_vars:
+    if "10m_wind_speed" in args.training_vars or "10m_wind_speed" in args.output_vars:
         forecast_ds["10m_wind_speed"] = np.sqrt(
             forecast_ds["10m_u_component_of_wind"]**2 +
             forecast_ds["10m_v_component_of_wind"]**2
@@ -1343,20 +1343,25 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         sample=['time', 'prediction_timedelta']
     ).to_array()
 
-    # Transpose and reshape to (n_samples, n_features)
+    # Reorder to (sample, variable, latitude, longitude) and reshape to (n_samples, n_features)
+    # Note: .to_array() produces dims (variable, latitude, longitude, sample).
+    # We use explicit .transpose() rather than .T to get the correct
+    # (sample, variable, latitude, longitude) ordering. This ensures the flattened
+    # features are ordered as [variable, latitude, longitude], which is what
+    # downstream reshape/view operations expect (UNet, save_output, mean error).
     if hasattr(forecast_stacked.data, 'compute'):
         fc_vals, fc_out_vals, obs_vals = dask.compute(
-            forecast_stacked.values.T,
-            forecast_output_stacked.values.T,
-            obs_repeated.values.T
+            forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
+            forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
+            obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values
         )
         fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
         fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
         obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
     else:
-        fc_combined = forecast_stacked.values.T.reshape(-1, n_training_vars * n_lat * n_lon)
-        fc_output_combined = forecast_output_stacked.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
-        obs_combined = obs_repeated.values.T.reshape(-1, n_output_vars * n_lat * n_lon)
+        fc_combined = forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_training_vars * n_lat * n_lon)
+        fc_output_combined = forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
+        obs_combined = obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
 
     # Create lead time indices
     lead_time_indices = np.tile(np.arange(n_lead_times), n_time)
@@ -1510,7 +1515,7 @@ def load_forecasts_classification(data_dir, args, lat_values, lon_values, train=
 
     # Prepare variable lists
     forecast_vars = [v for v in args.training_vars if v != "10m_wind_speed"]
-    if "10m_wind_speed" in args.training_vars:
+    if "10m_wind_speed" in args.training_vars or "10m_wind_speed" in args.output_vars:
         forecast_vars.extend(["10m_u_component_of_wind", "10m_v_component_of_wind"])
 
     # For classification, we need the output variable for label generation
@@ -1574,7 +1579,7 @@ def load_forecasts_classification(data_dir, args, lat_values, lon_values, train=
             )
 
     # Process data
-    if "10m_wind_speed" in args.training_vars:
+    if "10m_wind_speed" in args.training_vars or "10m_wind_speed" in args.output_vars:
         forecast_ds["10m_wind_speed"] = np.sqrt(
             forecast_ds["10m_u_component_of_wind"]**2 +
             forecast_ds["10m_v_component_of_wind"]**2
