@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helper_funcs import setup_directories
-from finetuning.figures_finetuning import plot_improvement_by_weather_bin, plot_rmse_improvement 
+from finetuning.figures_finetuning import plot_improvement_by_weather_bin, plot_rmse_improvement, map_forecasts
 
 
 def main():
@@ -52,22 +52,39 @@ def main():
     loss_trained_on = ["extreme_heat_loss", "mse"]
     metrics = ["rmse", "extreme_heat_rmse"]
 
-    for metric in metrics:
-        plot_improvement_by_weather_bin(
-            dirs=dirs,
-            train_start=train_start,
-            train_end=train_end,
-            test_start=test_start,
-            test_end=test_end,
-            model=model,
-            training_output_vars=training_output_vars,
-            variable=variable,
-            lead_times=lead_times,
-            regions=regions,
-            subregion=subregion,
-            loss_trained_on=loss_trained_on,
-            metric=metric,
-        )
+    # for metric in metrics:
+    #     plot_improvement_by_weather_bin(
+    #         dirs=dirs,
+    #         train_start=train_start,
+    #         train_end=train_end,
+    #         test_start=test_start,
+    #         test_end=test_end,
+    #         model=model,
+    #         training_output_vars=training_output_vars,
+    #         variable=variable,
+    #         lead_times=lead_times,
+    #         regions=regions,
+    #         subregion=subregion,
+    #         loss_trained_on=loss_trained_on,
+    #         metric=metric,
+    #     )
+
+    
+# make maps for joint temp-wind model
+    map_forecasts(dirs=dirs,
+                  train_start=train_start,
+                  train_end=train_end,
+                  test_start=test_start,
+                  test_end=test_end,
+                  model=model,
+                  training_output_vars=(["2m_temperature", "10m_wind_speed"], ["2m_temperature", "10m_wind_speed"]),
+                  variables=["2m_temperature", "10m_wind_speed"], # if doing both 2m_temperature and 10m_wind_speed 2m_temp must be first
+                  lead_times=[24],
+                  region="texas",
+                  subregion="6x6",
+                  loss_trained_on="joint_temp_wind_loss",
+                  metric="joint_temp_wind_loss",
+    )
 
 
 if __name__ == "__main__":

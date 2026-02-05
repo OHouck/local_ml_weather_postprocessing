@@ -59,7 +59,7 @@ subregions=(6x6)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 # regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 # regions=("north_america" "south_america" "oceania")
-regions=("usa_south")
+regions=("texas")
 # all_lead_times=(24 120 216)
 all_lead_times=(24)
 nn_architectures=("mlp")
@@ -71,7 +71,7 @@ bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
         # Skip if subregion is 2x2 and region is india, ethiopia, amazon, or usa_south
-        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
+        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "texas" || "$region" == "corn_belt") ]]; then
             continue
         fi
 

@@ -908,11 +908,11 @@ def map_global_improvements(
 
 
 # Regions where US/Canadian state/province borders should be shown
-NORTH_AMERICA_REGIONS = {'usa_south', 'corn_belt', 'british_columbia'}
+NORTH_AMERICA_REGIONS = {'usa_south', 'corn_belt', 'british_columbia', 'texas'}
 
 
 def map_forecasts(dirs, train_start, train_end, test_start, test_end,
-                  model, training_input_vars, training_output_vars,
+                  model, training_output_vars,
                   variables, lead_times, region, subregion,
                   loss_trained_on, metric, nn_architecture="mlp",
                   growing_season_only=False, ground_truth_source="",
@@ -942,10 +942,9 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
         Test end date (YYYY-MM-DD)
     model : str
         Model name: "pangu", "ifs", "aifs", etc.
-    training_input_vars : str or list
-        Input variable(s) the model was trained with
-    training_output_vars : str or list
-        Output variable(s) the model was trained to predict
+    training_output_vars : tuple
+        Tuple of (training_vars, output_vars) where each is a str or list.
+        Example: (['2m_temperature', '10m_wind_speed'], ['2m_temperature', '10m_wind_speed'])
     variables : str or list
         Variable(s) to evaluate and plot. For joint metrics, pass both variables.
     lead_times : int or list
@@ -974,11 +973,12 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
     dict
         Dictionary of created figures keyed by (lead_time, variable_key, map_type)
     """
-    # Normalize inputs to lists
-    if isinstance(training_input_vars, str):
-        training_input_vars = [training_input_vars]
-    if isinstance(training_output_vars, str):
-        training_output_vars = [training_output_vars]
+    # Unpack training/output vars tuple (same pattern as plot_improvement_by_weather_bin)
+    training_vars, output_vars = training_output_vars
+    training_vars = training_vars if isinstance(training_vars, (list, tuple)) else [training_vars]
+    output_vars = output_vars if isinstance(output_vars, (list, tuple)) else [output_vars]
+
+    # Normalize other inputs to lists
     if isinstance(variables, str):
         variables = [variables]
     if isinstance(lead_times, (int, float)):
@@ -1007,8 +1007,8 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
         train_end=train_end,
         test_start=test_start,
         test_end=test_end,
-        training_vars=training_input_vars,
-        output_vars=training_output_vars,
+        training_vars=training_vars,
+        output_vars=output_vars,
         lead_time_hours=lead_times,
         nn_architecture=nn_architecture,
         growing_season_only=growing_season_only,
@@ -1037,6 +1037,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
               float(lats.min()) - 0.5, float(lats.max()) + 0.5]
 
     # Determine whether to show state/province borders
+    # Might want to make this more flexible eventully to allow for state like borders elsewhere
     show_state_borders = region in NORTH_AMERICA_REGIONS
 
     print(f"  Region: {region}, Metric: {metric}, Lead times: {lead_times}")
@@ -1074,6 +1075,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
                 rmse_orig_maps[var] = rmse_original_pixel.values
                 improvement_maps[var] = improvement_pixel.values
 
+        # penalize opposing sign errors in temperature and wind speed
         elif metric == "joint_temp_wind_loss":
             if len(variables) != 2:
                 raise ValueError(
@@ -1081,6 +1083,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
                     f"(temperature and wind speed). Got: {variables}"
                 )
 
+            # assume first variable is temperature, second is wind speed (XX this could be improved)
             temp_var = variables[0]  # Expected: 2m_temperature
             wind_var = variables[1]  # Expected: 10m_wind_speed
 
@@ -1090,16 +1093,16 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
             # --- Original forecast joint loss per pixel ---
             temp_errors_orig = (orig_temp - gt_temp).values  # (time, lat, lon)
             wind_errors_orig = (orig_wind - gt_wind).values
-            same_sign_orig = (temp_errors_orig * wind_errors_orig) > 0
-            pixel_weights_orig = 1.0 + same_sign_orig.astype(float)
+            diff_sign_orig = (temp_errors_orig * wind_errors_orig) < 0
+            pixel_weights_orig = 1.0 + diff_sign_orig.astype(float)
             pixel_loss_orig = pixel_weights_orig * (temp_errors_orig**2 + wind_errors_orig**2) / 2.0
             joint_metric_orig = np.sqrt(pixel_loss_orig.mean(axis=0))  # (lat, lon)
 
             # --- Corrected forecast joint loss per pixel ---
             temp_errors_corr = (corr_temp - gt_temp).values
             wind_errors_corr = (corr_wind - gt_wind).values
-            same_sign_corr = (temp_errors_corr * wind_errors_corr) > 0
-            pixel_weights_corr = 1.0 + same_sign_corr.astype(float)
+            diff_sign_corr = (temp_errors_corr * wind_errors_corr) < 0
+            pixel_weights_corr = 1.0 + diff_sign_corr.astype(float)
             pixel_loss_corr = pixel_weights_corr * (temp_errors_corr**2 + wind_errors_corr**2) / 2.0
             joint_metric_corr = np.sqrt(pixel_loss_corr.mean(axis=0))
 
@@ -1137,7 +1140,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
                     scale='50m',
                     facecolor='none'
                 )
-                ax1.add_feature(states_provinces, edgecolor='gray', linewidth=0.3, zorder=2)
+                ax1.add_feature(states_provinces, edgecolor='black', linewidth=0.8, zorder=2)
 
             # YlOrRd colormap for metric values
             norm1 = Normalize(vmin=np.nanmin(orig_map), vmax=np.nanmax(orig_map))
@@ -1200,7 +1203,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
                     scale='50m',
                     facecolor='none'
                 )
-                ax2.add_feature(states_provinces, edgecolor='gray', linewidth=0.3, zorder=2)
+                ax2.add_feature(states_provinces, edgecolor='black', linewidth=0.8, zorder=2)
 
             # Diverging colormap centered at 0
             vmin_imp = float(np.nanmin(impr_map))
@@ -1257,7 +1260,7 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
             if save_path is not None:
                 out_folder = save_path
             else:
-                out_folder = os.path.join(dirs["fig"], model, region)
+                out_folder = os.path.join(dirs["fig"], model, "regional_maps")
             os.makedirs(out_folder, exist_ok=True)
 
             fname1 = f"map_original_{metric}_{var_key}_{model}_{region}_lt{lead_time}h.png"
@@ -4388,6 +4391,8 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
 
 def main():
     dirs = setup_directories()
+
+    
 
 #=============================================
 # Main figure binscatter plots

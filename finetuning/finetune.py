@@ -586,6 +586,7 @@ def parse_args():
 REGION_CENTERS = {
     'india': (22.0, 77.0),
     'usa_south': (35.0, 260.0),  # -100 + 360
+    'texas': (31.0, 262.0),  # -98 + 360
     'amazon': (-5.0, 295.0),  # -65 + 360
     'british_columbia': (53.125, 235.0),  # -125 + 360, using 53.125 to match previous 48.25-58 range
     'pakistan': (29.5, 65.0),

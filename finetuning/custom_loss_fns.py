@@ -270,12 +270,12 @@ def joint_temp_wind_loss(preds, targets, is_normalized, std_out=None, mean_out=N
     temp_errors = preds_4d[:, 0] - targets_4d[:, 0]
     wind_errors = preds_4d[:, 1] - targets_4d[:, 1]
 
-    # Per-pixel same-sign check: raw weight = 2 if same sign, 1 if different
-    same_sign = (temp_errors * wind_errors) > 0
-    if _is_torch_tensor(same_sign):
-        pixel_weights = 1.0 + same_sign.float()
+    # Per-pixel same-sign check: raw weight = 1 if same sign, 2 if different
+    diff_sign = (temp_errors * wind_errors) < 0
+    if _is_torch_tensor(diff_sign):
+        pixel_weights = 1.0 + diff_sign.float()
     else:
-        pixel_weights = 1.0 + same_sign.astype(float)
+        pixel_weights = 1.0 + diff_sign.astype(float)
 
     # Normalize weights to sum to 1 across all pixels in the batch
     pixel_weights = pixel_weights / pixel_weights.sum()
