@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path
 from finetuning.process_forecasts import calculate_rmse
-from finetuning.custom_loss_fns import extreme_heat_loss, mortality_weighted_loss
+from finetuning.custom_loss_fns import extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
 
 # Suppress Zarr warnings (e.g., for .DS_Store files)
 import warnings
@@ -904,6 +904,379 @@ def map_global_improvements(
         "corrected": "corrected RMSE"
     }.get(map_type, map_type)
     print(f"\nAll {len(figs)} global {map_type_str} maps created successfully!")
+    return figs
+
+
+# Regions where US/Canadian state/province borders should be shown
+NORTH_AMERICA_REGIONS = {'usa_south', 'corn_belt', 'british_columbia'}
+
+
+def map_forecasts(dirs, train_start, train_end, test_start, test_end,
+                  model, training_input_vars, training_output_vars,
+                  variables, lead_times, region, subregion,
+                  loss_trained_on, metric, nn_architecture="mlp",
+                  growing_season_only=False, ground_truth_source="",
+                  save_path=None):
+    """
+    Create per-pixel spatial maps of forecast accuracy for a single region.
+
+    Produces two maps per (lead_time, variable) combination:
+    1. Original forecast metric map (e.g., RMSE in physical units)
+    2. Percentage improvement map after post-processing
+
+    Supports single-variable metrics (RMSE) and multi-variable metrics
+    (joint_temp_wind_loss). Adds state/province borders for North American
+    regions and country borders elsewhere.
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories from setup_directories()
+    train_start : str
+        Training start date (YYYY-MM-DD)
+    train_end : str
+        Training end date (YYYY-MM-DD)
+    test_start : str
+        Test start date (YYYY-MM-DD)
+    test_end : str
+        Test end date (YYYY-MM-DD)
+    model : str
+        Model name: "pangu", "ifs", "aifs", etc.
+    training_input_vars : str or list
+        Input variable(s) the model was trained with
+    training_output_vars : str or list
+        Output variable(s) the model was trained to predict
+    variables : str or list
+        Variable(s) to evaluate and plot. For joint metrics, pass both variables.
+    lead_times : int or list
+        Lead time(s) in hours (e.g., 24 or [24, 120, 216])
+    region : str
+        Geographic region (e.g., "usa_south", "india")
+    subregion : str
+        Subregion size (e.g., "6x6")
+    loss_trained_on : str
+        Loss function used for training (for filename matching).
+        Options: "mse", "joint_temp_wind_loss", "extreme_heat_loss", etc.
+    metric : str
+        Evaluation metric for the maps.
+        Options: "rmse", "joint_temp_wind_loss"
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    growing_season_only : bool, optional
+        Whether the model was trained on growing season only (default: False)
+    ground_truth_source : str, optional
+        Ground truth source identifier for path construction (default: "")
+    save_path : str, optional
+        Custom save directory. If None, auto-generates based on parameters.
+
+    Returns
+    -------
+    dict
+        Dictionary of created figures keyed by (lead_time, variable_key, map_type)
+    """
+    # Normalize inputs to lists
+    if isinstance(training_input_vars, str):
+        training_input_vars = [training_input_vars]
+    if isinstance(training_output_vars, str):
+        training_output_vars = [training_output_vars]
+    if isinstance(variables, str):
+        variables = [variables]
+    if isinstance(lead_times, (int, float)):
+        lead_times = [int(lead_times)]
+    else:
+        lead_times = [int(lt) for lt in lead_times]
+
+    # Map loss_trained_on to alternate_loss_fn for file path construction
+    loss_fn_mapping = {
+        "mse": None,
+        "extreme_heat": "extreme_heat_loss",
+        "extreme_heat_loss": "extreme_heat_loss",
+        "mortality_weighted_loss": "mortality_weighted_loss",
+        "joint_temp_wind_loss": "joint_temp_wind_loss",
+    }
+    alternate_loss_fn = loss_fn_mapping.get(loss_trained_on,
+                                            loss_trained_on if loss_trained_on != "mse" else None)
+
+    # Construct zarr file path
+    args = SimpleNamespace(
+        model_name=model,
+        ground_truth_source=ground_truth_source,
+        region=region,
+        subregion=subregion,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        training_vars=training_input_vars,
+        output_vars=training_output_vars,
+        lead_time_hours=lead_times,
+        nn_architecture=nn_architecture,
+        growing_season_only=growing_season_only,
+        alternate_loss_fn=alternate_loss_fn
+    )
+
+    input_folder = dirs['input']
+    zarr_path = os.path.join(input_folder, generate_output_path(args))
+    print(f"\nmap_forecasts: Loading zarr from: {zarr_path}")
+
+    try:
+        ds = load_zarr_cached(zarr_path)
+    except Exception as e:
+        print(f"Error: Could not load zarr file: {e}")
+        print(f"  Expected path: {zarr_path}")
+        return None
+
+    lats = ds.latitude.values
+    lons = ds.longitude.values
+    n_lat = len(lats)
+    n_lon = len(lons)
+
+    # Convert 0-360 longitudes to -180/180 for set_extent
+    lons_display = np.where(lons > 180, lons - 360, lons)
+    extent = [float(lons_display.min()) - 0.5, float(lons_display.max()) + 0.5,
+              float(lats.min()) - 0.5, float(lats.max()) + 0.5]
+
+    # Determine whether to show state/province borders
+    show_state_borders = region in NORTH_AMERICA_REGIONS
+
+    print(f"  Region: {region}, Metric: {metric}, Lead times: {lead_times}")
+    print(f"  Variables: {variables}")
+    print(f"  Grid: {n_lat} lat x {n_lon} lon, Extent: {extent}")
+    print(f"  State borders: {show_state_borders}")
+
+    figs = {}
+
+    for lead_time in lead_times:
+        var_suffix = f"_lt{lead_time}h"
+        print(f"\n  Processing lead time {lead_time}h...")
+
+        # Compute metric maps based on metric type
+        if metric == "rmse":
+            # Per-variable pixel-level RMSE
+            rmse_orig_maps = {}
+            improvement_maps = {}
+
+            for var in variables:
+                try:
+                    ground_truth, original, corrected, _ = extract_forecast_data(ds, var, lead_time)
+                except KeyError as e:
+                    print(f"    Warning: Variable {var} not found for lt{lead_time}h: {e}")
+                    continue
+
+                # Pixel-wise RMSE over time: shape (latitude, longitude)
+                rmse_original_pixel = np.sqrt(((original - ground_truth) ** 2).mean(dim='time'))
+                rmse_corrected_pixel = np.sqrt(((corrected - ground_truth) ** 2).mean(dim='time'))
+
+                # Percentage improvement: positive = better
+                improvement_pixel = ((rmse_original_pixel - rmse_corrected_pixel)
+                                     / rmse_original_pixel * 100)
+
+                rmse_orig_maps[var] = rmse_original_pixel.values
+                improvement_maps[var] = improvement_pixel.values
+
+        elif metric == "joint_temp_wind_loss":
+            if len(variables) != 2:
+                raise ValueError(
+                    f"joint_temp_wind_loss metric requires exactly 2 variables "
+                    f"(temperature and wind speed). Got: {variables}"
+                )
+
+            temp_var = variables[0]  # Expected: 2m_temperature
+            wind_var = variables[1]  # Expected: 10m_wind_speed
+
+            gt_temp, orig_temp, corr_temp, _ = extract_forecast_data(ds, temp_var, lead_time)
+            gt_wind, orig_wind, corr_wind, _ = extract_forecast_data(ds, wind_var, lead_time)
+
+            # --- Original forecast joint loss per pixel ---
+            temp_errors_orig = (orig_temp - gt_temp).values  # (time, lat, lon)
+            wind_errors_orig = (orig_wind - gt_wind).values
+            same_sign_orig = (temp_errors_orig * wind_errors_orig) > 0
+            pixel_weights_orig = 1.0 + same_sign_orig.astype(float)
+            pixel_loss_orig = pixel_weights_orig * (temp_errors_orig**2 + wind_errors_orig**2) / 2.0
+            joint_metric_orig = np.sqrt(pixel_loss_orig.mean(axis=0))  # (lat, lon)
+
+            # --- Corrected forecast joint loss per pixel ---
+            temp_errors_corr = (corr_temp - gt_temp).values
+            wind_errors_corr = (corr_wind - gt_wind).values
+            same_sign_corr = (temp_errors_corr * wind_errors_corr) > 0
+            pixel_weights_corr = 1.0 + same_sign_corr.astype(float)
+            pixel_loss_corr = pixel_weights_corr * (temp_errors_corr**2 + wind_errors_corr**2) / 2.0
+            joint_metric_corr = np.sqrt(pixel_loss_corr.mean(axis=0))
+
+            # Improvement map
+            improvement_joint = ((joint_metric_orig - joint_metric_corr)
+                                 / joint_metric_orig * 100)
+
+            rmse_orig_maps = {"joint_temp_wind": joint_metric_orig}
+            improvement_maps = {"joint_temp_wind": improvement_joint}
+
+        else:
+            raise ValueError(f"Unknown metric: {metric}. Supported: 'rmse', 'joint_temp_wind_loss'")
+
+        # Create figures for each variable/metric key
+        for var_key in rmse_orig_maps:
+            orig_map = rmse_orig_maps[var_key]
+            impr_map = improvement_maps[var_key]
+
+            # --- Figure 1: Original forecast metric ---
+            fig1 = plt.figure(figsize=(10, 8))
+            ax1 = fig1.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+            ax1.set_extent(extent, crs=ccrs.PlateCarree())
+
+            # Map features
+            ax1.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.3, zorder=0)
+            ax1.add_feature(cfeature.OCEAN, facecolor='white', zorder=0)
+            ax1.add_feature(cfeature.COASTLINE, linewidth=0.5, edgecolor='black', zorder=2)
+            ax1.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.5,
+                            edgecolor='gray', zorder=2)
+
+            if show_state_borders:
+                states_provinces = cfeature.NaturalEarthFeature(
+                    category='cultural',
+                    name='admin_1_states_provinces_lines',
+                    scale='50m',
+                    facecolor='none'
+                )
+                ax1.add_feature(states_provinces, edgecolor='gray', linewidth=0.3, zorder=2)
+
+            # YlOrRd colormap for metric values
+            norm1 = Normalize(vmin=np.nanmin(orig_map), vmax=np.nanmax(orig_map))
+            cmap1 = plt.cm.YlOrRd
+
+            pcm1 = ax1.pcolormesh(
+                lons, lats, orig_map,
+                transform=ccrs.PlateCarree(),
+                cmap=cmap1, norm=norm1,
+                shading='nearest', zorder=1
+            )
+
+            gl1 = ax1.gridlines(draw_labels=True, linewidth=0.5, alpha=0.5,
+                                linestyle='--', zorder=3)
+            gl1.top_labels = False
+            gl1.right_labels = False
+
+            cbar1 = plt.colorbar(pcm1, ax=ax1, orientation='horizontal',
+                                 pad=0.05, shrink=0.8)
+            if metric == "joint_temp_wind_loss":
+                cbar1.set_label('Joint Temp-Wind RMSE', fontsize=12, weight='bold')
+            else:
+                unit_str = "K" if "temperature" in var_key else "m/s"
+                cbar1.set_label(f'Original Forecast RMSE ({unit_str})', fontsize=12,
+                                weight='bold')
+
+            var_display = var_key.replace('_', ' ').title()
+            ax1.set_title(
+                f"Original Forecast Error - {var_display}\n"
+                f"{model.upper()} - {region} - {lead_time}h Lead Time",
+                fontsize=14, weight='bold', pad=10
+            )
+
+            mean_val = float(np.nanmean(orig_map))
+            median_val = float(np.nanmedian(orig_map))
+            stats_text = f"Mean: {mean_val:.3f}\nMedian: {median_val:.3f}"
+            ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes, fontsize=10,
+                     verticalalignment='top',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
+                               edgecolor='black', alpha=0.8),
+                     family='monospace', zorder=10)
+
+            plt.tight_layout()
+
+            # --- Figure 2: Improvement map ---
+            fig2 = plt.figure(figsize=(10, 8))
+            ax2 = fig2.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+            ax2.set_extent(extent, crs=ccrs.PlateCarree())
+
+            ax2.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.3, zorder=0)
+            ax2.add_feature(cfeature.OCEAN, facecolor='white', zorder=0)
+            ax2.add_feature(cfeature.COASTLINE, linewidth=0.5, edgecolor='black', zorder=2)
+            ax2.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.5,
+                            edgecolor='gray', zorder=2)
+
+            if show_state_borders:
+                states_provinces = cfeature.NaturalEarthFeature(
+                    category='cultural',
+                    name='admin_1_states_provinces_lines',
+                    scale='50m',
+                    facecolor='none'
+                )
+                ax2.add_feature(states_provinces, edgecolor='gray', linewidth=0.3, zorder=2)
+
+            # Diverging colormap centered at 0
+            vmin_imp = float(np.nanmin(impr_map))
+            vmax_imp = float(np.nanmax(impr_map))
+
+            if vmin_imp >= 0:
+                norm2 = Normalize(vmin=vmin_imp, vmax=vmax_imp)
+                cmap2 = plt.cm.Blues
+            elif vmax_imp <= 0:
+                norm2 = Normalize(vmin=vmin_imp, vmax=vmax_imp)
+                cmap2 = plt.cm.Reds_r
+            else:
+                norm2 = TwoSlopeNorm(vmin=vmin_imp, vcenter=0, vmax=vmax_imp)
+                cmap2 = plt.cm.RdBu
+
+            pcm2 = ax2.pcolormesh(
+                lons, lats, impr_map,
+                transform=ccrs.PlateCarree(),
+                cmap=cmap2, norm=norm2,
+                shading='nearest', zorder=1
+            )
+
+            gl2 = ax2.gridlines(draw_labels=True, linewidth=0.5, alpha=0.5,
+                                linestyle='--', zorder=3)
+            gl2.top_labels = False
+            gl2.right_labels = False
+
+            cbar2 = plt.colorbar(pcm2, ax=ax2, orientation='horizontal',
+                                 pad=0.05, shrink=0.8)
+            if metric == "joint_temp_wind_loss":
+                cbar2.set_label('Joint Temp-Wind RMSE Improvement (%)', fontsize=12,
+                                weight='bold')
+            else:
+                cbar2.set_label('RMSE Improvement (%)', fontsize=12, weight='bold')
+
+            ax2.set_title(
+                f"Forecast Improvement - {var_display}\n"
+                f"{model.upper()} - {region} - {lead_time}h Lead Time",
+                fontsize=14, weight='bold', pad=10
+            )
+
+            mean_imp = float(np.nanmean(impr_map))
+            median_imp = float(np.nanmedian(impr_map))
+            stats_imp = f"Mean: {mean_imp:.1f}%\nMedian: {median_imp:.1f}%"
+            ax2.text(0.02, 0.98, stats_imp, transform=ax2.transAxes, fontsize=10,
+                     verticalalignment='top',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
+                               edgecolor='black', alpha=0.8),
+                     family='monospace', zorder=10)
+
+            plt.tight_layout()
+
+            # Save figures
+            if save_path is not None:
+                out_folder = save_path
+            else:
+                out_folder = os.path.join(dirs["fig"], model, region)
+            os.makedirs(out_folder, exist_ok=True)
+
+            fname1 = f"map_original_{metric}_{var_key}_{model}_{region}_lt{lead_time}h.png"
+            path1 = os.path.join(out_folder, fname1)
+            fig1.savefig(path1, dpi=300, bbox_inches='tight')
+            print(f"    Saved: {path1}")
+
+            fname2 = f"map_improvement_{metric}_{var_key}_{model}_{region}_lt{lead_time}h.png"
+            path2 = os.path.join(out_folder, fname2)
+            fig2.savefig(path2, dpi=300, bbox_inches='tight')
+            print(f"    Saved: {path2}")
+
+            figs[(lead_time, var_key, 'original')] = fig1
+            figs[(lead_time, var_key, 'improvement')] = fig2
+
+            plt.close(fig1)
+            plt.close(fig2)
+
+    print(f"\nmap_forecasts: Created {len(figs)} maps successfully!")
     return figs
 
 
@@ -4138,57 +4511,6 @@ def main():
     #                         growing_season_only=gs_flag,
     #                         loss_trained_on=loss_train_on
     #                     )
-
-    #=============================================
-    # Subregion Comparison Plots (now done in its own python script)
-    #=============================================
-
-    #==============================================
-    # Generate Maps
-    #============================================== 
-    # regions = ["usa_south", "amazon", "india", "british_columbia", "ethiopia"]
-    # for region in regions:
-    #     # MLP maps
-    #     generate_map_plots(
-    #         dirs=dirs,
-    #         train_start="2018-01-01",
-    #         train_end="2021-12-31",
-    #         test_start="2022-01-01",
-    #         test_end="2022-12-31",
-    #         model="pangu",
-    #         training_output_vars=(training_vars, output_vars),
-    #         prediction_var=prediction_var,
-    #         nn_architecture="mlp",
-    #         region=region,
-    #         subregion="2x2",
-    #         lead_time=24,
-    #         simultaneous=True
-    #     )
-
-        #===========================================
-        # Generate time series plots
-        #===========================================
-        # generate_time_series_plots(
-        #     dirs=dirs,
-        #     train_start="2018-01-01",
-        #     train_end="2021-12-31",
-        #     test_start="2022-01-01",
-        #     test_end="2022-12-31",
-        #     model="pangu",
-        #     training_output_vars=(training_vars, output_vars),
-        #     prediction_var=prediction_var,
-        #     nn_architecture="mlp",
-        #     region=region,
-        #     subregion="2x2",
-        #     lead_time=24,
-        #     simultaneous=True
-        # )
-
-    #============================================
-    # summary stat tables
-    #============================================
-
-
 
 
 
