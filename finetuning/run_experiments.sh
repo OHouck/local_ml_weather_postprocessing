@@ -149,6 +149,8 @@ for region in "${regions[@]}"; do
                             if [[ "$output_vars" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
                                 cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                             fi
+                        elif [[ "$loss_function" == "joint_temp_wind_loss" ]]; then
+                            cmd="$cmd --alternate_loss_fn=\"$loss_function\""
                         fi
                         
                         # Add bootstrap flag if region is in bootstrap_regions

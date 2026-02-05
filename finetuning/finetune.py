@@ -459,7 +459,7 @@ class UNet(nn.Module):
 # ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
-def load_optimal_hyperparameters(architecture, training_vars, output_vars):
+def load_optimal_hyperparameters(architecture, training_vars, output_vars, alternate_loss_fn):
     """
     Load optimal hyperparameters from hyperopt results.
 
@@ -467,6 +467,7 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars):
         architecture: 'mlp' or 'unet'
         training_vars: List of input variable names
         output_vars: Output variable name(s) - string or list of strings
+        alternate_loss_fn: Alternate loss function name (if any)
 
     Returns:
         Dictionary of optimal hyperparameters, or None if file not found
@@ -474,46 +475,51 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars):
     # Get the script's directory
     script_dir = Path(__file__).parent.parent
 
-    # Normalize output_vars to a list
-    if isinstance(output_vars, str):
-        output_vars = [output_vars]
-    elif isinstance(output_vars, (list, tuple)):
-        if len(output_vars) == 0:
-            print("Warning: output_vars list is empty")
-            return None
-        output_vars = list(output_vars)
+    if alternate_loss_fn == "joint_temp_wind_loss":
+        # currently for joint loss just do hyperparam tuning over usa_south for 1 day
+        results_file = script_dir / f"hyperopt_results_joint_wind_temperature_24h_{architecture}" / f"optimization_results_{architecture}.json"
 
-    # if using multiple training variables, use those hyperopt results
-    if len(training_vars) > 1:
-        multi_flag = "_multivar"
     else:
-        multi_flag = ""
-
-    # Map variable names to hyperopt result keys
-    VAR_KEY_MAP = {
-        "2m_temperature": "temperature",
-        "10m_wind_speed": "wind",
-    }
-
-    # For multiple output variables, try joint results first
-    if len(output_vars) > 1:
-        results_file = script_dir / f"hyperopt_results{multi_flag}_joint_{architecture}" / f"optimization_results_{architecture}.json"
-        if not results_file.exists():
-            # Fall back to first output variable's results
-            fallback_var = output_vars[0]
-            output_key = VAR_KEY_MAP.get(fallback_var)
-            if output_key is None:
-                print(f"Warning: No hyperparameter results available for output variables {output_vars}")
+        # Normalize output_vars to a list
+        if isinstance(output_vars, str):
+            output_vars = [output_vars]
+        elif isinstance(output_vars, (list, tuple)):
+            if len(output_vars) == 0:
+                print("Warning: output_vars list is empty")
                 return None
-            print(f"Warning: No joint hyperparameter results found for {output_vars}. "
-                  f"Falling back to results for '{fallback_var}'")
+            output_vars = list(output_vars)
+
+        # if using multiple training variables, use those hyperopt results
+        if len(training_vars) > 1:
+            multi_flag = "_multivar"
+        else:
+            multi_flag = ""
+
+        # Map variable names to hyperopt result keys
+        VAR_KEY_MAP = {
+            "2m_temperature": "temperature",
+            "10m_wind_speed": "wind",
+        }
+
+        # For multiple output variables, try joint results first
+        if len(output_vars) > 1:
+            results_file = script_dir / f"hyperopt_results{multi_flag}_joint_{architecture}" / f"optimization_results_{architecture}.json"
+            if not results_file.exists():
+                # Fall back to first output variable's results
+                fallback_var = output_vars[0]
+                output_key = VAR_KEY_MAP.get(fallback_var)
+                if output_key is None:
+                    print(f"Warning: No hyperparameter results available for output variables {output_vars}")
+                    return None
+                print(f"Warning: No joint hyperparameter results found for {output_vars}. "
+                    f"Falling back to results for '{fallback_var}'")
+                results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+        else:
+            output_key = VAR_KEY_MAP.get(output_vars[0])
+            if output_key is None:
+                print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
+                return None
             results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
-    else:
-        output_key = VAR_KEY_MAP.get(output_vars[0])
-        if output_key is None:
-            print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
-            return None
-        results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
 
     if not results_file.exists():
         print(f"Warning: Hyperparameter file not found at {results_file}")
@@ -1968,7 +1974,7 @@ def main():
     args = parse_args()
     
     # Load optimal hyperparameters based on architecture
-    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars)
+    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars, args.alternate_loss_fn)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
         if args.nn_architecture == 'mlp':

@@ -2170,6 +2170,7 @@ def plot_arch_experiment_results(
 
     # Storage for results
     results = {exp['name']: {lt: None for lt in lead_times} for exp in experiments}
+    training_times = {exp['name']: None for exp in experiments}
 
     # Load data for each experiment
     for exp in experiments:
@@ -2196,8 +2197,13 @@ def plot_arch_experiment_results(
         zarr_path = os.path.join(input_folder, generate_output_path(args))
         print(f"  Loading: {zarr_path}")
 
+
         try:
             ds = load_zarr_cached(zarr_path)
+
+            # get training time for each model
+            training_time = ds.training_time_minutes
+            training_times[exp['name']] = round(float(training_time), 2)
 
             # Calculate RMSE improvement for each lead time
             for lead_time in lead_times:
@@ -2260,7 +2266,7 @@ def plot_arch_experiment_results(
             edgecolor='black',
             linewidth=0.5,
             hatch=exp['hatch'],
-            label=exp['name'],
+            label=f"{exp['name']} ({training_times[exp['name']]:.1f} min)" if training_times[exp['name']] is not None else exp['name'],
             zorder=3
         )
 

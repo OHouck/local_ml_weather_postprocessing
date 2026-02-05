@@ -1,20 +1,20 @@
 {
   "architecture": "mlp",
   "best_hyperparams": {
-    "batch_size": 256,
-    "dropout_rate": 0.2808015354307172,
-    "hidden_dim": 128,
-    "lead_time_embedding_dim": 16,
-    "learning_rate": 0.0011629546127149728,
-    "min_delta": 2.012612242511354e-05,
-    "num_layers": 4,
-    "patience": 30,
-    "weight_decay": 6.71904037444635e-05
+    "batch_size": 64,
+    "dropout_rate": 0.19748122132522816,
+    "hidden_dim": 1024,
+    "lead_time_embedding_dim": 1,
+    "learning_rate": 4.612503304150433e-05,
+    "min_delta": 6.091890196228708e-05,
+    "num_layers": 2,
+    "patience": 20,
+    "weight_decay": 0.00037308394800227734
   },
-  "best_loss": 0.14228262640025519,
-  "best_epochs_trained": 189,
-  "n_evaluations": 1,
-  "region": "india",
+  "best_loss": 0.15524916922392912,
+  "best_epochs_trained": 64,
+  "n_evaluations": 200,
+  "region": "usa_south",
   "variables": [
     "2m_temperature",
     "10m_wind_speed"

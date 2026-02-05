@@ -56,19 +56,22 @@ def create_mlp_search_space():
     return {
         # Model architecture
         'hidden_dim': hp.choice('hidden_dim', [64, 128, 256, 512, 1024]),
-        'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6]),
+        # 'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6]),
+        'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6, 8, 10]),
 
         # Training parameters - OPTIMIZED: Higher learning rates
-        'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
+        # 'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
+        'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [64, 128, 256]),
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-3)),
 
         # Early stopping parameters - OPTIMIZED: Lower patience
-        'patience': hp.choice('patience', [15, 20, 25, 30]),
+        'patience': hp.choice('patience', [15, 20, 25, 30, 50, 100]),
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
         # Embedding and regularization
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
+        # 'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [1]),
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.3),
     }
 
@@ -150,6 +153,7 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         criterion = loss_functions[alternate_loss_fn]
 
         if alternate_loss_fn == "joint_temp_wind_loss":
+            # use partial to preserve signature
             criterion = partial(criterion, n_output_vars=n_output_vars,
                                 n_lat=n_lat, n_lon=n_lon)
 
@@ -733,14 +737,12 @@ if __name__ == "__main__":
         print("Enabled cudnn benchmarking for faster GPU training")
         print("Using mixed precision training (AMP) for CUDA operations")
 
-
-
     # Optimize MLP architecture
     mlp_results = optimize_hyperparameters(
         args=config,
         data_dir=data_dir,
         architecture="mlp",
-        max_evals=1,
+        max_evals=200,
         output_dir="hyperopt_results_joint_wind_temperature_24h_mlp",
         device=device,
         random_seed=42,
