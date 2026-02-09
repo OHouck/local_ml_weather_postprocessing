@@ -28,7 +28,7 @@ def main():
     test_start = "2022-01-01"
     test_end = "2022-12-31"
     model = "pangu"
-    nn_architecture = "unet"
+    nn_architecture = "mlp"
 
     for var in ["2m_temperature", "10m_wind_speed"]:
         # Generate plots

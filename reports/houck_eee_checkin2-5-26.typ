@@ -1,5 +1,7 @@
 = Ozma Houck EEE Check in Report 2-5-2026
 
+#let fig_dir = "figures/"
+
 === Main new project: How do weather forecast errors impact transmission congestion and LMPs 
 - In which areas do forecast errors most impact electricity prices? This is useful when designing forecasting models and when making decisions about where to invest in grid improving technologies.
 - In ERCOT, the marginal cost of generation without transmission constraints is called the system lambda. For the real-time market, it is available every 5 minutes. The difference between LMP and system lambda is due to transmission congestion.
@@ -23,16 +25,16 @@
 
 // Show maps of original errors and improvements from post processing
 #align(center)[
-  #image("figures/map_improvement_joint_temp_wind_loss_joint_temp_wind_pangu_texas_lt24h.png", width: 50%)
+  #image(fig_dir + "map_improvement_joint_temp_wind_loss_joint_temp_wind_pangu_texas_lt24h.png", width: 50%)
 ]
 #grid(
   columns: (1fr, 1fr),
   gutter: 10pt,
   // Row 1
-  image("figures/map_original_rmse_2m_temperature_pangu_texas_lt24h.png"),
-  image("figures/map_improvement_rmse_2m_temperature_pangu_texas_lt24h.png"),
+  image(fig_dir + "map_original_rmse_2m_temperature_pangu_texas_lt24h.png"),
+  image(fig_dir + "map_improvement_rmse_2m_temperature_pangu_texas_lt24h.png"),
   // Row 2
-  image("figures/map_original_rmse_10m_wind_speed_pangu_texas_lt24h.png"),
-  image("figures/map_improvement_rmse_10m_wind_speed_pangu_texas_lt24h.png"),
+  image(fig_dir + "map_original_rmse_10m_wind_speed_pangu_texas_lt24h.png"),
+  image(fig_dir + "map_improvement_rmse_10m_wind_speed_pangu_texas_lt24h.png"),
 )
 

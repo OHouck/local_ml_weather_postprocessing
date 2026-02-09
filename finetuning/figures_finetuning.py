@@ -160,8 +160,8 @@ def load_region_data(
     """
     Load and process zarr data for multiple regions.
 
-    This function consolidates the data loading logic for map_global_improvements
-    and plot_scatter_forecast_improvement. It returns a dictionary of patch data
+    This function consolidates the data loading logic for map_global_improvement, 
+    plot_scatter_forecast_improvement, and model_compare_boxplot. It returns a dictionary of patch data
 
     Parameters
     ----------
@@ -4392,47 +4392,24 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
 def main():
     dirs = setup_directories()
 
-    
 
-#=============================================
-# Main figure binscatter plots
-#=============================================
+    model_compare_boxplot(
+        dirs=dirs,
+        models=["pangu", "ifs"],
+        variables=["2m_temperature", "10m_wind_speed"],
+        regions=None,  # Use default continents
+        save_dir=None,  # Auto-generate based on parameters
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        nn_architecture="mlp",
+        subregion="6x6",
+        alternate_loss_fn=None
+    )
 
-    # # overlaying lead times for single model
-    # for model in ["pangu", "ifs"]:
-    #     for x_metric in ["sdor", "equator_distance"]:
-    #         _ = lead_time_compare_binscatter(
-    #             dirs=dirs,
-    #             model=model,
-    #             x_metric=x_metric
-    #         )
-    
-    # # Create plot comparing model binscatters
-    # for x_metric in ["sdor", "equator_distance"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         _ = model_compare_binscatter(
-    #             dirs=dirs,
-    #             variable=variable,
-    #             x_metric=x_metric
-    #         )
-#=============================================
-# Global Improvement Plots (scatter and maps for appendix)
-#=============================================
-    for model in ["pangu", "ifs"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            for binscatter in [True]:
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, x_metric="equator_distance", 
-                                                binscatter=binscatter)
-                plot_scatter_forecast_improvement(dirs=dirs, model=model, 
-                                                variable=variable, x_metric="sdor", 
-                                                binscatter=binscatter)
-            for map_type in ["original", "improvement"]:
-                for pixel_flag in [True]:
-                    map_global_improvements(dirs=dirs, model=model, 
-                                            variable=variable, map_type=map_type,
-                                            pixel_level=pixel_flag)
     exit()
+
 
 #=============================================
 # Binned RMSE Improvement Plots
@@ -4517,6 +4494,233 @@ def main():
     #                         loss_trained_on=loss_train_on
     #                     )
 
+
+def model_compare_boxplot(
+    dirs,
+    models=None,
+    variables=None,
+    regions=None,
+    save_dir=None,
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+    nn_architecture="mlp",
+    subregion="6x6",
+    alternate_loss_fn=None
+):
+    """
+    Create grouped boxplot comparing RMSE % improvement across models and lead times.
+
+    Creates a figure with 2 rows (one per variable) showing boxplots grouped by
+    lead time (1, 5, 9 days) with separate boxes for each model (Pangu, IFS).
+    The center line in each box represents the mean (not median).
+
+    Parameters
+    ----------
+    dirs : dict
+        Dictionary of directories (must include 'raw' and 'fig' keys)
+    models : list, optional
+        List of models to compare. Default: ["pangu", "ifs"]
+    variables : list, optional
+        List of variables to plot. Default: ["2m_temperature", "10m_wind_speed"]
+    regions : list, optional
+        List of regions to include. Default: all continents
+    save_dir : str, optional
+        Custom save directory. If None, auto-generates based on parameters
+    train_start : str, optional
+        Training start date (default: "2018-01-01")
+    train_end : str, optional
+        Training end date (default: "2021-12-31")
+    test_start : str, optional
+        Test start date (default: "2022-01-01")
+    test_end : str, optional
+        Test end date (default: "2022-12-31")
+    nn_architecture : str, optional
+        Neural network architecture: "mlp" or "unet" (default: "mlp")
+    subregion : str, optional
+        Subregion size pattern (default: "6x6")
+    alternate_loss_fn : str, optional
+        Alternate loss function name if used (default: None)
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure
+    """
+    # Set defaults
+    if models is None:
+        models = ["pangu", "ifs"]
+    if variables is None:
+        variables = ["2m_temperature", "10m_wind_speed"]
+
+    # Lead times in hours and their labels in days
+    lead_times = [24, 120, 216]
+    lead_time_labels = {24: "1 day", 120: "5 days", 216: "9 days"}
+
+    # Colors for each model
+    model_colors = {
+        "pangu": '#1f77b4',  # Blue
+        "ifs": '#ff7f0e'     # Orange
+    }
+
+    print(f"\nCreating model comparison boxplot")
+    print(f"Models: {models}")
+    print(f"Variables: {variables}")
+    print(f"Lead times: {lead_times} hours = {[lead_time_labels[lt] for lt in lead_times]}")
+    print(f"Architecture: {nn_architecture}")
+
+    # Create figure with 2 rows (one per variable)
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Process each variable (row)
+    for row_idx, variable in enumerate(variables):
+        print(f"\n{'='*60}")
+        print(f"Processing {variable}")
+        print(f"{'='*60}")
+
+        ax = axes[row_idx]
+
+        # Collect improvement data for each model and lead time
+        all_improvements = {model: {lt: [] for lt in lead_times} for model in models}
+
+        for model in models:
+            # Load region data for this model and variable
+            all_patch_data = load_region_data(
+                dirs=dirs,
+                model=model,
+                variable=variable,
+                regions=regions,
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                nn_architecture=nn_architecture,
+                subregion=subregion,
+                alternate_loss_fn=alternate_loss_fn,
+                lead_times=lead_times,
+                sdor_da=None
+            )
+
+            if all_patch_data is None:
+                print(f"Warning: No data available for {model} - {variable}")
+                continue
+
+            # Extract improvements for each lead time
+            for lt in lead_times:
+                if all_patch_data[lt]:
+                    improvements = [p['improvement'] for p in all_patch_data[lt]]
+                    all_improvements[model][lt] = improvements
+                    print(f"  {model} @ {lt}h: {len(improvements)} patches, "
+                          f"mean={np.mean(improvements):.2f}%")
+
+        # Prepare data for grouped boxplot
+        box_data = []
+        positions = []
+        colors_list = []
+
+        group_width = 0.8  # Width of each lead time group
+        box_width = 0.35   # Width of each box
+        n_models = len(models)
+
+        for i, lt in enumerate(lead_times):
+            group_center = i + 1  # Center position for this lead time group
+
+            for j, model in enumerate(models):
+                # Position boxes side by side within group
+                offset = (j - (n_models - 1) / 2) * box_width
+                positions.append(group_center + offset)
+
+                data = all_improvements[model][lt]
+                box_data.append(data if data else [0])  # Use [0] if no data
+                colors_list.append(model_colors[model])
+
+        # Create boxplot
+        bp = ax.boxplot(
+            box_data,
+            positions=positions,
+            widths=box_width * 0.8,
+            patch_artist=True,
+            showmeans=True,
+            meanline=True,
+            showfliers=True,
+            flierprops=dict(marker='o', markersize=4, alpha=0.5)
+        )
+
+        # Style the boxes
+        for patch, color in zip(bp['boxes'], colors_list):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+        # Style the mean lines (make them visible)
+        for mean_line in bp['means']:
+            mean_line.set_color('black')
+            mean_line.set_linewidth(2)
+
+        # Style the median lines (make them less prominent since we show mean)
+        for median_line in bp['medians']:
+            median_line.set_color('darkgray')
+            median_line.set_linewidth(1)
+            median_line.set_linestyle('--')
+
+        # Style whiskers and caps
+        for whisker in bp['whiskers']:
+            whisker.set_color('gray')
+            whisker.set_linewidth(1)
+        for cap in bp['caps']:
+            cap.set_color('gray')
+            cap.set_linewidth(1)
+
+        # Add horizontal line at y=0
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
+
+        # Configure axes
+        ax.set_xticks([1, 2, 3])
+        ax.set_xticklabels([lead_time_labels[lt] for lt in lead_times], fontsize=11)
+        ax.set_xlabel("Lead Time", fontsize=12)
+        ax.set_ylabel("RMSE Improvement (%)", fontsize=12)
+        ax.grid(True, alpha=0.3, linestyle='--', axis='y')
+
+        # Add variable title on the left
+        variable_title = variable.replace("_", " ").title()
+        ax.text(-0.08, 0.5, variable_title,
+                transform=ax.transAxes, fontsize=12, fontweight='bold',
+                rotation=90, verticalalignment='center')
+
+        # Add legend for first row only
+        if row_idx == 0:
+            legend_elements = [
+                plt.Rectangle((0, 0), 1, 1, facecolor=model_colors[model],
+                              alpha=0.7, label=model.upper())
+                for model in models
+            ]
+            # Add mean line indicator
+            legend_elements.append(
+                Line2D([0], [0], color='black', linewidth=2, label='Mean')
+            )
+            ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
+
+    # Add overall title
+    arch_label = nn_architecture.upper()
+    title = f'Model Comparison: RMSE Improvement by Lead Time ({arch_label})'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0.05, 0, 1, 0.98])
+
+    # Determine output directory
+    if save_dir is None:
+        out_folder = os.path.join(dirs["fig"], "model_comparison")
+    else:
+        out_folder = save_dir
+    os.makedirs(out_folder, exist_ok=True)
+
+    # Save figure
+    filename = f"model_compare_boxplot_{nn_architecture}.png"
+    save_path = os.path.join(out_folder, filename)
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\nFigure saved to: {save_path}")
+
+    return fig
 
 
 if __name__ == "__main__":

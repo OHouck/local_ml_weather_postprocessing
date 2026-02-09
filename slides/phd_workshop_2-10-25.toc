@@ -1,0 +1,6 @@
+\beamer@sectionintoc {1}{Background}{2}{0}{1}
+\beamer@sectionintoc {2}{Post-Processing Method}{6}{0}{2}
+\beamer@sectionintoc {3}{Global Results}{8}{0}{3}
+\beamer@sectionintoc {4}{Architecture Comparison}{18}{0}{4}
+\beamer@sectionintoc {5}{Custom Loss Functions}{21}{0}{5}
+\beamer@sectionintoc {6}{Appendix}{26}{1}{6}
