@@ -1369,10 +1369,6 @@ INPUT ./reference_pics//unet_explained.png
 INPUT ./reference_pics//unet_explained.png
 INPUT ./reference_pics//unet_explained.png
 INPUT ./reference_pics//unet_explained.png
-INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
-INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
-INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
-INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_2m_temperature_pangu_lt24.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_2m_temperature_pangu_lt24.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_2m_temperature_pangu_lt24.png
@@ -1406,6 +1402,14 @@ INPUT /Users/ohouck/globus/forecast_data/figures//pangu/lead_time_comparison/lea
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/lead_time_comparison/lead_time_compare_binscatter_sdor.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/lead_time_comparison/lead_time_compare_binscatter_sdor.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/lead_time_comparison/lead_time_compare_binscatter_sdor.png
+INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
+INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
+INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
+INPUT /Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png
+INPUT /Users/ohouck/globus/forecast_data/figures//pangu/binned_analysis/6x6/binned_rmse_trained_on_mse_2m_temperature_lt216h_pangu_mlp_multi_region_10bins.png
+INPUT /Users/ohouck/globus/forecast_data/figures//pangu/binned_analysis/6x6/binned_rmse_trained_on_mse_2m_temperature_lt216h_pangu_mlp_multi_region_10bins.png
+INPUT /Users/ohouck/globus/forecast_data/figures//pangu/binned_analysis/6x6/binned_rmse_trained_on_mse_2m_temperature_lt216h_pangu_mlp_multi_region_10bins.png
+INPUT /Users/ohouck/globus/forecast_data/figures//pangu/binned_analysis/6x6/binned_rmse_trained_on_mse_2m_temperature_lt216h_pangu_mlp_multi_region_10bins.png
 INPUT /usr/local/texlive/2023/texmf-dist/fonts/tfm/public/cm/cmssi10.tfm
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/architecture_comparison/arch_comparison_2m_temperature_india_6x6.png
 INPUT /Users/ohouck/globus/forecast_data/figures//pangu/architecture_comparison/arch_comparison_2m_temperature_india_6x6.png

@@ -1,7 +1,8 @@
 # Fdb version 4
-["pdflatex"] 1770668222 "/Users/ohouck/vc/ai_weather_ag/slides/phd_workshop_2-10-25.tex" "phd_workshop_2-10-25.pdf" "phd_workshop_2-10-25" 1770668233 0
+["pdflatex"] 1770750467 "/Users/ohouck/vc/ai_weather_ag/slides/phd_workshop_2-10-25.tex" "phd_workshop_2-10-25.pdf" "phd_workshop_2-10-25" 1770750482 0
   "/Users/ohouck/globus/forecast_data/figures//model_comparison/model_compare_boxplot_mlp.png" 1770572334 268386 29cd41d58ecd5d5894417f64b78f9068 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/architecture_comparison/arch_comparison_2m_temperature_india_6x6.png" 1770306352 326482 eddea176781b4268a99d485024e4699c ""
+  "/Users/ohouck/globus/forecast_data/figures//pangu/binned_analysis/6x6/binned_rmse_trained_on_mse_2m_temperature_lt216h_pangu_mlp_multi_region_10bins.png" 1764030000 379420 ab8d1ec776b0edff4431ce9f13c15585 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_10m_wind_speed_pangu_lt120.png" 1770138544 1561758 80cbcdfa49498e30302f30b891278221 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_10m_wind_speed_pangu_lt216.png" 1770138555 1533016 0183a741b58269b829c35532740bb418 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/global_maps/global_improvement_map_pixel_10m_wind_speed_pangu_lt24.png" 1770138533 1692516 1600a8e7a9e610ccd975e08c812e88cb ""
@@ -14,7 +15,7 @@
   "/Users/ohouck/globus/forecast_data/figures//pangu/regional_maps/map_improvement_rmse_10m_wind_speed_pangu_texas_lt24h.png" 1770333635 264626 c65ce226cacf6a82866eab035e6ba7f1 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/regional_maps/map_improvement_rmse_2m_temperature_pangu_texas_lt24h.png" 1770333634 262643 0956a8af1da8aae7eae5ebf984ff8661 ""
   "/Users/ohouck/globus/forecast_data/figures//pangu/subregion/region_size_comparison_2m_temperature_mlp_pangu.png" 1770653805 176545 d66c213089e9dd75518df8ee4352bee0 ""
-  "/Users/ohouck/vc/ai_weather_ag/slides/phd_workshop_2-10-25.tex" 1770668211 24102 219e4e8128e22ee4b408e1fc730e9130 ""
+  "/Users/ohouck/vc/ai_weather_ag/slides/phd_workshop_2-10-25.tex" 1770750451 23149 83baa7999ca9c5241644956616dd82dc ""
   "/usr/local/texlive/2023/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2023/texmf-dist/fonts/tfm/jknappen/ec/tcss1095.tfm" 1136768653 1536 f0fa079cdc83a6ffeda21e42352cf1ea ""
@@ -230,10 +231,10 @@
   "/usr/local/texlive/2023/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1702502669 4623355 b8cad38412faebe1ce5b780a45db67bd ""
   "/usr/local/texlive/2023/texmf-var/web2c/pdftex/pdflatex.fmt" 1702502667 7883459 fcbcf97f901c1be0601a48e4ee7d3c61 ""
   "/usr/local/texlive/2023/texmf.cnf" 1678822455 577 1b2b1af17af2508fb20dd85783af4050 ""
-  "phd_workshop_2-10-25.aux" 1770668232 6969 b4113498763d54765b30eaae136974bd "pdflatex"
-  "phd_workshop_2-10-25.nav" 1770668232 4239 cc0d866dd4f0a45f253ac0a7d4ff5d5b "pdflatex"
-  "phd_workshop_2-10-25.out" 1770668232 852 74aaa09bdb3e881397c20c4a318da134 "pdflatex"
-  "phd_workshop_2-10-25.tex" 1770668211 24102 219e4e8128e22ee4b408e1fc730e9130 ""
+  "phd_workshop_2-10-25.aux" 1770750482 7110 fb48aea3082c528593e7ac736bd817cd "pdflatex"
+  "phd_workshop_2-10-25.nav" 1770750482 4343 e994918d619cc69fecee97568e08af3d "pdflatex"
+  "phd_workshop_2-10-25.out" 1770750482 852 74aaa09bdb3e881397c20c4a318da134 "pdflatex"
+  "phd_workshop_2-10-25.tex" 1770750451 23149 83baa7999ca9c5241644956616dd82dc ""
   "reference_pics//ECMWF_supercomputer.png" 1761601199 1323366 9682ba4c8c63da152b444a86e44aea8c ""
   "reference_pics//mlp_explained.png" 1762210522 631969 1c448cb9cc1d7067dca15e09645a079d ""
   "reference_pics//unet_explained.png" 1762210881 870539 b2955735baaf2019a7b43e7c6953051f ""
