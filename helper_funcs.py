@@ -43,6 +43,10 @@ def generate_output_path(args):
         model_str = "mlp"
     elif args.nn_architecture == 'unet':
         model_str = "unet"
+    elif args.nn_architecture == 'rescnn':
+        model_str = "rescnn"
+    elif args.nn_architecture == 'resmlp':
+        model_str = "resmlp"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:

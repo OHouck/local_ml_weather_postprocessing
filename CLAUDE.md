@@ -113,11 +113,15 @@ REGION_CENTERS = {
 --output_vars        Variable(s) to correct, e.g. 2m_temperature
 --train_start/end    Date range YYYY-MM-DD
 --test_start/end     Date range YYYY-MM-DD
---nn_architecture    mlp | unet (default: mlp)
+--nn_architecture    mlp | unet | resmlp | rescnn (default: mlp)
 --alternate_loss_fn  extreme_heat_loss | mortality_weighted_loss | quantile_loss |
                      heatwave_loss | joint_temp_wind_loss
 --bootstrap          N  (run N bootstrap samples of subregions)
 --growing_season_only  Filter training to growing season only
+--ensemble           N  (train N seed-diverse MLPs, average predictions)
+--snapshot_ensemble  N  (train N snapshot ensemble runs, recommended: 3-5)
+--snapshot_epochs    Total epochs per snapshot run (default: 210)
+--snapshot_T0        Cosine cycle period for snapshots (default: 30)
 --mlp_hidden_dim     (default: 1024)
 --mlp_num_layers     (default: 6)
 --mlp_dropout        (default: 0.25)
@@ -268,7 +272,7 @@ python3 finetuning/hyperparam_tuning.py \
 
 - **Don't hardcode data paths** — always use `setup_directories()` from `helper_funcs.py`
 - **Adding a new machine**: edit the hostname check in `helper_funcs.setup_directories()`
-- **MLP is the recommended architecture**: trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
+- **MLP with snapshot ensemble is the recommended approach**: `--snapshot_ensemble 3` gives ~+20% MSE improvement in <1 min. Single MLP trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
 - **Extra input variables hurt or are neutral**: paper shows single-variable input is best for correcting 2m_temperature
 - **Bootstrap regions**: climate/topographic zones use `--bootstrap N`; filenames contain `bs*` and `filter_patch_zarr_files` matches on that pattern
 - **SDOR data** (standard deviation of orography from ERA5) must be loaded separately before calling `lead_time_compare_binscatter` with `x_metric="sdor"`

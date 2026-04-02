@@ -205,6 +205,307 @@ class ClassifierMLP(nn.Module):
 
 
 # ------------------------------
+# ResidualMLP: Enhanced MLP with residual connections and modern techniques
+# ------------------------------
+class ResidualMLPBlock(nn.Module):
+    """A single residual block for the MLP: Linear -> LayerNorm -> GELU -> Dropout -> Linear -> add residual."""
+    def __init__(self, dim, expansion_factor=2, dropout_rate=0.1):
+        super().__init__()
+        expanded_dim = int(dim * expansion_factor)
+        self.net = nn.Sequential(
+            nn.Linear(dim, expanded_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(expanded_dim, dim),
+            nn.Dropout(dropout_rate),
+        )
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x):
+        return x + self.net(self.norm(x))
+
+
+class ResidualMLP(nn.Module):
+    """
+    Enhanced MLP with pre-norm residual connections for weather forecast bias correction.
+
+    Improvements over SimpleMLP:
+    - Pre-norm residual connections: Each block adds its output to the input (natural for
+      error prediction). Pre-norm (LayerNorm before transformations) provides more stable
+      training gradients than post-norm.
+    - GELU activation: Smoother than ReLU, avoids dead neurons, widely used in modern
+      architectures (GPT, ViT). Particularly helpful for regression tasks.
+    - Expansion factor in residual blocks: Each block projects up to expanded_dim then
+      back down, following the MLP block design from Transformers. This gives more
+      representational capacity per block while keeping the residual dimension fixed.
+    - Spatial position encoding: Adds normalized lat/lon coordinates as extra input features,
+      giving the model location awareness without convolutions.
+    - Separate projection for input and output: The input projection maps to a hidden
+      dimension that's maintained through all residual blocks, then a separate output
+      projection maps to the output dimension.
+    - Cosine-similarity inspired: The fixed hidden dimension through residual blocks means
+      the model can build up complex representations incrementally.
+
+    Architecture:
+        Input (flattened spatial + position + day_of_year + lead_time_emb)
+        -> Linear projection to hidden_dim
+        -> N x ResidualBlock (LayerNorm -> Linear -> GELU -> Dropout -> Linear -> add residual)
+        -> LayerNorm -> Linear projection to output_dim
+    """
+    def __init__(self, input_dim, hidden_dim=768, output_dim=1,
+                 num_blocks=6, expansion_factor=2, dropout_rate=0.15,
+                 n_lead_times=1, lead_time_embedding_dim=8,
+                 n_lat=None, n_lon=None):
+        super().__init__()
+
+        self.n_lead_times = n_lead_times
+        self.n_lat = n_lat
+        self.n_lon = n_lon
+
+        # Lead time embedding
+        self.lead_time_embedding = None
+        actual_input_dim = input_dim + 2  # +2 for day-of-year sin/cos
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            actual_input_dim += lead_time_embedding_dim
+
+        # No spatial position features for MLP (keeps input dim manageable)
+        self.pos_features = None
+
+        # Input projection
+        self.input_proj = nn.Sequential(
+            nn.Linear(actual_input_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_rate),
+        )
+
+        # Residual blocks
+        self.blocks = nn.ModuleList([
+            ResidualMLPBlock(hidden_dim, expansion_factor, dropout_rate)
+            for _ in range(num_blocks)
+        ])
+
+        # Output projection
+        self.output_proj = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
+        """
+        Forward pass.
+
+        Args:
+            x: Flattened input [batch, input_dim]
+            lead_time_idx: Lead time indices [batch]
+            day_of_year_features: Day-of-year sin/cos [batch, 2]
+
+        Returns:
+            Output [batch, output_dim]
+        """
+        parts = [x]
+
+        # Add day-of-year features
+        if day_of_year_features is not None:
+            parts.append(day_of_year_features)
+
+        # Add lead time embedding
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            parts.append(self.lead_time_embedding(lead_time_idx))
+
+        x = torch.cat(parts, dim=-1)
+
+        # Input projection
+        x = self.input_proj(x)
+
+        # Residual blocks
+        for block in self.blocks:
+            x = block(x)
+
+        # Output projection
+        return self.output_proj(x)
+
+
+# ------------------------------
+# ResCNN: FiLM-conditioned Residual CNN for spatial bias correction
+# ------------------------------
+class FiLMLayer(nn.Module):
+    """Feature-wise Linear Modulation (FiLM) layer.
+
+    Conditions convolutional feature maps on external information (lead time,
+    day-of-year) by learning per-channel scale (gamma) and shift (beta) parameters.
+    This is more expressive than simple concatenation because it modulates features
+    multiplicatively.
+
+    Reference: Perez et al., "FiLM: Visual Reasoning with a General Conditioning Layer", AAAI 2018.
+    """
+    def __init__(self, conditioning_dim, n_channels):
+        super().__init__()
+        self.scale = nn.Linear(conditioning_dim, n_channels)
+        self.shift = nn.Linear(conditioning_dim, n_channels)
+        # Initialize scale to 1 and shift to 0 (identity transform at init)
+        nn.init.ones_(self.scale.weight.data[:, 0] if conditioning_dim > 0 else self.scale.weight.data)
+        nn.init.zeros_(self.scale.bias.data)
+        nn.init.zeros_(self.shift.weight.data)
+        nn.init.zeros_(self.shift.bias.data)
+
+    def forward(self, x, conditioning):
+        """
+        Args:
+            x: Feature maps [batch, channels, H, W]
+            conditioning: Conditioning vector [batch, conditioning_dim]
+        Returns:
+            Modulated feature maps [batch, channels, H, W]
+        """
+        gamma = self.scale(conditioning).unsqueeze(-1).unsqueeze(-1)  # [B, C, 1, 1]
+        beta = self.shift(conditioning).unsqueeze(-1).unsqueeze(-1)   # [B, C, 1, 1]
+        return gamma * x + beta
+
+
+class ResBlock(nn.Module):
+    """Residual block with FiLM conditioning.
+
+    Two 3x3 convolutions with BatchNorm and ReLU, plus a FiLM conditioning layer
+    applied after the first conv. The skip connection adds the input directly to
+    the output, which is a natural fit for error-prediction tasks.
+    """
+    def __init__(self, channels, conditioning_dim, dropout_rate=0.1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.film = FiLMLayer(conditioning_dim, channels)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+        self.dropout = nn.Dropout2d(dropout_rate) if dropout_rate > 0 else nn.Identity()
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x, conditioning):
+        residual = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.film(out, conditioning)
+        out = self.dropout(out)
+        out = self.bn2(self.conv2(out))
+        out = self.dropout(out)
+        out = self.relu(out + residual)
+        return out
+
+
+class ResCNN(nn.Module):
+    """
+    FiLM-conditioned Residual CNN for weather forecast bias correction.
+
+    Unlike the MLP which flattens spatial structure, this model operates directly
+    on the 2D grid using convolutions. Unlike the UNet which uses pooling/upsampling,
+    this model maintains full resolution throughout, which is more appropriate for
+    the small 24x24 grids used in 6x6 degree patches.
+
+    Key design choices:
+    - Residual connections: Natural fit since the model predicts a residual error
+    - FiLM conditioning: Modulates conv features based on lead time and day-of-year,
+      more expressive than simple concatenation
+    - No pooling: Preserves spatial resolution for small grids
+    - Spatial position encoding: Adds normalized lat/lon as extra input channels
+    - BatchNorm: Stabilizes training
+
+    Architecture:
+        Input (n_vars, H, W) + position encoding -> Conv stem -> N ResBlocks with FiLM -> Conv head -> Output (n_output_vars, H, W)
+    """
+    def __init__(self, input_dim, hidden_dim=64, output_dim=1,
+                 n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
+                 n_lead_times=1, lead_time_embedding_dim=8,
+                 num_res_blocks=6, dropout_rate=0.1):
+        super().__init__()
+
+        if n_lat is None or n_lon is None or n_input_vars is None:
+            raise ValueError("n_lat, n_lon, and n_input_vars must be provided for ResCNN")
+
+        self.n_lat = n_lat
+        self.n_lon = n_lon
+        self.n_input_vars = n_input_vars
+        self.n_output_vars = n_output_vars if n_output_vars is not None else 1
+        self.n_lead_times = n_lead_times
+        self.num_res_blocks = num_res_blocks
+
+        # Conditioning: day-of-year (2) + optional lead time embedding
+        self.lead_time_embedding = None
+        conditioning_dim = 2  # sin/cos of day-of-year
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            conditioning_dim += lead_time_embedding_dim
+
+        # Input channels: n_input_vars + 2 (lat/lon position encoding)
+        in_channels = n_input_vars + 2
+
+        # Stem: project input channels to hidden_dim
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dim, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_dim),
+            nn.ReLU(inplace=True),
+        )
+
+        # Residual blocks with FiLM conditioning
+        self.res_blocks = nn.ModuleList([
+            ResBlock(hidden_dim, conditioning_dim, dropout_rate)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Output head: project to output channels
+        self.head = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_dim // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hidden_dim // 2, self.n_output_vars, kernel_size=1),
+        )
+
+        # Pre-compute position encoding grid (registered as buffer so it moves with .to(device))
+        lat_grid = torch.linspace(-1, 1, n_lat).unsqueeze(1).expand(n_lat, n_lon).unsqueeze(0)  # [1, H, W]
+        lon_grid = torch.linspace(-1, 1, n_lon).unsqueeze(0).expand(n_lat, n_lon).unsqueeze(0)  # [1, H, W]
+        self.register_buffer('pos_encoding', torch.cat([lat_grid, lon_grid], dim=0))  # [2, H, W]
+
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
+        """
+        Forward pass.
+
+        Args:
+            x: Flattened input [batch, n_input_vars * n_lat * n_lon] (for compatibility with existing pipeline)
+            lead_time_idx: Lead time indices [batch]
+            day_of_year_features: Day-of-year sin/cos [batch, 2]
+
+        Returns:
+            Flattened output [batch, n_output_vars * n_lat * n_lon]
+        """
+        batch_size = x.shape[0]
+
+        # Reshape to spatial format
+        x = x.view(batch_size, self.n_input_vars, self.n_lat, self.n_lon)
+
+        # Add position encoding (broadcast across batch)
+        pos = self.pos_encoding.unsqueeze(0).expand(batch_size, -1, -1, -1)
+        x = torch.cat([x, pos], dim=1)
+
+        # Build conditioning vector
+        cond_parts = []
+        if day_of_year_features is not None:
+            cond_parts.append(day_of_year_features)
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            cond_parts.append(self.lead_time_embedding(lead_time_idx))
+        conditioning = torch.cat(cond_parts, dim=1) if cond_parts else torch.zeros(batch_size, 2, device=x.device)
+
+        # Stem
+        x = self.stem(x)
+
+        # Residual blocks with FiLM conditioning
+        for block in self.res_blocks:
+            x = block(x, conditioning)
+
+        # Output head
+        x = self.head(x)
+
+        # Flatten for compatibility with existing pipeline
+        return x.view(batch_size, -1)
+
+
+# ------------------------------
 # U-Net definition with lead time and day-of-year encoding
 # ------------------------------
 class UNet(nn.Module):
@@ -555,7 +856,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet'])
+    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet', 'rescnn', 'resmlp'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
@@ -575,6 +876,38 @@ def parse_args():
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
+
+    # ResCNN hyperparameters
+    parser.add_argument('--rescnn_hidden_dim', type=int, default=64,
+                        help='Number of channels in ResCNN residual blocks (default: 64)')
+    parser.add_argument('--rescnn_num_blocks', type=int, default=6,
+                        help='Number of residual blocks in ResCNN (default: 6)')
+    parser.add_argument('--rescnn_dropout', type=float, default=0.1,
+                        help='Dropout rate for ResCNN (default: 0.1)')
+
+    # ResidualMLP hyperparameters
+    parser.add_argument('--resmlp_hidden_dim', type=int, default=768,
+                        help='Hidden dimension for ResidualMLP (default: 768)')
+    parser.add_argument('--resmlp_num_blocks', type=int, default=6,
+                        help='Number of residual blocks for ResidualMLP (default: 6)')
+    parser.add_argument('--resmlp_expansion', type=float, default=2.0,
+                        help='Expansion factor in ResidualMLP blocks (default: 2.0)')
+    parser.add_argument('--resmlp_dropout', type=float, default=0.15,
+                        help='Dropout rate for ResidualMLP (default: 0.15)')
+
+    # Ensemble
+    parser.add_argument('--ensemble', type=int, default=None,
+                        help='If set, train N models with different seeds and average predictions. '
+                             'Recommended: 5-7 for best accuracy/speed tradeoff.')
+    parser.add_argument('--snapshot_ensemble', type=int, default=None,
+                        help='If set, train N independent snapshot ensemble runs, each saving '
+                             'checkpoints at cosine cycle minima and averaging all snapshots. '
+                             'Recommended: 3-5 runs for best accuracy/speed tradeoff. '
+                             'Each run produces ~7 snapshots (210 epochs / T_0=30).')
+    parser.add_argument('--snapshot_epochs', type=int, default=210,
+                        help='Total epochs per snapshot ensemble run (default: 210)')
+    parser.add_argument('--snapshot_T0', type=int, default=30,
+                        help='Cosine cycle period for snapshot ensemble (default: 30)')
 
     return parser.parse_args()
 
@@ -1030,6 +1363,224 @@ def train_model(model, train_loader, valid_loader, epochs, lr, device,
     # Load best weights
     model.load_state_dict(best_model_wts)
     return model, training_time_minutes
+
+
+def train_model_cosine(model, train_loader, valid_loader, epochs, lr, device,
+                       weight_decay=0, patience=50, min_delta=1e-5, grad_clip=1.0,
+                       scheduler_T0=30, scheduler_Tmult=2):
+    """
+    Train model with cosine annealing warm restarts and gradient clipping.
+
+    Uses AdamW optimizer with CosineAnnealingWarmRestarts scheduler instead of
+    ReduceLROnPlateau. The warm restarts periodically increase the learning rate,
+    which helps escape local minima and provides implicit regularization through
+    varied learning rates during training.
+
+    Gradient clipping prevents exploding gradients, particularly useful with
+    cosine annealing where LR jumps back up after each restart.
+
+    Args:
+        model: PyTorch model to train
+        train_loader: DataLoader for training data
+        valid_loader: DataLoader for validation data
+        epochs: Maximum number of epochs
+        lr: Initial/peak learning rate
+        device: Device (cpu/cuda/mps)
+        weight_decay: L2 regularization (AdamW decoupled weight decay)
+        patience: Early stopping patience
+        min_delta: Minimum improvement threshold for early stopping
+        grad_clip: Maximum gradient norm (0 to disable)
+        scheduler_T0: Initial period for cosine annealing restarts
+        scheduler_Tmult: Multiplier for restart period (period doubles each restart)
+
+    Returns:
+        model: Trained model with best weights
+        training_time_minutes: Training duration in minutes
+    """
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=scheduler_T0, T_mult=scheduler_Tmult, eta_min=1e-6)
+
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    best_model_wts = copy.deepcopy(model.state_dict())
+    train_start_time = time.time()
+
+    for epoch in range(1, epochs + 1):
+        # --- training step ---
+        model.train()
+        train_loss = 0.0
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device)
+            fc_output_batch = fc_output_batch.to(device)
+            y_batch = y_batch.to(device)
+            lead_time_batch = lead_time_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            optimizer.zero_grad()
+            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+            preds = fc_output_batch + pred_error
+            loss = criterion(preds, y_batch)
+            loss.backward()
+
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+            optimizer.step()
+            train_loss += loss.item() * fc_output_batch.size(0)
+
+        train_loss /= len(train_loader.dataset)
+        scheduler.step()
+
+        # --- validation step ---
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                fc_input_batch = fc_input_batch.to(device)
+                fc_output_batch = fc_output_batch.to(device)
+                y_batch = y_batch.to(device)
+                lead_time_batch = lead_time_batch.to(device)
+                doy_batch = doy_batch.to(device)
+                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                preds = fc_output_batch + pred_error
+                loss = criterion(preds, y_batch)
+                val_loss += loss.item() * fc_output_batch.size(0)
+        val_loss /= len(valid_loader.dataset)
+
+        # --- early stopping check ---
+        if val_loss + min_delta < best_val_loss:
+            best_val_loss = val_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epoch % 10 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, "
+                  f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}, "
+                  f"Best Val: {best_val_loss:.6f}, Patience: {epochs_without_improvement}/{patience}")
+
+        if epochs_without_improvement >= patience:
+            print(f"\u2192 Early stopping at epoch {epoch}. "
+                  f"No improvement in {patience} epochs.")
+            break
+
+    train_end_time = time.time()
+    training_time_minutes = (train_end_time - train_start_time) / 60.0
+
+    model.load_state_dict(best_model_wts)
+    return model, training_time_minutes
+
+
+def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, device,
+                            weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1):
+    """
+    Train a single model and save snapshots at the end of each cosine annealing cycle.
+
+    Instead of early stopping, this runs for a fixed number of epochs and saves the
+    model weights at each point where the cosine learning rate schedule reaches its
+    minimum (end of each cycle). These snapshots can be averaged at inference time
+    to create a "free" ensemble from a single training run.
+
+    This approach works because:
+    - Each cosine cycle converges to a different local minimum
+    - Averaging predictions from different local minima reduces variance
+    - Training time is ~3x less than training N separate models
+
+    Args:
+        model: PyTorch model to train
+        train_loader: DataLoader for training data
+        valid_loader: DataLoader for validation data
+        epochs: Total number of training epochs
+        lr: Initial/peak learning rate
+        device: Device (cpu/cuda/mps)
+        weight_decay: L2 regularization (AdamW decoupled weight decay)
+        grad_clip: Maximum gradient norm (0 to disable)
+        T_0: Cosine cycle period in epochs (default: 30)
+        T_mult: Multiplier for cycle period (1 = fixed period, 2 = doubling)
+
+    Returns:
+        snapshots: List of (state_dict, val_loss) tuples for each snapshot
+        training_time_minutes: Training duration in minutes
+    """
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=T_0, T_mult=T_mult, eta_min=1e-6)
+
+    snapshots = []
+    train_start_time = time.time()
+
+    for epoch in range(1, epochs + 1):
+        # --- training step ---
+        model.train()
+        train_loss = 0.0
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device)
+            fc_output_batch = fc_output_batch.to(device)
+            y_batch = y_batch.to(device)
+            lead_time_batch = lead_time_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            optimizer.zero_grad()
+            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+            preds = fc_output_batch + pred_error
+            loss = criterion(preds, y_batch)
+            loss.backward()
+
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+            optimizer.step()
+            train_loss += loss.item() * fc_output_batch.size(0)
+
+        train_loss /= len(train_loader.dataset)
+        scheduler.step()
+
+        # Check if we're at a cycle boundary (LR minimum)
+        if T_mult == 1:
+            is_cycle_end = (epoch % T_0 == 0)
+        else:
+            cycle_sum = 0
+            is_cycle_end = False
+            for c in range(20):
+                cycle_sum += T_0 * (T_mult ** c)
+                if epoch == cycle_sum:
+                    is_cycle_end = True
+                    break
+
+        if is_cycle_end:
+            # Evaluate on validation set
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                    fc_input_batch = fc_input_batch.to(device)
+                    fc_output_batch = fc_output_batch.to(device)
+                    y_batch = y_batch.to(device)
+                    lead_time_batch = lead_time_batch.to(device)
+                    doy_batch = doy_batch.to(device)
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    preds = fc_output_batch + pred_error
+                    loss = criterion(preds, y_batch)
+                    val_loss += loss.item() * fc_output_batch.size(0)
+            val_loss /= len(valid_loader.dataset)
+
+            snapshots.append((copy.deepcopy(model.state_dict()), val_loss))
+            print(f"  Snapshot at epoch {epoch}/{epochs}, val_loss={val_loss:.6f}")
+
+        if epoch % 50 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"  Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, LR: {current_lr:.2e}")
+
+    train_end_time = time.time()
+    training_time_minutes = (train_end_time - train_start_time) / 60.0
+
+    print(f"  Snapshot training complete: {len(snapshots)} snapshots in {training_time_minutes:.2f} min")
+    return snapshots, training_time_minutes
 
 
 def train_classifier(model, train_loader, valid_loader, epochs, lr, device,
@@ -1852,6 +2403,42 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      lead_time_embedding_dim=lead_time_emb_dim,
                      dropout_rate=args.unet_dropout).to(device)
         num_epochs = 500
+    elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'rescnn':
+        print(f"Using ResCNN with {n_lead_times} lead times")
+        print(f"  ResCNN hidden_dim: {args.rescnn_hidden_dim}")
+        print(f"  ResCNN num_blocks: {args.rescnn_num_blocks}")
+        print(f"  ResCNN dropout: {args.rescnn_dropout}")
+        print(f"  ResCNN lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = ResCNN(input_dim=input_dim,
+                       hidden_dim=args.rescnn_hidden_dim,
+                       output_dim=output_dim,
+                       n_lat=n_lat, n_lon=n_lon,
+                       n_input_vars=n_training_vars,
+                       n_output_vars=n_output_vars,
+                       n_lead_times=n_lead_times,
+                       lead_time_embedding_dim=lead_time_emb_dim,
+                       num_res_blocks=args.rescnn_num_blocks,
+                       dropout_rate=args.rescnn_dropout
+                       ).to(device)
+        num_epochs = 500
+    elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'resmlp':
+        print(f"Using ResidualMLP with {n_lead_times} lead times")
+        print(f"  ResidualMLP hidden_dim: {args.resmlp_hidden_dim}")
+        print(f"  ResidualMLP num_blocks: {args.resmlp_num_blocks}")
+        print(f"  ResidualMLP expansion: {args.resmlp_expansion}")
+        print(f"  ResidualMLP dropout: {args.resmlp_dropout}")
+        print(f"  ResidualMLP lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = ResidualMLP(input_dim=input_dim,
+                            hidden_dim=args.resmlp_hidden_dim,
+                            output_dim=output_dim,
+                            num_blocks=args.resmlp_num_blocks,
+                            expansion_factor=args.resmlp_expansion,
+                            dropout_rate=args.resmlp_dropout,
+                            n_lead_times=n_lead_times,
+                            lead_time_embedding_dim=lead_time_emb_dim,
+                            n_lat=n_lat, n_lon=n_lon,
+                            ).to(device)
+        num_epochs = 500
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times")
         print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
@@ -1880,39 +2467,169 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     print(f"  patience: {patience}")
     print(f"  min_delta: {min_delta}")
 
-    # Train model
-    model, training_time_minutes = train_model(model, train_loader, val_loader,
-                                                epochs=num_epochs, lr=lr,
-                                                device=device,
-                                                weight_decay=weight_decay,
-                                                stats_out=stats_out,
-                                                alternate_loss_fn=args.alternate_loss_fn,
-                                                patience=patience,
-                                                min_delta=min_delta,
-                                                scheduler_patience=10,
-                                                scheduler_factor=0.5,
-                                                min_lr=1e-7,
-                                                n_lead_times=n_lead_times,
-                                                lead_time_days=lead_time_days,
-                                                n_output_vars=n_output_vars,
-                                                n_lat=n_lat,
-                                                n_lon=n_lon
-                                              )
-    print(f"Training complete in {training_time_minutes:.2f} minutes")
+    # Determine ensemble mode
+    n_ensemble = getattr(args, 'ensemble', None) or 1
+    n_snapshot = getattr(args, 'snapshot_ensemble', None) or 0
+    use_ensemble = n_ensemble > 1
+    use_snapshot = n_snapshot > 0
 
+    if use_snapshot:
+        print(f"\n{'='*50}")
+        print(f"SNAPSHOT ENSEMBLE: {n_snapshot} runs")
+        print(f"{'='*50}")
+    elif use_ensemble:
+        print(f"\n{'='*50}")
+        print(f"ENSEMBLE TRAINING: {n_ensemble} members")
+        print(f"{'='*50}")
+
+    # Load test data before ensemble loop (only need to load once)
     load_time = time.time()
-    # Load test data
     (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
      test_times, _, _, _, _, _, _, _) = \
         load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
-
-    # Apply correction
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
     test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
-    corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                test_lead_time_indices,
-                                test_day_of_year_features, device)
-    corrected = (corrected * stats_out['std']) + stats_out['mean']
+
+    ensemble_corrections = []
+    training_time_minutes = 0.0
+
+    # Helper to create a fresh model instance
+    def _create_model():
+        if hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
+            return UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
+                        n_input_vars=n_training_vars, n_output_vars=n_output_vars,
+                        n_lead_times=n_lead_times,
+                        lead_time_embedding_dim=lead_time_emb_dim,
+                        dropout_rate=args.unet_dropout).to(device)
+        elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'rescnn':
+            return ResCNN(input_dim=input_dim, hidden_dim=args.rescnn_hidden_dim,
+                          output_dim=output_dim, n_lat=n_lat, n_lon=n_lon,
+                          n_input_vars=n_training_vars, n_output_vars=n_output_vars,
+                          n_lead_times=n_lead_times, lead_time_embedding_dim=lead_time_emb_dim,
+                          num_res_blocks=args.rescnn_num_blocks,
+                          dropout_rate=args.rescnn_dropout).to(device)
+        elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'resmlp':
+            return ResidualMLP(input_dim=input_dim, hidden_dim=args.resmlp_hidden_dim,
+                               output_dim=output_dim, num_blocks=args.resmlp_num_blocks,
+                               expansion_factor=args.resmlp_expansion,
+                               dropout_rate=args.resmlp_dropout,
+                               n_lead_times=n_lead_times,
+                               lead_time_embedding_dim=lead_time_emb_dim,
+                               n_lat=n_lat, n_lon=n_lon).to(device)
+        else:
+            return SimpleMLP(input_dim=input_dim, hidden_dim=args.mlp_hidden_dim,
+                             output_dim=output_dim,
+                             num_hidden_layers=args.mlp_num_layers,
+                             n_lead_times=n_lead_times,
+                             lead_time_embedding_dim=lead_time_emb_dim,
+                             dropout_rate=args.mlp_dropout).to(device)
+
+    if use_snapshot:
+        # ---- Snapshot ensemble: train N runs, save snapshots at cosine cycle minima ----
+        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(args, 'snapshot_T0', 30)
+
+        for run_i in range(n_snapshot):
+            ens_seed = run_i * 17 + 1
+            torch.manual_seed(ens_seed)
+            np.random.seed(ens_seed * 13 + 7)
+
+            print(f"\n--- Snapshot run {run_i+1}/{n_snapshot} (seed={ens_seed}) ---")
+
+            # Different train/val split per run
+            idx = np.arange(n_samples)
+            np.random.shuffle(idx)
+            split = int(0.8 * n_samples)
+            t_idx, v_idx = idx[:split], idx[split:]
+
+            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                 batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                               batch_size=batch_size, device=device)
+
+            model = _create_model()
+            snapshots, run_time = train_snapshot_ensemble(
+                model, run_train_loader, run_val_loader,
+                epochs=snapshot_epochs, lr=lr, device=device,
+                weight_decay=weight_decay, grad_clip=1.0,
+                T_0=snapshot_T0, T_mult=1)
+            training_time_minutes += run_time
+
+            # Generate predictions from each snapshot
+            for snap_weights, snap_val_loss in snapshots:
+                model.load_state_dict(snap_weights)
+                snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                  test_lead_time_indices,
+                                                  test_day_of_year_features, device)
+                snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
+                ensemble_corrections.append(snap_corrected)
+
+        corrected = np.mean(ensemble_corrections, axis=0)
+        total_snapshots = len(ensemble_corrections)
+        print(f"\nSnapshot ensemble complete: {n_snapshot} runs, {total_snapshots} total snapshots, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    else:
+        # ---- Standard training (single or seed-diverse ensemble) ----
+        for ens_i in range(n_ensemble):
+            if use_ensemble:
+                print(f"\n--- Ensemble member {ens_i+1}/{n_ensemble} (seed={ens_i*17+1}) ---")
+                # Different seed and train/val split per ensemble member
+                ens_seed = ens_i * 17 + 1
+                torch.manual_seed(ens_seed)
+                np.random.seed(ens_seed * 13 + 7)
+
+                # Re-split train/validation with new seed
+                idx = np.arange(n_samples)
+                np.random.shuffle(idx)
+                split = int(0.8 * n_samples)
+                t_idx, v_idx = idx[:split], idx[split:]
+
+                train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                batch_size=batch_size, device=device)
+                val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                              lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                              batch_size=batch_size, device=device)
+
+                model = _create_model()
+
+            # Train this model - use cosine annealing for ensemble, standard for single
+            if use_ensemble:
+                model, member_time = train_model_cosine(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience,
+                    min_delta=min_delta, grad_clip=1.0)
+            else:
+                model, member_time = train_model(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, stats_out=stats_out,
+                    alternate_loss_fn=args.alternate_loss_fn,
+                    patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                    n_lead_times=n_lead_times, lead_time_days=lead_time_days,
+                    n_output_vars=n_output_vars, n_lat=n_lat, n_lon=n_lon)
+
+            training_time_minutes += member_time
+            print(f"{'Member' if use_ensemble else 'Training'} complete in {member_time:.2f} minutes")
+
+            # Apply correction
+            member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                test_lead_time_indices,
+                                                test_day_of_year_features, device)
+            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+            ensemble_corrections.append(member_corrected)
+
+        # Average ensemble predictions (or just use the single model's correction)
+        if use_ensemble:
+            corrected = np.mean(ensemble_corrections, axis=0)
+            print(f"\nEnsemble of {n_ensemble} members complete. Total training: {training_time_minutes:.2f} minutes")
+        else:
+            corrected = ensemble_corrections[0]
 
     # Calculate MSE per lead time (aggregate and per-variable)
     for lt_idx, lead_time in enumerate(args.lead_time_hours):
@@ -1985,7 +2702,16 @@ def main():
         elif args.nn_architecture == 'unet':
             args.unet_hidden_dim = optimal_hyperparams.get('hidden_dim', args.unet_hidden_dim)
             args.unet_dropout = optimal_hyperparams.get('dropout_rate', args.unet_dropout)
-        
+        elif args.nn_architecture == 'rescnn':
+            args.rescnn_hidden_dim = optimal_hyperparams.get('hidden_dim', args.rescnn_hidden_dim)
+            args.rescnn_num_blocks = optimal_hyperparams.get('num_blocks', args.rescnn_num_blocks)
+            args.rescnn_dropout = optimal_hyperparams.get('dropout_rate', args.rescnn_dropout)
+        elif args.nn_architecture == 'resmlp':
+            args.resmlp_hidden_dim = optimal_hyperparams.get('hidden_dim', args.resmlp_hidden_dim)
+            args.resmlp_num_blocks = optimal_hyperparams.get('num_blocks', args.resmlp_num_blocks)
+            args.resmlp_expansion = optimal_hyperparams.get('expansion_factor', args.resmlp_expansion)
+            args.resmlp_dropout = optimal_hyperparams.get('dropout_rate', args.resmlp_dropout)
+
         # Store training hyperparameters for use later
         args.optimal_lr = optimal_hyperparams.get('learning_rate', None)
         args.optimal_batch_size = optimal_hyperparams.get('batch_size', None)
