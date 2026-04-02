@@ -1,903 +1,275 @@
-# CLAUDE.md - AI Weather AG Repository Guide for AI Assistants
+# CLAUDE.md — AI Weather Forecast Post-Processing
 
-**Version**: 1.0
-**Last Updated**: 2025-11-14
-**Target Audience**: AI assistants (Claude, GPT, etc.) working with this codebase
-
----
-
-## TABLE OF CONTENTS
-
-1. [Project Overview](#project-overview)
-2. [Codebase Structure](#codebase-structure)
-3. [Development Workflows](#development-workflows)
-4. [Key Conventions](#key-conventions)
-5. [Common Tasks](#common-tasks)
-6. [Data Organization](#data-organization)
-7. [Important Files Reference](#important-files-reference)
-8. [Best Practices](#best-practices)
-9. [Common Pitfalls](#common-pitfalls)
-10. [Additional Resources](#additional-resources)
+**Project**: "Tailoring machine learning weather predictions for local impacts"
+**Authors**: Ozma Houck & James Franke (University of Chicago)
+**Purpose**: Train computationally cheap neural networks to post-process weather forecast errors, improving regional forecast skill for local applications.
 
 ---
 
-## PROJECT OVERVIEW
+## Project Summary
 
-### Purpose
-This repository implements **neural network-based post-processing** (bias correction) for AI weather forecasts. The primary goal is to reduce RMSE (Root Mean Squared Error) in 2m temperature and 10m wind speed predictions from models like Pangu, ECMWF IFS, and AIFS for specific geographic regions.
+The core idea: train lightweight neural networks (MLP or U-Net) to predict the **error** in existing global weather forecasts (Pangu-Weather, ECMWF IFS) and subtract that error. This is applied independently to 6×6 degree regional patches across global land surface.
 
-### Core Technology Stack
-- **Language**: Python 3.11+
-- **Deep Learning**: PyTorch 2.1.0+, torchvision 0.16.0+
-- **Data Processing**: xarray 2025+, Dask, zarr 3+
-- **Weather Data**: WeatherBench2, ERA5 reanalysis
-- **Visualization**: matplotlib, cartopy
-- **Environment**: Works on both Mac (development) and Linux clusters (SLURM)
-
-### Key Models
-1. **SimpleMLP**: Multi-layer perceptron for flattened spatial data
-2. **UNet**: Convolutional U-Net for preserving spatial structure
-3. **Aurora**: Microsoft's foundation weather model (separate module)
+Key findings in the paper:
+- Mean RMSE improvement of ~10% for 2m temperature, ~14% for 10m wind speed
+- Improvement is larger near the equator and in high-topography areas
+- The simple MLP is as good as the U-Net and trains ~25× faster
+- Adding more input variables or larger training domains does not improve accuracy
 
 ---
 
-## CODEBASE STRUCTURE
-
-### Directory Organization
+## Codebase Structure
 
 ```
-/home/user/ai_weather_ag/
-├── finetuning/                     # PRIMARY MODULE - Main training pipeline
-│   ├── finetune.py                # **MAIN ENTRY POINT** for training
-│   ├── prepare_forecasts_and_targets.py  # Data loading with auto-download
-│   ├── process_forecasts.py       # Forecast processing utilities
-│   ├── figures_finetuning.py      # Visualization and analysis
-│   ├── hyperparam_tuning.py       # Hyperparameter optimization
-│   └── clean_and_sample_climate_zones.py  # Climate zone processing
+ai_weather_ag/
+├── finetuning/                          # PRIMARY MODULE
+│   ├── finetune.py                      # Main training entry point
+│   ├── prepare_forecasts_and_targets.py # Data loading (load_forecasts)
+│   ├── figures_finetuning.py            # All paper figure generation
+│   ├── process_forecasts.py             # Compute statistics across output files
+│   ├── custom_loss_fns.py               # Alternative loss functions
+│   ├── hyperparam_tuning.py             # Bayesian hyperparameter search
+│   ├── clean_and_sample_climate_zones.py  # Bootstrap zone sampling
+│   ├── plot_maps_and_binscatters.py     # Script → paper Figs 1–3
+│   ├── plot_arch_experiment_results.py  # Script → paper Fig 4
+│   └── plot_region_size_results.py      # Script → paper Fig 5
 │
-├── aurora/                         # Aurora weather model integration
-│   ├── run_aurora.py              # Main Aurora execution
-│   ├── download_aurora.py         # Data download for Aurora
-│   └── prepare_aurora_data.py     # Aurora data preparation
-│
-├── downloading_data/               # Raw data acquisition utilities
-│   ├── download_forecasts.py      # Forecast data from WeatherBench2
-│   └── download_targets.py        # ERA5 target data
-│
-├── neuralGCM_retraining/          # NeuralGCM decoder experiments (archived)
-├── run_ECMWF_forecasts/           # ECMWF forecast tools (archived)
-├── run_weatherbench2/             # WeatherBench2 evaluation (archived)
-├── weatherbenchx/                 # WeatherBench metrics
-├── gee_gencast/                   # Google Earth Engine GenCast
-├── old_finetuning/                # Legacy code (archived)
-│
-├── hyperopt_results_*/            # Hyperparameter tuning results
-├── reports/                        # Output reports
-├── logs/                          # Execution logs
-├── slides/                        # Presentations
-│
-├── helper_funcs.py                # Shared utilities (path setup, etc.)
-├── setup_architecture_experiments.py  # Architecture comparison config
-├── run_architecture_experiments.sh   # Run 4 architecture experiments
-├── analyze_architecture_results.py   # Parse experiment results
-│
-└── Documentation Files
-    ├── CLAUDE.md                  # This file
-    ├── README.md                  # Basic project info
-    ├── ARCHITECTURE_EXPERIMENTS_README.md  # Architecture comparison guide
-    ├── UPDATED_FEATURES_SUMMARY.md        # Feature updates
-    ├── BRANCH_SUMMARY.md          # Git branch guide
-    ├── REPOSITORY_STRUCTURE_ANALYSIS.md   # Detailed technical analysis
-    └── AI_ASSISTANT_QUICK_REFERENCE.md    # Quick lookup guide
+├── helper_funcs.py                      # setup_directories(), generate_output_path()
+├── hyperopt_results_*/                  # Saved Bayesian hyperopt results (JSON)
+└── CLAUDE.md                            # This file
 ```
-
-### Module Sizes
-- **finetuning/**: ~7,244 lines of Python (primary module)
-- **neuralGCM_retraining/**: ~60+ test files and core modules
-- **Root scripts**: ~1,439 lines across 9 files
 
 ---
 
-## DEVELOPMENT WORKFLOWS
+## Environment Setup
 
-### Workflow 1: Standard Fine-tuning
+Data root is determined by hostname in `helper_funcs.setup_directories()`:
+- **Mac (`oMac.local`)**: `/Users/ohouck/globus/forecast_data`
+- **Midway3 cluster**: `/project/jfranke/ozma/forecast_data`
 
-**Goal**: Train a bias correction model for a specific region
+Adding a new machine requires editing `helper_funcs.py`.
 
+Directory layout under the data root:
+```
+forecast_data/
+├── raw/                    # Downloaded forecast zarrs (pangu/, ifs/, aifs/, era5/)
+├── processed/
+│   └── finetuning_output/  # Output zarrs, organized by model/region/
+└── figures/                # Saved figure files (figs/pangu/, figs/ifs/, etc.)
+```
+
+---
+
+## Three Key Files
+
+### 1. `finetuning/finetune.py` — Training Script
+
+Entry point for training a post-processing model on a region.
+
+**Model classes defined here**:
+- `SimpleMLP` — flattens spatial patch, concatenates day-of-year sin/cos and learned lead-time embedding, passes through fully connected layers
+- `UNet` — encoder-decoder with skip connections; caps channels at 128; number of pooling levels auto-calculated from patch size
+- `ClassifierMLP` — used only for classification-based loss experiments (e.g., heatwave duration)
+
+**Key functions**:
+- `parse_args()` — defines all CLI flags (see below)
+- `get_region_grid(args)` — returns lat/lon arrays for named regions or global grids
+- `train_model(...)` — training loop with Adam optimizer, ReduceLROnPlateau scheduler, early stopping, AMP on CUDA
+- `apply_correction(...)` — inference: predicts error and adds to raw forecast
+- `save_output(...)` — writes corrected+original+ground_truth to zarr, organized by lead time
+- `load_optimal_hyperparameters(arch, training_vars, output_vars, loss_fn)` — reads best params from `hyperopt_results_*/optimization_results_{arch}.json`
+
+**The model predicts forecast error, not the weather value directly**:
+```
+corrected = raw_forecast + model(forecast_fields, lead_time, day_of_year)
+```
+
+**Named regions** with fixed center lat/lon (expanded by subregion size):
+```python
+REGION_CENTERS = {
+    'india': (22.0, 77.0),
+    'usa_south': (35.0, 260.0),
+    'amazon': (-5.0, 295.0),
+    'pakistan': (29.5, 65.0),
+    'ethiopia': (9.0, 39.0),
+    'corn_belt': (41.0, 270.0),
+    'finland': (65.0, 29.0),
+    ...
+}
+```
+
+**Special region keywords** (use full global grid):
+- `global`, climate zones (`tropical`, `arid`, `temperate`, `cold`, `polar`), topographic zones (`flat`, `hilly`, `mountainous`), continents (`africa`, `asia`, `europe`, `north_america`, `south_america`, `oceania`)
+
+**CLI flags**:
+```
+--data_dir           Raw data directory
+--output_dir         Where to write output zarrs (REQUIRED)
+--model_name         pangu | ifs | aifs (REQUIRED)
+--region             Region name (default: india)
+--subregion          Patch size, e.g. 6x6 (default: 2x2)
+--lead_time_hours    List of lead times in hours, e.g. 24 120 216
+--training_vars      Input variable(s), e.g. 2m_temperature
+--output_vars        Variable(s) to correct, e.g. 2m_temperature
+--train_start/end    Date range YYYY-MM-DD
+--test_start/end     Date range YYYY-MM-DD
+--nn_architecture    mlp | unet (default: mlp)
+--alternate_loss_fn  extreme_heat_loss | mortality_weighted_loss | quantile_loss |
+                     heatwave_loss | joint_temp_wind_loss
+--bootstrap          N  (run N bootstrap samples of subregions)
+--growing_season_only  Filter training to growing season only
+--mlp_hidden_dim     (default: 1024)
+--mlp_num_layers     (default: 6)
+--mlp_dropout        (default: 0.25)
+--unet_hidden_dim    (default: 64, max channels capped at 128)
+--unet_dropout       (default: 0.1)
+```
+
+**Standard training periods by model**:
+- Pangu / IFS: train 2018–2021, test 2022
+- AIFS: train 2021–2023, test 2024
+
+### 2. `finetuning/figures_finetuning.py` — Figure Generation
+
+All paper figures come from functions in this file. The `plot_*.py` scripts call these functions.
+
+**Functions that produce paper figures**:
+
+| Function | Paper Figure | Description |
+|----------|-------------|-------------|
+| `map_global_improvements(pixel_level=True)` | Fig 1, Appendix maps | Global map of RMSE % improvement per pixel |
+| `lead_time_compare_binscatter()` | Figs 2, 3 | Binscatter of improvement vs equator distance or SDOR, by lead time |
+| `plot_rmse_improvement()` | Fig 4 | Bar chart comparing architectures/input configs on India 6x6 |
+| `generate_subregion_comparison_plots()` | Fig 5 | RMSE improvement vs training domain size (Finland/Amazon) |
+| `model_compare_boxplot()` | Appendix Fig 6 | IFS vs Pangu improvement comparison boxplot |
+
+**Supporting functions**:
+- `load_region_data(dirs, model, variable, regions, ...)` — loads all matching zarr files for given model/arch/subregion config, returns dict keyed by lead time
+- `filter_patch_zarr_files(zone_dir, variable, ...)` — matches zarr files by filename pattern (dates, subregion, arch, loss fn)
+- `validate_non_overlapping_patches()` — used in pixel-level map plotting to ensure tiles don't overlap
+
+**Key dependencies**:
+- `binsreg` library for binscatter plots (Figures 2 and 3)
+- `cartopy` for map projections
+- SDOR (standard deviation of orography) data from ERA5 for Figure 3
+
+### 3. `finetuning/process_forecasts.py` — Statistics Aggregation
+
+Reads output zarr files across all region/model/variable combinations and aggregates into a summary CSV. Used for structured comparison tables.
+
+**Main function**: `calculate_and_save_statistics(dirs, models, variable_configs, ...)` → returns `pd.DataFrame`
+
+Computes per-file: RMSE original, RMSE corrected, % improvement, extreme-heat RMSE, mean forecast values, error frequency above cutoff threshold.
+
+For bootstrap regions (climate/topographic zones): aggregates across bootstrap samples with 95% CIs via t-distribution.
+
+---
+
+## Output File Naming Convention
+
+Outputs are written to `{output_dir}/{model_name}/{region}/` with filename:
+```
+train_{training_vars}_test_{output_vars}_dim{subregion}_leadtime_{lead_times}h_{dates}_{arch}[_{loss_fn}][_{bootstrap_info}].zarr
+```
+
+Example:
+```
+pangu/india/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
+```
+
+`helper_funcs.generate_output_path(args)` generates this path. `filter_patch_zarr_files()` in `figures_finetuning.py` parses it back when loading results.
+
+---
+
+## Data Variables
+
+**Primary variables for the paper**:
+- `2m_temperature` — 2-meter air temperature (data in K; custom loss functions convert to Celsius internally)
+- `10m_wind_speed` — 10-meter wind speed (m/s)
+
+**Additional input variables supported**:
+- `10m_u_component_of_wind`, `10m_v_component_of_wind`
+- `temperature_1000hPa`, `specific_humidity_1000hPa`, `geopotential_1000hPa`
+- Any variable with pattern `{variable}_{pressure}hPa` (parsed by `parse_atmospheric_variable()`)
+
+**Output zarr variable naming** (organized by lead time):
+```
+{var}_original_lt{N}h       (time, latitude, longitude)
+{var}_corrected_lt{N}h      (time, latitude, longitude)
+{var}_ground_truth_lt{N}h
+{var}_mean_corrected_lt{N}h  (mean-bias-corrected baseline)
+```
+
+---
+
+## Hyperparameter Search
+
+Hyperparameters are tuned via Bayesian optimization in `hyperparam_tuning.py`, run on central India 6×6. Results saved to:
+```
+hyperopt_results_{temperature|wind}_{mlp|unet}/optimization_results_{arch}.json
+hyperopt_results_multivar_{temperature|wind}_{mlp|unet}/...  (multi-variable input)
+hyperopt_results_joint_{mlp|unet}/...                         (multi-output)
+```
+
+`finetune.py` loads these automatically via `load_optimal_hyperparameters()` unless architecture flags are passed explicitly on the CLI.
+
+---
+
+## Loss Functions (`finetuning/custom_loss_fns.py`)
+
+| Name | Use Case |
+|------|----------|
+| MSE (default) | Standard mean squared error |
+| `extreme_heat_loss` | Penalizes errors on hot days more heavily |
+| `mortality_weighted_loss` | Weights errors by mortality risk curve |
+| `quantile_loss` | Quantile regression |
+| `heatwave_loss` | Classification of heatwave duration events |
+| `joint_temp_wind_loss` | Jointly optimizes temperature and wind speed |
+
+Custom losses that operate on Celsius (not normalized) values use `is_normalized=True` during training and `is_normalized=False` for evaluation.
+
+---
+
+## Common Workflows
+
+### Train a post-processing model
 ```bash
-# Example: Train MLP for India region
 python3 finetuning/finetune.py \
-    --output_dir ~/ai_weather_ag/data/fine_tuning_output \
+    --output_dir ~/data/fine_tuning_output \
     --model_name pangu \
     --region india \
     --subregion 6x6 \
-    --training_vars 2m_temperature 10m_u_component_of_wind 10m_v_component_of_wind \
-                    temperature_1000hPa specific_humidity_1000hPa geopotential_1000hPa \
-    --output_vars 2m_temperature \
-    --lead_time_hours 24 72 144 \
-    --train_start 2020-01-01 --train_end 2020-12-31 \
-    --test_start 2021-01-01 --test_end 2021-06-30 \
-    --nn_architecture mlp \
-    --mlp_hidden_dim 1024 \
-    --mlp_num_layers 6 \
-    --mlp_dropout 0.25 \
-    --data_dir ~/ai_weather_ag/data/raw
-```
-
-**What happens**:
-1. `finetune.py` calls `prepare_forecasts_and_targets.py`
-2. System checks if data exists locally
-3. If missing, auto-downloads from WeatherBench2 to `data/raw/{model}/{model}_{region}_{year}.zarr`
-4. Data is loaded, preprocessed, and split into train/val/test
-5. Model trains with early stopping (patience=50 epochs)
-6. Applies correction to test data
-7. Saves output to `{output_dir}/{model}_{region}_{architecture}_{timestamp}.zarr`
-8. Prints RMSE metrics for original vs corrected forecasts
-
-### Workflow 2: Architecture Comparison
-
-**Goal**: Compare 4 different architectures on the same data
-
-```bash
-# Run all 4 experiments (MLP Deep, MLP Wide, UNet Light, UNet Deep)
-./run_architecture_experiments.sh
-
-# Analyze results
-python3 analyze_architecture_results.py
-```
-
-**Output**: `ARCHITECTURE_COMPARISON_REPORT.txt` with detailed metrics
-
-### Workflow 3: Aurora Forecasting
-
-**Goal**: Generate forecasts using Microsoft Aurora foundation model
-
-```bash
-python3 aurora/run_aurora.py \
-    --start_date 2020-01-01 \
-    --end_date 2020-01-31 \
-    --output_dir ~/aurora_output
-```
-
-### Workflow 4: Hyperparameter Tuning
-
-**Goal**: Find optimal hyperparameters using Hyperopt
-
-```bash
-python3 finetuning/hyperparam_tuning.py \
-    --region india \
-    --model_name pangu \
-    --max_evals 100
-```
-
-### Workflow 5: Understanding Data Loading (`load_forecasts`)
-
-**Goal**: Understand how the refactored `load_forecasts` function intelligently loads data
-
-The `load_forecasts()` function in `prepare_forecasts_and_targets.py` is the **main data loading function** for finetuning. It implements intelligent data loading logic:
-
-**Loading Logic (in order of preference)**:
-1. **Try regional files first**: Check for `DATASOURCE/DATASOURCE_REGION_YEAR.zarr` (e.g., `pangu/pangu_india_2020.zarr`)
-   - If all required variables present → Load and return
-
-2. **If data doesn't exist AND only basic variables needed** (`2m_temperature`, `10m_wind_speed`):
-   - Try loading from global files: `DATASOURCE/DATASOURCE_YEAR.zarr` (e.g., `pangu/pangu_2020.zarr`)
-   - If global files don't exist → Download regional data
-
-3. **If data doesn't exist AND atmospheric variables needed**:
-   - Download regional data with standard atmospheric variables at 1000hPa:
-     - `2m_temperature`, `10m_u_component_of_wind`, `10m_v_component_of_wind`
-     - `temperature_1000hPa`, `specific_humidity_1000hPa`, `geopotential_1000hPa`
-
-**Performance optimizations**:
-- Uses Dask with automatic chunking for efficient memory usage
-- Strategically loads data into memory when needed
-- Rechunks data for optimal layout before computing
-- Computes forecast and target data in parallel
-
-**Function signature**:
-```python
-load_forecasts(data_dir, args, lat_values, lon_values, train=True,
-               patch_num=None, use_legacy_global_data=False)
-```
-
-**Returns**:
-```python
-(fc, fc_output, obs, lead_time_indices, day_of_year_features, times,
- lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
- training_mean_forecast_error)
-```
-
-**Example call** (from `finetune.py`):
-```python
-from finetuning.prepare_forecasts_and_targets import load_forecasts
-
-(fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
- lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
- training_mean_forecast_error) = load_forecasts(
-    data_dir, args, lat_vals, lon_vals, train=True,
-    patch_num=None, use_legacy_global_data=False
-)
-```
-
----
-
-## KEY CONVENTIONS
-
-### 1. Naming Conventions
-
-#### Files and Modules
-- **snake_case**: All Python files use snake_case (e.g., `prepare_forecasts_and_targets.py`)
-- **Script pattern**: Entry points end in `.py` with no special prefix
-- **Test pattern**: Test files use `*_test.py` pattern (NeuralGCM module)
-
-#### Classes
-- **PascalCase**: All classes use PascalCase (e.g., `SimpleMLP`, `UNet`, `ResidualBlock`)
-
-#### Functions and Variables
-- **snake_case**: All functions and variables (e.g., `load_combined_dataset()`, `hidden_dim`)
-- **Private functions**: Prefix with `_` (e.g., `_validate_input()`)
-
-#### Constants
-- **UPPER_SNAKE_CASE**: Module-level constants (though not heavily used in this codebase)
-
-### 2. Variable Naming Patterns
-
-#### Weather Variables
-- **Surface variables**: `2m_temperature`, `10m_u_component_of_wind`, `10m_v_component_of_wind`
-- **Atmospheric variables**: `{variable}_{pressure}hPa` (e.g., `temperature_500hPa`, `geopotential_850hPa`)
-- **Parsing**: Use `parse_atmospheric_variable(var_name)` from `prepare_forecasts_and_targets.py`
-
-Example:
-```python
-from prepare_forecasts_and_targets import parse_atmospheric_variable
-
-var, level = parse_atmospheric_variable("temperature_500hPa")
-# Returns: ("temperature", 500)
-
-var, level = parse_atmospheric_variable("2m_temperature")
-# Returns: ("2m_temperature", None)
-```
-
-#### Region Names
-Supported regions (defined in `prepare_forecasts_and_targets.py`):
-```python
-REGION_BOUNDS = {
-    'india': (5, 35, 65, 100),              # (lat_min, lat_max, lon_min, lon_max)
-    'usa_south': (25, 35, -100, -90),
-    'amazon': (-10, 0, -70, -60),
-    'pakistan': (24, 37, 60, 77),
-    'china': (20, 40, 100, 120),
-    'australia': (-35, -25, 135, 145),
-    'europe': (40, 55, -5, 15),
-    'africa': (0, 15, 10, 30),
-    'odisha': (17.78, 22.57, 81.37, 87.53)
-}
-```
-
-### 3. Argument Patterns
-
-All main scripts use `argparse` with consistent patterns:
-
-**Required Arguments**:
-- `--output_dir`: Where to save results
-- `--region`: Geographic region
-- `--model_name`: Forecast model (pangu, ifs, aifs, aurora)
-- `--training_vars`: Input variables (space-separated)
-- `--output_vars`: Target variables (space-separated)
-- `--lead_time_hours`: Forecast lead times (space-separated integers)
-- `--train_start`, `--train_end`: Training date range (YYYY-MM-DD)
-- `--test_start`, `--test_end`: Testing date range (YYYY-MM-DD)
-
-**Optional Arguments**:
-- `--data_dir`: Where raw data is stored (default: `~/ai_weather_ag/data/raw`)
-- `--subregion`: Subregion size (e.g., `6x6` degrees)
-- `--nn_architecture`: `mlp` or `unet` (default: `mlp`)
-- `--mlp_hidden_dim`: MLP hidden layer size (default: 1024)
-- `--mlp_num_layers`: MLP depth (default: 4)
-- `--mlp_dropout`: MLP dropout rate (default: 0.25)
-- `--unet_hidden_dim`: UNet base channels (default: 32)
-- `--unet_dropout`: UNet dropout rate (default: 0.1)
-
-### 4. Import Structure
-
-Standard import order:
-```python
-# 1. Standard library
-import os
-import sys
-from pathlib import Path
-from typing import List, Tuple, Optional
-
-# 2. Third-party packages
-import numpy as np
-import xarray as xr
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-
-# 3. Local modules
-from helper_funcs import setup_directories, generate_output_path
-from prepare_forecasts_and_targets import load_forecasts
-```
-
-### 5. Data Flow Patterns
-
-#### Temporal Encoding
-All models include temporal features:
-- **Day of year**: `sin(2π * day / 365)`, `cos(2π * day / 365)`
-- **Month encoding**: One-hot encoded months (12 dimensions)
-- **Hour of day** (if applicable): `sin(2π * hour / 24)`, `cos(2π * hour / 24)`
-
-#### Lead Time Encoding
-Models support multiple lead times simultaneously:
-- Embedded as additional input features
-- Allows single model to correct multiple forecast horizons
-- Lead times typically: 24h, 72h, 144h, 168h
-
-#### Spatial Flattening (MLP)
-```python
-# Input shape: (batch, channels, height, width)
-# Flatten to: (batch, channels * height * width)
-x_flat = x.view(batch_size, -1)
-```
-
-#### Spatial Preservation (UNet)
-```python
-# Maintains (batch, channels, height, width) throughout
-# Uses encoder-decoder with skip connections
-```
-
----
-
-## COMMON TASKS
-
-### Task 1: Add a New Region
-
-**Steps**:
-1. Open `finetuning/prepare_forecasts_and_targets.py`
-2. Add region to `REGION_BOUNDS` dictionary:
-```python
-REGION_BOUNDS = {
-    # ... existing regions ...
-    'new_region': (lat_min, lat_max, lon_min, lon_max),  # Degrees
-}
-```
-3. Use in commands: `--region new_region`
-
-### Task 2: Add a New Atmospheric Variable
-
-**Steps**:
-1. Determine variable name from WeatherBench2/ERA5 catalog
-2. Add to `--training_vars` with pressure level suffix:
-```bash
---training_vars 2m_temperature temperature_850hPa specific_humidity_700hPa
-```
-3. System automatically downloads and extracts the correct pressure level
-
-### Task 3: Modify Model Architecture
-
-**For MLP**:
-Edit `finetune.py`, class `SimpleMLP`:
-```python
-class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers, dropout, ...):
-        # Modify layers here
-```
-
-**For UNet**:
-Edit `finetune.py`, class `UNet`:
-```python
-class UNet(nn.Module):
-    def __init__(self, in_channels, hidden_dim, dropout, ...):
-        # Modify encoder/decoder here
-```
-
-**Best Practice**: Use command-line arguments for architecture params instead of hardcoding:
-```bash
---mlp_hidden_dim 2048 --mlp_num_layers 8
-```
-
-### Task 4: Change Training Parameters
-
-Modify `finetune.py` training loop:
-```python
-# Key parameters (around line 300-350)
-num_epochs = 750
-batch_size = 128
-learning_rate = 1e-4
-patience = 50  # Early stopping
-```
-
-Or add command-line arguments in `parse_args()`.
-
-### Task 5: Add Visualization
-
-**Option 1**: Use existing `figures_finetuning.py`
-```python
-from figures_finetuning import plot_forecast_comparison
-
-plot_forecast_comparison(
-    original_ds=original_zarr,
-    corrected_ds=corrected_zarr,
-    target_ds=era5_zarr,
-    output_path="comparison.png"
-)
-```
-
-**Option 2**: Create new plotting function
-- Follow matplotlib + cartopy patterns in `figures_finetuning.py`
-- Save figures to `{output_dir}/figures/`
-
-### Task 6: Run on SLURM Cluster
-
-Create SLURM script (e.g., `finetune_job.sh`):
-```bash
-#!/bin/bash
-#SBATCH --job-name=finetune
-#SBATCH --output=logs/finetune-%j.txt
-#SBATCH --time=12:00:00
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --mem=64G
-
-source setup_server.sh  # Loads environment
-
-python3 finetuning/finetune.py \
-    --output_dir ~/data/output \
-    --region india \
-    --model_name pangu \
     --training_vars 2m_temperature \
     --output_vars 2m_temperature \
-    --lead_time_hours 24 72 144 \
-    --train_start 2020-01-01 --train_end 2020-12-31 \
-    --test_start 2021-01-01 --test_end 2021-06-30 \
+    --lead_time_hours 24 120 216 \
+    --train_start 2018-01-01 --train_end 2021-12-31 \
+    --test_start 2022-01-01 --test_end 2022-12-31 \
     --nn_architecture mlp
 ```
 
-Submit: `sbatch finetune_job.sh`
-
----
-
-## DATA ORGANIZATION
-
-### Local Data Structure
-
-```
-~/ai_weather_ag/data/
-├── raw/                           # Downloaded forecast and target data
-│   ├── pangu/
-│   │   ├── pangu_india_2020.zarr
-│   │   ├── pangu_india_2021.zarr
-│   │   └── pangu_usa_south_2020.zarr
-│   ├── ifs/
-│   │   └── ifs_india_2020.zarr
-│   ├── aifs/
-│   │   └── aifs_india_2020.zarr
-│   └── era5/                      # Ground truth targets
-│       ├── era5_india_2020.zarr
-│       └── era5_india_2021.zarr
-│
-├── fine_tuning_output/            # Model outputs
-│   ├── pangu_india_mlp_20250114_120000.zarr
-│   ├── pangu_india_unet_20250114_130000.zarr
-│   └── figures/
-│
-└── architecture_experiments/      # Architecture comparison outputs
-    ├── logs/
-    │   ├── mlp_deep_20250109_120000.log
-    │   └── unet_light_20250109_140000.log
-    ├── ARCHITECTURE_COMPARISON_REPORT.txt
-    └── results_summary.json
-```
-
-### File Naming Convention
-
-**Raw data**:
-```
-{model}_{region}_{year}.zarr
-```
-
-**Model outputs**:
-```
-{model}_{region}_{architecture}_{timestamp}.zarr
-```
-
-**Logs**:
-```
-{experiment_name}_{timestamp}.log
-```
-
-### Zarr Dataset Structure
-
-**Forecast data** (e.g., `pangu_india_2020.zarr`):
-```python
-<xarray.Dataset>
-Dimensions:           (time, latitude, longitude, level)
-Coordinates:
-  * time              (time) datetime64[ns]
-  * latitude          (latitude) float32
-  * longitude         (longitude) float32
-  * level             (level) int32  # For atmospheric variables
-Data variables:
-    2m_temperature    (time, latitude, longitude) float32
-    temperature       (time, level, latitude, longitude) float32  # Atmospheric
-    geopotential      (time, level, latitude, longitude) float32
-Attributes:
-    model:            pangu
-    region:           india
-    lead_time_hours:  [24, 72, 144]
-```
-
-**Target data** (ERA5):
-```python
-<xarray.Dataset>
-Dimensions:           (time, latitude, longitude)
-Coordinates:
-  * time              (time) datetime64[ns]
-  * latitude          (latitude) float32
-  * longitude         (longitude) float32
-Data variables:
-    2m_temperature    (time, latitude, longitude) float32
-```
-
----
-
-## IMPORTANT FILES REFERENCE
-
-### Primary Entry Points
-
-| File | Purpose | Key Functions |
-|------|---------|---------------|
-| `finetuning/finetune.py` | Main training script | `parse_args()`, `load_combined_dataset()`, `train_model()`, `apply_correction()` |
-| `aurora/run_aurora.py` | Aurora model execution | `run_aurora_forecast()` |
-| `run_architecture_experiments.sh` | Batch architecture comparison | N/A (bash script) |
-
-### Core Modules
-
-| File | Purpose | Key Functions |
-|------|---------|---------------|
-| `finetuning/prepare_forecasts_and_targets.py` | **MAIN DATA LOADING MODULE** - Intelligently loads data from local regional files, global files, or downloads from WeatherBench2 | `load_forecasts()` (MAIN), `download_forecast_data()`, `download_target_data()`, `parse_atmospheric_variable()`, `check_data_exists()` |
-| `finetuning/process_forecasts.py` | Forecast utilities | `process_forecast_data()` |
-| `finetuning/figures_finetuning.py` | Visualization | `plot_forecast_comparison()`, `create_rmse_maps()` |
-| `finetuning/hyperparam_tuning.py` | Hyperparameter search | `objective()`, `run_hyperopt()` |
-| `helper_funcs.py` | Shared utilities | `setup_directories()`, `generate_output_path()` |
-
-### Analysis & Reporting
-
-| File | Purpose |
-|------|---------|
-| `analyze_architecture_results.py` | Parse experiment logs and generate comparison reports |
-| `setup_architecture_experiments.py` | Configure architecture comparison experiments |
-
-### Configuration
-
-| File | Purpose |
-|------|---------|
-| `pyproject.toml` | Python dependencies and project metadata |
-| `.python-version` | Python version (3.11) |
-| `setup_mac.sh` | Mac development environment setup |
-| `setup_server.sh` | Server (Linux/SLURM) environment setup |
-
----
-
-## BEST PRACTICES
-
-### 1. Code Modification Guidelines
-
-**DO**:
-- ✅ Add command-line arguments for new parameters
-- ✅ Test on small data subset first (short date range)
-- ✅ Save intermediate outputs for debugging
-- ✅ Use existing helper functions (`setup_directories()`, etc.)
-- ✅ Follow existing naming conventions
-- ✅ Add docstrings for new functions
-- ✅ Validate inputs early (check shapes, data types)
-
-**DON'T**:
-- ❌ Hardcode file paths (use `data_dir` and `output_dir` arguments)
-- ❌ Modify archived modules (`old_finetuning/`, `run_ECMWF_forecasts/`)
-- ❌ Change core data loading logic without thorough testing
-- ❌ Skip error handling for data downloads (network issues common)
-- ❌ Remove existing command-line arguments (breaks backward compatibility)
-
-### 2. Testing Strategy
-
-**Before committing changes**:
-1. Run small test (1-week train, 1-week test) to verify code runs
-2. Check output shapes and data types
-3. Verify RMSE improvements are reasonable (not too good to be true)
-4. Test on both MLP and UNet architectures
-5. Ensure output files are created correctly
-
-**Example test command**:
+### Regenerate paper figures
 ```bash
-python3 finetuning/finetune.py \
-    --output_dir ~/test_output \
-    --region india --subregion 2x2 \
-    --model_name pangu \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --lead_time_hours 24 \
-    --train_start 2020-01-01 --train_end 2020-01-07 \
-    --test_start 2020-01-08 --test_end 2020-01-14 \
-    --nn_architecture mlp
+python3 finetuning/plot_maps_and_binscatters.py   # Figs 1, 2, 3
+python3 finetuning/plot_arch_experiment_results.py # Fig 4
+python3 finetuning/plot_region_size_results.py     # Fig 5
 ```
 
-### 3. Git Workflow
-
-**Current branch**: `claude/claude-md-mhzdrqu2tkbkl2gm-0186xVGLrHNfJWYxfGXre8BT`
-
-**Branch conventions**:
-- `main`: Production baseline (original implementation)
-- `model-architecture-improvements`: Conservative improvements (recommended)
-- `moderate-architecture-improvements`: Moderate improvements (experimental)
-- `aggressive-architecture-improvements`: Aggressive changes (not recommended)
-- See `BRANCH_SUMMARY.md` for detailed comparison
-
-**When committing**:
+### Run hyperparameter tuning
 ```bash
-# Stage changes
-git add <files>
-
-# Commit with descriptive message
-git commit -m "Add support for new atmospheric variable parsing"
-
-# Push to remote (ALWAYS use -u origin)
-git push -u origin claude/claude-md-mhzdrqu2tkbkl2gm-0186xVGLrHNfJWYxfGXre8BT
-```
-
-**IMPORTANT**: Branch names must start with `claude/` and end with session ID for push to succeed.
-
-### 4. Performance Optimization
-
-**Memory**:
-- Use Dask for large datasets (`chunks={'time': 10}`)
-- Process data in batches (current batch_size: 128)
-- Free GPU memory with `torch.cuda.empty_cache()` between runs
-
-**Compute**:
-- Use GPU when available (automatically detected in code)
-- Leverage DataLoader `num_workers` for parallel data loading
-- Cache preprocessed data when running multiple experiments
-
-**Storage**:
-- Use zarr compression for output files
-- Download only required pressure levels (not all atmospheric data)
-- Use region-based subsetting (don't download global data)
-
-### 5. Documentation
-
-**When adding features**:
-1. Update this `CLAUDE.md` file
-2. Add docstrings to new functions
-3. Update relevant README files (e.g., `ARCHITECTURE_EXPERIMENTS_README.md`)
-4. Document command-line arguments in `parse_args()` help text
-
-**Docstring format**:
-```python
-def new_function(param1: str, param2: int) -> np.ndarray:
-    """
-    Brief one-line description.
-
-    Longer description with more details about what the function does,
-    edge cases, and usage examples.
-
-    Args:
-        param1: Description of param1
-        param2: Description of param2
-
-    Returns:
-        Description of return value
-
-    Raises:
-        ValueError: When param2 is negative
-    """
-```
-
----
-
-## COMMON PITFALLS
-
-### 1. Data Loading Issues
-
-**Problem**: Missing variables error
-```
-KeyError: 'temperature_500hPa'
-```
-
-**Solution**: Variable doesn't exist in downloaded data. Check:
-- Is variable name correct? (see WeatherBench2 catalog)
-- Does the pressure level exist in source data?
-- Run `xr.open_zarr(path).info()` to see available variables
-
-### 2. Memory Errors
-
-**Problem**: Out of memory during training
-```
-RuntimeError: CUDA out of memory
-```
-
-**Solutions**:
-- Reduce batch size (edit `batch_size` in `finetune.py`)
-- Use smaller region (`--subregion 2x2` instead of `6x6`)
-- Use shorter training period
-- Use lighter architecture (`--mlp_num_layers 3` instead of `6`)
-
-### 3. Network Download Failures
-
-**Problem**: Data download times out
-```
-ConnectionError: Failed to download from WeatherBench2
-```
-
-**Solutions**:
-- Retry the command (downloads are incremental)
-- Use smaller date ranges (download year by year)
-- Check network connection
-- For large downloads, run on server with better bandwidth
-
-### 4. Shape Mismatches
-
-**Problem**: Model input/output shape errors
-```
-RuntimeError: Expected input shape (batch, 1440) but got (batch, 576)
-```
-
-**Cause**: Changing region size or variables without adjusting model
-
-**Solutions**:
-- Retrain model from scratch (don't load old checkpoints)
-- Ensure `input_dim` matches actual data dimensions
-- Check spatial dimensions after preprocessing
-
-### 5. Incorrect Lead Time Handling
-
-**Problem**: Model treats all lead times the same
-
-**Cause**: Not properly encoding lead time as input feature
-
-**Solution**: Ensure lead time is embedded correctly:
-```python
-# In model forward pass
-lead_time_emb = self.lead_time_embedding(lead_time_tensor)
-x = torch.cat([x, lead_time_emb], dim=1)
-```
-
-### 6. Zarr Consolidation Issues
-
-**Problem**: Zarr reads are slow or fail
-```
-ValueError: Failed to open zarr group
-```
-
-**Solution**: Consolidate metadata after writing:
-```python
-import zarr
-zarr.consolidate_metadata(zarr_path)
-```
-
-### 7. Date Range Errors
-
-**Problem**: No data found for requested dates
-```
-ValueError: No forecast data found for period 2023-01-01 to 2023-12-31
-```
-
-**Cause**: Data not available for those dates in WeatherBench2
-
-**Solution**: Check available years:
-- Pangu: 2018-2022
-- IFS: 2020-2022
-- ERA5: 1979-present (but limited in WeatherBench2)
-
----
-
-## ADDITIONAL RESOURCES
-
-### External Documentation
-- **WeatherBench2**: https://weatherbench2.readthedocs.io/
-- **Pangu-Weather**: https://github.com/198808xc/Pangu-Weather
-- **Aurora**: https://www.microsoft.com/en-us/research/project/aurora/
-- **ERA5 Reanalysis**: https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5
-
-### Internal Documentation
-- `ARCHITECTURE_EXPERIMENTS_README.md`: Detailed guide to architecture comparison
-- `UPDATED_FEATURES_SUMMARY.md`: Recent feature updates (dynamic loading, atmospheric variables)
-- `BRANCH_SUMMARY.md`: Git branch comparison and recommendations
-- `REPOSITORY_STRUCTURE_ANALYSIS.md`: Comprehensive technical analysis (632 lines)
-- `AI_ASSISTANT_QUICK_REFERENCE.md`: Quick lookup guide
-
-### Key Research Papers
-- Pangu-Weather (2023): https://arxiv.org/abs/2211.02556
-- WeatherBench2 (2024): https://arxiv.org/abs/2308.15560
-- NeuralGCM (2024): https://arxiv.org/abs/2311.07222
-
-### Contacts
-- **Repository Owner**: Ozma Houck
-- **GitHub**: https://github.com/OHouck/ai_weather_ag
-
----
-
-## QUICK COMMAND REFERENCE
-
-### Most Common Commands
-
-```bash
-# 1. Standard training (MLP)
-python3 finetuning/finetune.py \
-    --output_dir ~/output --region india --model_name pangu \
-    --training_vars 2m_temperature --output_vars 2m_temperature \
-    --lead_time_hours 24 72 144 \
-    --train_start 2020-01-01 --train_end 2020-12-31 \
-    --test_start 2021-01-01 --test_end 2021-06-30 \
-    --nn_architecture mlp --mlp_hidden_dim 1024 --mlp_num_layers 6
-
-# 2. Training with UNet
-python3 finetuning/finetune.py \
-    --output_dir ~/output --region india --model_name pangu \
-    --training_vars 2m_temperature --output_vars 2m_temperature \
-    --lead_time_hours 24 72 144 \
-    --train_start 2020-01-01 --train_end 2020-12-31 \
-    --test_start 2021-01-01 --test_end 2021-06-30 \
-    --nn_architecture unet --unet_hidden_dim 128
-
-# 3. Architecture comparison
-./run_architecture_experiments.sh
-python3 analyze_architecture_results.py
-
-# 4. Hyperparameter tuning
 python3 finetuning/hyperparam_tuning.py \
-    --region india --model_name pangu --max_evals 100
-
-# 5. Aurora forecasting
-python3 aurora/run_aurora.py \
-    --start_date 2020-01-01 --end_date 2020-01-31 \
-    --output_dir ~/aurora_output
-```
-
-### Git Commands
-
-```bash
-# Check current branch
-git branch
-
-# Stage and commit changes
-git add <files>
-git commit -m "Description of changes"
-
-# Push to remote (use -u origin with full branch name)
-git push -u origin claude/claude-md-mhzdrqu2tkbkl2gm-0186xVGLrHNfJWYxfGXre8BT
-
-# Switch branches
-git checkout model-architecture-improvements
-
-# View changes
-git status
-git diff
+    --model_name pangu --region india --subregion 6x6 \
+    --training_vars 2m_temperature --output_vars 2m_temperature \
+    --nn_architecture mlp --max_evals 100
 ```
 
 ---
 
-## VERSION HISTORY
+## Important Notes
 
-- **v1.1** (2025-11-14): Refactored `prepare_forecasts_and_targets.py`
-  - `load_forecasts()` is now the main data loading function
-  - Intelligent data loading: tries regional files → global files → downloads as needed
-  - Cleaner, more readable code structure (~1,400 lines, reduced from ~1,700)
-  - Improved performance with strategic Dask chunking and memory management
-  - Removed redundant helper functions (`load_or_pull_forecast_data`, `load_or_pull_target_data`, `prepare_data_for_finetuning`)
-  - Updated documentation to reflect new architecture
-
-- **v1.0** (2025-11-14): Initial comprehensive documentation created
-  - Full codebase structure analysis
-  - Development workflow documentation
-  - Key conventions and best practices
-  - Common tasks and pitfalls
-
----
-
-**End of CLAUDE.md**
-
-For detailed technical analysis, see `REPOSITORY_STRUCTURE_ANALYSIS.md`.
-For quick reference, see `AI_ASSISTANT_QUICK_REFERENCE.md`.
+- **Don't hardcode data paths** — always use `setup_directories()` from `helper_funcs.py`
+- **Adding a new machine**: edit the hostname check in `helper_funcs.setup_directories()`
+- **MLP is the recommended architecture**: trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
+- **Extra input variables hurt or are neutral**: paper shows single-variable input is best for correcting 2m_temperature
+- **Bootstrap regions**: climate/topographic zones use `--bootstrap N`; filenames contain `bs*` and `filter_patch_zarr_files` matches on that pattern
+- **SDOR data** (standard deviation of orography from ERA5) must be loaded separately before calling `lead_time_compare_binscatter` with `x_metric="sdor"`
+- **Paper uses 6×6 degree patches globally** — all continent-based training runs use `--subregion 6x6`

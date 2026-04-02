@@ -134,9 +134,11 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
         basename = os.path.basename(file_path)
 
         # Check if file matches the expected pattern
+        # Architecture can appear as _{arch}_ (with suffix like loss fn) or _{arch}.zarr (at end)
+        arch_match = (f"_{arch_str}_" in basename or basename.endswith(f"_{arch_str}.zarr"))
         if (dates_str in basename and
             dim_str in basename and
-            f"_{arch_str}_" in basename):
+            arch_match):
             matching_files.append(file_path)
 
     return matching_files
@@ -718,19 +720,13 @@ def map_global_improvements(
 
             # Statistics for title
             if map_type == "improvement":
-                title_main = f"Global RMSE Improvement Map (Pixel-Level)"
                 unit = "%"
-            elif map_type == "original":
-                title_main = f"Global Original RMSE Map (Pixel-Level)"
-                unit = ""
-            else:  # corrected
-                title_main = f"Global Corrected RMSE Map (Pixel-Level)"
+            else:
                 unit = ""
 
             title_parts = [
-                title_main,
-                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
-                f"N = {n_pixels} pixels"
+                "Global RMSE Improvement Map",
+                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time // 24} Day Lead Time",
             ]
 
             stats_text = (
@@ -808,21 +804,12 @@ def map_global_improvements(
             std_val = np.std(values)
 
             if map_type == "improvement":
-                title_main = f"Global RMSE Improvement Map"
                 stats_text = (
                     f"Mean: {mean_val:.1f}%\n"
                     f"Median: {median_val:.1f}%\n"
                     f"Std: {std_val:.1f}%"
                 )
-            elif map_type == "original":
-                title_main = f"Global Original Forecast Error Map"
-                stats_text = (
-                    f"Mean: {mean_val:.3f}\n"
-                    f"Median: {median_val:.3f}\n"
-                    f"Std: {std_val:.3f}"
-                )
-            elif map_type == "corrected":
-                title_main = f"Global Corrected Forecast Error Map"
+            else:
                 stats_text = (
                     f"Mean: {mean_val:.3f}\n"
                     f"Median: {median_val:.3f}\n"
@@ -830,9 +817,8 @@ def map_global_improvements(
                 )
 
             title_parts = [
-                title_main,
-                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time}h Lead Time",
-                f"N = {len(patch_data)} regions"
+                "Global RMSE Improvement Map",
+                f"{model.upper()} - {variable.replace('_', ' ').title()} - {lead_time // 24} Day Lead Time",
             ]
 
         # Add gridlines
@@ -1966,6 +1952,7 @@ def plot_arch_experiment_results(
     # Storage for results
     results = {exp['name']: {lt: None for lt in lead_times} for exp in experiments}
     training_times = {exp['name']: None for exp in experiments}
+    mean_bias_results = {lt: None for lt in lead_times}
 
     # Load data for each experiment
     for exp in experiments:
@@ -2002,18 +1989,18 @@ def plot_arch_experiment_results(
 
             # Calculate RMSE improvement for each lead time
             for lead_time in lead_times:
-                ground_truth, original, corrected, _ = extract_forecast_data(ds, variable, lead_time)
+                ground_truth, original, corrected, mean_corrected = extract_forecast_data(ds, variable, lead_time)
 
-                # Flatten arrays and remove NaNs
-                gt_flat = ground_truth.values.flatten()
-                orig_flat = original.values.flatten()
-                corr_flat = corrected.values.flatten()
+                # Flatten arrays
+                gt_flat_raw = ground_truth.values.flatten()
+                orig_flat_raw = original.values.flatten()
+                corr_flat_raw = corrected.values.flatten()
 
                 # Remove NaN values
-                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-                gt_flat = gt_flat[mask]
-                orig_flat = orig_flat[mask]
-                corr_flat = corr_flat[mask]
+                mask = ~(np.isnan(gt_flat_raw) | np.isnan(orig_flat_raw) | np.isnan(corr_flat_raw))
+                gt_flat = gt_flat_raw[mask]
+                orig_flat = orig_flat_raw[mask]
+                corr_flat = corr_flat_raw[mask]
 
                 # Calculate RMSE
                 rmse_original = calculate_rmse(orig_flat, gt_flat)
@@ -2023,6 +2010,16 @@ def plot_arch_experiment_results(
                 results[exp['name']][lead_time] = pct_improvement
                 print(f"    {lead_time}h: {pct_improvement:.2f}% improvement")
 
+                # Compute mean-bias-correction baseline (same across experiments, only compute once)
+                # Use the unmasked raw arrays so shapes align with mc_flat
+                if mean_bias_results[lead_time] is None and mean_corrected is not None:
+                    mc_flat_raw = mean_corrected.values.flatten()
+                    mc_mask = ~(np.isnan(gt_flat_raw) | np.isnan(orig_flat_raw) | np.isnan(mc_flat_raw))
+                    rmse_mean_corrected = calculate_rmse(mc_flat_raw[mc_mask], gt_flat_raw[mc_mask])
+                    rmse_orig_for_mc = calculate_rmse(orig_flat_raw[mc_mask], gt_flat_raw[mc_mask])
+                    mean_bias_results[lead_time] = calculate_improvement_percentage(rmse_orig_for_mc, rmse_mean_corrected)
+                    print(f"    {lead_time}h: Mean bias correction: {mean_bias_results[lead_time]:.2f}% improvement")
+
         except FileNotFoundError:
             print(f"  Warning: File not found for {exp['name']}")
         except Exception as e:
@@ -2031,9 +2028,28 @@ def plot_arch_experiment_results(
     # Create plot
     fig, ax = plt.subplots(figsize=(14, 8))
 
-    # Calculate bar width and positions
-    n_experiments = len(experiments)
-    bar_width = 0.6 / n_experiments
+    # Calculate bar width and positions (add 1 for mean bias correction baseline)
+    has_mean_bias = any(v is not None for v in mean_bias_results.values())
+    n_bars = len(experiments) + (1 if has_mean_bias else 0)
+    bar_width = 0.6 / n_bars
+
+    # Plot mean bias correction baseline first (leftmost bar)
+    if has_mean_bias:
+        mean_improvements = [mean_bias_results[lt] if mean_bias_results[lt] is not None else 0
+                            for lt in lead_times]
+        x_pos = np.arange(len(lead_times)) + (0 - n_bars/2 + 0.5) * bar_width
+        ax.bar(
+            x_pos,
+            mean_improvements,
+            width=bar_width,
+            color='#999999',
+            alpha=0.8,
+            edgecolor='black',
+            linewidth=0.5,
+            hatch=None,
+            label='Mean Bias Correction',
+            zorder=3
+        )
 
     # Plot bars for each experiment
     for exp_idx, exp in enumerate(experiments):
@@ -2048,8 +2064,9 @@ def plot_arch_experiment_results(
         # Replace None with 0 for plotting
         improvements = [v if v is not None else 0 for v in improvements]
 
-        # Calculate x positions for this experiment
-        x_pos = np.arange(len(lead_times)) + (exp_idx - n_experiments/2 + 0.5) * bar_width
+        # Calculate x positions (offset by 1 if mean bias bar is present)
+        bar_offset = exp_idx + (1 if has_mean_bias else 0)
+        x_pos = np.arange(len(lead_times)) + (bar_offset - n_bars/2 + 0.5) * bar_width
 
         # Plot bars
         bars = ax.bar(
@@ -2088,7 +2105,7 @@ def plot_arch_experiment_results(
     ax.tick_params(axis='both', labelsize=16)
 
     # Legend
-    ax.legend(fontsize=14, loc='upper right', framealpha=0.95, edgecolor='gray')
+    ax.legend(fontsize=12, loc='upper right', framealpha=0.95, edgecolor='gray')
 
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
@@ -4389,112 +4406,6 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
     return result
 
 
-def main():
-    dirs = setup_directories()
-
-
-    # model_compare_boxplot(
-    #     dirs=dirs,
-    #     models=["pangu", "ifs"],
-    #     variables=["2m_temperature", "10m_wind_speed"],
-    #     regions=None,  # Use default continents
-    #     save_dir=None,  # Auto-generate based on parameters
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     nn_architecture="mlp",
-    #     subregion="6x6",
-    #     alternate_loss_fn=None
-    # )
-
-
-
-#=============================================
-# Binned RMSE Improvement Plots
-#=============================================
-    # dirs = setup_directories()
-    # var = "2m_temperature"
-    # loss_train_on = ["extreme_heat", "mse"]
-    # metric = "error_difference"  
-    # lead_time =216  # 9 days
-    # training_outptut_vars = ([var], [var])
-    # variable = var
-    # plot_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
-    #                             test_start="2022-01-01", test_end="2022-12-31",
-    #                             model="pangu",
-    #                             training_output_vars=training_outptut_vars,
-    #                             variable=variable,
-    #                             nn_architecture="mlp",
-    #                             lead_time=lead_time,
-    #                             regions=["india", "ethiopia"],
-    #                             subregion="6x6",
-    #                             n_bins=10,
-    #                             loss_trained_on=loss_train_on,
-    #                             metric=metric
-    #                             )
-
-
-#=============================================
-# Lead Time Plots (by region and lead time)
-#=============================================
-
-    nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
-    variable_list = ["2m_temperature", "10m_wind_speed"]
-    model_list = ["pangu"]
-    geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
-    climate_regions = ["tropical", "arid", "temperate"]
-    topo_regions = ["flat", "hilly", "mountainous"]
-    growing_season_flags = [False]
-    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
-    for var in variable_list:
-        for model in model_list:
-            for gs_flag in growing_season_flags:
-                for regions in [geo_regions, climate_regions, topo_regions]:
-                    if regions == climate_regions or regions == topo_regions:
-                        subregion = "2x2"
-                    elif regions == geo_regions:
-                        subregion = "6x6"
-                    for loss_train_on in ["mse", "extreme_heat"]:
-                        if model == "aifs" and not gs_flag:
-                            # aifs results are only for growing season
-                            continue
-
-                        # for evaluation_loss in ["rmse", "extreme_heat"]:
-                        #     plot_rmse_improvement(csv_path = stat_path,
-                        #         dirs=dirs,
-                        #         variable=var,
-                        #         model=model,
-                        #         regions=regions,
-                        #         subregion=subregion,
-                        #         nn_architectures=nn_architectures,
-                        #         growing_season_only=gs_flag,
-                        #         loss_trained_on=loss_train_on,
-                        #         evaluation_loss=evaluation_loss
-                        #     )
-                        # plot_raw_forecast_values(csv_path = stat_path,
-                        #     dirs=dirs,
-                        #     variable=var,
-                        #     model=model,
-                        #     regions=regions,
-                        #     subregion=subregion,
-                        #     nn_architectures=nn_architectures,
-                        #     growing_season_only=gs_flag,
-                        #     loss_trained_on=loss_train_on
-                        # )
-                        plot_error_cutoff(csv_path = stat_path,
-                            dirs=dirs,
-                            variable=var,
-                            model=model,
-                            regions=regions,
-                            subregion=subregion,
-                            nn_architectures=nn_architectures,
-                            growing_season_only=gs_flag,
-                            loss_trained_on=loss_train_on
-                        )
-exit()
-
-
 def model_compare_boxplot(
     dirs,
     models=None,
@@ -4724,4 +4635,104 @@ def model_compare_boxplot(
 
 
 if __name__ == "__main__":
-    main()
+    dirs = setup_directories()
+
+
+    # model_compare_boxplot(
+    #     dirs=dirs,
+    #     models=["pangu", "ifs"],
+    #     variables=["2m_temperature", "10m_wind_speed"],
+    #     regions=None,  # Use default continents
+    #     save_dir=None,  # Auto-generate based on parameters
+    #     train_start="2018-01-01",
+    #     train_end="2021-12-31",
+    #     test_start="2022-01-01",
+    #     test_end="2022-12-31",
+    #     nn_architecture="mlp",
+    #     subregion="6x6",
+    #     alternate_loss_fn=None
+    # )
+
+
+#=============================================
+# Binned RMSE Improvement Plots
+#=============================================
+    # dirs = setup_directories()
+    # var = "2m_temperature"
+    # loss_train_on = ["extreme_heat", "mse"]
+    # metric = "error_difference"  
+    # lead_time =216  # 9 days
+    # training_outptut_vars = ([var], [var])
+    # variable = var
+    # plot_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
+    #                             test_start="2022-01-01", test_end="2022-12-31",
+    #                             model="pangu",
+    #                             training_output_vars=training_outptut_vars,
+    #                             variable=variable,
+    #                             nn_architecture="mlp",
+    #                             lead_time=lead_time,
+    #                             regions=["india", "ethiopia"],
+    #                             subregion="6x6",
+    #                             n_bins=10,
+    #                             loss_trained_on=loss_train_on,
+    #                             metric=metric
+    #                             )
+
+
+#=============================================
+# Lead Time Plots (by region and lead time)
+#=============================================
+
+    nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
+    variable_list = ["2m_temperature", "10m_wind_speed"]
+    model_list = ["pangu"]
+    geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
+    climate_regions = ["tropical", "arid", "temperate"]
+    topo_regions = ["flat", "hilly", "mountainous"]
+    growing_season_flags = [False]
+    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
+    for var in variable_list:
+        for model in model_list:
+            for gs_flag in growing_season_flags:
+                for regions in [geo_regions, climate_regions, topo_regions]:
+                    if regions == climate_regions or regions == topo_regions:
+                        subregion = "2x2"
+                    elif regions == geo_regions:
+                        subregion = "6x6"
+                    for loss_train_on in ["mse", "extreme_heat"]:
+                        if model == "aifs" and not gs_flag:
+                            # aifs results are only for growing season
+                            continue
+
+                        # for evaluation_loss in ["rmse", "extreme_heat"]:
+                        #     plot_rmse_improvement(csv_path = stat_path,
+                        #         dirs=dirs,
+                        #         variable=var,
+                        #         model=model,
+                        #         regions=regions,
+                        #         subregion=subregion,
+                        #         nn_architectures=nn_architectures,
+                        #         growing_season_only=gs_flag,
+                        #         loss_trained_on=loss_train_on,
+                        #         evaluation_loss=evaluation_loss
+                        #     )
+                        # plot_raw_forecast_values(csv_path = stat_path,
+                        #     dirs=dirs,
+                        #     variable=var,
+                        #     model=model,
+                        #     regions=regions,
+                        #     subregion=subregion,
+                        #     nn_architectures=nn_architectures,
+                        #     growing_season_only=gs_flag,
+                        #     loss_trained_on=loss_train_on
+                        # )
+                        plot_error_cutoff(csv_path = stat_path,
+                            dirs=dirs,
+                            variable=var,
+                            model=model,
+                            regions=regions,
+                            subregion=subregion,
+                            nn_architectures=nn_architectures,
+                            growing_season_only=gs_flag,
+                            loss_trained_on=loss_train_on
+                        )
