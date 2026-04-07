@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=run_experiments_pangu_mlp
+#SBATCH --job-name=run_experiments_pangu_mlp_snapshot
 #SBATCH --account=pi-jfranke
-#SBATCH --output=run_experiments_pangu_mlp%J.txt
+#SBATCH --output=run_experiments_pangu_mlp_snapshot%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=120G
@@ -41,13 +41,13 @@ fi
 #
 training_output_vars=(
     # Minimal: Use only the output variable for training
-    # "2m_temperature|2m_temperature"
+    "2m_temperature|2m_temperature"
 
     # partial:use 3 vars
     # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
 
     # Full: Use all 6 variables for training (best performance from experiments)
-    "2m_temperature 10m_wind_speed|2m_temperature 10m_wind_speed"
+    # "2m_temperature 10m_wind_speed|2m_temperature 10m_wind_speed"
 
     # "10m_wind_speed|10m_wind_speed"
 )
@@ -57,14 +57,12 @@ subregions=(6x6)
 # regions=("flat" "mountainous" "hilly")
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
-# regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
+regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 # regions=("north_america" "south_america" "oceania")
-regions=("texas")
-# all_lead_times=(24 120 216)
-all_lead_times=(24)
+all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
-loss_functions=("joint_temp_wind_loss") # options: mse, extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
+loss_functions=("mse") # options: mse, extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
@@ -126,6 +124,8 @@ for region in "${regions[@]}"; do
                         fi
 
                         # Build base command
+                        # Uses snapshot ensemble of 3 runs (21 total snapshots) —
+                        # best accuracy/speed tradeoff per architecture experiments.
                         cmd="python3 finetuning/finetune.py \
                             --data_dir=\"$data_dir\" \
                             --output_dir=\"$output_dir\" \
@@ -137,7 +137,11 @@ for region in "${regions[@]}"; do
                             --region=\"$region\" \
                             --subregion=\"$subregion\" \
                             --lead_time_hours ${all_lead_times[@]} \
-                            --nn_architecture=\"$nn_architecture\""
+                            --nn_architecture=\"$nn_architecture\" \
+                            --block_ensemble \
+                            --block_holdout=3 \
+                            --snapshot_ensemble=1 \
+                            --snapshot_T0=10 --snapshot_T_mult=1"
                         
                         # Add growing_season_only flag if model_name is aifs
                         if [[ "$model_name" == "aifs" ]]; then

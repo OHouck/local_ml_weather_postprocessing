@@ -2,9 +2,11 @@
 """
 Script to generate architecture comparison plots from run_arch_experiments.sh outputs.
 
-This script plots RMSE improvement for the 4 architecture configurations:
+This script plots RMSE improvement for 6 architecture/training configurations:
 - MLP with single variable (minimal)
 - MLP with 3 variables (partial: temp + temp_1000hPa + specific_humidity_1000hPa)
+- MLP Snapshot Ensemble ×3 with single variable (minimal)
+- MLP Snapshot Ensemble ×3 with 3 variables (partial)
 - UNet with single variable (minimal)
 - UNet with 3 variables (partial)
 
@@ -51,8 +53,11 @@ def main():
     print("\nExperiments:")
     print("  1. MLP (Minimal) - Single variable")
     print("  2. MLP (Partial) - 3 variables")
-    print("  3. UNet (Minimal) - Single variable")
-    print("  4. UNet (Partial) - 3 variables")
+    print("  3. MLP Snapshot Ensemble x3 (Minimal) - Single variable")
+    print("  4. MLP Snapshot Ensemble x3 (Partial) - 3 variables")
+    print("  5. UNet (Minimal) - Single variable")
+    print("  6. UNet (Partial) - 3 variables")
+    print("  7. Block LTHO Ensemble k=3 (Minimal) - NEW BEST")
     print("\n" + "=" * 80)
 
     # Generate plot

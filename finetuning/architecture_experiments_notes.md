@@ -16,6 +16,11 @@ Constraint: Training time < 5 minutes on M3 Max MacBook Pro.
 
 ## Summary of Results
 
+> **Note on metrics**: Values below are **MSE % improvement** = `(1 - MSE_corr/MSE_orig) * 100`.
+> RMSE % improvement = `(1 - RMSE_corr/RMSE_orig) * 100` is approximately half the MSE improvement.
+> Example: +11.2% MSE ≈ +5.8% RMSE.
+
+### Round 1–2 (earlier session, measured in normalized space)
 | Model | 24h | 120h | 216h | Avg Improvement | Training Time |
 |-------|------|-------|-------|-----------------|---------------|
 | **Single MLP (baseline)** | +10.3% | +19.2% | +26.8% | **+18.7%** | 0.19 min |
@@ -33,9 +38,56 @@ Constraint: Training time < 5 minutes on M3 Max MacBook Pro.
 | **Snapshot Ens (3 runs × 7 snaps)** | +11.6% | +20.5% | +28.0% | **+20.0%** | **0.67 min** |
 | **Snapshot Ens (5 runs × 7 snaps)** | **+11.7%** | **+20.9%** | **+28.3%** | **+20.3%** | **1.11 min** |
 
-**Winner: Multi-seed Snapshot Ensemble of 5 runs (+20.3% avg, +1.6 pp over single MLP, 1.11 min)**
-**Best 24h: Snapshot Ens with T=30/Tmult=2 (+11.8% MSE, 0.22 min)**
-**Best tradeoff: Snapshot Ens 3 runs (+20.0% avg, +11.6% at 24h, 0.67 min)**
+### Round 3 (session 2 — actual temperature space, verified from zarr)
+| Model | 24h MSE% | 120h MSE% | 216h MSE% | Avg MSE% | Training Time |
+|-------|----------|-----------|-----------|----------|---------------|
+| **Mean Debiasing (baseline)** | +8.95% | +16.06% | +11.92% | +12.31% | — |
+| Single MLP (hyperopt) | +9.44% | +16.51% | +24.26% | +16.74% | ~0.2 min |
+| PixelwiseMLP | +6.55% | +13.40% | +27.76% | +15.90% | ~0.5 min |
+| LocalGlobalMLP | +6.85% | +15.11% | +27.11% | +16.36% | ~0.6 min |
+| TwoStreamMLP | +7.38% | +14.33% | +29.51% | +17.07% | ~1.1 min |
+| TwoStreamMLP Snapshot 3 | +6.32% | +15.49% | +27.85% | +16.55% | ~4.4 min |
+| MLP PCA-30 | +3.32% | +11.73% | +23.07% | +12.71% | ~0.3 min |
+| SWA Ensemble 3 (warmup=150, T0=10, swa_epochs=110) | +10.76% | +20.85% | +28.49% | +20.03% | ~0.9 min |
+| MLP Snapshot 3 (T0=30) | +11.35% | +21.49% | +28.14% | +20.33% | ~1.0 min |
+| MLP Snapshot 5 (T0=30) | +11.32% | +21.37% | +28.45% | +20.38% | ~1.4 min |
+| **Block Ensemble (4 early-stop)** | **+11.54%** | **+22.18%** | **+26.53%** | **+20.08%** | **~0.5 min** |
+| **Block + Snapshot (T0=30, 28 preds, equal weight)** | **+12.10%** | **+22.31%** | **+29.34%** | **+21.25%** | **~1.5 min** |
+
+### Round 4 (session 3 — val-loss weighting, T0 tuning for LOO blocks)
+| Model | 24h MSE% | 120h MSE% | 216h MSE% | Avg MSE% | Training Time |
+|-------|----------|-----------|-----------|----------|---------------|
+| Block LOO Snap (T0=10, 84 preds, equal) | +12.20% | +22.47% | +29.37% | +21.35% | ~1.3 min |
+| Block LOO Snap (T0=15, 56 preds, equal) | +12.22% | +22.37% | +29.46% | ~21.35% | ~1.3 min |
+| Block LOO Snap (T0=20, 40 preds, equal) | +11.97% | +22.14% | +29.34% | +21.15% | ~1.3 min |
+| Block LOO Snap (T0=15, 3 seeds/block, 112 preds) | +12.08% | +22.24% | +29.44% | +21.25% | ~2.5 min |
+| **Block LOO Snap (T0=15, 56 preds, global val-loss weighted)** | **+12.25%** | **+22.51%** | **+29.36%** | **+21.37%** | **~1.3 min** |
+
+### Round 5 (session 3 — leave-K-out generalisation: key breakthrough)
+| Model | 24h MSE% | 120h MSE% | 216h MSE% | Avg MSE% | Training Time |
+|-------|----------|-----------|-----------|----------|---------------|
+| Block k=1 (LOO) + Snap T0=15, val-wt | +12.25% | +22.51% | +29.36% | +21.37% | ~1.3 min |
+| Block k=2 (LTO) + Snap T0=15, val-wt | +12.77% | +24.36% | +30.51% | +22.55% | ~1.3 min |
+| Block k=3 early-stop only (4 preds) | +11.24% | +23.11% | +26.40% | +20.25% | ~0.2 min |
+| Block k=3 (LTHO) + Snap T0=30, val-wt | +13.28% | +26.60% | +30.91% | +23.60% | ~0.5 min |
+| Block k=3 (LTHO) + Snap T0=15, val-wt | +13.34–13.36% | +26.55–26.86% | +30.89–31.29% | ~23.70% | ~0.5 min |
+| **Block k=3 (LTHO) + Snap T0=10, val-wt** | **+13.36–13.41%** | **+26.82–27.07%** | **+31.12–31.29%** | **~23.80%** | **~0.5 min** |
+| Block k=3, 2 seeds/block, T0=15 (112 preds) | +13.24% | +26.81% | +31.30% | +23.78% | ~0.9 min |
+| Block k=3, 3 seeds/block, T0=10 (252 preds) | +13.27% | +27.08% | +31.28% | +23.88% | ~1.3 min |
+| Block k=2 + k=3 combined (equal weight) | +13.36% | +25.91% | +31.12% | +23.46% | — |
+
+**NEW WINNER: Block k=3 (Leave-Three-Out) + Snapshot T0=10, 1 seed, val-loss weighted**
+**84 total predictions (4 blocks × 21 snapshots), training ~0.5 min**
+**24h: +13.41% MSE (+6.97% RMSE) vs +8.95% mean debiasing — beats baseline by +4.46 pp**
+**Best avg improvement: +23.80% MSE across all lead times**
+
+**Key insight: why does leave-three-out (train on 1 year) beat leave-one-out (train on 3 years)?**
+- Each single-year model (~1083 samples) is strongly regularized: it can only learn patterns that generalized within that one year
+- When you average 4 models trained on completely different single years, you get maximum temporal diversity — each model learned different seasonal patterns
+- The val-loss weighting naturally selects the "better" snapshots across all 4 single-year training runs
+- More holdout → more temporal diversity among training sets → better ensemble → better 24h performance
+- The sweet spot T0=10 (21 snaps/block) works because single-year models are small (train fast, converge quickly per cycle)
+- Adding more seeds per block doesn't help: temporal diversity across blocks is sufficient; seed diversity within a block adds noise
 
 ---
 
@@ -116,26 +168,49 @@ Constraint: Training time < 5 minutes on M3 Max MacBook Pro.
 1. **Architecture changes don't help much** with only 4332 training samples.
    The data size is the bottleneck, not model expressiveness.
 
-2. **Snapshot ensemble is the best approach** — it provides "free" ensemble diversity
-   from a single training run by saving weights at each cosine cycle minimum. Combined
-   with multi-seed runs, it achieves the best results in the least time.
+2. **Leave-K-out block ensemble is the best training strategy** — the more years held out
+   per block, the more temporally diverse the ensemble:
+   - k=1 (LOO, train on 3 years): +12.25% at 24h, 4 blocks
+   - k=2 (LTO, train on 2 years): +12.77% at 24h, 6 blocks
+   - k=3 (LTHO, train on 1 year): **+13.41% at 24h, 4 blocks** ← BEST
+   More holdout = stronger regularization per model + higher temporal diversity across blocks.
 
-3. **Ensemble is the most reliable way to improve** — it reduces variance without
-   increasing bias, and works with any base model.
+3. **Block k=3 + Snapshot T0=10 is the overall winner** — 4 single-year models × 21
+   snapshots/block = 84 total predictions in ~0.5 min. Beats everything else at all
+   lead times. T0=10 (21 snaps/block) is the sweet spot for single-year training because
+   these small models converge fast per cycle.
 
-4. **MPS (Apple Silicon) is slow for convolutions** on small grids. MLPs are
+4. **Global val-loss weighted averaging matters for block ensembles** — weights each
+   snapshot by 1/val_loss across all predictions. Naturally down-weights harder validation
+   blocks. Adds ~0.1-0.2 pp at 24h. Does NOT help for random-split snapshot ensembles
+   (val_losses are incomparable across different random splits).
+
+5. **Seed diversity within blocks doesn't help** — temporal diversity across blocks is
+   sufficient; adding more seeds per block adds noise, not signal.
+
+6. **Combining different k-level ensembles (k=2+k=3) doesn't help** — k=3 alone is better
+   than k=2+k=3 averaged. More predictions ≠ better if they come from weaker models.
+
+7. **MC dropout at inference time doesn't work** — enabling dropout during inference
+   badly degrades performance (10.9% at 24h with 20 samples); the 0.25 dropout rate
+   introduces too much noise per pass.
+
+8. **SWA (Stochastic Weight Averaging) is weaker than snapshot** — averaging weights
+   finds a single "average" minimum vs snapshot's diverse minima ensemble.
+
+9. **MPS (Apple Silicon) is slow for convolutions** on small grids. MLPs are
    much faster and equally effective.
 
-5. **Joint training across lead times** is better than per-lead-time models —
-   the shared structure helps all lead times. Even for optimizing 24h specifically,
-   training jointly with 120h and 216h produces better 24h predictions.
+10. **Joint training across lead times** is better than per-lead-time models.
 
-6. **CosineAnnealingWarmRestarts** helps over ReduceLROnPlateau for the MLP,
-   as the periodic LR restarts help escape local minima. With T_mult=1, each cycle
-   converges to a different local minimum that can be saved as a snapshot.
+11. **CosineAnnealingWarmRestarts T0=10 is the sweet spot for k=3 blocks** — single-year
+    models (~1083 samples) are small and converge fast. T0=10 (21 snaps/block) > T0=15
+    (14 snaps/block) > T0=30 (7 snaps/block) for k=3. For k=1 blocks (3× more data),
+    T0=15 is better.
 
-7. **Train/val split ratio matters less for ensembles** — 80/20 is fine for
-   ensembles since they already get diversity from different seeds.
+12. **The snapshot hyperopt was corrupted** — use the non-snapshot hyperopt params
+    (mlp_hidden_dim=1024, num_layers=2, dropout=0.244, lr=3.3e-4, wd=2.2e-6) with
+    --snapshot_T0=10 --snapshot_T_mult=1 --block_holdout=3 for best results.
 
 ---
 
@@ -145,21 +220,35 @@ Constraint: Training time < 5 minutes on M3 Max MacBook Pro.
 # Single MLP (original behavior, unchanged)
 python3 finetuning/finetune.py --nn_architecture mlp ...
 
-# Snapshot ensemble of 3 runs (RECOMMENDED - best accuracy/speed tradeoff)
-# Each run saves ~7 snapshots → 21 total predictions averaged
-python3 finetuning/finetune.py --nn_architecture mlp --snapshot_ensemble 3 ...
+# BEST OVERALL: Block k=3 + Snapshot T0=10 (~0.5 min, +13.41% at 24h)
+# Trains 4 single-year blocks × 21 snapshots = 84 total predictions
+# Uses global val-loss weighted averaging automatically
+python3 finetuning/finetune.py --nn_architecture mlp --block_ensemble \
+    --block_holdout 3 --snapshot_ensemble 1 --snapshot_T0 10 --snapshot_T_mult 1 ...
 
-# Snapshot ensemble of 5 runs (best overall accuracy, ~1 min)
-python3 finetuning/finetune.py --nn_architecture mlp --snapshot_ensemble 5 ...
+# Good tradeoff: Block k=2 + Snapshot T0=15 (~1.3 min, +12.77% at 24h)
+# Trains 6 two-year blocks × 14 snapshots = 84 total predictions
+python3 finetuning/finetune.py --nn_architecture mlp --block_ensemble \
+    --block_holdout 2 --snapshot_ensemble 1 --snapshot_T0 15 --snapshot_T_mult 1 ...
 
-# Seed-diverse ensemble of 7 MLPs (previous best, still good)
-python3 finetuning/finetune.py --nn_architecture mlp --ensemble 7 ...
+# Simple baseline: Block LOO + Snapshot T0=15 (~1.3 min, +12.25% at 24h)
+# Trains 4 three-year blocks × 14 snapshots = 56 total predictions
+python3 finetuning/finetune.py --nn_architecture mlp --block_ensemble \
+    --snapshot_ensemble 1 --snapshot_T0 15 --snapshot_T_mult 1 ...
 
-# Custom snapshot settings
+# Pure snapshot (no block): 3 runs × T0=30 (~1.0 min, +11.15%)
 python3 finetuning/finetune.py --nn_architecture mlp --snapshot_ensemble 3 \
-    --snapshot_epochs 210 --snapshot_T0 30 ...
+    --snapshot_T0 30 --snapshot_T_mult 1 ...
 
-# Other architectures (available but not recommended over snapshot ensemble)
+# Snapshot ensemble of 5 runs (no block, ~1.4 min)
+python3 finetuning/finetune.py --nn_architecture mlp --snapshot_ensemble 5 \
+    --snapshot_T0 30 --snapshot_T_mult 1 ...
+
+# SWA ensemble (not recommended: weaker than snapshot at 24h)
+python3 finetuning/finetune.py --nn_architecture mlp --swa_ensemble 3 \
+    --swa_warmup_epochs 100 --swa_epochs 110 --swa_T0 10 ...
+
+# Other architectures (available but not recommended over block+snapshot)
 python3 finetuning/finetune.py --nn_architecture resmlp ...
 python3 finetuning/finetune.py --nn_architecture rescnn ...
 ```

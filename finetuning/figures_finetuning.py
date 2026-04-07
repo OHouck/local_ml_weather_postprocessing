@@ -30,7 +30,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path
-from finetuning.process_forecasts import calculate_rmse
 from finetuning.custom_loss_fns import extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
 
 # Suppress Zarr warnings (e.g., for .DS_Store files)
@@ -75,15 +74,41 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
     return (rmse_original - rmse_corrected) / rmse_original * 100
 
 
+def _build_arch_suffix(nn_architecture, block_ensemble=False, block_holdout=1,
+                       snapshot_ensemble=None):
+    """
+    Build the architecture string that appears in output filenames,
+    replicating the logic in helper_funcs.generate_output_path().
+
+    Examples
+    --------
+    _build_arch_suffix("mlp")                                      -> "mlp"
+    _build_arch_suffix("mlp", snapshot_ensemble=3)                 -> "mlp_snapshot3"
+    _build_arch_suffix("mlp", block_ensemble=True, block_holdout=3,
+                       snapshot_ensemble=1)                        -> "mlp_blockk3_snapshot1"
+    _build_arch_suffix("unet")                                     -> "unet"
+    """
+    suffix = nn_architecture
+    if block_ensemble:
+        holdout_str = f"k{block_holdout}" if block_holdout != 1 else ""
+        suffix += f"_block{holdout_str}"
+        if snapshot_ensemble:
+            suffix += f"_snapshot{snapshot_ensemble}"
+    elif snapshot_ensemble:
+        suffix += f"_snapshot{snapshot_ensemble}"
+    return suffix
+
+
 def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_end="2021-12-31",
                             test_start="2022-01-01", test_end="2022-12-31",
-                            nn_architecture="mlp", subregion="2x2", alternate_loss_fn=None):
+                            nn_architecture="mlp", subregion="2x2", alternate_loss_fn=None,
+                            snapshot_ensemble=None, block_ensemble=False, block_holdout=1):
     """
     Filter zarr files in a zone directory to match specific model configuration.
 
     This matches the file naming convention from generate_output_path(), which creates files like:
     train_{training_vars}_test_{output_vars}_dim{subregion}_leadtime_{lead_times}_
-    train{train_start}-{train_end}_test{test_start}-{test_end}_{nn_architecture}[_{alternate_loss_fn}]_{zone_type}_bs{batch_num}.zarr
+    train{train_start}-{train_end}_test{test_start}-{test_end}_{arch}[_bs{N}].zarr
 
     Parameters
     ----------
@@ -105,12 +130,20 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
         Subregion size pattern (default: "2x2")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    snapshot_ensemble : int, optional
+        Number of snapshot ensemble runs (default: None)
+    block_ensemble : bool, optional
+        Whether block leave-one-out ensemble was used (default: False)
+    block_holdout : int, optional
+        Block holdout size for block ensemble (default: 1)
 
     Returns
     -------
     list
         List of matching zarr file paths
     """
+    import re as _re
+
     if not os.path.exists(zone_dir):
         return []
 
@@ -118,27 +151,34 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
     all_files = glob.glob(os.path.join(zone_dir, f"*{variable}*.zarr"))
 
     # Build the pattern to match based on generate_output_path structure
-    # Pattern: train_{var}_test_{var}_dim{subregion}_leadtime_*_train{dates}_test{dates}_{arch}[_{loss}]_{zone}_bs*.zarr
     dates_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
     dim_str = f"dim{subregion}"
 
-    # Build architecture string
+    # Build architecture string replicating generate_output_path logic
+    arch_str = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
+                                  snapshot_ensemble)
     if alternate_loss_fn:
-        arch_str = f"{nn_architecture}_{alternate_loss_fn}"
-    else:
-        arch_str = nn_architecture
+        # loss fn is inserted between nn_architecture and the block/snapshot suffixes,
+        # so rebuild: base_arch + loss + block/snapshot
+        base = nn_architecture + f"_{alternate_loss_fn}"
+        arch_str = _build_arch_suffix(base, block_ensemble, block_holdout, snapshot_ensemble)
+
+    # Match arch_str as an exact suffix, allowing for optional zone label and bootstrap index.
+    # Handles three forms:
+    #   ..._mlp_blockk3_snapshot1.zarr                (plain run)
+    #   ..._mlp_blockk3_snapshot1_bs40.zarr           (bootstrap, no zone label)
+    #   ..._mlp_blockk3_snapshot1_africa_bs40.zarr    (bootstrap with zone label)
+    arch_pattern = _re.compile(
+        rf"_{_re.escape(arch_str)}(?:(?:_[a-z_]+)?_bs\d+)?\.zarr$"
+    )
 
     # Filter files that match the model configuration
     matching_files = []
     for file_path in all_files:
         basename = os.path.basename(file_path)
-
-        # Check if file matches the expected pattern
-        # Architecture can appear as _{arch}_ (with suffix like loss fn) or _{arch}.zarr (at end)
-        arch_match = (f"_{arch_str}_" in basename or basename.endswith(f"_{arch_str}.zarr"))
         if (dates_str in basename and
-            dim_str in basename and
-            arch_match):
+                dim_str in basename and
+                arch_pattern.search(basename)):
             matching_files.append(file_path)
 
     return matching_files
@@ -157,7 +197,10 @@ def load_region_data(
     subregion="6x6",
     alternate_loss_fn=None,
     lead_times=None,
-    sdor_da=None
+    sdor_da=None,
+    snapshot_ensemble=None,
+    block_ensemble=False,
+    block_holdout=1
 ):
     """
     Load and process zarr data for multiple regions.
@@ -194,6 +237,12 @@ def load_region_data(
         List of lead times to process. If None, uses [24, 120, 216]
     sdor_da : xarray.DataArray, optional
         Standard deviation of orography data (only needed if calculating sdor)
+    snapshot_ensemble : int, optional
+        Number of snapshot ensemble runs (default: None = plain training)
+    block_ensemble : bool, optional
+        Whether block leave-one-out ensemble was used (default: False)
+    block_holdout : int, optional
+        Block holdout size for block ensemble (default: 1)
 
     Returns
     -------
@@ -230,6 +279,10 @@ def load_region_data(
           f"train={train_start} to {train_end}, test={test_start} to {test_end}")
     if alternate_loss_fn:
         print(f"Alternate loss function: {alternate_loss_fn}")
+    if block_ensemble:
+        print(f"Block ensemble: block_holdout={block_holdout}, snapshot_ensemble={snapshot_ensemble}")
+    elif snapshot_ensemble:
+        print(f"Snapshot ensemble: {snapshot_ensemble}")
 
     # Collect patch data for each lead time
     all_patch_data = {lt: [] for lt in lead_times}
@@ -244,7 +297,10 @@ def load_region_data(
         # Find zarr files matching the model configuration
         zarr_files = filter_patch_zarr_files(
             region_dir, variable, train_start, train_end,
-            test_start, test_end, nn_architecture, subregion, alternate_loss_fn
+            test_start, test_end, nn_architecture, subregion, alternate_loss_fn,
+            snapshot_ensemble=snapshot_ensemble,
+            block_ensemble=block_ensemble,
+            block_holdout=block_holdout
         )
 
         print(f"\nProcessing {region}: found {len(zarr_files)} matching files")
@@ -462,7 +518,10 @@ def map_global_improvements(
     nn_architecture="mlp",
     subregion="6x6",
     alternate_loss_fn=None,
-    pixel_level=False
+    pixel_level=False,
+    snapshot_ensemble=None,
+    block_ensemble=False,
+    block_holdout=1
 ):
     """
     Create global maps showing RMSE metrics for all post-processed patches.
@@ -540,7 +599,10 @@ def map_global_improvements(
         subregion=subregion,
         alternate_loss_fn=alternate_loss_fn,
         lead_times=lead_times,
-        sdor_da=None
+        sdor_da=None,
+        snapshot_ensemble=snapshot_ensemble,
+        block_ensemble=block_ensemble,
+        block_holdout=block_holdout
     )
 
     if all_patch_data is None:
@@ -859,20 +921,13 @@ def map_global_improvements(
         plt.tight_layout()
 
         # Save figure
-        if pixel_level:
-            if map_type == "improvement":
-                fname = f"global_improvement_map_pixel_{variable}_{model}_lt{lead_time}.png"
-            elif map_type == "original":
-                fname = f"global_original_rmse_map_pixel_{variable}_{model}_lt{lead_time}.png"
-            elif map_type == "corrected":
-                fname = f"global_corrected_rmse_map_pixel_{variable}_{model}_lt{lead_time}.png"
-        else:
-            if map_type == "improvement":
-                fname = f"global_improvement_map_{variable}_{model}_lt{lead_time}.png"
-            elif map_type == "original":
-                fname = f"global_original_rmse_map_{variable}_{model}_lt{lead_time}.png"
-            elif map_type == "corrected":
-                fname = f"global_corrected_rmse_map_{variable}_{model}_lt{lead_time}.png"
+        arch_suffix = _build_arch_suffix(nn_architecture, block_ensemble,
+                                         block_holdout, snapshot_ensemble)
+        pixel_tag = "_pixel" if pixel_level else ""
+        map_tag = {"improvement": "improvement", "original": "original_rmse",
+                   "corrected": "corrected_rmse"}.get(map_type, map_type)
+        fname = (f"global_{map_tag}_map{pixel_tag}_{variable}_{model}"
+                 f"_{arch_suffix}_lt{lead_time}.png")
 
         save_path = os.path.join(out_folder, fname)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1271,7 +1326,9 @@ def map_forecasts(dirs, train_start, train_end, test_start, test_end,
 
 def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start,
                                         test_end, model, variable, nn_architecture="mlp",
-                                        growing_season_only=False, alternate_loss_fn=None):
+                                        growing_season_only=False, alternate_loss_fn=None,
+                                        snapshot_ensemble=None, block_ensemble=False,
+                                        block_holdout=1):
     """
     Creates single-panel plot showing RMSE improvement for different subregion sizes for a specific variable.
     Compares center 4x4 region across different training region sizes.
@@ -1341,7 +1398,10 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
             lead_time_hours=lead_times,
             nn_architecture=nn_architecture,
             growing_season_only=growing_season_only,
-            alternate_loss_fn=alternate_loss_fn
+            alternate_loss_fn=alternate_loss_fn,
+            snapshot_ensemble=snapshot_ensemble,
+            block_ensemble=block_ensemble,
+            block_holdout=block_holdout
         )
 
         path_6x6 = os.path.join(input_folder, generate_output_path(args_6x6))
@@ -1385,7 +1445,10 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 lead_time_hours=lead_times,
                 nn_architecture=nn_architecture,
                 growing_season_only=growing_season_only,
-                alternate_loss_fn=alternate_loss_fn
+                alternate_loss_fn=alternate_loss_fn,
+                snapshot_ensemble=snapshot_ensemble,
+                block_ensemble=block_ensemble,
+                block_holdout=block_holdout
             )
 
             path = os.path.join(input_folder, generate_output_path(args))
@@ -1480,7 +1543,9 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     out_folder = os.path.join(dirs["fig"], model, "subregion")
     os.makedirs(out_folder, exist_ok=True)
 
-    fname = f"region_size_comparison_{variable}_{nn_architecture}_{model}.png"
+    arch_suffix = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
+                                     snapshot_ensemble)
+    fname = f"region_size_comparison_{variable}_{arch_suffix}_{model}.png"
     save_path = os.path.join(out_folder, fname)
 
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
@@ -1910,22 +1975,55 @@ def plot_arch_experiment_results(
     """
     input_folder = dirs['input']
 
-    # Define the experiment configurations from run_arch_experiments.sh
+    # Define the experiment configurations from run_arch_experiments.sh.
+    # snapshot_ensemble=3 entries produce filenames with _snapshot3 suffix via
+    # generate_output_path; None means standard early-stopping MLP/UNet.
+    # block_ensemble=True with block_holdout=3 produces _blockk3_snapshot1 files.
+    SNAPSHOT_RUNS = 3   # must match snapshot_ensemble_runs in run_arch_experiments.sh
+    BLOCK_LTHO_RUNS = 1  # snapshot_ensemble passed to block LTHO (1 seed/block)
     experiments = [
         {
             'name': 'MLP (2m Temperature)',
             'architecture': 'mlp',
             'training_vars': [variable],
             'output_vars': [variable],
+            'snapshot_ensemble': None,
+            'block_ensemble': False,
+            'block_holdout': 1,
             'color': '#1f77b4',  # Blue
             'hatch': None
         },
         {
             'name': 'MLP (2m Temperature + 1000hPa Temperature and Specific Humidity)',
             'architecture': 'mlp',
-            'training_vars': [variable, f'temperature_1000hPa', f'specific_humidity_1000hPa'],
+            'training_vars': [variable, 'temperature_1000hPa', 'specific_humidity_1000hPa'],
             'output_vars': [variable],
+            'snapshot_ensemble': None,
+            'block_ensemble': False,
+            'block_holdout': 1,
             'color': '#1f77b4',  # Blue
+            'hatch': '//'
+        },
+        {
+            'name': f'MLP Snapshot Ensemble ×{SNAPSHOT_RUNS} (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': SNAPSHOT_RUNS,
+            'block_ensemble': False,
+            'block_holdout': 1,
+            'color': '#2ca02c',  # Green
+            'hatch': None
+        },
+        {
+            'name': f'MLP Snapshot Ensemble ×{SNAPSHOT_RUNS} (2m Temperature + 1000hPa Temperature and Specific Humidity)',
+            'architecture': 'mlp',
+            'training_vars': [variable, 'temperature_1000hPa', 'specific_humidity_1000hPa'],
+            'output_vars': [variable],
+            'snapshot_ensemble': SNAPSHOT_RUNS,
+            'block_ensemble': False,
+            'block_holdout': 1,
+            'color': '#2ca02c',  # Green
             'hatch': '//'
         },
         {
@@ -1933,17 +2031,36 @@ def plot_arch_experiment_results(
             'architecture': 'unet',
             'training_vars': [variable],
             'output_vars': [variable],
+            'snapshot_ensemble': None,
+            'block_ensemble': False,
+            'block_holdout': 1,
             'color': '#ff7f0e',  # Orange
             'hatch': None
         },
         {
             'name': 'UNet (2m Temperature + 1000hPa Temperature and Specific Humidity)',
             'architecture': 'unet',
-            'training_vars': [variable, f'temperature_1000hPa', f'specific_humidity_1000hPa'],
+            'training_vars': [variable, 'temperature_1000hPa', 'specific_humidity_1000hPa'],
             'output_vars': [variable],
+            'snapshot_ensemble': None,
+            'block_ensemble': False,
+            'block_holdout': 1,
             'color': '#ff7f0e',  # Orange
             'hatch': '//'
-        }
+        },
+        {
+            # Block Leave-Three-Out (LTHO): 4 single-year models × 21 snapshots (T0=10) = 84 preds
+            # val-loss weighted; ~0.5 min training; best known method for 24h improvement
+            'name': 'Block LTHO Ensemble (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#9467bd',  # Purple
+            'hatch': None
+        },
     ]
 
     lead_times = [24, 120, 216]  # Hours
@@ -1971,6 +2088,11 @@ def plot_arch_experiment_results(
             output_vars=exp['output_vars'],
             lead_time_hours=lead_times,
             nn_architecture=exp['architecture'],
+            snapshot_ensemble=exp.get('snapshot_ensemble', None),
+            ensemble=None,
+            swa_ensemble=None,
+            block_ensemble=exp.get('block_ensemble', False),
+            block_holdout=exp.get('block_holdout', 1),
             growing_season_only=False,
             alternate_loss_fn=None,
             ground_truth_source=""
@@ -2083,7 +2205,7 @@ def plot_arch_experiment_results(
         )
 
     # Set axes
-    ax.set_ylim(-2.5, 15)
+    ax.set_ylim(-2.5, 20)
     ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
 
@@ -3627,7 +3749,10 @@ def lead_time_compare_binscatter(
     test_end="2022-12-31",
     nn_architecture="mlp",
     subregion="6x6",
-    alternate_loss_fn=None
+    alternate_loss_fn=None,
+    snapshot_ensemble=None,
+    block_ensemble=False,
+    block_holdout=1
 ):
     """
     Create 2x2 binscatter comparison across lead times.
@@ -3724,7 +3849,10 @@ def lead_time_compare_binscatter(
             subregion=subregion,
             alternate_loss_fn=alternate_loss_fn,
             lead_times=lead_times,
-            sdor_da=sdor_da
+            sdor_da=sdor_da,
+            snapshot_ensemble=snapshot_ensemble,
+            block_ensemble=block_ensemble,
+            block_holdout=block_holdout
         )
 
         if all_patch_data is None:
@@ -3813,7 +3941,9 @@ def lead_time_compare_binscatter(
 
     # Save figure
     x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
-    filename = f"lead_time_compare_binscatter_{x_suffix}.png"
+    arch_suffix = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
+                                     snapshot_ensemble)
+    filename = f"lead_time_compare_binscatter_{model}_{arch_suffix}_{x_suffix}.png"
     save_path = os.path.join(out_folder, filename)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nSaved lead time comparison plot to: {save_path}")
@@ -3833,7 +3963,10 @@ def model_compare_binscatter(
     test_end="2022-12-31",
     nn_architecture="mlp",
     subregion="6x6",
-    alternate_loss_fn=None
+    alternate_loss_fn=None,
+    snapshot_ensemble=None,
+    block_ensemble=False,
+    block_holdout=1
 ):
     """
     Create 1x3 binscatter comparison across models (Pangu original, IFS original, Pangu corrected).
@@ -3933,7 +4066,10 @@ def model_compare_binscatter(
         subregion=subregion,
         alternate_loss_fn=alternate_loss_fn,
         lead_times=lead_times,
-        sdor_da=sdor_da
+        sdor_da=sdor_da,
+        snapshot_ensemble=snapshot_ensemble,
+        block_ensemble=block_ensemble,
+        block_holdout=block_holdout
     )
 
     # Load IFS data
@@ -3950,7 +4086,10 @@ def model_compare_binscatter(
         subregion=subregion,
         alternate_loss_fn=alternate_loss_fn,
         lead_times=lead_times,
-        sdor_da=sdor_da
+        sdor_da=sdor_da,
+        snapshot_ensemble=snapshot_ensemble,
+        block_ensemble=block_ensemble,
+        block_holdout=block_holdout
     )
 
     if pangu_data is None or ifs_data is None:
@@ -4034,7 +4173,9 @@ def model_compare_binscatter(
 
     # Save figure
     x_suffix = "equator" if x_metric == "equator_distance" else "sdor"
-    filename = f"model_compare_binscatter_{variable}_{x_suffix}.png"
+    arch_suffix = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
+                                     snapshot_ensemble)
+    filename = f"model_compare_binscatter_{variable}_{arch_suffix}_{x_suffix}.png"
     save_path = os.path.join(out_folder, filename)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nSaved model comparison plot to: {save_path}")
@@ -4202,10 +4343,18 @@ def _plot_binscatter(ax, x, y, color, label,
         bin_x = dots_df['x'].values
         bin_y = dots_df['fit'].values
 
-        # Get confidence intervals from .ci DataFrame
+        # Get confidence intervals from .ci DataFrame.
+        # binsreg returns None for ci when bins have too few distinct x values;
+        # in that case fall back to zero-width intervals so the plot still renders.
         ci_df = data_obj.ci
-        ci_l = ci_df['ci_l'].values
-        ci_r = ci_df['ci_r'].values
+        if ci_df is None:
+            print(f"  Warning: binsreg returned no CI (too few distinct x values). "
+                  f"Plotting bin means without error bars.")
+            ci_l = bin_y.copy()
+            ci_r = bin_y.copy()
+        else:
+            ci_l = ci_df['ci_l'].values
+            ci_r = ci_df['ci_r'].values
 
     # Calculate error bars
     yerr_lower = np.abs(bin_y - ci_l)

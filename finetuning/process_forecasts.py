@@ -254,24 +254,27 @@ def calculate_and_save_statistics(
                                         corr_flat = corrected.values.flatten()
                                         mean_bias_flat = mean_bias_corrected.values.flatten() if mean_bias_corrected is not None else None
 
+                                        # Remove NaN values before computing any metrics
+                                        mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                                        if mean_bias_flat is not None:
+                                            mask = mask & ~np.isnan(mean_bias_flat)
+
+                                        gt_flat = gt_flat[mask]
+                                        orig_flat = orig_flat[mask]
+                                        corr_flat = corr_flat[mask]
+                                        mean_bias_flat = mean_bias_flat[mask] if mean_bias_flat is not None else None
+
                                         # Calculate RMSE values
                                         rmse_original = calculate_rmse(orig_flat, gt_flat)
                                         rmse_corrected = calculate_rmse(corr_flat, gt_flat)
                                         rmse_pct_improvement = (rmse_original - rmse_corrected) / rmse_original * 100
 
-                                        rmse_og_extreme_heat = extreme_heat_loss(orig_flat, gt_flat, is_normalized=False, return_rmse=True)
-                                        rmse_corr_extreme_heat = extreme_heat_loss(corr_flat, gt_flat, is_normalized=False, return_rmse=True) 
-                                        rmse_pct_improvement_extreme_heat = (rmse_og_extreme_heat - rmse_corr_extreme_heat) / rmse_og_extreme_heat * 100 if rmse_og_extreme_heat and rmse_corr_extreme_heat else None   
-
-                                        # Remove NaN values - fixed logic here
-                                        mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
-                                        if mean_bias_flat is not None:
-                                            mask = mask & ~np.isnan(mean_bias_flat)
-                                        
-                                        gt_flat = gt_flat[mask]
-                                        orig_flat = orig_flat[mask]
-                                        corr_flat = corr_flat[mask]
-                                        mean_bias_flat = mean_bias_flat[mask] if mean_bias_flat is not None else None
+                                        if prediction_var == '2m_temperature':
+                                            rmse_og_extreme_heat = extreme_heat_loss(orig_flat, gt_flat, is_normalized=False, return_rmse=True)
+                                            rmse_corr_extreme_heat = extreme_heat_loss(corr_flat, gt_flat, is_normalized=False, return_rmse=True)
+                                            rmse_pct_improvement_extreme_heat = (rmse_og_extreme_heat - rmse_corr_extreme_heat) / rmse_og_extreme_heat * 100 if rmse_og_extreme_heat and rmse_corr_extreme_heat else None
+                                        else:
+                                            rmse_pct_improvement_extreme_heat = None
                                         
                                         # Store ground truth for statistics
                                         ground_truth_values.extend(gt_flat)

@@ -37,7 +37,8 @@ training_output_vars=(
 subregions=(20x20 15x15 10x10 8x8 6x6 4x4)
 regions=("finland" "amazon")
 all_lead_times=(24 120 216)
-nn_architecture="unet"
+nn_architecture="mlp"
+snapshot_ensemble_runs=3   # 3 runs × 7 snapshots = 21 members; best accuracy/speed tradeoff
 model_name="pangu"
 
 for region in "${regions[@]}"; do
@@ -51,6 +52,8 @@ for region in "${regions[@]}"; do
             test_end="2022-12-31"
 
             # Build base command
+            # Snapshot ensemble of 3 runs (best accuracy/speed tradeoff per
+            # architecture_experiments_notes.md; replaces previous UNet baseline)
             cmd="python3 finetuning/finetune.py \
                 --data_dir=\"$data_dir\" \
                 --output_dir=\"$output_dir\" \
@@ -62,8 +65,9 @@ for region in "${regions[@]}"; do
                 --region=\"$region\" \
                 --subregion=\"$subregion\" \
                 --lead_time_hours ${all_lead_times[@]} \
-                --nn_architecture=\"$nn_architecture\""
-        
+                --nn_architecture=\"$nn_architecture\" \
+                --snapshot_ensemble=${snapshot_ensemble_runs}"
+
             # Execute command
             eval $cmd
         done

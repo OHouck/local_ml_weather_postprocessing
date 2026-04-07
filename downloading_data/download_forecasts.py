@@ -328,11 +328,7 @@ def download_data_by_year(model, year, subset, available_vars, start_time, clien
         ) / 1024**3
         print(f"  Total file size on disk: {total_size:.2f} GB")
     
-    
-    # Close Dask client
-    client.close()
-    print("\nDask client closed.")
-    
+
     return output_path
 
 def main():
@@ -511,6 +507,9 @@ def main():
     for year in years:
         output = download_data_by_year(model, year, subset, available_vars, start_time, client)
         print(f"\nSuccess! Data saved to: {output}")
+
+    client.close()
+    print("\nDask client closed.")
 
     start_time = print_time_and_memory("Verification complete", start_time)
     

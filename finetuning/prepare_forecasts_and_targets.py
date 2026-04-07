@@ -190,9 +190,13 @@ def check_variables_in_dataset(file_path, required_vars):
         missing_vars = []
 
         for var in required_vars:
-            # Skip computed variables
+            # 10m_wind_speed is computed from u/v components — check that both exist
             if var == "10m_wind_speed":
-                present_vars.append(var)
+                if ("10m_u_component_of_wind" in ds.data_vars and
+                        "10m_v_component_of_wind" in ds.data_vars):
+                    present_vars.append(var)
+                else:
+                    missing_vars.append(var)
                 continue
 
             # After flattening, atmospheric variables are stored with their full name
@@ -1012,8 +1016,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
     time_start = getattr(args, f"{ver_str}_start")
     time_end = getattr(args, f"{ver_str}_end")
 
-    # Create time range
-    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+    # Create time range (daily; forecasts are midnight-only and intersection filters further)
+    time_values = pd.date_range(start=time_start, end=time_end, freq='D')
 
     # Only keep growing season dates if requested: 3-15 to 10-31
     if args.growing_season_only:
@@ -1023,6 +1027,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         ]
 
     time_values_np = time_values.to_numpy()
+    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
 
     # Determine target dataset name
     if args.ground_truth_source == "":
@@ -1104,8 +1109,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 print(f"    Loading {year} from {file_path}")
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
-                # Select lead times
-                lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+                # Select requested lead times
                 ds = ds.sel(prediction_timedelta=lead_times_td)
 
                 # Select region if needed (data is already regional, but may need sub-region)
@@ -1175,7 +1179,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
                 for year in years_needed:
                     file_path = get_data_path(data_dir, args.model_name, args.region, year)
                     ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                     ds = ds.sel(prediction_timedelta=lead_times_td)
                     ds = ds.sel(latitude=lat_values, longitude=lon_values)
                     forecast_datasets.append(ds)
@@ -1237,7 +1240,6 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             for year in years_needed:
                 file_path = get_data_path(data_dir, args.model_name, args.region, year)
                 ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
-                lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
                 ds = ds.sel(prediction_timedelta=lead_times_td)
                 ds = ds.sel(latitude=lat_values, longitude=lon_values)
                 forecast_datasets.append(ds)
@@ -1302,11 +1304,12 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             obs_ds["10m_v_component_of_wind"]**2
         )
 
-    # Convert lead times to timedelta and select
-    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
-    forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
-
     # Select common time range
+    if 'prediction_timedelta' in forecast_ds.dims:
+        forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+    else:
+        raise ValueError("Forecast dataset is missing 'prediction_timedelta' dimension")
+
     common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
     common_times = np.intersect1d(common_times, time_values_np)
     forecast_ds = forecast_ds.sel(time=common_times)
@@ -1476,8 +1479,8 @@ def load_forecasts_classification(data_dir, args, lat_values, lon_values, train=
     time_start = getattr(args, f"{ver_str}_start")
     time_end = getattr(args, f"{ver_str}_end")
 
-    # Create time range
-    time_values = pd.date_range(start=time_start, end=time_end, freq='12h')
+    # Create time range (daily; forecasts are midnight-only and intersection filters further)
+    time_values = pd.date_range(start=time_start, end=time_end, freq='D')
 
     # Only keep growing season dates if requested
     if args.growing_season_only:

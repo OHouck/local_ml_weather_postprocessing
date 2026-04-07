@@ -41,8 +41,15 @@ from helper_funcs import setup_directories, generate_output_path
 
 if __name__ == "__main__":
     dirs = setup_directories()
-    print("HELLO()")
 
+    # Model configuration: MLP with block-k3 + snapshot ensemble
+    model_kwargs = dict(
+        nn_architecture="mlp",
+        block_ensemble=True,
+        block_holdout=3,
+        snapshot_ensemble=1,
+        subregion="6x6",
+    )
 
     #=============================================
     # Global Improvement Map Plots
@@ -50,26 +57,28 @@ if __name__ == "__main__":
     for model in ["pangu", "ifs"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             print(f"Creating global improvement map for {model} - {variable}")
-            map_global_improvements(dirs=dirs, model=model, 
+            map_global_improvements(dirs=dirs, model=model,
                                     variable=variable, map_type="improvement",
-                                    pixel_level=True)
+                                    pixel_level=True, **model_kwargs)
     #=============================================
     # Binscatter Plots
     #=============================================
-    # overlaying lead times for single model: Currently plot used for main paper 
+    # overlaying lead times for single model: Currently plot used for main paper
     for model in ["pangu", "ifs"]:
         for x_metric in ["sdor", "equator_distance"]:
             _ = lead_time_compare_binscatter(
                 dirs=dirs,
                 model=model,
-                x_metric=x_metric
+                x_metric=x_metric,
+                **model_kwargs
             )
-    
+
     # Create plot comparing model binscatters: Currently in Appendix
     for x_metric in ["sdor", "equator_distance"]:
         for variable in ["2m_temperature", "10m_wind_speed"]:
             _ = model_compare_binscatter(
                 dirs=dirs,
                 variable=variable,
-                x_metric=x_metric
+                x_metric=x_metric,
+                **model_kwargs
             )

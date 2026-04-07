@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=run_experiments_pangu_mlp
+#SBATCH --job-name=run_arch_experiments_pangu
 #SBATCH --account=pi-jfranke
-#SBATCH --output=run_experiments_pangu_mlp%J.txt
+#SBATCH --output=run_arch_experiments_pangu%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=120G
@@ -31,20 +31,22 @@ fi
 # ============================================================================
 # TRAINING/OUTPUT VARIABLE PAIRS
 # ============================================================================
-# Each entry is a paired configuration: "training_vars|output_vars"
-# Training vars are space-separated variables used as model inputs
-# Output vars are space-separated variables the model predicts
-#
-# Examples:
-#   "2m_temperature|2m_temperature" - Predict temp using only temp
-#   "2m_temperature 10m_u_component_of_wind|2m_temperature" - Predict temp using temp and wind
-#
+Each entry is a paired configuration: "training_vars|output_vars"
+Training vars are space-separated variables used as model inputs
+Output vars are space-separated variables the model predicts
+
+Examples:
+  "2m_temperature|2m_temperature" - Predict temp using only temp
+  "2m_temperature 10m_u_component_of_wind|2m_temperature" - Predict temp using temp and wind
+
 training_output_vars=(
     # Minimal: Use only the output variable for training
     "2m_temperature|2m_temperature"
 
     # partial:use 3 vars
-    "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
+    # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
+
+    # "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(6x6)
@@ -56,95 +58,109 @@ loss_functions=("mse")
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
-for region in "${regions[@]}"; do
-    for subregion in "${subregions[@]}"; do
-        # Skip if subregion is 2x2 and region is india, ethiopia, amazon, or usa_south
-        if [[ "$subregion" == "2x2" && ("$region" == "india" || "$region" == "ethiopia" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
-            continue
-        fi
+train_start="2018-01-01"
+train_end="2021-12-31"
+test_start="2022-01-01"
+test_end="2022-12-31"
+model_name="pangu"
+region="india"
+subregion="6x6"
 
-        # Skip if subregion is 6x6 and region is any of the bootstrap regions
-        if [[ "$subregion" == "6x6" && " ${bootstrap_regions[@]} " =~ " ${region} " ]]; then
-            continue
-        fi
+# # ============================================================================
+# # PLAIN MLP AND UNET EXPERIMENTS  (no ensemble)
+# # Produces standard early-stopping MLP and UNet zarrs for the arch comparison.
+# # ============================================================================
+# echo ""
+# echo "========================================================"
+# echo "Running plain MLP / UNet experiments"
+# echo "========================================================"
 
-        for nn_architecture in "${nn_architectures[@]}"; do
-            for var_pair in "${training_output_vars[@]}"; do
-                # Split the pair into training_vars and output_vars
-                IFS='|' read -r training_vars output_vars <<< "$var_pair"
+# for nn_architecture in "${nn_architectures[@]}"; do
+#     for var_pair in "${training_output_vars[@]}"; do
+#         IFS='|' read -r training_vars output_vars <<< "$var_pair"
 
-                for model_name in "${model_names[@]}"; do
-                    for loss_function in "${loss_functions[@]}"; do
-                        # Skip incompatible combinations
-                        if [[ "$loss_function" == "extreme_heat_loss" && "$output_vars" != "2m_temperature" ]]; then
-                            continue
-                        fi
-                        # Determine train/test dates based on model_name
-                        if [[ "$model_name" == "aifs" ]]; then
-                            train_start="2022-01-01"
-                            train_end="2023-12-31"
-                            test_start="2024-01-01"
-                            test_end="2024-12-31"
+#         cmd="python3 finetuning/finetune.py \
+#             --data_dir=\"$data_dir\" \
+#             --output_dir=\"$output_dir\" \
+#             --training_vars $training_vars \
+#             --output_vars $output_vars \
+#             --train_start=\"$train_start\" --train_end=\"$train_end\" \
+#             --test_start=\"$test_start\" --test_end=\"$test_end\" \
+#             --model_name=\"$model_name\" \
+#             --region=\"$region\" \
+#             --subregion=\"$subregion\" \
+#             --lead_time_hours ${all_lead_times[@]} \
+#             --nn_architecture=\"$nn_architecture\""
 
-                            # only current aifs variables are total_precipitation and 2m_temperature
-                            if [[ "$output_vars" != "total_precipitation" && "$output_vars" != "2m_temperature" ]]; then
-                                continue
-                            fi
-                        else
-                            # Testing period
-                            # train_start="2018-01-01"
-                            # train_end="2018-01-31"
-                            # test_start="2022-01-01"
-                            # test_end="2022-01-31"
+#         eval $cmd
+#     done
+# done
 
-                            # PRODUCTION: Full period (uncomment for production runs)
-                            train_start="2018-01-01"
-                            train_end="2021-12-31"
-                            test_start="2022-01-01"
-                            test_end="2022-12-31"
+# # ============================================================================
+# # SNAPSHOT ENSEMBLE MLP EXPERIMENTS
+# # snapshot_ensemble=3 produces _snapshot3 files matched by SNAPSHOT_RUNS in
+# # figures_finetuning.py → plot_arch_experiment_results.
+# # ============================================================================
+# snapshot_ensemble_runs=3   # must match SNAPSHOT_RUNS in figures_finetuning.py
 
-                            # aifs is the only model with precipitation currently
-                            if [[ "$output_vars" == "total_precipitation" ]]; then
-                                continue
-                            fi
-                        fi
+# echo ""
+# echo "========================================================"
+# echo "Running MLP Snapshot Ensemble experiments (${snapshot_ensemble_runs} runs, T0=30)"
+# echo "========================================================"
 
-                        # Build base command
-                        cmd="python3 finetuning/finetune.py \
-                            --data_dir=\"$data_dir\" \
-                            --output_dir=\"$output_dir\" \
-                            --training_vars $training_vars \
-                            --output_vars $output_vars \
-                            --train_start=\"$train_start\" --train_end=\"$train_end\" \
-                            --test_start=\"$test_start\" --test_end=\"$test_end\" \
-                            --model_name=\"$model_name\" \
-                            --region=\"$region\" \
-                            --subregion=\"$subregion\" \
-                            --lead_time_hours ${all_lead_times[@]} \
-                            --nn_architecture=\"$nn_architecture\""
-                        
-                        # Add growing_season_only flag if model_name is aifs
-                        if [[ "$model_name" == "aifs" ]]; then
-                            cmd="$cmd --growing_season_only"
-                        fi
+# for var_pair in "${training_output_vars[@]}"; do
+#     IFS='|' read -r training_vars output_vars <<< "$var_pair"
 
-                        if [[ "$loss_function" == "extreme_heat_loss" ]]; then
-                            # only both doing this for 2m_temperature and for geographic regions
-                            if [[ "$variable" == "2m_temperature" && ("$region" == "ethiopia" || "$region" == "india" || "$region" == "amazon" || "$region" == "usa_south" || "$region" == "corn_belt") ]]; then
-                                cmd="$cmd --alternate_loss_fn=\"$loss_function\""
-                            fi
-                        fi
-                        
-                        # Add bootstrap flag if region is in bootstrap_regions
-                        if [[ " ${bootstrap_regions[@]} " =~ " ${region} " ]]; then
-                            cmd="$cmd --bootstrap"
-                        fi
-                        
-                        # Execute command
-                        eval $cmd
-                    done
-                done
-            done
-        done
-    done
+#     cmd="python3 finetuning/finetune.py \
+#         --data_dir=\"$data_dir\" \
+#         --output_dir=\"$output_dir\" \
+#         --training_vars $training_vars \
+#         --output_vars $output_vars \
+#         --train_start=\"$train_start\" --train_end=\"$train_end\" \
+#         --test_start=\"$test_start\" --test_end=\"$test_end\" \
+#         --model_name=\"$model_name\" \
+#         --region=\"$region\" \
+#         --subregion=\"$subregion\" \
+#         --lead_time_hours ${all_lead_times[@]} \
+#         --nn_architecture=mlp \
+#         --snapshot_ensemble=${snapshot_ensemble_runs} \
+#         --snapshot_T0=30 --snapshot_T_mult=1"
+
+#     eval $cmd
+# done
+
+# ============================================================================
+# BLOCK LTHO (LEAVE-THREE-OUT) ENSEMBLE EXPERIMENTS  ← new best method
+# Trains 4 single-year models × 21 snapshots each (T0=10) = 84 total predictions.
+# Uses val-loss weighted averaging automatically.  Training: ~0.5 min.
+# Only the minimal (single-variable) configuration is run; multi-variable input
+# was tested and confirmed to hurt performance for the k=3 block size.
+# Produces _blockk3_snapshot1 files matched by BLOCK_LTHO_RUNS in
+# figures_finetuning.py → plot_arch_experiment_results.
+# ============================================================================
+echo ""
+echo "========================================================"
+echo "Running Block LTHO (k=3) ensemble experiments"
+echo "========================================================"
+for var_pair in "${training_output_vars[@]}"; do
+    IFS='|' read -r training_vars output_vars <<< "$var_pair"
+
+    cmd="python3 finetuning/finetune.py \
+        --data_dir=\"$data_dir\" \
+        --output_dir=\"$output_dir\" \
+        --training_vars $training_vars \
+        --output_vars $output_vars \
+        --train_start=\"$train_start\" --train_end=\"$train_end\" \
+        --test_start=\"$test_start\" --test_end=\"$test_end\" \
+        --model_name=\"$model_name\" \
+        --region=\"$region\" \
+        --subregion=\"$subregion\" \
+        --lead_time_hours ${all_lead_times[@]} \
+        --nn_architecture=mlp \
+        --block_ensemble \
+        --block_holdout=3 \
+        --snapshot_ensemble=1 \
+        --snapshot_T0=10 --snapshot_T_mult=1"
+
+    eval $cmd
 done

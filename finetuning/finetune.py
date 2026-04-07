@@ -90,8 +90,8 @@ CONTINENT_MAP = {
 # Simple MLP definition with lead time and day-of-year encoding
 # ------------------------------
 class SimpleMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=6,
-                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.25):
+    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
+                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.244):
         super(SimpleMLP, self).__init__()
 
         # Lead time embedding
@@ -202,307 +202,6 @@ class ClassifierMLP(nn.Module):
         if day_of_year_features is not None:
             x = torch.cat([x, day_of_year_features], dim=-1)
         return self.net(x)
-
-
-# ------------------------------
-# ResidualMLP: Enhanced MLP with residual connections and modern techniques
-# ------------------------------
-class ResidualMLPBlock(nn.Module):
-    """A single residual block for the MLP: Linear -> LayerNorm -> GELU -> Dropout -> Linear -> add residual."""
-    def __init__(self, dim, expansion_factor=2, dropout_rate=0.1):
-        super().__init__()
-        expanded_dim = int(dim * expansion_factor)
-        self.net = nn.Sequential(
-            nn.Linear(dim, expanded_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(expanded_dim, dim),
-            nn.Dropout(dropout_rate),
-        )
-        self.norm = nn.LayerNorm(dim)
-
-    def forward(self, x):
-        return x + self.net(self.norm(x))
-
-
-class ResidualMLP(nn.Module):
-    """
-    Enhanced MLP with pre-norm residual connections for weather forecast bias correction.
-
-    Improvements over SimpleMLP:
-    - Pre-norm residual connections: Each block adds its output to the input (natural for
-      error prediction). Pre-norm (LayerNorm before transformations) provides more stable
-      training gradients than post-norm.
-    - GELU activation: Smoother than ReLU, avoids dead neurons, widely used in modern
-      architectures (GPT, ViT). Particularly helpful for regression tasks.
-    - Expansion factor in residual blocks: Each block projects up to expanded_dim then
-      back down, following the MLP block design from Transformers. This gives more
-      representational capacity per block while keeping the residual dimension fixed.
-    - Spatial position encoding: Adds normalized lat/lon coordinates as extra input features,
-      giving the model location awareness without convolutions.
-    - Separate projection for input and output: The input projection maps to a hidden
-      dimension that's maintained through all residual blocks, then a separate output
-      projection maps to the output dimension.
-    - Cosine-similarity inspired: The fixed hidden dimension through residual blocks means
-      the model can build up complex representations incrementally.
-
-    Architecture:
-        Input (flattened spatial + position + day_of_year + lead_time_emb)
-        -> Linear projection to hidden_dim
-        -> N x ResidualBlock (LayerNorm -> Linear -> GELU -> Dropout -> Linear -> add residual)
-        -> LayerNorm -> Linear projection to output_dim
-    """
-    def __init__(self, input_dim, hidden_dim=768, output_dim=1,
-                 num_blocks=6, expansion_factor=2, dropout_rate=0.15,
-                 n_lead_times=1, lead_time_embedding_dim=8,
-                 n_lat=None, n_lon=None):
-        super().__init__()
-
-        self.n_lead_times = n_lead_times
-        self.n_lat = n_lat
-        self.n_lon = n_lon
-
-        # Lead time embedding
-        self.lead_time_embedding = None
-        actual_input_dim = input_dim + 2  # +2 for day-of-year sin/cos
-        if n_lead_times > 1:
-            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            actual_input_dim += lead_time_embedding_dim
-
-        # No spatial position features for MLP (keeps input dim manageable)
-        self.pos_features = None
-
-        # Input projection
-        self.input_proj = nn.Sequential(
-            nn.Linear(actual_input_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout_rate),
-        )
-
-        # Residual blocks
-        self.blocks = nn.ModuleList([
-            ResidualMLPBlock(hidden_dim, expansion_factor, dropout_rate)
-            for _ in range(num_blocks)
-        ])
-
-        # Output projection
-        self.output_proj = nn.Sequential(
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, output_dim),
-        )
-
-    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
-        """
-        Forward pass.
-
-        Args:
-            x: Flattened input [batch, input_dim]
-            lead_time_idx: Lead time indices [batch]
-            day_of_year_features: Day-of-year sin/cos [batch, 2]
-
-        Returns:
-            Output [batch, output_dim]
-        """
-        parts = [x]
-
-        # Add day-of-year features
-        if day_of_year_features is not None:
-            parts.append(day_of_year_features)
-
-        # Add lead time embedding
-        if self.lead_time_embedding is not None and lead_time_idx is not None:
-            parts.append(self.lead_time_embedding(lead_time_idx))
-
-        x = torch.cat(parts, dim=-1)
-
-        # Input projection
-        x = self.input_proj(x)
-
-        # Residual blocks
-        for block in self.blocks:
-            x = block(x)
-
-        # Output projection
-        return self.output_proj(x)
-
-
-# ------------------------------
-# ResCNN: FiLM-conditioned Residual CNN for spatial bias correction
-# ------------------------------
-class FiLMLayer(nn.Module):
-    """Feature-wise Linear Modulation (FiLM) layer.
-
-    Conditions convolutional feature maps on external information (lead time,
-    day-of-year) by learning per-channel scale (gamma) and shift (beta) parameters.
-    This is more expressive than simple concatenation because it modulates features
-    multiplicatively.
-
-    Reference: Perez et al., "FiLM: Visual Reasoning with a General Conditioning Layer", AAAI 2018.
-    """
-    def __init__(self, conditioning_dim, n_channels):
-        super().__init__()
-        self.scale = nn.Linear(conditioning_dim, n_channels)
-        self.shift = nn.Linear(conditioning_dim, n_channels)
-        # Initialize scale to 1 and shift to 0 (identity transform at init)
-        nn.init.ones_(self.scale.weight.data[:, 0] if conditioning_dim > 0 else self.scale.weight.data)
-        nn.init.zeros_(self.scale.bias.data)
-        nn.init.zeros_(self.shift.weight.data)
-        nn.init.zeros_(self.shift.bias.data)
-
-    def forward(self, x, conditioning):
-        """
-        Args:
-            x: Feature maps [batch, channels, H, W]
-            conditioning: Conditioning vector [batch, conditioning_dim]
-        Returns:
-            Modulated feature maps [batch, channels, H, W]
-        """
-        gamma = self.scale(conditioning).unsqueeze(-1).unsqueeze(-1)  # [B, C, 1, 1]
-        beta = self.shift(conditioning).unsqueeze(-1).unsqueeze(-1)   # [B, C, 1, 1]
-        return gamma * x + beta
-
-
-class ResBlock(nn.Module):
-    """Residual block with FiLM conditioning.
-
-    Two 3x3 convolutions with BatchNorm and ReLU, plus a FiLM conditioning layer
-    applied after the first conv. The skip connection adds the input directly to
-    the output, which is a natural fit for error-prediction tasks.
-    """
-    def __init__(self, channels, conditioning_dim, dropout_rate=0.1):
-        super().__init__()
-        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(channels)
-        self.film = FiLMLayer(conditioning_dim, channels)
-        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(channels)
-        self.dropout = nn.Dropout2d(dropout_rate) if dropout_rate > 0 else nn.Identity()
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x, conditioning):
-        residual = x
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.film(out, conditioning)
-        out = self.dropout(out)
-        out = self.bn2(self.conv2(out))
-        out = self.dropout(out)
-        out = self.relu(out + residual)
-        return out
-
-
-class ResCNN(nn.Module):
-    """
-    FiLM-conditioned Residual CNN for weather forecast bias correction.
-
-    Unlike the MLP which flattens spatial structure, this model operates directly
-    on the 2D grid using convolutions. Unlike the UNet which uses pooling/upsampling,
-    this model maintains full resolution throughout, which is more appropriate for
-    the small 24x24 grids used in 6x6 degree patches.
-
-    Key design choices:
-    - Residual connections: Natural fit since the model predicts a residual error
-    - FiLM conditioning: Modulates conv features based on lead time and day-of-year,
-      more expressive than simple concatenation
-    - No pooling: Preserves spatial resolution for small grids
-    - Spatial position encoding: Adds normalized lat/lon as extra input channels
-    - BatchNorm: Stabilizes training
-
-    Architecture:
-        Input (n_vars, H, W) + position encoding -> Conv stem -> N ResBlocks with FiLM -> Conv head -> Output (n_output_vars, H, W)
-    """
-    def __init__(self, input_dim, hidden_dim=64, output_dim=1,
-                 n_lat=None, n_lon=None, n_input_vars=None, n_output_vars=None,
-                 n_lead_times=1, lead_time_embedding_dim=8,
-                 num_res_blocks=6, dropout_rate=0.1):
-        super().__init__()
-
-        if n_lat is None or n_lon is None or n_input_vars is None:
-            raise ValueError("n_lat, n_lon, and n_input_vars must be provided for ResCNN")
-
-        self.n_lat = n_lat
-        self.n_lon = n_lon
-        self.n_input_vars = n_input_vars
-        self.n_output_vars = n_output_vars if n_output_vars is not None else 1
-        self.n_lead_times = n_lead_times
-        self.num_res_blocks = num_res_blocks
-
-        # Conditioning: day-of-year (2) + optional lead time embedding
-        self.lead_time_embedding = None
-        conditioning_dim = 2  # sin/cos of day-of-year
-        if n_lead_times > 1:
-            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            conditioning_dim += lead_time_embedding_dim
-
-        # Input channels: n_input_vars + 2 (lat/lon position encoding)
-        in_channels = n_input_vars + 2
-
-        # Stem: project input channels to hidden_dim
-        self.stem = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_dim, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(hidden_dim),
-            nn.ReLU(inplace=True),
-        )
-
-        # Residual blocks with FiLM conditioning
-        self.res_blocks = nn.ModuleList([
-            ResBlock(hidden_dim, conditioning_dim, dropout_rate)
-            for _ in range(num_res_blocks)
-        ])
-
-        # Output head: project to output channels
-        self.head = nn.Sequential(
-            nn.Conv2d(hidden_dim, hidden_dim // 2, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(hidden_dim // 2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(hidden_dim // 2, self.n_output_vars, kernel_size=1),
-        )
-
-        # Pre-compute position encoding grid (registered as buffer so it moves with .to(device))
-        lat_grid = torch.linspace(-1, 1, n_lat).unsqueeze(1).expand(n_lat, n_lon).unsqueeze(0)  # [1, H, W]
-        lon_grid = torch.linspace(-1, 1, n_lon).unsqueeze(0).expand(n_lat, n_lon).unsqueeze(0)  # [1, H, W]
-        self.register_buffer('pos_encoding', torch.cat([lat_grid, lon_grid], dim=0))  # [2, H, W]
-
-    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
-        """
-        Forward pass.
-
-        Args:
-            x: Flattened input [batch, n_input_vars * n_lat * n_lon] (for compatibility with existing pipeline)
-            lead_time_idx: Lead time indices [batch]
-            day_of_year_features: Day-of-year sin/cos [batch, 2]
-
-        Returns:
-            Flattened output [batch, n_output_vars * n_lat * n_lon]
-        """
-        batch_size = x.shape[0]
-
-        # Reshape to spatial format
-        x = x.view(batch_size, self.n_input_vars, self.n_lat, self.n_lon)
-
-        # Add position encoding (broadcast across batch)
-        pos = self.pos_encoding.unsqueeze(0).expand(batch_size, -1, -1, -1)
-        x = torch.cat([x, pos], dim=1)
-
-        # Build conditioning vector
-        cond_parts = []
-        if day_of_year_features is not None:
-            cond_parts.append(day_of_year_features)
-        if self.lead_time_embedding is not None and lead_time_idx is not None:
-            cond_parts.append(self.lead_time_embedding(lead_time_idx))
-        conditioning = torch.cat(cond_parts, dim=1) if cond_parts else torch.zeros(batch_size, 2, device=x.device)
-
-        # Stem
-        x = self.stem(x)
-
-        # Residual blocks with FiLM conditioning
-        for block in self.res_blocks:
-            x = block(x, conditioning)
-
-        # Output head
-        x = self.head(x)
-
-        # Flatten for compatibility with existing pipeline
-        return x.view(batch_size, -1)
 
 
 # ------------------------------
@@ -757,10 +456,14 @@ class UNet(nn.Module):
 
         return x
 
+
+
+
 # ------------------------------
 # Load optimal hyperparameters
 # ------------------------------
-def load_optimal_hyperparameters(architecture, training_vars, output_vars, alternate_loss_fn):
+def load_optimal_hyperparameters(architecture, training_vars, output_vars, alternate_loss_fn,
+                                 use_snapshot=False, use_block_ltho=False):
     """
     Load optimal hyperparameters from hyperopt results.
 
@@ -769,6 +472,10 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
         training_vars: List of input variable names
         output_vars: Output variable name(s) - string or list of strings
         alternate_loss_fn: Alternate loss function name (if any)
+        use_snapshot: Whether tuning was done with snapshot ensemble objective
+        use_block_ltho: Whether tuning was done with block LTHO objective.
+            When True, looks for hyperopt_results_block_ltho_{var}_mlp/ first,
+            then falls back to snapshot or non-snapshot results.
 
     Returns:
         Dictionary of optimal hyperparameters, or None if file not found
@@ -776,9 +483,11 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
     # Get the script's directory
     script_dir = Path(__file__).parent.parent
 
+    snapshot_prefix = "snapshot_" if use_snapshot else ""
+
     if alternate_loss_fn == "joint_temp_wind_loss":
         # currently for joint loss just do hyperparam tuning over usa_south for 1 day
-        results_file = script_dir / f"hyperopt_results_joint_wind_temperature_24h_{architecture}" / f"optimization_results_{architecture}.json"
+        results_file = script_dir / f"hyperopt_results_{snapshot_prefix}joint_wind_temperature_24h_{architecture}" / f"optimization_results_{architecture}.json"
 
     else:
         # Normalize output_vars to a list
@@ -804,7 +513,7 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
 
         # For multiple output variables, try joint results first
         if len(output_vars) > 1:
-            results_file = script_dir / f"hyperopt_results{multi_flag}_joint_{architecture}" / f"optimization_results_{architecture}.json"
+            results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}joint_{architecture}" / f"optimization_results_{architecture}.json"
             if not results_file.exists():
                 # Fall back to first output variable's results
                 fallback_var = output_vars[0]
@@ -814,18 +523,42 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
                     return None
                 print(f"Warning: No joint hyperparameter results found for {output_vars}. "
                     f"Falling back to results for '{fallback_var}'")
-                results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+                results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
         else:
             output_key = VAR_KEY_MAP.get(output_vars[0])
             if output_key is None:
                 print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
                 return None
-            results_file = script_dir / f"hyperopt_results{multi_flag}_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+            # Block LTHO: check dedicated block_ltho results first, then fall through
+            if use_block_ltho and multi_flag == "":
+                block_ltho_file = script_dir / f"hyperopt_results_block_ltho_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+                print(f"Checking for block LTHO hyperparameter file at {block_ltho_file}")
+
+                #  XX currently these hyperparameters outperform those trained specifically for block_ltho, not sure why
+                results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+                # if block_ltho_file.exists():
+                #     print(f"Using block LTHO hyperparameters from {block_ltho_file}")
+                #     # results_file = block_ltho_file 
+                # else:
+                #     print(f"Note: No block LTHO hyperparameter file found at {block_ltho_file}; "
+                #           "falling back to standard hyperopt results.")
+                #     results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+            else:
+                results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
 
     if not results_file.exists():
-        print(f"Warning: Hyperparameter file not found at {results_file}")
-        return None
-
+        # If snapshot-specific hyperopt file not found, fall back to non-snapshot params
+        if use_snapshot and snapshot_prefix:
+            fallback_file = Path(str(results_file).replace(f"_{snapshot_prefix}", "_"))
+            if fallback_file.exists():
+                print(f"Warning: Snapshot hyperparameter file not found; falling back to non-snapshot params from {fallback_file}")
+                results_file = fallback_file
+            else:
+                print(f"Warning: Hyperparameter file not found at {results_file}")
+                return None
+        else:
+            print(f"Warning: Hyperparameter file not found at {results_file}")
+            return None
     try:
         with open(results_file, 'r') as f:
             results = json.load(f)
@@ -836,6 +569,7 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
     except Exception as e:
         print(f"Warning: Could not load hyperparameters from {results_file}: {e}")
         return None
+
 
 # ------------------------------
 # Argument parsing
@@ -856,7 +590,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet', 'rescnn', 'resmlp'])
+    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
@@ -867,33 +601,21 @@ def parse_args():
 
     # Architecture hyperparameters
     parser.add_argument('--mlp_hidden_dim', type=int, default=1024,
-                    help='Hidden dimension for MLP (default: 1024, from mlp_moderate)')
-    parser.add_argument('--mlp_num_layers', type=int, default=6,
-                    help='Number of hidden layers for MLP (default: 6, from mlp_moderate)')
-    parser.add_argument('--mlp_dropout', type=float, default=0.25,
-                        help='Dropout rate for MLP (default: 0.25, from mlp_moderate)')
+                    help='Hidden dimension for MLP (default: 1024, from block LTHO hyperopt)')
+    parser.add_argument('--mlp_num_layers', type=int, default=2,
+                    help='Number of hidden layers for MLP (default: 2, from block LTHO hyperopt)')
+    parser.add_argument('--mlp_dropout', type=float, default=0.244,
+                        help='Dropout rate for MLP (default: 0.244, from block LTHO hyperopt)')
     parser.add_argument('--unet_hidden_dim', type=int, default=64,
                         help='Base number of channels for UNet (default: 64, from unet_medium)')
     parser.add_argument('--unet_dropout', type=float, default=0.1,
                         help='Dropout rate for UNet')
 
-    # ResCNN hyperparameters
-    parser.add_argument('--rescnn_hidden_dim', type=int, default=64,
-                        help='Number of channels in ResCNN residual blocks (default: 64)')
-    parser.add_argument('--rescnn_num_blocks', type=int, default=6,
-                        help='Number of residual blocks in ResCNN (default: 6)')
-    parser.add_argument('--rescnn_dropout', type=float, default=0.1,
-                        help='Dropout rate for ResCNN (default: 0.1)')
-
-    # ResidualMLP hyperparameters
-    parser.add_argument('--resmlp_hidden_dim', type=int, default=768,
-                        help='Hidden dimension for ResidualMLP (default: 768)')
-    parser.add_argument('--resmlp_num_blocks', type=int, default=6,
-                        help='Number of residual blocks for ResidualMLP (default: 6)')
-    parser.add_argument('--resmlp_expansion', type=float, default=2.0,
-                        help='Expansion factor in ResidualMLP blocks (default: 2.0)')
-    parser.add_argument('--resmlp_dropout', type=float, default=0.15,
-                        help='Dropout rate for ResidualMLP (default: 0.15)')
+    # PCA dimensionality reduction (optional, applies to any architecture)
+    parser.add_argument('--pca_components', type=int, default=0,
+                        help='If >0, project forecast inputs to top-K PCA components before training. '
+                             'Reduces 576-dim spatial input to K-dim PC space. '
+                             'Recommended: 30-50 (captures ~95%% of variance). Default: 0 (disabled).')
 
     # Ensemble
     parser.add_argument('--ensemble', type=int, default=None,
@@ -906,8 +628,37 @@ def parse_args():
                              'Each run produces ~7 snapshots (210 epochs / T_0=30).')
     parser.add_argument('--snapshot_epochs', type=int, default=210,
                         help='Total epochs per snapshot ensemble run (default: 210)')
-    parser.add_argument('--snapshot_T0', type=int, default=30,
-                        help='Cosine cycle period for snapshot ensemble (default: 30)')
+    parser.add_argument('--snapshot_T0', type=int, default=None,
+                        help='Cosine cycle period for snapshot ensemble. '
+                             'Default is auto-selected: 10 when --block_holdout=3 (21 snaps/block, '
+                             'optimal for single-year training sets), 15 when --block_holdout=2, '
+                             'and 30 otherwise. Explicitly set to override.')
+    parser.add_argument('--snapshot_T_mult', type=int, default=1,
+                        help='Cosine cycle multiplier for snapshot ensemble (default: 1)')
+    parser.add_argument('--swa_ensemble', type=int, default=None,
+                        help='If set, train N independent SWA (Stochastic Weight Averaging) models '
+                             'and ensemble their predictions. Each model trains for '
+                             '--swa_warmup_epochs + --swa_epochs total epochs.')
+    parser.add_argument('--swa_warmup_epochs', type=int, default=150,
+                        help='Warmup epochs before SWA averaging begins (default: 150)')
+    parser.add_argument('--swa_epochs', type=int, default=60,
+                        help='Epochs during which SWA weight averaging occurs (default: 60)')
+    parser.add_argument('--swa_T0', type=int, default=20,
+                        help='Cosine cycle period during SWA phase (default: 20)')
+    parser.add_argument('--mc_dropout_samples', type=int, default=0,
+                        help='If > 0, apply Monte Carlo dropout at inference time: average over '
+                             'this many stochastic forward passes per snapshot/model. '
+                             'Free variance reduction; typical values 10-50.')
+    parser.add_argument('--block_ensemble', action='store_true', default=False,
+                        help='Train one snapshot ensemble per held-out training year '
+                             '(leave-one-year-out cross-validation), then ensemble all predictions. '
+                             'Produces more temporally diverse ensemble members than random splits.')
+    parser.add_argument('--block_holdout', type=int, default=3,
+                        help='Number of years to hold out per block (default: 3 = leave-three-out). '
+                             'k=3: 4 blocks each trained on 1 year — best performance (+13.4%% at 24h). '
+                             'k=2: 6 blocks each trained on 2 years (+12.8%% at 24h). '
+                             'k=1: 4 blocks each trained on 3 years (+12.2%% at 24h, LOO). '
+                             'Only used when --block_ensemble is set.')
 
     return parser.parse_args()
 
@@ -1583,6 +1334,114 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
     return snapshots, training_time_minutes
 
 
+def train_swa_ensemble(model, train_loader, valid_loader, warmup_epochs, swa_epochs, lr, device,
+                       weight_decay=0, grad_clip=1.0, swa_lr=None, swa_T0=20):
+    """
+    Train with Stochastic Weight Averaging (SWA).
+
+    SWA maintains a running average of model weights over multiple LR cycles
+    after an initial warmup phase. Averaged weights tend to lie in wider,
+    flatter minima that generalize better than any single checkpoint.
+
+    Algorithm:
+    1. Warmup: train normally for warmup_epochs with cosine annealing
+    2. SWA phase: run swa_epochs more epochs; at the end of each cosine cycle,
+       update the SWA model (running weight average) and record val_loss
+
+    Args:
+        model: PyTorch model to train
+        train_loader: Training DataLoader
+        valid_loader: Validation DataLoader
+        warmup_epochs: Epochs for initial convergence before SWA starts
+        swa_epochs: Additional epochs during which SWA weight averaging occurs
+        lr: Initial/peak learning rate
+        device: torch device
+        weight_decay: AdamW weight decay
+        grad_clip: Gradient norm clipping (0 to disable)
+        swa_lr: Peak LR during SWA phase (defaults to lr)
+        swa_T0: Cosine cycle period during SWA phase
+
+    Returns:
+        swa_model: AveragedModel with averaged weights
+        val_loss: Validation MSE of the final SWA model
+        training_time_minutes: Total training time
+    """
+    from torch.optim.swa_utils import AveragedModel, SWALR
+
+    if swa_lr is None:
+        swa_lr = lr
+
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=swa_T0, T_mult=1, eta_min=1e-6)
+
+    swa_model = AveragedModel(model)
+
+    train_start_time = time.time()
+    total_epochs = warmup_epochs + swa_epochs
+
+    n_swa_updates = 0
+
+    for epoch in range(1, total_epochs + 1):
+        model.train()
+        train_loss = 0.0
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device)
+            fc_output_batch = fc_output_batch.to(device)
+            y_batch = y_batch.to(device)
+            lead_time_batch = lead_time_batch.to(device)
+            doy_batch = doy_batch.to(device)
+
+            optimizer.zero_grad()
+            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+            preds = fc_output_batch + pred_error
+            loss = criterion(preds, y_batch)
+            loss.backward()
+
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+            optimizer.step()
+            train_loss += loss.item() * fc_output_batch.size(0)
+
+        train_loss /= len(train_loader.dataset)
+        scheduler.step()
+
+        # During SWA phase: update averaged model at cycle boundaries
+        if epoch > warmup_epochs:
+            swa_phase_epoch = epoch - warmup_epochs
+            is_cycle_end = (swa_phase_epoch % swa_T0 == 0)
+            if is_cycle_end:
+                swa_model.update_parameters(model)
+                n_swa_updates += 1
+
+        if epoch % 50 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"  Epoch {epoch}/{total_epochs} - Train Loss: {train_loss:.6f}, LR: {current_lr:.2e}")
+
+    # Evaluate SWA model on validation set
+    swa_model.eval()
+    val_loss = 0.0
+    with torch.no_grad():
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+            fc_input_batch = fc_input_batch.to(device)
+            fc_output_batch = fc_output_batch.to(device)
+            y_batch = y_batch.to(device)
+            lead_time_batch = lead_time_batch.to(device)
+            doy_batch = doy_batch.to(device)
+            pred_error = swa_model(fc_input_batch, lead_time_batch, doy_batch)
+            preds = fc_output_batch + pred_error
+            loss = criterion(preds, y_batch)
+            val_loss += loss.item() * fc_output_batch.size(0)
+    val_loss /= len(valid_loader.dataset)
+
+    training_time_minutes = (time.time() - train_start_time) / 60.0
+    print(f"  SWA training complete: {n_swa_updates} weight updates, val_loss={val_loss:.6f}, "
+          f"time={training_time_minutes:.2f} min")
+    return swa_model, val_loss, training_time_minutes
+
+
 def train_classifier(model, train_loader, valid_loader, epochs, lr, device,
                      class_weights=None, weight_decay=0,
                      patience=50, min_delta=1e-5,
@@ -2000,7 +1859,7 @@ def evaluate_classifier(model, test_loader, device, n_classes, class_names=None,
     }
 
 
-def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device):
+def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device, mc_dropout_samples=0):
     """
     Apply the correction to forecast output data using forecast input data.
     Uses mixed precision for CUDA devices.
@@ -2011,40 +1870,47 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
         lead_time_indices: Lead time indices
         day_of_year_features: Day-of-year features
         device: Device to run on
+        mc_dropout_samples: If > 0, enable dropout at inference and average over this many
+                            stochastic forward passes (Monte Carlo dropout).
 
     Returns:
         Corrected forecast for output variables
     """
-    model.eval()
-    corrected_all = []
-
-    # Process in batches to handle memory efficiently
     batch_size = 128
     n_samples = forecast_input_data.shape[0]
-
-    # Use AMP and non_blocking for CUDA
     use_amp = device.type == 'cuda'
     non_blocking = device.type == 'cuda'
 
-    with torch.no_grad():
-        for i in range(0, n_samples, batch_size):
-            end_idx = min(i + batch_size, n_samples)
-            fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
-            fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
-            lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device, non_blocking=non_blocking)
-            doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device, non_blocking=non_blocking)
+    def _run_inference():
+        corrected_all = []
+        with torch.no_grad():
+            for i in range(0, n_samples, batch_size):
+                end_idx = min(i + batch_size, n_samples)
+                fc_input_batch = torch.from_numpy(forecast_input_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
+                fc_output_batch = torch.from_numpy(forecast_output_data[i:end_idx]).float().to(device, non_blocking=non_blocking)
+                lt_batch = torch.from_numpy(lead_time_indices[i:end_idx]).long().to(device, non_blocking=non_blocking)
+                doy_batch = torch.from_numpy(day_of_year_features[i:end_idx]).float().to(device, non_blocking=non_blocking)
 
-            if use_amp:
-                with torch.cuda.amp.autocast():
+                if use_amp:
+                    with torch.cuda.amp.autocast():
+                        predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
+                        corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+                else:
                     predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
                     corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
-            else:
-                predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
-                corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
 
-            corrected_all.append(corrected_batch)
+                corrected_all.append(corrected_batch)
+        return np.concatenate(corrected_all, axis=0)
 
-    return np.concatenate(corrected_all, axis=0)
+    if mc_dropout_samples > 0:
+        # Monte Carlo dropout: keep model in train mode to enable stochastic dropout
+        model.train()
+        samples = [_run_inference() for _ in range(mc_dropout_samples)]
+        model.eval()
+        return np.mean(samples, axis=0)
+    else:
+        model.eval()
+        return _run_inference()
 
 
 def save_output(output_path, model_name, output_vars, lon_values, lat_values,
@@ -2354,6 +2220,25 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     fc_norm = (fc - stats_train['mean']) / stats_train['std']
     fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
 
+    # PCA dimensionality reduction on forecast inputs (if requested).
+    # Reduces the spatial input from n_vars*n_lat*n_lon to K principal components,
+    # retaining the dominant spatial patterns while greatly reducing overfitting.
+    pca_components = getattr(args, 'pca_components', 0)
+    pca_transformer = None  # dict with 'mean' and 'components' arrays
+    if pca_components > 0:
+        max_components = min(pca_components, fc_norm.shape[0] - 1, fc_norm.shape[1])
+        print(f"\nApplying PCA reduction: {fc_norm.shape[1]} → {max_components} components")
+        pca_mean = fc_norm.mean(axis=0)
+        X_c = fc_norm - pca_mean
+        # Thin SVD: U [n,k], s [k], Vt [k, n_features]
+        _, s, Vt = np.linalg.svd(X_c, full_matrices=False)
+        pca_components_mat = Vt[:max_components]  # [K, n_features]
+        var_total = (s ** 2).sum()
+        var_explained = (s[:max_components] ** 2).sum() / var_total
+        pca_transformer = {'mean': pca_mean, 'components': pca_components_mat}
+        fc_norm = X_c @ pca_components_mat.T  # [n_samples, K]
+        print(f"  Variance explained: {var_explained*100:.1f}% with {max_components} PCs")
+
     # normalize target observations using forecasts to be corrected
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
@@ -2387,7 +2272,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         print(f"  CPU cores available: {os.cpu_count()}")
 
     # Initialize model
-    input_dim = n_training_vars * n_lat * n_lon
+    input_dim = fc_norm.shape[1]  # either n_training_vars * n_lat * n_lon, or pca_components if PCA used
     output_dim = n_output_vars * n_lat * n_lon
 
     # Use optimal lead time embedding dimension if available
@@ -2402,42 +2287,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      n_lead_times=n_lead_times,
                      lead_time_embedding_dim=lead_time_emb_dim,
                      dropout_rate=args.unet_dropout).to(device)
-        num_epochs = 500
-    elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'rescnn':
-        print(f"Using ResCNN with {n_lead_times} lead times")
-        print(f"  ResCNN hidden_dim: {args.rescnn_hidden_dim}")
-        print(f"  ResCNN num_blocks: {args.rescnn_num_blocks}")
-        print(f"  ResCNN dropout: {args.rescnn_dropout}")
-        print(f"  ResCNN lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = ResCNN(input_dim=input_dim,
-                       hidden_dim=args.rescnn_hidden_dim,
-                       output_dim=output_dim,
-                       n_lat=n_lat, n_lon=n_lon,
-                       n_input_vars=n_training_vars,
-                       n_output_vars=n_output_vars,
-                       n_lead_times=n_lead_times,
-                       lead_time_embedding_dim=lead_time_emb_dim,
-                       num_res_blocks=args.rescnn_num_blocks,
-                       dropout_rate=args.rescnn_dropout
-                       ).to(device)
-        num_epochs = 500
-    elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'resmlp':
-        print(f"Using ResidualMLP with {n_lead_times} lead times")
-        print(f"  ResidualMLP hidden_dim: {args.resmlp_hidden_dim}")
-        print(f"  ResidualMLP num_blocks: {args.resmlp_num_blocks}")
-        print(f"  ResidualMLP expansion: {args.resmlp_expansion}")
-        print(f"  ResidualMLP dropout: {args.resmlp_dropout}")
-        print(f"  ResidualMLP lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = ResidualMLP(input_dim=input_dim,
-                            hidden_dim=args.resmlp_hidden_dim,
-                            output_dim=output_dim,
-                            num_blocks=args.resmlp_num_blocks,
-                            expansion_factor=args.resmlp_expansion,
-                            dropout_rate=args.resmlp_dropout,
-                            n_lead_times=n_lead_times,
-                            lead_time_embedding_dim=lead_time_emb_dim,
-                            n_lat=n_lat, n_lon=n_lon,
-                            ).to(device)
         num_epochs = 500
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times")
@@ -2456,8 +2305,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
         num_epochs = 750
 
     # Use optimal training hyperparameters if available
-    lr = args.optimal_lr if args.optimal_lr else 8.669714431623457e-06
-    weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 5.210913466175803e-06
+    # Block LTHO empirical best: lr=3.3e-4, wd=2.2e-6 (found via architecture experiments)
+    lr = args.optimal_lr if args.optimal_lr else 3.3e-4
+    weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 2.2e-6
     patience = args.optimal_patience if args.optimal_patience else 50
     min_delta = args.optimal_min_delta if args.optimal_min_delta else 1e-5
 
@@ -2470,12 +2320,25 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Determine ensemble mode
     n_ensemble = getattr(args, 'ensemble', None) or 1
     n_snapshot = getattr(args, 'snapshot_ensemble', None) or 0
+    n_swa = getattr(args, 'swa_ensemble', None) or 0
+    use_block = getattr(args, 'block_ensemble', False)
     use_ensemble = n_ensemble > 1
     use_snapshot = n_snapshot > 0
+    use_swa = n_swa > 0
 
-    if use_snapshot:
+    if use_block:
+        print(f"\n{'='*50}")
+        print(f"BLOCK ENSEMBLE (leave-{getattr(args, 'block_holdout', 3)}-out)")
+        if use_snapshot:
+            print(f"  + SNAPSHOT (T0={getattr(args, 'snapshot_T0', 30)}) per block")
+        print(f"{'='*50}")
+    elif use_snapshot:
         print(f"\n{'='*50}")
         print(f"SNAPSHOT ENSEMBLE: {n_snapshot} runs")
+        print(f"{'='*50}")
+    elif use_swa:
+        print(f"\n{'='*50}")
+        print(f"SWA ENSEMBLE: {n_swa} runs")
         print(f"{'='*50}")
     elif use_ensemble:
         print(f"\n{'='*50}")
@@ -2490,7 +2353,12 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
     test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
 
+    # Apply same PCA transform to test data (using fit from training data)
+    if pca_transformer is not None:
+        test_fc_norm = (test_fc_norm - pca_transformer['mean']) @ pca_transformer['components'].T
+
     ensemble_corrections = []
+    ensemble_weights = []  # val_loss-based weights for snapshot members; empty = equal weight
     training_time_minutes = 0.0
 
     # Helper to create a fresh model instance
@@ -2501,21 +2369,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                         n_lead_times=n_lead_times,
                         lead_time_embedding_dim=lead_time_emb_dim,
                         dropout_rate=args.unet_dropout).to(device)
-        elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'rescnn':
-            return ResCNN(input_dim=input_dim, hidden_dim=args.rescnn_hidden_dim,
-                          output_dim=output_dim, n_lat=n_lat, n_lon=n_lon,
-                          n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                          n_lead_times=n_lead_times, lead_time_embedding_dim=lead_time_emb_dim,
-                          num_res_blocks=args.rescnn_num_blocks,
-                          dropout_rate=args.rescnn_dropout).to(device)
-        elif hasattr(args, 'nn_architecture') and args.nn_architecture == 'resmlp':
-            return ResidualMLP(input_dim=input_dim, hidden_dim=args.resmlp_hidden_dim,
-                               output_dim=output_dim, num_blocks=args.resmlp_num_blocks,
-                               expansion_factor=args.resmlp_expansion,
-                               dropout_rate=args.resmlp_dropout,
-                               n_lead_times=n_lead_times,
-                               lead_time_embedding_dim=lead_time_emb_dim,
-                               n_lat=n_lat, n_lon=n_lon).to(device)
         else:
             return SimpleMLP(input_dim=input_dim, hidden_dim=args.mlp_hidden_dim,
                              output_dim=output_dim,
@@ -2524,10 +2377,107 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                              lead_time_embedding_dim=lead_time_emb_dim,
                              dropout_rate=args.mlp_dropout).to(device)
 
-    if use_snapshot:
+    if use_block:
+        # ---- Block ensemble: leave-k-out cross-validation ensemble ----
+        # For each held-out block of training years, train a snapshot ensemble on the remaining years.
+        # This creates temporally diverse models that generalize better across climate variability.
+        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
+
+        import pandas as pd
+        from itertools import combinations
+        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
+        block_holdout = getattr(args, 'block_holdout', 3)
+        held_year_sets = list(combinations(train_years, block_holdout))
+        print(f"Training years available: {train_years}")
+        print(f"Block holdout: {block_holdout} years per block ({len(held_year_sets)} blocks total)")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        # Extract year per sample
+        sample_years = pd.DatetimeIndex(train_times).year.values
+
+        for held_years_tuple in held_year_sets:
+            seed_key = sum(held_years_tuple)
+            torch.manual_seed(seed_key)
+            np.random.seed(seed_key * 13)
+
+            v_mask = np.isin(sample_years, held_years_tuple)
+            t_mask = ~v_mask
+            held_year = held_years_tuple  # keep as tuple for logging
+
+            print(f"\n--- Block: held_years={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()} ---")
+
+            run_train_loader = create_dataloader(
+                fc_norm[t_mask], fc_output_norm[t_mask], obs_norm[t_mask],
+                lead_time_indices[t_mask], day_of_year_features[t_mask],
+                batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(
+                fc_norm[v_mask], fc_output_norm[v_mask], obs_norm[v_mask],
+                lead_time_indices[v_mask], day_of_year_features[v_mask],
+                batch_size=batch_size, device=device)
+
+            if use_snapshot:
+                # Snapshot ensemble within each block; n_snapshot controls number of seed-diverse runs
+                n_seeds_per_block = max(1, n_snapshot)
+                for seed_idx in range(n_seeds_per_block):
+                    # seed_idx=0 uses seed_key (sum of held years) to preserve original behavior
+                    seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
+                    torch.manual_seed(seed)
+                    np.random.seed(seed)
+                    model = _create_model()
+                    snapshots, run_time = train_snapshot_ensemble(
+                        model, run_train_loader, run_val_loader,
+                        epochs=snapshot_epochs, lr=lr, device=device,
+                        weight_decay=weight_decay, grad_clip=1.0,
+                        T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                    training_time_minutes += run_time
+
+                    mc_samples = getattr(args, 'mc_dropout_samples', 0) # currenlty not using this
+                    for snap_weights, snap_val_loss in snapshots:
+                        model.load_state_dict(snap_weights)
+                        snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                          test_lead_time_indices,
+                                                          test_day_of_year_features, device,
+                                                          mc_dropout_samples=mc_samples)
+                        snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
+                        ensemble_corrections.append(snap_corrected)
+                        ensemble_weights.append(1.0 / max(snap_val_loss, 1e-12))
+            else:
+                # Single model per block (early stopping)
+                model = _create_model()
+                model, run_time = train_model(
+                    model, run_train_loader, run_val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
+                training_time_minutes += run_time
+
+                mc_samples = getattr(args, 'mc_dropout_samples', 0)
+                member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                    test_lead_time_indices,
+                                                    test_day_of_year_features, device,
+                                                    mc_dropout_samples=mc_samples)
+                member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+                ensemble_corrections.append(member_corrected)
+
+        if ensemble_weights:
+            w = np.array(ensemble_weights)
+            w = w / w.sum()
+            corrected = np.average(ensemble_corrections, weights=w, axis=0)
+        else:
+            corrected = np.mean(ensemble_corrections, axis=0)
+        total_preds = len(ensemble_corrections)
+        print(f"\nBlock ensemble complete: {len(held_year_sets)} blocks, {total_preds} total predictions, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_snapshot: # snapshot but not block training
         # ---- Snapshot ensemble: train N runs, save snapshots at cosine cycle minima ----
         snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
-        snapshot_T0 = getattr(args, 'snapshot_T0', 30)
+        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
+
+        print(f"Snapshot scheduler settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
 
         for run_i in range(n_snapshot):
             ens_seed = run_i * 17 + 1
@@ -2554,7 +2504,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model, run_train_loader, run_val_loader,
                 epochs=snapshot_epochs, lr=lr, device=device,
                 weight_decay=weight_decay, grad_clip=1.0,
-                T_0=snapshot_T0, T_mult=1)
+                T_0=snapshot_T0, T_mult=snapshot_T_mult)
             training_time_minutes += run_time
 
             # Generate predictions from each snapshot
@@ -2566,10 +2516,58 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
                 ensemble_corrections.append(snap_corrected)
 
+        # Uniform averaging across all snapshot predictions
         corrected = np.mean(ensemble_corrections, axis=0)
         total_snapshots = len(ensemble_corrections)
         print(f"\nSnapshot ensemble complete: {n_snapshot} runs, {total_snapshots} total snapshots, "
               f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_swa:
+        # ---- SWA ensemble: train N independent SWA models, ensemble predictions ----
+        swa_warmup = getattr(args, 'swa_warmup_epochs', 150)
+        swa_epochs = getattr(args, 'swa_epochs', 60)
+        swa_T0 = getattr(args, 'swa_T0', 20)
+
+        print(f"SWA settings: warmup={swa_warmup}, swa_epochs={swa_epochs}, T0={swa_T0}")
+
+        for run_i in range(n_swa):
+            ens_seed = run_i * 17 + 1
+            torch.manual_seed(ens_seed)
+            np.random.seed(ens_seed * 13 + 7)
+
+            print(f"\n--- SWA run {run_i+1}/{n_swa} (seed={ens_seed}) ---")
+
+            # Different train/val split per run
+            idx = np.arange(n_samples)
+            np.random.shuffle(idx)
+            split = int(0.8 * n_samples)
+            t_idx, v_idx = idx[:split], idx[split:]
+
+            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                 batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                               batch_size=batch_size, device=device)
+
+            model = _create_model()
+            swa_model, swa_val_loss, run_time = train_swa_ensemble(
+                model, run_train_loader, run_val_loader,
+                warmup_epochs=swa_warmup, swa_epochs=swa_epochs, lr=lr,
+                device=device, weight_decay=weight_decay, grad_clip=1.0,
+                swa_T0=swa_T0)
+            training_time_minutes += run_time
+
+            # Generate predictions from the SWA-averaged model
+            swa_model.eval()
+            member_corrected = apply_correction(swa_model, test_fc_norm, test_fc_output_norm,
+                                                test_lead_time_indices,
+                                                test_day_of_year_features, device)
+            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+            ensemble_corrections.append(member_corrected)
+
+        corrected = np.mean(ensemble_corrections, axis=0)
+        print(f"\nSWA ensemble complete: {n_swa} runs, training: {training_time_minutes:.2f} minutes")
 
     else:
         # ---- Standard training (single or seed-diverse ensemble) ----
@@ -2690,9 +2688,29 @@ def main():
 
     # Parse command line arguments
     args = parse_args()
-    
+
+    # Auto-select snapshot_T0 if not explicitly provided (None = use default).
+    # Optimal T0 depends on block training set size:
+    #   k=3 (1-year blocks, ~1083 samples): T0=10 — small models converge fast, 21 snaps/block
+    #   k=2 (2-year blocks, ~2166 samples): T0=15 — 14 snaps/block sweet spot
+    #   k=1 / no block (3-4 year sets):     T0=30 — 7 well-converged snaps/block
+    if getattr(args, 'snapshot_T0', None) is None:
+        block_holdout = getattr(args, 'block_holdout', 3)
+        use_block = getattr(args, 'block_ensemble', False)
+        if use_block and block_holdout >= 3:
+            args.snapshot_T0 = 10
+        elif use_block and block_holdout == 2:
+            args.snapshot_T0 = 15
+        else:
+            args.snapshot_T0 = 30
+        print(f"Auto-selected snapshot_T0={args.snapshot_T0} "
+              f"(block_ensemble={use_block}, block_holdout={block_holdout})")
+
     # Load optimal hyperparameters based on architecture
-    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars, args.alternate_loss_fn)
+    use_snapshot = bool(getattr(args, 'snapshot_ensemble', None))
+    use_block = getattr(args, 'block_ensemble', False)
+    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars, args.alternate_loss_fn,
+                                                       use_snapshot=use_snapshot, use_block_ltho=use_block)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
         if args.nn_architecture == 'mlp':
@@ -2702,16 +2720,6 @@ def main():
         elif args.nn_architecture == 'unet':
             args.unet_hidden_dim = optimal_hyperparams.get('hidden_dim', args.unet_hidden_dim)
             args.unet_dropout = optimal_hyperparams.get('dropout_rate', args.unet_dropout)
-        elif args.nn_architecture == 'rescnn':
-            args.rescnn_hidden_dim = optimal_hyperparams.get('hidden_dim', args.rescnn_hidden_dim)
-            args.rescnn_num_blocks = optimal_hyperparams.get('num_blocks', args.rescnn_num_blocks)
-            args.rescnn_dropout = optimal_hyperparams.get('dropout_rate', args.rescnn_dropout)
-        elif args.nn_architecture == 'resmlp':
-            args.resmlp_hidden_dim = optimal_hyperparams.get('hidden_dim', args.resmlp_hidden_dim)
-            args.resmlp_num_blocks = optimal_hyperparams.get('num_blocks', args.resmlp_num_blocks)
-            args.resmlp_expansion = optimal_hyperparams.get('expansion_factor', args.resmlp_expansion)
-            args.resmlp_dropout = optimal_hyperparams.get('dropout_rate', args.resmlp_dropout)
-
         # Store training hyperparameters for use later
         args.optimal_lr = optimal_hyperparams.get('learning_rate', None)
         args.optimal_batch_size = optimal_hyperparams.get('batch_size', None)
@@ -2719,6 +2727,13 @@ def main():
         args.optimal_patience = optimal_hyperparams.get('patience', None)
         args.optimal_min_delta = optimal_hyperparams.get('min_delta', None)
         args.optimal_lead_time_embedding_dim = optimal_hyperparams.get('lead_time_embedding_dim', None)
+        args.optimal_snapshot_T0 = optimal_hyperparams.get('snapshot_T0', None)
+        args.optimal_snapshot_T_mult = optimal_hyperparams.get('snapshot_T_mult', None)
+
+        if use_snapshot and 'snapshot_T0' not in optimal_hyperparams:
+            print("Warning: Snapshot mode enabled but tuned hyperparameters do not include snapshot_T0; falling back to CLI/default.")
+        if use_snapshot and 'snapshot_T_mult' not in optimal_hyperparams:
+            print("Warning: Snapshot mode enabled but tuned hyperparameters do not include snapshot_T_mult; falling back to CLI/default.")
         
         print(f"\nUsing optimal hyperparameters:")
         if args.nn_architecture == 'mlp':
@@ -2733,6 +2748,9 @@ def main():
         print(f"  weight_decay: {args.optimal_weight_decay}")
         print(f"  patience: {args.optimal_patience}")
         print(f"  min_delta: {args.optimal_min_delta}")
+        if use_snapshot:
+            print(f"  snapshot_T0: {args.optimal_snapshot_T0}")
+            print(f"  snapshot_T_mult: {args.optimal_snapshot_T_mult}")
     else:
         # Set defaults if no optimal hyperparameters found
         args.optimal_lr = None
@@ -2741,6 +2759,8 @@ def main():
         args.optimal_patience = None
         args.optimal_min_delta = None
         args.optimal_lead_time_embedding_dim = None
+        args.optimal_snapshot_T0 = None
+        args.optimal_snapshot_T_mult = None
         print("\nUsing default hyperparameters (no optimal hyperparameters found)")
 
     # Prepare output dir and base path

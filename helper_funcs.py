@@ -43,14 +43,33 @@ def generate_output_path(args):
         model_str = "mlp"
     elif args.nn_architecture == 'unet':
         model_str = "unet"
-    elif args.nn_architecture == 'rescnn':
-        model_str = "rescnn"
-    elif args.nn_architecture == 'resmlp':
-        model_str = "resmlp"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:
         model_str += f"_{args.alternate_loss_fn}"
+
+    # Append PCA suffix if PCA dimensionality reduction is used
+    pca_components = getattr(args, 'pca_components', 0)
+    if pca_components > 0:
+        model_str += f"_pca{pca_components}"
+
+    # Append snapshot/ensemble/swa/block suffix so runs don't collide in the output directory
+    n_snapshot = getattr(args, 'snapshot_ensemble', None)
+    n_ensemble = getattr(args, 'ensemble', None)
+    n_swa = getattr(args, 'swa_ensemble', None)
+    use_block = getattr(args, 'block_ensemble', False)
+    block_holdout = getattr(args, 'block_holdout', 1)
+    if use_block:
+        holdout_suffix = f"k{block_holdout}" if block_holdout != 1 else ""
+        model_str += f"_block{holdout_suffix}"
+        if n_snapshot:
+            model_str += f"_snapshot{n_snapshot}"
+    elif n_snapshot:
+        model_str += f"_snapshot{n_snapshot}"
+    elif n_swa:
+        model_str += f"_swa{n_swa}"
+    elif n_ensemble:
+        model_str += f"_ensemble{n_ensemble}"
 
     if args.growing_season_only:
         grow_str = "_growing_season"

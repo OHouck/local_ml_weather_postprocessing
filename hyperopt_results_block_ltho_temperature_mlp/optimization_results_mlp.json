@@ -1,0 +1,29 @@
+{
+  "architecture": "mlp",
+  "mode": "block_ltho",
+  "best_hyperparams": {
+    "batch_size": 256,
+    "dropout_rate": 0.12434877277550578,
+    "hidden_dim": 1024,
+    "learning_rate": 0.0001916890940381127,
+    "num_layers": 2,
+    "snapshot_T0": 5,
+    "snapshot_T_mult": 1,
+    "weight_decay": 6.0833800169154445e-05
+  },
+  "best_loss": 0.06729054637253284,
+  "best_epochs_trained": 210,
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": 210,
+  "best_n_snapshots": null,
+  "n_evaluations": 100,
+  "region": "india",
+  "variables": [
+    "2m_temperature"
+  ],
+  "lead_times": [
+    24,
+    120,
+    216
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "hyperparams": {
+    "batch_size": 256,
+    "dropout_rate": 0.24398352656507966,
+    "hidden_dim": 64,
+    "learning_rate": 0.00043996539539044213,
+    "num_layers": 4,
+    "snapshot_T0": 10,
+    "snapshot_T_mult": 2,
+    "weight_decay": 1.069786113935846e-05
+  },
+  "loss": 0.4314805343747139,
+  "epochs_trained": 210,
+  "architecture": "mlp",
+  "mode": "block_ltho",
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": 210,
+  "n_snapshots": null
+}
