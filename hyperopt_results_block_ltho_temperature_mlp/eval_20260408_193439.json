@@ -1,0 +1,30 @@
+{
+  "hyperparams": {
+    "batch_size": 64,
+    "dropout_rate": 0.24621367034332486,
+    "hidden_dim": 128,
+    "learning_rate": 6.997310045948901e-05,
+    "num_layers": 3,
+    "snapshot_T0": 7,
+    "snapshot_T_mult": 2,
+    "weight_decay": 0.0006208710065543786
+  },
+  "loss": 0.12498295928041141,
+  "epochs_trained": 210,
+  "architecture": "mlp",
+  "mode": "block_ltho",
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": 210,
+  "n_snapshots": null,
+  "cell_info": "europe patch 26; europe patch 33; europe patch 38",
+  "cell_losses": [
+    0.1137421615421772,
+    0.12151404097676277,
+    0.13969267532229424
+  ],
+  "cell_infos": [
+    "europe patch 26",
+    "europe patch 33",
+    "europe patch 38"
+  ]
+}

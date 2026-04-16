@@ -2,22 +2,22 @@
   "architecture": "mlp",
   "mode": "block_ltho",
   "best_hyperparams": {
-    "batch_size": 256,
-    "dropout_rate": 0.12434877277550578,
-    "hidden_dim": 1024,
-    "learning_rate": 0.0001916890940381127,
+    "batch_size": 64,
+    "dropout_rate": 0.17027886546136112,
+    "hidden_dim": 256,
+    "learning_rate": 0.0008054944940976897,
     "num_layers": 2,
-    "snapshot_T0": 5,
+    "snapshot_T0": 7,
     "snapshot_T_mult": 1,
-    "weight_decay": 6.0833800169154445e-05
+    "weight_decay": 0.00036718599646249543
   },
-  "best_loss": 0.06729054637253284,
+  "best_loss": 0.04081855978195866,
   "best_epochs_trained": 210,
   "snapshot_objective_runs": null,
   "snapshot_epochs": 210,
   "best_n_snapshots": null,
   "n_evaluations": 100,
-  "region": "india",
+  "region": "multi_cell_37_cells",
   "variables": [
     "2m_temperature"
   ],

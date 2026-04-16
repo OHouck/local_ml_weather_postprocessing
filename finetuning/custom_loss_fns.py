@@ -631,6 +631,127 @@ def compute_class_weights(labels, n_classes, method="inverse_sqrt", smoothing=0.
     return weights.tolist()
 
 
+def gaussian_crps_loss(mu, sigma, target):
+    """
+    Closed-form Gaussian CRPS loss for Distributional Regression Networks (DRN).
+
+    Source: Rasp & Lerch 2018, MWR 146(11). Gneiting & Raftery 2007 for CRPS formula.
+
+    Args:
+        mu: Predicted mean of corrected forecast (torch.Tensor, same shape as target)
+        sigma: Predicted std dev (torch.Tensor, same shape as target, must be > 0)
+        target: Ground truth observations (torch.Tensor)
+
+    Returns:
+        Mean CRPS loss (scalar torch.Tensor)
+    """
+    import math
+    sigma = sigma.clamp(min=1e-6)
+    z = (target - mu) / sigma
+    sqrt_2 = math.sqrt(2.0)
+    sqrt_pi = math.sqrt(math.pi)
+    # Standard normal PDF: phi(z) = exp(-0.5*z^2) / sqrt(2*pi)
+    phi = torch.exp(-0.5 * z * z) / (sqrt_2 * sqrt_pi)
+    # Standard normal CDF: Phi(z) = 0.5 * (1 + erf(z / sqrt(2)))
+    Phi = 0.5 * (1.0 + torch.erf(z / sqrt_2))
+    crps = sigma * (z * (2.0 * Phi - 1.0) + 2.0 * phi - 1.0 / sqrt_pi)
+    return crps.mean()
+
+
+def bernstein_quantile_loss(raw_coeffs, fc_output, target, degree=6, n_quantiles=19):
+    """
+    Quantile loss using Bernstein polynomial quantile function (BQN).
+
+    Source: Bremnes 2020, MWR 148(1). Validated as SOTA for wind post-processing
+    by Schulz & Lerch 2022, MWR 150(1).
+
+    The model outputs (degree+1)*output_dim raw values. These are transformed
+    via cumsum(softplus(.)) to get monotone Bernstein coefficients representing
+    the quantile function of the error (correction). Adding fc_output gives
+    the quantile function of the corrected forecast.
+
+    Args:
+        raw_coeffs: Raw model output (batch, output_dim * (degree+1))
+        fc_output: Normalized forecast to correct (batch, output_dim)
+        target: Normalized ground truth observations (batch, output_dim)
+        degree: Bernstein polynomial degree (default 6)
+        n_quantiles: Number of quantile levels to evaluate (default 19)
+
+    Returns:
+        Mean pinball loss across all quantile levels (scalar torch.Tensor)
+    """
+    import math
+    batch_size = raw_coeffs.shape[0]
+    output_dim = fc_output.shape[-1]
+
+    # Reshape to (batch, output_dim, degree+1) and enforce monotonicity
+    raw = raw_coeffs.view(batch_size, output_dim, degree + 1)
+    # cumsum(softplus(raw)) gives a monotone non-negative sequence
+    deltas = torch.nn.functional.softplus(raw)
+    alphas = torch.cumsum(deltas, dim=-1)  # (batch, output_dim, degree+1)
+    # Center so coefficients represent the error distribution around 0
+    alphas = alphas - alphas.mean(dim=-1, keepdim=True)
+    # Add forecast to convert error quantile function to corrected forecast quantile function
+    alphas = alphas + fc_output.unsqueeze(-1)  # (batch, output_dim, degree+1)
+
+    # Build Bernstein basis B_{k,d}(tau) for each quantile level
+    # binom_coeffs: C(d,k) for k=0..d
+    binom_coeffs = torch.tensor(
+        [math.comb(degree, k) for k in range(degree + 1)],
+        dtype=raw_coeffs.dtype, device=raw_coeffs.device
+    )  # (degree+1,)
+    k = torch.arange(degree + 1, dtype=raw_coeffs.dtype, device=raw_coeffs.device)
+    taus = torch.linspace(0.05, 0.95, n_quantiles, dtype=raw_coeffs.dtype, device=raw_coeffs.device)
+
+    # basis shape: (n_quantiles, degree+1)
+    basis = binom_coeffs * taus[:, None] ** k * (1.0 - taus[:, None]) ** (degree - k)
+
+    # quantiles shape: (batch, output_dim, n_quantiles)
+    quantiles = torch.einsum('bod,qd->boq', alphas, basis)
+
+    # Pinball loss
+    target_exp = target.unsqueeze(-1)  # (batch, output_dim, 1)
+    diff = target_exp - quantiles       # (batch, output_dim, n_quantiles)
+    # max(tau * diff, (tau-1) * diff) — pinball/quantile loss
+    pinball = torch.max(taus * diff, (taus - 1.0) * diff)
+
+    return pinball.mean()
+
+
+def bernstein_median(raw_coeffs, fc_output, degree=6):
+    """
+    Extract the median (tau=0.5) from BQN raw output for point-forecast use.
+
+    Args:
+        raw_coeffs: Raw model output (batch, output_dim * (degree+1))
+        fc_output: Normalized forecast (batch, output_dim)
+        degree: Bernstein polynomial degree
+
+    Returns:
+        Median of the corrected forecast distribution (batch, output_dim)
+    """
+    import math
+    batch_size = raw_coeffs.shape[0]
+    output_dim = fc_output.shape[-1]
+
+    raw = raw_coeffs.view(batch_size, output_dim, degree + 1)
+    deltas = torch.nn.functional.softplus(raw)
+    alphas = torch.cumsum(deltas, dim=-1)
+    alphas = alphas - alphas.mean(dim=-1, keepdim=True)
+    alphas = alphas + fc_output.unsqueeze(-1)
+
+    binom_coeffs = torch.tensor(
+        [math.comb(degree, k) for k in range(degree + 1)],
+        dtype=raw_coeffs.dtype, device=raw_coeffs.device
+    )
+    k = torch.arange(degree + 1, dtype=raw_coeffs.dtype, device=raw_coeffs.device)
+    tau = torch.tensor(0.5, dtype=raw_coeffs.dtype, device=raw_coeffs.device)
+    basis_median = binom_coeffs * tau ** k * (1.0 - tau) ** (degree - k)  # (degree+1,)
+
+    median = (alphas * basis_median).sum(dim=-1)  # (batch, output_dim)
+    return median
+
+
 # Register label generators for classification losses
 # This allows run_subregion_experiment to get the right label generator for each loss
 LABEL_GENERATORS = {

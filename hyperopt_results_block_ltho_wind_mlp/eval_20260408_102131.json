@@ -1,0 +1,30 @@
+{
+  "hyperparams": {
+    "batch_size": 256,
+    "dropout_rate": 0.14474281109999593,
+    "hidden_dim": 1024,
+    "learning_rate": 0.0018256275917542552,
+    "num_layers": 6,
+    "snapshot_T0": 15,
+    "snapshot_T_mult": 1,
+    "weight_decay": 1.434779294292001e-06
+  },
+  "loss": 0.8878970245520273,
+  "epochs_trained": 210,
+  "architecture": "mlp",
+  "mode": "block_ltho",
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": 210,
+  "n_snapshots": null,
+  "cell_info": "africa patch 78; asia patch 22; asia patch 29",
+  "cell_losses": [
+    0.9423844367265701,
+    0.7296320647001266,
+    0.9916745722293854
+  ],
+  "cell_infos": [
+    "africa patch 78",
+    "asia patch 22",
+    "asia patch 29"
+  ]
+}

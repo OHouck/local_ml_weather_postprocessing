@@ -2,13 +2,9 @@
 """
 Script to generate architecture comparison plots from run_arch_experiments.sh outputs.
 
-This script plots RMSE improvement for 6 architecture/training configurations:
-- MLP with single variable (minimal)
-- MLP with 3 variables (partial: temp + temp_1000hPa + specific_humidity_1000hPa)
-- MLP Snapshot Ensemble ×3 with single variable (minimal)
-- MLP Snapshot Ensemble ×3 with 3 variables (partial)
-- UNet with single variable (minimal)
-- UNet with 3 variables (partial)
+All experiments are evaluated on a 5% eval sample of continent 6x6 cells (disjoint
+from the hyperopt split) and results are averaged across cells for a geographically
+diverse comparison.
 
 Usage:
     python3 finetuning/plot_arch_experiment_results.py
@@ -36,7 +32,6 @@ def main():
     test_start = "2022-01-01"
     test_end = "2022-12-31"
     model = "pangu"
-    region = "india"
     subregion = "6x6"
     variable = "2m_temperature"
 
@@ -45,26 +40,30 @@ def main():
     print("=" * 80)
     print(f"\nConfiguration:")
     print(f"  Model: {model}")
-    print(f"  Region: {region}")
+    print(f"  Eval: 5% continent cell sample (global, averaged)")
     print(f"  Subregion: {subregion}")
     print(f"  Variable: {variable}")
     print(f"  Training: {train_start} to {train_end}")
     print(f"  Testing: {test_start} to {test_end}")
-    print("\nExperiments:")
-    print("  1. MLP (Minimal) - Single variable")
-    print("  2. MLP (Partial) - 3 variables")
-    print("  3. MLP Snapshot Ensemble x3 (Minimal) - Single variable")
-    print("  4. MLP Snapshot Ensemble x3 (Partial) - 3 variables")
-    print("  5. UNet (Minimal) - Single variable")
-    print("  6. UNet (Partial) - 3 variables")
-    print("  7. Block LTHO Ensemble k=3 (Minimal) - NEW BEST")
+    print("\nExperiments (all averaged across global eval cells):")
+    print("  1. MLP — single variable")
+    print("  2. MLP — 3 variables (+ 1000hPa T & q)")
+    print("  3. MLP Snapshot Ensemble x3 — single variable")
+    print("  4. MLP Snapshot Ensemble x3 — 3 variables")
+    print("  5. UNet — single variable")
+    print("  6. UNet — 3 variables")
+    print("  7. Block LTHO Ensemble k=3 — single variable")
+    print("  8. Block LTHO + LT-Weighted — 5x weight on 24h in snapshot training")
+    print("  9. Per-LT Block LTHO — separate model per lead time")
+    print(" 10. Block LTHO + SmallInit — zero-init final layer")
+    print(" 11. Block LTHO + DRN (Gaussian CRPS) — probabilistic head, CRPS loss")
+    print(" 12. Block LTHO + BQN d=6 (Bernstein Quantile) — median as point estimate")
     print("\n" + "=" * 80)
 
     # Generate plot
     plot_arch_experiment_results(
         dirs=dirs,
         model=model,
-        region=region,
         subregion=subregion,
         variable=variable,
         train_start=train_start,

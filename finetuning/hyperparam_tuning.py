@@ -32,7 +32,7 @@ from finetuning.custom_loss_fns import (
     heatwave_loss, joint_temp_wind_loss
 )
 from functools import partial
-from helper_funcs import setup_directories
+from helper_funcs import setup_directories, sample_continent_patches
 
 
 def make_eval_dataloader(fc_norm_sub, fc_output_norm_sub, obs_norm_sub,
@@ -576,6 +576,92 @@ def preload_training_data(args: SimpleNamespace,
     }
 
 
+def preload_multi_cell_data(cell_patches: list,
+                            args: SimpleNamespace,
+                            data_dir: str,
+                            device: torch.device,
+                            use_legacy_global_data: bool = False,
+                            split_seed: int = 42) -> list:
+    """
+    Pre-load and cache training data for multiple continent 6x6 cells.
+
+    Each cell is loaded independently and stored as its own cached_data dict,
+    so that different hyperopt trials can train on different cells.
+
+    Args:
+        cell_patches: List of (continent, patch_idx, patch_array) from sample_continent_patches()
+        args: Configuration with variables, lead times, etc. (region/subregion are overridden per cell)
+        data_dir: Path to data directory
+        device: torch device
+        use_legacy_global_data: Whether to use legacy global data format
+        split_seed: Seed for train/val split
+
+    Returns:
+        list of cached_data dicts (one per cell), same format as preload_training_data()
+    """
+    print("\n" + "="*70)
+    print(f"PRE-LOADING DATA FOR {len(cell_patches)} CONTINENT CELLS")
+    print("="*70)
+
+    cached_cells = []
+    for i, (continent, patch_idx, patch_array) in enumerate(cell_patches):
+        lat_vals = patch_array[0]
+        lon_vals = patch_array[1]
+
+        print(f"\n  Cell {i+1}/{len(cell_patches)}: {continent} patch {patch_idx} "
+              f"(lat {lat_vals.min():.1f}-{lat_vals.max():.1f}, "
+              f"lon {lon_vals.min():.1f}-{lon_vals.max():.1f})")
+
+        try:
+            (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times,
+             lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, _) = \
+                load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
+                               use_legacy_global_data=use_legacy_global_data)
+
+            # Normalize data
+            stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
+            stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+            fc_norm = (fc - stats_train['mean']) / stats_train['std']
+            fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
+            obs_norm = (obs - stats_out['mean']) / stats_out['std']
+
+            # Split train/validation (80/20)
+            n_samples = len(fc)
+            rng = np.random.default_rng(split_seed)
+            indices = rng.permutation(n_samples)
+            split_idx = int(0.8 * n_samples)
+            train_idx = indices[:split_idx]
+            val_idx = indices[split_idx:]
+
+            cached_cells.append({
+                'fc_norm': fc_norm,
+                'fc_output_norm': fc_output_norm,
+                'obs_norm': obs_norm,
+                'lead_time_indices': lead_time_indices,
+                'day_of_year_features': day_of_year_features,
+                'train_idx': train_idx,
+                'val_idx': val_idx,
+                'n_lat': n_lat,
+                'n_lon': n_lon,
+                'n_training_vars': n_training_vars,
+                'n_output_vars': n_output_vars,
+                'stats_train': stats_train,
+                'stats_out': stats_out,
+                'train_times': train_times,
+                'continent': continent,
+                'patch_idx': patch_idx,
+            })
+            print(f"    Loaded {n_samples} samples ({len(train_idx)} train, {len(val_idx)} val)")
+
+        except Exception as e:
+            print(f"    WARNING: Failed to load cell {continent} patch {patch_idx}: {e}")
+            continue
+
+    print(f"\n  Successfully loaded {len(cached_cells)}/{len(cell_patches)} cells")
+    print("="*70 + "\n")
+    return cached_cells
+
+
 def evaluate_hyperparameters(hyperparams: Dict[str, Any],
                             args: SimpleNamespace,
                             data_dir: str,
@@ -1096,7 +1182,8 @@ def optimize_hyperparameters(args: SimpleNamespace,
                             use_snapshot: bool = False,
                             use_block_ltho: bool = False,
                             snapshot_objective_runs: int = 3,
-                            snapshot_epochs: int = 210) -> Dict[str, Any]:
+                            snapshot_epochs: int = 210,
+                            multi_cell_data: list = None) -> Dict[str, Any]:
     """
     Optimize hyperparameters for a single region/variable configuration.
 
@@ -1111,10 +1198,9 @@ def optimize_hyperparameters(args: SimpleNamespace,
         resume: If True, continue from previous trials
         use_snapshot: Optimize for random-split snapshot ensemble
         use_block_ltho: Optimize for block leave-three-out ensemble (overrides use_snapshot)
-            Uses 4-fold year-based CV: each fold trains on 1 year, evaluates on 3.
-            Results saved to output_dir/optimization_results_mlp.json so that
-            load_optimal_hyperparameters() in finetune.py can auto-load them when
-            --block_ensemble is passed.
+        multi_cell_data: If provided, list of cached_data dicts from preload_multi_cell_data().
+            Each trial evaluates on a different cell (round-robin), making hyperparameters
+            robust across diverse geographic regions.
 
     Returns:
         dict: Best hyperparameters and optimization results
@@ -1140,8 +1226,14 @@ def optimize_hyperparameters(args: SimpleNamespace,
         )
     print(f"Using device: {device}")
     mode_str = 'block_ltho' if use_block_ltho else ('snapshot' if use_snapshot else 'early-stopping')
-    print(f"Optimizing {architecture.upper()} ({mode_str}) for region '{args.region}', "
-          f"variable(s) {args.output_vars}, lead times {args.lead_time_hours}h")
+
+    use_multi_cell = multi_cell_data is not None and len(multi_cell_data) > 0
+    if use_multi_cell:
+        print(f"Optimizing {architecture.upper()} ({mode_str}) across {len(multi_cell_data)} continent cells, "
+              f"variable(s) {args.output_vars}, lead times {args.lead_time_hours}h")
+    else:
+        print(f"Optimizing {architecture.upper()} ({mode_str}) for region '{args.region}', "
+              f"variable(s) {args.output_vars}, lead times {args.lead_time_hours}h")
     if use_snapshot:
         print(f"Snapshot objective settings: runs={snapshot_objective_runs}, epochs={snapshot_epochs}")
     if use_block_ltho:
@@ -1169,40 +1261,102 @@ def optimize_hyperparameters(args: SimpleNamespace,
         search_space = create_unet_search_space()
 
     # Pre-load training data once for all trials (major performance optimization)
-    cached_data = preload_training_data(
-        args,
-        data_dir,
-        device,
-        use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
-        split_seed=random_seed
-    )
+    if not use_multi_cell:
+        cached_data = preload_training_data(
+            args,
+            data_dir,
+            device,
+            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA,
+            split_seed=random_seed
+        )
+
+    # Trial counter for round-robin cell selection in multi-cell mode.
+    # CELLS_PER_TRIAL controls how many cells each hyperopt trial evaluates on.
+    # Using multiple cells per trial reduces noise from cell-level heterogeneity
+    # (some regions are much easier to improve than others), preventing the
+    # optimizer from rewarding a bad architecture that happened to land on an
+    # easy cell.
+    CELLS_PER_TRIAL = 3
+    trial_counter = [0]
 
     # Define objective function
     def objective(hyperparams):
-        result = evaluate_hyperparameters(
-            hyperparams, args, data_dir, architecture, device,
-            cached_data=cached_data,
-            use_snapshot=use_snapshot,
-            use_block_ltho=use_block_ltho,
-            split_seed=random_seed,
-            snapshot_objective_runs=snapshot_objective_runs,
-            snapshot_epochs=snapshot_epochs
-        )
+        if use_multi_cell:
+            # Evaluate on CELLS_PER_TRIAL different cells and average the loss.
+            # Cells are selected round-robin so every cell gets roughly equal use.
+            n_cells = len(multi_cell_data)
+            cell_losses = []
+            cell_infos = []
+            cell_epochs = []
+
+            base_idx = (trial_counter[0] * CELLS_PER_TRIAL) % n_cells
+            trial_counter[0] += 1
+
+            for k in range(CELLS_PER_TRIAL):
+                cell_idx = (base_idx + k) % n_cells
+                cell_data = multi_cell_data[cell_idx]
+                cell_info = f"{cell_data.get('continent', '?')} patch {cell_data.get('patch_idx', '?')}"
+                cell_infos.append(cell_info)
+
+                print(f"\n  Trial {trial_counter[0]}, cell {k+1}/{CELLS_PER_TRIAL}: "
+                      f"idx {cell_idx} ({cell_info})")
+
+                result_k = evaluate_hyperparameters(
+                    hyperparams, args, data_dir, architecture, device,
+                    cached_data=cell_data,
+                    use_snapshot=use_snapshot,
+                    use_block_ltho=use_block_ltho,
+                    split_seed=random_seed,
+                    snapshot_objective_runs=snapshot_objective_runs,
+                    snapshot_epochs=snapshot_epochs
+                )
+                cell_losses.append(result_k['loss'])
+                cell_epochs.append(result_k['epochs_trained'])
+
+            mean_loss = float(np.mean(cell_losses))
+            print(f"\n  Trial {trial_counter[0]} mean loss across {CELLS_PER_TRIAL} cells: "
+                  f"{mean_loss:.6f}  (individual: {[f'{l:.4f}' for l in cell_losses]})")
+
+            result = {
+                'loss': mean_loss,
+                'status': STATUS_OK,
+                'epochs_trained': int(np.mean(cell_epochs)),
+                'hyperparams': hyperparams,
+                'cell_losses': cell_losses,
+                'cell_infos': cell_infos,
+            }
+            cell_info_str = "; ".join(cell_infos)
+        else:
+            result = evaluate_hyperparameters(
+                hyperparams, args, data_dir, architecture, device,
+                cached_data=cached_data,
+                use_snapshot=use_snapshot,
+                use_block_ltho=use_block_ltho,
+                split_seed=random_seed,
+                snapshot_objective_runs=snapshot_objective_runs,
+                snapshot_epochs=snapshot_epochs
+            )
+            cell_info_str = args.region
 
         # Save intermediate result
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         result_file = os.path.join(output_dir, f'eval_{timestamp}.json')
+        save_dict = {
+            'hyperparams': hyperparams,
+            'loss': result['loss'],
+            'epochs_trained': result['epochs_trained'],
+            'architecture': architecture,
+            'mode': mode_str,
+            'snapshot_objective_runs': snapshot_objective_runs if use_snapshot else None,
+            'snapshot_epochs': snapshot_epochs,
+            'n_snapshots': result.get('n_snapshots'),
+            'cell_info': cell_info_str,
+        }
+        if use_multi_cell:
+            save_dict['cell_losses'] = result.get('cell_losses')
+            save_dict['cell_infos'] = result.get('cell_infos')
         with open(result_file, 'w') as f:
-            json.dump({
-                'hyperparams': hyperparams,
-                'loss': result['loss'],
-                'epochs_trained': result['epochs_trained'],
-                'architecture': architecture,
-                'mode': mode_str,
-                'snapshot_objective_runs': snapshot_objective_runs if use_snapshot else None,
-                'snapshot_epochs': snapshot_epochs,
-                'n_snapshots': result.get('n_snapshots')
-            }, f, indent=2)
+            json.dump(save_dict, f, indent=2)
 
         return result
 
@@ -1215,6 +1369,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
             trials = pickle.load(f)
         n_previous = len(trials.trials)
         print(f"Loaded {n_previous} previous trials")
+        trial_counter[0] = n_previous  # Continue round-robin from where we left off
 
         if n_previous >= max_evals:
             print(f"Already completed {n_previous} evaluations (>= {max_evals})")
@@ -1250,6 +1405,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
     best_trial = trials.trials[best_idx]
 
     # Prepare results
+    region_info = f"multi_cell_{len(multi_cell_data)}_cells" if use_multi_cell else args.region
     results = {
         'architecture': architecture,
         'mode': mode_str,
@@ -1260,7 +1416,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
         'snapshot_epochs': snapshot_epochs if (use_snapshot or use_block_ltho) else None,
         'best_n_snapshots': best_trial['result'].get('n_snapshots') if use_snapshot else None,
         'n_evaluations': len(trials.trials),
-        'region': args.region,
+        'region': region_info,
         'variables': args.output_vars,
         'lead_times': args.lead_time_hours
     }
@@ -1278,7 +1434,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
             'snapshot_epochs': results['snapshot_epochs'],
             'best_n_snapshots': results['best_n_snapshots'],
             'n_evaluations': results['n_evaluations'],
-            'region': args.region,
+            'region': region_info,
             'variables': args.output_vars,
             'lead_times': args.lead_time_hours
         }, f, indent=2)
@@ -1337,7 +1493,7 @@ if __name__ == "__main__":
     #   For block LTHO, each of the 4 blocks trains for this many epochs.
     #   Runtime estimate (M3 Max): ~0.1 min/block × 4 blocks = ~0.4 min/trial
     # ========================================================================
-    TUNING_MODE = "block_ltho_temperature"   # <-- EDIT THIS
+    TUNING_MODE = "block_ltho_wind"   # <-- EDIT THIS
     USE_SNAPSHOT_ENSEMBLE = False            # <-- EDIT THIS (ignored for block_ltho_*)
     SNAPSHOT_OBJECTIVE_RUNS = 3             # <-- EDIT THIS (ignored for block_ltho_*)
     SNAPSHOT_EPOCHS = 210                   # <-- EDIT THIS
@@ -1413,15 +1569,16 @@ if __name__ == "__main__":
         output_dir = f"hyperopt_results_{snapshot_prefix}joint_wind_temperature_24h_mlp"
 
     elif TUNING_MODE == "block_ltho_temperature":
-        # Block LTHO: tune on India 6x6, all three standard Pangu lead times.
-        # Each trial trains 4 single-year models and cross-validates across years.
+        # Block LTHO: tune across a 10% random sample of continent 6x6 cells.
+        # Each trial trains on a different cell (round-robin), so hyperparameters
+        # are optimized for diverse geographic conditions rather than a single region.
         config = SimpleNamespace(
             model_name="pangu",
             training_vars=["2m_temperature"],
             output_vars=["2m_temperature"],
             train_start="2018-01-01",
             train_end="2021-12-31",
-            region="india",
+            region="multi_cell",
             subregion="6x6",
             ground_truth_source="",
             lead_time_hours=[24, 120, 216],
@@ -1437,7 +1594,7 @@ if __name__ == "__main__":
             output_vars=["10m_wind_speed"],
             train_start="2018-01-01",
             train_end="2021-12-31",
-            region="india",
+            region="multi_cell",
             subregion="6x6",
             ground_truth_source="",
             lead_time_hours=[24, 120, 216],
@@ -1459,6 +1616,18 @@ if __name__ == "__main__":
         print(f"Snapshot ensemble: {USE_SNAPSHOT_ENSEMBLE}")
     print(f"Output dir: {output_dir}\n")
 
+    # For block LTHO modes, pre-load a 10% sample of continent cells
+    multi_cell_data = None
+    if use_block_ltho:
+        cell_patches = sample_continent_patches(
+            dirs['processed'], fraction=0.1, seed=42, split='hyperopt'
+        )
+        print(f"Sampled {len(cell_patches)} continent cells for hyperopt")
+        multi_cell_data = preload_multi_cell_data(
+            cell_patches, config, data_dir, device,
+            use_legacy_global_data=USE_LEGACY_GLOBAL_DATA, split_seed=42
+        )
+
     mlp_results = optimize_hyperparameters(
         args=config,
         data_dir=data_dir,
@@ -1471,7 +1640,8 @@ if __name__ == "__main__":
         use_snapshot=USE_SNAPSHOT_ENSEMBLE,
         use_block_ltho=use_block_ltho,
         snapshot_objective_runs=SNAPSHOT_OBJECTIVE_RUNS,
-        snapshot_epochs=SNAPSHOT_EPOCHS
+        snapshot_epochs=SNAPSHOT_EPOCHS,
+        multi_cell_data=multi_cell_data
     )
     print(f"MLP optimization finished with best loss: {mlp_results['best_loss']:.6f}")
 

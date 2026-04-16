@@ -91,12 +91,18 @@ CONTINENT_MAP = {
 # ------------------------------
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
-                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.244):
+                n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.244,
+                small_output_init=False, probabilistic_head='none', bernstein_degree=6):
         super(SimpleMLP, self).__init__()
 
         # Lead time embedding
         self.n_lead_times = n_lead_times
         self.lead_time_embedding = None
+
+        # Probabilistic head configuration
+        self.probabilistic_head = probabilistic_head
+        self.bernstein_degree = bernstein_degree
+        self.base_output_dim = output_dim  # save for inference-time head extraction
 
         # Day-of-year features (sin/cos) - 2 features
         # Calculate actual input dimension
@@ -105,6 +111,14 @@ class SimpleMLP(nn.Module):
         if n_lead_times > 1:
             self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
             actual_input_dim += lead_time_embedding_dim
+
+        # Determine raw output dimension based on probabilistic head type
+        if probabilistic_head == 'gaussian':
+            raw_output_dim = output_dim * 2  # (mu_error, log_sigma) per pixel
+        elif probabilistic_head == 'bernstein':
+            raw_output_dim = output_dim * (bernstein_degree + 1)
+        else:
+            raw_output_dim = output_dim
 
         layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
 
@@ -116,7 +130,13 @@ class SimpleMLP(nn.Module):
 
             if dropout_rate > 0:
                 layers.append(nn.Dropout(dropout_rate))
-        layers.append(nn.Linear(hidden_dim, output_dim))
+        output_layer = nn.Linear(hidden_dim, raw_output_dim)
+        if small_output_init:
+            # Initialize output layer near zero so model starts predicting ~zero correction.
+            # This is critical for short lead times (24h) where the optimal correction is small.
+            nn.init.normal_(output_layer.weight, std=0.01)
+            nn.init.zeros_(output_layer.bias)
+        layers.append(output_layer)
         self.net = nn.Sequential(*layers)
 
     def forward(self, x, lead_time_idx=None, day_of_year_features=None):
@@ -130,6 +150,87 @@ class SimpleMLP(nn.Module):
             x = torch.cat([x, lead_time_emb], dim=-1)
 
         return self.net(x)
+
+
+# ------------------------------
+# GatedMLP: SwiGLU activations, LayerNorm, residual connections, small output init
+# Designed to learn small corrections more effectively than SimpleMLP (especially at 24h)
+# ------------------------------
+class GatedMLP(nn.Module):
+    """
+    MLP with gated activations (SwiGLU), LayerNorm, and residual connections.
+
+    Key improvements over SimpleMLP for small-correction regimes:
+    1. SwiGLU gating: learns to selectively pass/block information, better for small signals
+    2. LayerNorm: stabilizes training when target corrections are near-zero
+    3. Residual connections: each hidden block adds a delta, easing optimization
+    4. Small output initialization: final layer weights initialized near zero so the model
+       starts by predicting ~zero correction, then refines from there
+    """
+
+    def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
+                 n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.244):
+        super(GatedMLP, self).__init__()
+
+        self.n_lead_times = n_lead_times
+        self.lead_time_embedding = None
+
+        # Day-of-year features (sin/cos) - 2 features
+        actual_input_dim = input_dim + 2
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            actual_input_dim += lead_time_embedding_dim
+
+        # Input projection
+        self.input_proj = nn.Linear(actual_input_dim, hidden_dim)
+
+        # Gated residual blocks
+        self.blocks = nn.ModuleList()
+        for _ in range(num_hidden_layers):
+            self.blocks.append(SwiGLUBlock(hidden_dim, dropout_rate))
+
+        # Output projection with small initialization
+        self.output_norm = nn.LayerNorm(hidden_dim)
+        self.output_proj = nn.Linear(hidden_dim, output_dim)
+        # Initialize output layer near zero so model starts predicting ~zero correction
+        nn.init.normal_(self.output_proj.weight, std=0.01)
+        nn.init.zeros_(self.output_proj.bias)
+
+    def forward(self, x, lead_time_idx=None, day_of_year_features=None):
+        if day_of_year_features is not None:
+            x = torch.cat([x, day_of_year_features], dim=-1)
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            lead_time_emb = self.lead_time_embedding(lead_time_idx)
+            x = torch.cat([x, lead_time_emb], dim=-1)
+
+        x = self.input_proj(x)
+        for block in self.blocks:
+            x = block(x)
+        x = self.output_norm(x)
+        return self.output_proj(x)
+
+
+class SwiGLUBlock(nn.Module):
+    """Single SwiGLU gated block with LayerNorm and residual connection."""
+
+    def __init__(self, hidden_dim, dropout_rate=0.244):
+        super(SwiGLUBlock, self).__init__()
+        self.norm = nn.LayerNorm(hidden_dim)
+        # SwiGLU: two parallel projections, one gated by SiLU
+        self.w_gate = nn.Linear(hidden_dim, hidden_dim)
+        self.w_value = nn.Linear(hidden_dim, hidden_dim)
+        self.w_out = nn.Linear(hidden_dim, hidden_dim)
+        self.dropout = nn.Dropout(dropout_rate)
+
+    def forward(self, x):
+        residual = x
+        x = self.norm(x)
+        # SwiGLU: gate * value where gate uses SiLU activation
+        gate = F.silu(self.w_gate(x))
+        value = self.w_value(x)
+        x = self.w_out(gate * value)
+        x = self.dropout(x)
+        return residual + x
 
 
 # ------------------------------
@@ -529,20 +630,18 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
             if output_key is None:
                 print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
                 return None
-            # Block LTHO: check dedicated block_ltho results first, then fall through
+            # Block LTHO: use dedicated block_ltho hyperparameters (tuned across continent cells)
             if use_block_ltho and multi_flag == "":
                 block_ltho_file = script_dir / f"hyperopt_results_block_ltho_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
                 print(f"Checking for block LTHO hyperparameter file at {block_ltho_file}")
 
-                #  XX currently these hyperparameters outperform those trained specifically for block_ltho, not sure why
-                results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
-                # if block_ltho_file.exists():
-                #     print(f"Using block LTHO hyperparameters from {block_ltho_file}")
-                #     # results_file = block_ltho_file 
-                # else:
-                #     print(f"Note: No block LTHO hyperparameter file found at {block_ltho_file}; "
-                #           "falling back to standard hyperopt results.")
-                #     results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+                if block_ltho_file.exists():
+                    print(f"Using block LTHO hyperparameters from {block_ltho_file}")
+                    results_file = block_ltho_file
+                else:
+                    print(f"Note: No block LTHO hyperparameter file found at {block_ltho_file}; "
+                          "falling back to standard hyperopt results.")
+                    results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
             else:
                 results_file = script_dir / f"hyperopt_results{multi_flag}_{snapshot_prefix}{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
 
@@ -590,7 +689,7 @@ def parse_args():
     parser.add_argument('--train_end',     type=str, default='2019-12-31')
     parser.add_argument('--test_start',    type=str, default='2020-01-01')
     parser.add_argument('--test_end',      type=str, default='2020-12-31')
-    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet'])
+    parser.add_argument('--nn_architecture',   type=str, default='mlp', choices=['mlp', 'unet', 'gated_mlp'])
     parser.add_argument('--bootstrap',      type=int, default=None,
                         help='If set, run N bootstrap samples of subregions')
     parser.add_argument('--growing_season_only', action='store_true',
@@ -659,6 +758,42 @@ def parse_args():
                              'k=2: 6 blocks each trained on 2 years (+12.8%% at 24h). '
                              'k=1: 4 blocks each trained on 3 years (+12.2%% at 24h, LOO). '
                              'Only used when --block_ensemble is set.')
+
+    # Lead-time-weighted loss: weight short lead times more heavily
+    parser.add_argument('--lead_time_loss_weights', type=float, nargs='+', default=None,
+                        help='Per-lead-time loss weights (same order as --lead_time_hours). '
+                             'E.g., "3.0 1.0 0.5" weights 24h 3x more than 120h. '
+                             'Default: None (equal weighting).')
+
+    # C-Mixup data augmentation for regression
+    parser.add_argument('--cmixup_alpha', type=float, default=0.0,
+                        help='C-Mixup alpha parameter (Beta distribution). '
+                             '0 = disabled, 0.2-1.0 recommended. '
+                             'Mixes samples with similar targets for regularization.')
+
+    # Small output initialization — helps when learning small corrections (e.g. 24h)
+    parser.add_argument('--small_output_init', action='store_true', default=False,
+                        help='Initialize final layer weights near zero so model starts '
+                             'predicting ~zero correction. Helps at short lead times.')
+
+    # Per-lead-time training — train separate models for each lead time
+    parser.add_argument('--per_lead_time', action='store_true', default=False,
+                        help='Train a separate model for each lead time instead of one '
+                             'model for all lead times jointly. Each model sees only data '
+                             'from its lead time, so 24h model optimizes purely for 24h. '
+                             'Works with --block_ensemble and --snapshot_ensemble.')
+
+    # Probabilistic head — DRN (Gaussian CRPS) or BQN (Bernstein quantile network)
+    parser.add_argument('--probabilistic_head', type=str, default='none',
+                        choices=['none', 'gaussian', 'bernstein'],
+                        help='Probabilistic output head. "gaussian": Gaussian CRPS loss (DRN, '
+                             'Rasp & Lerch 2018). "bernstein": Bernstein quantile network (BQN, '
+                             'Bremnes 2020). Point-forecast RMSE uses mean/median respectively. '
+                             'Default: none (standard MSE).')
+    parser.add_argument('--bernstein_degree', type=int, default=6,
+                        help='Degree d of Bernstein polynomials for BQN head (default: 6). '
+                             'Output dim = output_dim * (d+1). Lower d = less overfitting '
+                             'for small datasets. Schulz & Lerch 2022 use d=12 at full stations.')
 
     return parser.parse_args()
 
@@ -1226,8 +1361,217 @@ def train_model_cosine(model, train_loader, valid_loader, epochs, lr, device,
     return model, training_time_minutes
 
 
+def cmixup_batch(fc_input, fc_output, obs, lead_time_idx, doy_features, alpha=0.4):
+    """
+    C-Mixup: label-aware mixup that preferentially mixes samples with similar targets.
+
+    For each sample, finds a mixing partner weighted by similarity in target space
+    (Gaussian kernel on label distance), then interpolates inputs and targets.
+    This regularizes the model without creating unrealistic interpolations.
+
+    Args:
+        fc_input, fc_output, obs: batch tensors
+        lead_time_idx, doy_features: batch tensors
+        alpha: Beta distribution parameter (higher = more mixing)
+
+    Returns:
+        Mixed versions of all input tensors
+    """
+    batch_size = fc_input.size(0)
+    if batch_size < 2 or alpha <= 0:
+        return fc_input, fc_output, obs, lead_time_idx, doy_features
+
+    # Sample mixing coefficient
+    lam = torch.distributions.Beta(alpha, alpha).sample((batch_size,)).to(fc_input.device)
+    lam = lam.unsqueeze(1)
+
+    # Compute pairwise target distances for label-aware partner selection
+    obs_flat = obs.view(batch_size, -1)
+    # Use L2 distance in target space, then Gaussian kernel
+    with torch.no_grad():
+        dists = torch.cdist(obs_flat, obs_flat)  # [B, B]
+        # Bandwidth: median distance (robust choice)
+        bandwidth = dists.median().clamp(min=1e-6)
+        weights = torch.exp(-dists / bandwidth)
+        # Zero out self-mixing
+        weights.fill_diagonal_(0)
+        # Sample partner indices proportional to weights
+        partner_idx = torch.multinomial(weights, 1).squeeze(1)
+
+    # Mix inputs and targets
+    fc_input_mixed = lam * fc_input + (1 - lam) * fc_input[partner_idx]
+    fc_output_mixed = lam * fc_output + (1 - lam) * fc_output[partner_idx]
+    obs_mixed = lam * obs + (1 - lam) * obs[partner_idx]
+
+    # For discrete features (lead_time), keep the original (mixing doesn't make sense)
+    # For doy_features (continuous sin/cos), mix them
+    doy_mixed = lam * doy_features + (1 - lam) * doy_features[partner_idx]
+
+    return fc_input_mixed, fc_output_mixed, obs_mixed, lead_time_idx, doy_mixed
+
+
+def train_model_weighted(model, train_loader, valid_loader, epochs, lr, device,
+                         weight_decay=0, patience=50, min_delta=1e-5,
+                         scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                         lead_time_weights=None, n_lead_times=1,
+                         cmixup_alpha=0.0):
+    """
+    Train model with per-lead-time loss weighting and optional C-Mixup augmentation.
+
+    This training function is designed to improve 24h lead time performance by:
+    1. Weighting the loss per lead time (e.g., 3x weight on 24h vs 1x on 120h)
+    2. C-Mixup regularization to prevent overfitting on small training sets
+
+    Args:
+        model: PyTorch model
+        train_loader, valid_loader: DataLoaders
+        epochs, lr, device: standard training args
+        weight_decay: L2 regularization
+        patience, min_delta: early stopping
+        scheduler_patience, scheduler_factor, min_lr: LR scheduler
+        lead_time_weights: dict mapping lead_time_index -> weight, or None for equal
+        n_lead_times: number of distinct lead times
+        cmixup_alpha: C-Mixup alpha (0 = disabled)
+
+    Returns:
+        model: trained model with best weights
+        training_time_minutes: training duration
+    """
+    criterion = nn.MSELoss(reduction='none')  # per-sample loss for weighting
+
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=scheduler_factor,
+        patience=scheduler_patience, min_lr=min_lr
+    )
+
+    # Build lead-time weight tensor
+    if lead_time_weights is not None:
+        lt_weight_tensor = torch.ones(n_lead_times, device=device)
+        for lt_idx, w in lead_time_weights.items():
+            lt_weight_tensor[lt_idx] = w
+        print(f"Lead-time loss weights: {lt_weight_tensor.tolist()}")
+    else:
+        lt_weight_tensor = None
+
+    use_cmixup = cmixup_alpha > 0
+    if use_cmixup:
+        print(f"C-Mixup enabled with alpha={cmixup_alpha}")
+
+    # Setup AMP
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+    non_blocking = device.type == 'cuda'
+
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    best_model_wts = copy.deepcopy(model.state_dict())
+    train_start_time = time.time()
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        train_loss = 0.0
+        for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in train_loader:
+            fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+            fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+            y_batch = y_batch.to(device, non_blocking=non_blocking)
+            lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+            doy_batch = doy_batch.to(device, non_blocking=non_blocking)
+
+            # Apply C-Mixup augmentation
+            if use_cmixup:
+                fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch = \
+                    cmixup_batch(fc_input_batch, fc_output_batch, y_batch,
+                                 lead_time_batch, doy_batch, alpha=cmixup_alpha)
+
+            optimizer.zero_grad()
+
+            if use_amp:
+                with torch.amp.autocast("cuda"):
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    preds = fc_output_batch + pred_error
+                    per_sample_loss = criterion(preds, y_batch).mean(dim=-1)  # [batch]
+
+                    if lt_weight_tensor is not None:
+                        weights = lt_weight_tensor[lead_time_batch]  # [batch]
+                        loss = (per_sample_loss * weights).mean()
+                    else:
+                        loss = per_sample_loss.mean()
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                preds = fc_output_batch + pred_error
+                per_sample_loss = criterion(preds, y_batch).mean(dim=-1)
+
+                if lt_weight_tensor is not None:
+                    weights = lt_weight_tensor[lead_time_batch]
+                    loss = (per_sample_loss * weights).mean()
+                else:
+                    loss = per_sample_loss.mean()
+
+                loss.backward()
+                optimizer.step()
+
+            train_loss += loss.item() * fc_output_batch.size(0)
+        train_loss /= len(train_loader.dataset)
+
+        # Validation (always unweighted MSE for fair comparison)
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
+                fc_input_batch = fc_input_batch.to(device, non_blocking=non_blocking)
+                fc_output_batch = fc_output_batch.to(device, non_blocking=non_blocking)
+                y_batch = y_batch.to(device, non_blocking=non_blocking)
+                lead_time_batch = lead_time_batch.to(device, non_blocking=non_blocking)
+                doy_batch = doy_batch.to(device, non_blocking=non_blocking)
+
+                if use_amp:
+                    with torch.amp.autocast('cuda'):
+                        pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                        preds = fc_output_batch + pred_error
+                        loss = F.mse_loss(preds, y_batch)
+                else:
+                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
+                    preds = fc_output_batch + pred_error
+                    loss = F.mse_loss(preds, y_batch)
+
+                val_loss += loss.item() * fc_output_batch.size(0)
+        val_loss /= len(valid_loader.dataset)
+
+        scheduler.step(val_loss)
+
+        if val_loss + min_delta < best_val_loss:
+            best_val_loss = val_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epoch % 10 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}, "
+                  f"Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}, "
+                  f"Best Val: {best_val_loss:.6f}, Patience: {epochs_without_improvement}/{patience}")
+
+        if epochs_without_improvement >= patience:
+            print(f"→ Early stopping at epoch {epoch}. "
+                  f"No improvement in {patience} epochs.")
+            break
+
+    training_time_minutes = (time.time() - train_start_time) / 60.0
+    model.load_state_dict(best_model_wts)
+    return model, training_time_minutes
+
+
 def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, device,
-                            weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1):
+                            weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1,
+                            lead_time_weights=None, n_lead_times=1,
+                            probabilistic_head='none', bernstein_degree=6,
+                            warm_start_epochs=20):
     """
     Train a single model and save snapshots at the end of each cosine annealing cycle.
 
@@ -1252,12 +1596,34 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
         grad_clip: Maximum gradient norm (0 to disable)
         T_0: Cosine cycle period in epochs (default: 30)
         T_mult: Multiplier for cycle period (1 = fixed period, 2 = doubling)
+        lead_time_weights: Optional dict mapping lead_time_index -> weight for
+            per-lead-time loss weighting. E.g., {0: 3.0, 1: 1.0, 2: 0.5} gives
+            3x weight to the first lead time (typically 24h). None = equal weighting.
+        n_lead_times: Number of distinct lead times (required if lead_time_weights given)
 
     Returns:
         snapshots: List of (state_dict, val_loss) tuples for each snapshot
         training_time_minutes: Training duration in minutes
     """
-    criterion = nn.MSELoss()
+    from finetuning.custom_loss_fns import gaussian_crps_loss, bernstein_quantile_loss
+
+    use_probabilistic = probabilistic_head in ('gaussian', 'bernstein')
+
+    # Build lead-time weight tensor if provided (not combined with probabilistic heads)
+    lt_weight_tensor = None
+    if lead_time_weights is not None and not use_probabilistic:
+        lt_weight_tensor = torch.ones(n_lead_times, device=device)
+        for lt_idx, w in lead_time_weights.items():
+            lt_weight_tensor[lt_idx] = w
+        print(f"  Snapshot training with LT weights: {lt_weight_tensor.tolist()}")
+        criterion = nn.MSELoss(reduction='none')  # per-sample for weighting
+    else:
+        criterion = nn.MSELoss()
+
+    if use_probabilistic:
+        print(f"  Snapshot training with probabilistic head: {probabilistic_head}"
+              f" (warm-start MSE for first {warm_start_epochs} epochs)")
+
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=T_0, T_mult=T_mult, eta_min=1e-6)
@@ -1277,9 +1643,34 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
             doy_batch = doy_batch.to(device)
 
             optimizer.zero_grad()
-            pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
-            preds = fc_output_batch + pred_error
-            loss = criterion(preds, y_batch)
+            pred_raw = model(fc_input_batch, lead_time_batch, doy_batch)
+
+            if use_probabilistic:
+                output_dim = fc_output_batch.shape[-1]
+                if probabilistic_head == 'gaussian':
+                    mu_error = pred_raw[:, :output_dim]
+                    preds_mu = fc_output_batch + mu_error
+                    if epoch <= warm_start_epochs:
+                        # Warm-start: MSE on mean only; sigma branch unfrozen but not penalized yet
+                        loss = F.mse_loss(preds_mu, y_batch)
+                    else:
+                        log_sigma = pred_raw[:, output_dim:].clamp(-3.0, 3.0)
+                        sigma = log_sigma.exp()
+                        loss = gaussian_crps_loss(preds_mu, sigma, y_batch)
+                else:  # bernstein
+                    loss = bernstein_quantile_loss(
+                        pred_raw, fc_output_batch, y_batch,
+                        degree=bernstein_degree, n_quantiles=19
+                    )
+            elif lt_weight_tensor is not None:
+                preds = fc_output_batch + pred_raw
+                per_sample_loss = criterion(preds, y_batch).mean(dim=-1)  # [batch]
+                weights = lt_weight_tensor[lead_time_batch]  # [batch]
+                loss = (per_sample_loss * weights).mean()
+            else:
+                preds = fc_output_batch + pred_raw
+                loss = criterion(preds, y_batch)
+
             loss.backward()
 
             if grad_clip > 0:
@@ -1304,9 +1695,10 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
                     break
 
         if is_cycle_end:
-            # Evaluate on validation set
+            # Evaluate on validation set — always unweighted point-estimate MSE for fair comparison
             model.eval()
             val_loss = 0.0
+            val_criterion = nn.MSELoss()
             with torch.no_grad():
                 for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in valid_loader:
                     fc_input_batch = fc_input_batch.to(device)
@@ -1314,9 +1706,17 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
                     y_batch = y_batch.to(device)
                     lead_time_batch = lead_time_batch.to(device)
                     doy_batch = doy_batch.to(device)
-                    pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
-                    preds = fc_output_batch + pred_error
-                    loss = criterion(preds, y_batch)
+                    pred_raw = model(fc_input_batch, lead_time_batch, doy_batch)
+                    if use_probabilistic:
+                        output_dim = fc_output_batch.shape[-1]
+                        if probabilistic_head == 'gaussian':
+                            preds = fc_output_batch + pred_raw[:, :output_dim]
+                        else:  # bernstein
+                            from finetuning.custom_loss_fns import bernstein_median
+                            preds = bernstein_median(pred_raw, fc_output_batch, degree=bernstein_degree)
+                    else:
+                        preds = fc_output_batch + pred_raw
+                    loss = val_criterion(preds, y_batch)
                     val_loss += loss.item() * fc_output_batch.size(0)
             val_loss /= len(valid_loader.dataset)
 
@@ -1859,7 +2259,9 @@ def evaluate_classifier(model, test_loader, device, n_classes, class_names=None,
     }
 
 
-def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices, day_of_year_features, device, mc_dropout_samples=0):
+def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices,
+                     day_of_year_features, device, mc_dropout_samples=0,
+                     probabilistic_head='none', bernstein_degree=6):
     """
     Apply the correction to forecast output data using forecast input data.
     Uses mixed precision for CUDA devices.
@@ -1872,14 +2274,20 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
         device: Device to run on
         mc_dropout_samples: If > 0, enable dropout at inference and average over this many
                             stochastic forward passes (Monte Carlo dropout).
+        probabilistic_head: 'none', 'gaussian', or 'bernstein'. For probabilistic heads
+                            the model output is larger; this extracts the point estimate.
+        bernstein_degree: Bernstein polynomial degree (used only when probabilistic_head='bernstein')
 
     Returns:
-        Corrected forecast for output variables
+        Corrected forecast for output variables (point estimate for probabilistic heads)
     """
+    from finetuning.custom_loss_fns import bernstein_median
+
     batch_size = 128
     n_samples = forecast_input_data.shape[0]
     use_amp = device.type == 'cuda'
     non_blocking = device.type == 'cuda'
+    output_dim = forecast_output_data.shape[-1]
 
     def _run_inference():
         corrected_all = []
@@ -1893,11 +2301,21 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
 
                 if use_amp:
                     with torch.cuda.amp.autocast():
-                        predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
-                        corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+                        pred_raw = model(fc_input_batch, lt_batch, doy_batch)
                 else:
-                    predicted_error = model(fc_input_batch, lt_batch, doy_batch).cpu().numpy()
-                    corrected_batch = fc_output_batch.cpu().numpy() + predicted_error
+                    pred_raw = model(fc_input_batch, lt_batch, doy_batch)
+
+                if probabilistic_head == 'gaussian':
+                    # pred_raw: (batch, 2*output_dim); first half is mu_error
+                    mu_error = pred_raw[:, :output_dim]
+                    corrected_batch = (fc_output_batch + mu_error).cpu().numpy()
+                elif probabilistic_head == 'bernstein':
+                    # Extract median (tau=0.5) as point estimate
+                    median = bernstein_median(pred_raw, fc_output_batch, degree=bernstein_degree)
+                    corrected_batch = median.cpu().numpy()
+                else:
+                    # Standard: pred_raw is the error, add to forecast
+                    corrected_batch = (fc_output_batch + pred_raw).cpu().numpy()
 
                 corrected_all.append(corrected_batch)
         return np.concatenate(corrected_all, axis=0)
@@ -2013,6 +2431,53 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     output_path = os.path.expanduser(output_path)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
+
+
+def _compute_gated_mlp_hidden_dim(input_dim, output_dim, mlp_hidden_dim, num_layers,
+                                   n_lead_times, lead_time_embedding_dim):
+    """
+    Compute GatedMLP hidden_dim that matches SimpleMLP parameter count.
+
+    GatedMLP has 3 linear layers per block (w_gate, w_value, w_out) vs 1 for SimpleMLP,
+    so requires a smaller hidden_dim to match parameter count.
+
+    Uses binary search to find the closest hidden_dim.
+    """
+    # Compute target param count from SimpleMLP
+    target_model = SimpleMLP(
+        input_dim=input_dim,
+        hidden_dim=mlp_hidden_dim,
+        output_dim=output_dim,
+        num_hidden_layers=num_layers,
+        n_lead_times=n_lead_times,
+        lead_time_embedding_dim=lead_time_embedding_dim,
+    )
+    target_params = sum(p.numel() for p in target_model.parameters())
+
+    # Binary search for GatedMLP hidden_dim
+    lo, hi = 16, mlp_hidden_dim
+    best_h, best_diff = mlp_hidden_dim, float('inf')
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        g = GatedMLP(
+            input_dim=input_dim,
+            hidden_dim=mid,
+            output_dim=output_dim,
+            num_hidden_layers=num_layers,
+            n_lead_times=n_lead_times,
+            lead_time_embedding_dim=lead_time_embedding_dim,
+        )
+        n = sum(p.numel() for p in g.parameters())
+        diff = abs(n - target_params)
+        if diff < best_diff:
+            best_diff = diff
+            best_h = mid
+        if n < target_params:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    return best_h
 
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
@@ -2278,7 +2743,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # Use optimal lead time embedding dimension if available
     lead_time_emb_dim = args.optimal_lead_time_embedding_dim if args.optimal_lead_time_embedding_dim else 4
 
-    if hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
+    arch = getattr(args, 'nn_architecture', 'mlp')
+    if arch == 'unet':
         print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
         print(f"  UNet dropout: {args.unet_dropout}")
         print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
@@ -2288,6 +2754,34 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                      lead_time_embedding_dim=lead_time_emb_dim,
                      dropout_rate=args.unet_dropout).to(device)
         num_epochs = 500
+    elif arch == 'gated_mlp':
+        # GatedMLP uses SwiGLU (3 linear layers per block vs 1 for SimpleMLP).
+        # Scale hidden_dim so parameter count matches SimpleMLP for a fair comparison.
+        # gated_mlp_hidden_dim can be set explicitly; otherwise auto-compute to match SimpleMLP.
+        gated_hidden_dim = getattr(args, 'gated_mlp_hidden_dim', None)
+        if gated_hidden_dim is None:
+            gated_hidden_dim = _compute_gated_mlp_hidden_dim(
+                input_dim=input_dim,
+                output_dim=output_dim,
+                mlp_hidden_dim=args.mlp_hidden_dim,
+                num_layers=args.mlp_num_layers,
+                n_lead_times=n_lead_times,
+                lead_time_embedding_dim=lead_time_emb_dim,
+            )
+        print(f"Using GatedMLP (SwiGLU + LayerNorm + residual) with {n_lead_times} lead times")
+        print(f"  hidden_dim: {gated_hidden_dim} (auto-scaled to match SimpleMLP param count)")
+        print(f"  num_layers: {args.mlp_num_layers}")
+        print(f"  dropout: {args.mlp_dropout}")
+        print(f"  lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = GatedMLP(input_dim=input_dim,
+                         hidden_dim=gated_hidden_dim,
+                         output_dim=output_dim,
+                         num_hidden_layers=args.mlp_num_layers,
+                         n_lead_times=n_lead_times,
+                         lead_time_embedding_dim=lead_time_emb_dim,
+                         dropout_rate=args.mlp_dropout
+                         ).to(device)
+        num_epochs = 750
     else:
         print(f"Using SimpleMLP with {n_lead_times} lead times")
         print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
@@ -2361,23 +2855,173 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     ensemble_weights = []  # val_loss-based weights for snapshot members; empty = equal weight
     training_time_minutes = 0.0
 
+    # Build lead-time weight dict for snapshot training (if specified)
+    lt_weights_raw = getattr(args, 'lead_time_loss_weights', None)
+    lt_weight_dict = None
+    if lt_weights_raw is not None:
+        lt_weight_dict = {i: w for i, w in enumerate(lt_weights_raw)}
+        print(f"Lead-time loss weights: {lt_weight_dict}")
+
+    use_small_init = getattr(args, 'small_output_init', False)
+    use_per_lt = getattr(args, 'per_lead_time', False)
+    prob_head = getattr(args, 'probabilistic_head', 'none')
+    bern_degree = getattr(args, 'bernstein_degree', 6)
+
     # Helper to create a fresh model instance
-    def _create_model():
-        if hasattr(args, 'nn_architecture') and args.nn_architecture == 'unet':
+    def _create_model(n_lt_override=None):
+        """Create a fresh model. n_lt_override: override n_lead_times (for per-LT training)."""
+        _n_lt = n_lt_override if n_lt_override is not None else n_lead_times
+        if arch == 'unet':
             return UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
                         n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                        n_lead_times=n_lead_times,
+                        n_lead_times=_n_lt,
                         lead_time_embedding_dim=lead_time_emb_dim,
                         dropout_rate=args.unet_dropout).to(device)
+        elif arch == 'gated_mlp':
+            _gated_hd = getattr(args, 'gated_mlp_hidden_dim', None) or _compute_gated_mlp_hidden_dim(
+                input_dim=input_dim, output_dim=output_dim,
+                mlp_hidden_dim=args.mlp_hidden_dim, num_layers=args.mlp_num_layers,
+                n_lead_times=_n_lt, lead_time_embedding_dim=lead_time_emb_dim,
+            )
+            return GatedMLP(input_dim=input_dim, hidden_dim=_gated_hd,
+                            output_dim=output_dim,
+                            num_hidden_layers=args.mlp_num_layers,
+                            n_lead_times=_n_lt,
+                            lead_time_embedding_dim=lead_time_emb_dim,
+                            dropout_rate=args.mlp_dropout).to(device)
         else:
             return SimpleMLP(input_dim=input_dim, hidden_dim=args.mlp_hidden_dim,
                              output_dim=output_dim,
                              num_hidden_layers=args.mlp_num_layers,
-                             n_lead_times=n_lead_times,
+                             n_lead_times=_n_lt,
                              lead_time_embedding_dim=lead_time_emb_dim,
-                             dropout_rate=args.mlp_dropout).to(device)
+                             dropout_rate=args.mlp_dropout,
+                             small_output_init=use_small_init,
+                             probabilistic_head=prob_head,
+                             bernstein_degree=bern_degree).to(device)
 
-    if use_block:
+    if use_per_lt and use_block:
+        # ---- Per-Lead-Time Block Ensemble ----
+        # Train a SEPARATE block ensemble for each lead time. Each model only sees
+        # data from its lead time, so 24h model optimizes purely for 24h without
+        # gradient competition from 120h/216h. Results are stitched back together.
+        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
+
+        import pandas as pd
+        from itertools import combinations
+        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
+        block_holdout = getattr(args, 'block_holdout', 3)
+        held_year_sets = list(combinations(train_years, block_holdout))
+        sample_years = pd.DatetimeIndex(train_times).year.values
+
+        print(f"\nPER-LEAD-TIME Block Ensemble: training {n_lead_times} separate models")
+        print(f"Training years: {train_years}, blocks: {len(held_year_sets)}")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        # Allocate output array matching test data shape
+        corrected_per_lt = np.zeros_like(test_fc_output)
+
+        for lt_idx in range(n_lead_times):
+            lt_hours = args.lead_time_hours[lt_idx]
+            print(f"\n{'='*50}")
+            print(f"  Training model for lead time {lt_hours}h (index {lt_idx})")
+            print(f"{'='*50}")
+
+            # Filter train data to this lead time only
+            lt_train_mask = (lead_time_indices == lt_idx)
+            lt_test_mask = (test_lead_time_indices == lt_idx)
+
+            fc_lt = fc_norm[lt_train_mask]
+            fc_out_lt = fc_output_norm[lt_train_mask]
+            obs_lt = obs_norm[lt_train_mask]
+            doy_lt = day_of_year_features[lt_train_mask]
+            # Lead time index is always 0 for single-LT model
+            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
+            times_lt = train_times[lt_train_mask] if hasattr(train_times, '__getitem__') else np.array(train_times)[lt_train_mask]
+            sample_years_lt = sample_years[lt_train_mask]
+
+            test_fc_lt = test_fc_norm[lt_test_mask]
+            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
+            test_doy_lt = test_day_of_year_features[lt_test_mask]
+            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
+
+            lt_corrections = []
+            lt_weights = []
+
+            for held_years_tuple in held_year_sets:
+                seed_key = sum(held_years_tuple) + lt_idx * 1000
+                torch.manual_seed(seed_key)
+                np.random.seed(seed_key * 13)
+
+                v_mask = np.isin(sample_years_lt, held_years_tuple)
+                t_mask = ~v_mask
+                print(f"  Block held={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()}")
+
+                run_train_loader = create_dataloader(
+                    fc_lt[t_mask], fc_out_lt[t_mask], obs_lt[t_mask],
+                    lti_lt[t_mask], doy_lt[t_mask],
+                    batch_size=batch_size, device=device)
+                run_val_loader = create_dataloader(
+                    fc_lt[v_mask], fc_out_lt[v_mask], obs_lt[v_mask],
+                    lti_lt[v_mask], doy_lt[v_mask],
+                    batch_size=batch_size, device=device)
+
+                if use_snapshot:
+                    n_seeds_per_block = max(1, n_snapshot)
+                    for seed_idx in range(n_seeds_per_block):
+                        seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
+                        torch.manual_seed(seed)
+                        np.random.seed(seed)
+                        # n_lead_times=1 for per-LT model (no lead time embedding needed)
+                        model = _create_model(n_lt_override=1)
+                        snapshots, run_time = train_snapshot_ensemble(
+                            model, run_train_loader, run_val_loader,
+                            epochs=snapshot_epochs, lr=lr, device=device,
+                            weight_decay=weight_decay, grad_clip=1.0,
+                            T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                            probabilistic_head=prob_head, bernstein_degree=bern_degree)
+                        training_time_minutes += run_time
+
+                        for snap_weights, snap_val_loss in snapshots:
+                            model.load_state_dict(snap_weights)
+                            snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                         test_lti_lt, test_doy_lt, device,
+                                                         probabilistic_head=prob_head,
+                                                         bernstein_degree=bern_degree)
+                            snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
+                            lt_corrections.append(snap_corr)
+                            lt_weights.append(1.0 / max(snap_val_loss, 1e-12))
+                else:
+                    model = _create_model(n_lt_override=1)
+                    model, run_time = train_model(
+                        model, run_train_loader, run_val_loader,
+                        epochs=num_epochs, lr=lr, device=device,
+                        weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                        scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
+                    training_time_minutes += run_time
+                    member_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                   test_lti_lt, test_doy_lt, device)
+                    member_corr = (member_corr * stats_out['std']) + stats_out['mean']
+                    lt_corrections.append(member_corr)
+
+            # Weighted average for this lead time
+            if lt_weights:
+                w = np.array(lt_weights)
+                w = w / w.sum()
+                lt_corrected = np.average(lt_corrections, weights=w, axis=0)
+            else:
+                lt_corrected = np.mean(lt_corrections, axis=0)
+
+            corrected_per_lt[lt_test_mask] = lt_corrected
+            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} ensemble members")
+
+        corrected = corrected_per_lt
+        print(f"\nPer-LT block ensemble complete: {n_lead_times} models, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_block:
         # ---- Block ensemble: leave-k-out cross-validation ensemble ----
         # For each held-out block of training years, train a snapshot ensemble on the remaining years.
         # This creates temporally diverse models that generalize better across climate variability.
@@ -2430,7 +3074,10 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                         model, run_train_loader, run_val_loader,
                         epochs=snapshot_epochs, lr=lr, device=device,
                         weight_decay=weight_decay, grad_clip=1.0,
-                        T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                        T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                        lead_time_weights=lt_weight_dict,
+                        n_lead_times=n_lead_times,
+                        probabilistic_head=prob_head, bernstein_degree=bern_degree)
                     training_time_minutes += run_time
 
                     mc_samples = getattr(args, 'mc_dropout_samples', 0) # currenlty not using this
@@ -2439,7 +3086,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                         snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
                                                           test_lead_time_indices,
                                                           test_day_of_year_features, device,
-                                                          mc_dropout_samples=mc_samples)
+                                                          mc_dropout_samples=mc_samples,
+                                                          probabilistic_head=prob_head,
+                                                          bernstein_degree=bern_degree)
                         snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
                         ensemble_corrections.append(snap_corrected)
                         ensemble_weights.append(1.0 / max(snap_val_loss, 1e-12))
@@ -2504,7 +3153,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model, run_train_loader, run_val_loader,
                 epochs=snapshot_epochs, lr=lr, device=device,
                 weight_decay=weight_decay, grad_clip=1.0,
-                T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                probabilistic_head=prob_head, bernstein_degree=bern_degree)
             training_time_minutes += run_time
 
             # Generate predictions from each snapshot
@@ -2512,7 +3162,9 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model.load_state_dict(snap_weights)
                 snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
                                                   test_lead_time_indices,
-                                                  test_day_of_year_features, device)
+                                                  test_day_of_year_features, device,
+                                                  probabilistic_head=prob_head,
+                                                  bernstein_degree=bern_degree)
                 snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
                 ensemble_corrections.append(snap_corrected)
 
@@ -2595,12 +3247,29 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model = _create_model()
 
             # Train this model - use cosine annealing for ensemble, standard for single
+            # Use weighted training if lead-time weights or C-Mixup are specified
+            lt_weights = getattr(args, 'lead_time_loss_weights', None)
+            cmixup_alpha = getattr(args, 'cmixup_alpha', 0.0)
+            use_weighted = (lt_weights is not None or cmixup_alpha > 0) and args.alternate_loss_fn is None
+
             if use_ensemble:
                 model, member_time = train_model_cosine(
                     model, train_loader, val_loader,
                     epochs=num_epochs, lr=lr, device=device,
                     weight_decay=weight_decay, patience=patience,
                     min_delta=min_delta, grad_clip=1.0)
+            elif use_weighted:
+                # Build lead-time weight dict from list
+                lt_weight_dict = None
+                if lt_weights is not None:
+                    lt_weight_dict = {i: w for i, w in enumerate(lt_weights)}
+                model, member_time = train_model_weighted(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                    lead_time_weights=lt_weight_dict, n_lead_times=n_lead_times,
+                    cmixup_alpha=cmixup_alpha)
             else:
                 model, member_time = train_model(
                     model, train_loader, val_loader,
@@ -2709,11 +3378,13 @@ def main():
     # Load optimal hyperparameters based on architecture
     use_snapshot = bool(getattr(args, 'snapshot_ensemble', None))
     use_block = getattr(args, 'block_ensemble', False)
-    optimal_hyperparams = load_optimal_hyperparameters(args.nn_architecture, args.training_vars, args.output_vars, args.alternate_loss_fn,
+    # gated_mlp uses same hyperparams as mlp (same input/output dims, similar capacity)
+    hyperopt_arch = 'mlp' if args.nn_architecture == 'gated_mlp' else args.nn_architecture
+    optimal_hyperparams = load_optimal_hyperparameters(hyperopt_arch, args.training_vars, args.output_vars, args.alternate_loss_fn,
                                                        use_snapshot=use_snapshot, use_block_ltho=use_block)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
-        if args.nn_architecture == 'mlp':
+        if args.nn_architecture in ('mlp', 'gated_mlp'):
             args.mlp_hidden_dim = optimal_hyperparams.get('hidden_dim', args.mlp_hidden_dim)
             args.mlp_num_layers = optimal_hyperparams.get('num_layers', args.mlp_num_layers)
             args.mlp_dropout = optimal_hyperparams.get('dropout_rate', args.mlp_dropout)
@@ -2736,7 +3407,7 @@ def main():
             print("Warning: Snapshot mode enabled but tuned hyperparameters do not include snapshot_T_mult; falling back to CLI/default.")
         
         print(f"\nUsing optimal hyperparameters:")
-        if args.nn_architecture == 'mlp':
+        if args.nn_architecture in ('mlp', 'gated_mlp'):
             print(f"  hidden_dim: {args.mlp_hidden_dim}")
             print(f"  num_layers: {args.mlp_num_layers}")
             print(f"  dropout: {args.mlp_dropout}")

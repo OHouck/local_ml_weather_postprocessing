@@ -1924,6 +1924,107 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
     print(f"RMSE improvement plot saved to: {save_path}")
 
 
+def _load_eval_cell_results(exp, eval_cells, input_folder, model, variable,
+                            train_start, train_end, test_start, test_end,
+                            lead_times, results, training_times, mean_bias_results):
+    """
+    Load block LTHO results from eval cell zarr files and compute average improvement.
+
+    Searches for zarr files matching each eval cell (continent + patch index), computes
+    per-cell RMSE improvement, and stores the mean across cells.
+    """
+    cell_improvements = {lt: [] for lt in lead_times}
+    cell_training_times = []
+    n_found = 0
+
+    for continent, patch_idx, patch_array in eval_cells:
+        # Build args to generate the expected output path
+        args = SimpleNamespace(
+            model_name=model,
+            region=continent,
+            subregion="6x6",
+            train_start=train_start,
+            train_end=train_end,
+            test_start=test_start,
+            test_end=test_end,
+            training_vars=exp['training_vars'],
+            output_vars=exp['output_vars'],
+            lead_time_hours=lead_times,
+            nn_architecture=exp['architecture'],
+            snapshot_ensemble=exp.get('snapshot_ensemble', None),
+            ensemble=None,
+            swa_ensemble=None,
+            block_ensemble=exp.get('block_ensemble', False),
+            block_holdout=exp.get('block_holdout', 1),
+            growing_season_only=False,
+            alternate_loss_fn=None,
+            ground_truth_source="",
+            pca_components=0,
+            lead_time_loss_weights=exp.get('lead_time_loss_weights', None),
+            cmixup_alpha=exp.get('cmixup_alpha', 0.0),
+            per_lead_time=exp.get('per_lead_time', False),
+            small_output_init=exp.get('small_output_init', False),
+            probabilistic_head=exp.get('probabilistic_head', 'none'),
+            bernstein_degree=exp.get('bernstein_degree', 6),
+        )
+
+        base_path = os.path.join(input_folder, generate_output_path(args))
+        zarr_path = base_path.replace('.zarr', f'_{continent}_bs{patch_idx}.zarr')
+
+        if not os.path.exists(zarr_path):
+            print(f"  Missing: {zarr_path}")
+            continue
+
+        try:
+            ds = xr.open_zarr(zarr_path)
+            n_found += 1
+
+            if hasattr(ds, 'training_time_minutes'):
+                cell_training_times.append(float(ds.training_time_minutes))
+
+            for lead_time in lead_times:
+                ground_truth, original, corrected, mean_corrected = extract_forecast_data(ds, variable, lead_time)
+
+                gt_flat = ground_truth.values.flatten()
+                orig_flat = original.values.flatten()
+                corr_flat = corrected.values.flatten()
+
+                mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(corr_flat))
+                if mask.sum() == 0:
+                    continue
+
+                rmse_original = calculate_rmse(orig_flat[mask], gt_flat[mask])
+                rmse_corrected = calculate_rmse(corr_flat[mask], gt_flat[mask])
+                pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
+                cell_improvements[lead_time].append(pct_improvement)
+
+                # Mean bias correction baseline from first cell with data
+                if mean_bias_results[lead_time] is None and mean_corrected is not None:
+                    mc_flat = mean_corrected.values.flatten()
+                    mc_mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(mc_flat))
+                    if mc_mask.sum() > 0:
+                        rmse_mc = calculate_rmse(mc_flat[mc_mask], gt_flat[mc_mask])
+                        rmse_orig_mc = calculate_rmse(orig_flat[mc_mask], gt_flat[mc_mask])
+                        mean_bias_results[lead_time] = calculate_improvement_percentage(rmse_orig_mc, rmse_mc)
+
+        except Exception as e:
+            print(f"  Error loading {continent} patch {patch_idx}: {e}")
+
+    print(f"  Found {n_found}/{len(eval_cells)} eval cell results")
+
+    # Average across cells
+    for lead_time in lead_times:
+        if cell_improvements[lead_time]:
+            mean_imp = np.mean(cell_improvements[lead_time])
+            std_imp = np.std(cell_improvements[lead_time])
+            results[exp['name']][lead_time] = mean_imp
+            print(f"    {lead_time}h: {mean_imp:.2f}% ± {std_imp:.2f}% improvement "
+                  f"(n={len(cell_improvements[lead_time])} cells)")
+
+    if cell_training_times:
+        training_times[exp['name']] = round(np.mean(cell_training_times), 2)
+
+
 def plot_arch_experiment_results(
     dirs,
     model="pangu",
@@ -1939,11 +2040,12 @@ def plot_arch_experiment_results(
     """
     Plot RMSE improvement for architecture experiments directly from zarr files.
 
-    Designed for experiments from run_arch_experiments.sh which tests:
-    - MLP with single variable (minimal)
-    - MLP with 3 variables (partial)
-    - UNet with single variable (minimal)
-    - UNet with 3 variables (partial)
+    All experiments are evaluated on a 5% eval sample of continent 6x6 cells and
+    results are averaged across cells. Experiments include:
+    - MLP with single variable / 3 variables
+    - MLP Snapshot Ensemble x3 with single variable / 3 variables
+    - UNet with single variable / 3 variables
+    - Block LTHO Ensemble k=3 and variants (LT-Weighted, Per-LT, SmallInit, DRN, BQN)
 
     Parameters
     ----------
@@ -1991,7 +2093,8 @@ def plot_arch_experiment_results(
             'block_ensemble': False,
             'block_holdout': 1,
             'color': '#1f77b4',  # Blue
-            'hatch': None
+            'hatch': None,
+            'use_eval_cells': True,
         },
         {
             'name': 'MLP (2m Temperature + 1000hPa Temperature and Specific Humidity)',
@@ -2049,8 +2152,8 @@ def plot_arch_experiment_results(
             'hatch': '//'
         },
         {
-            # Block Leave-Three-Out (LTHO): 4 single-year models × 21 snapshots (T0=10) = 84 preds
-            # val-loss weighted; ~0.5 min training; best known method for 24h improvement
+            # Block Leave-Three-Out (LTHO): evaluated across a 10% sample of continent cells.
+            # Results are averaged across cells for a geographically diverse comparison.
             'name': 'Block LTHO Ensemble (2m Temperature)',
             'architecture': 'mlp',
             'training_vars': [variable],
@@ -2059,7 +2162,84 @@ def plot_arch_experiment_results(
             'block_ensemble': True,
             'block_holdout': 3,
             'color': '#9467bd',  # Purple
-            'hatch': None
+            'hatch': None,
+            'use_eval_cells': True,
+        },
+        {
+            # Block LTHO + LT-weighted snapshots: 5x weight on 24h within snapshot training.
+            'name': 'Block LTHO + LT-Weighted (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#d62728',  # Red
+            'hatch': None,
+            'use_eval_cells': True,
+            'lead_time_loss_weights': [5.0, 1.0, 0.5],
+        },
+        {
+            # Per-lead-time Block LTHO: separate model for each lead time.
+            'name': 'Per-LT Block LTHO (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#2ca02c',  # Green
+            'hatch': None,
+            'use_eval_cells': True,
+            'per_lead_time': True,
+        },
+        {
+            # Block LTHO + small output init: zero-init final layer.
+            'name': 'Block LTHO + SmallInit (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#8c564b',  # Brown
+            'hatch': None,
+            'use_eval_cells': True,
+            'small_output_init': True,
+        },
+        {
+            # Block LTHO + DRN: Gaussian CRPS head (Rasp & Lerch 2018, MWR 146(11)).
+            # Outputs (mu_error, log_sigma); trained with closed-form Gaussian CRPS after
+            # 20-epoch MSE warm-start. Point-forecast RMSE uses mu (mean correction).
+            'name': 'Block LTHO + DRN (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#17becf',  # Cyan
+            'hatch': None,
+            'use_eval_cells': True,
+            'probabilistic_head': 'gaussian',
+            'bernstein_degree': 6,
+        },
+        {
+            # Block LTHO + BQN d=6: Bernstein Quantile Network (Bremnes 2020, MWR 148(1)).
+            # Outputs monotone Bernstein polynomial coefficients; trained with pinball loss
+            # over 19 quantile levels. Point-forecast RMSE uses the median (tau=0.5).
+            'name': 'Block LTHO + BQN d=6 (2m Temperature)',
+            'architecture': 'mlp',
+            'training_vars': [variable],
+            'output_vars': [variable],
+            'snapshot_ensemble': BLOCK_LTHO_RUNS,
+            'block_ensemble': True,
+            'block_holdout': 3,
+            'color': '#e377c2',  # Pink
+            'hatch': None,
+            'use_eval_cells': True,
+            'probabilistic_head': 'bernstein',
+            'bernstein_degree': 6,
         },
     ]
 
@@ -2071,11 +2251,28 @@ def plot_arch_experiment_results(
     training_times = {exp['name']: None for exp in experiments}
     mean_bias_results = {lt: None for lt in lead_times}
 
+    # Load eval cell sample for experiments that use it.
+    # fraction=0.05 matches the fraction used in run_arch_experiments_eval.py.
+    from helper_funcs import sample_continent_patches
+    eval_cells = sample_continent_patches(
+        dirs['processed'],
+        fraction=0.05, seed=42, split='eval'
+    )
+
     # Load data for each experiment
     for exp in experiments:
         print(f"\nProcessing {exp['name']}...")
 
-        # Build args for generate_output_path
+        if exp.get('use_eval_cells', False):
+            # Multi-cell mode: load zarrs from each eval cell, average improvements
+            _load_eval_cell_results(
+                exp, eval_cells, input_folder, model, variable,
+                train_start, train_end, test_start, test_end,
+                lead_times, results, training_times, mean_bias_results
+            )
+            continue
+
+        # Single-region mode (legacy experiments)
         args = SimpleNamespace(
             model_name=model,
             region=region,
@@ -2095,12 +2292,16 @@ def plot_arch_experiment_results(
             block_holdout=exp.get('block_holdout', 1),
             growing_season_only=False,
             alternate_loss_fn=None,
-            ground_truth_source=""
+            ground_truth_source="",
+            pca_components=0,
+            lead_time_loss_weights=exp.get('lead_time_loss_weights', None),
+            cmixup_alpha=exp.get('cmixup_alpha', 0.0),
+            per_lead_time=exp.get('per_lead_time', False),
+            small_output_init=exp.get('small_output_init', False),
         )
 
         zarr_path = os.path.join(input_folder, generate_output_path(args))
         print(f"  Loading: {zarr_path}")
-
 
         try:
             ds = load_zarr_cached(zarr_path)
@@ -2147,8 +2348,8 @@ def plot_arch_experiment_results(
         except Exception as e:
             print(f"  Error loading {exp['name']}: {e}")
 
-    # Create plot
-    fig, ax = plt.subplots(figsize=(14, 8))
+    # Create plot — extra bottom margin for the below-axis legend
+    fig, ax = plt.subplots(figsize=(14, 10))
 
     # Calculate bar width and positions (add 1 for mean bias correction baseline)
     has_mean_bias = any(v is not None for v in mean_bias_results.values())
@@ -2215,9 +2416,10 @@ def plot_arch_experiment_results(
     ax.set_xlabel("Forecast Lead Time (days)", fontsize=20)
 
     # Title
+    n_cells = len(eval_cells)
     title_parts = [
         f"Architecture Comparison: RMSE Improvement for {variable.replace('_', ' ').title()}",
-        f"Model: {model.upper()}, Region: {region.replace('_', ' ').title()}, Patch Size: {subregion}"
+        f"Model: {model.upper()}, Patch Size: {subregion} — averaged across {n_cells} global eval cells"
     ]
     ax.set_title('\n'.join(title_parts), fontsize=20, pad=15)
 
@@ -2226,21 +2428,37 @@ def plot_arch_experiment_results(
     ax.set_axisbelow(True)
     ax.tick_params(axis='both', labelsize=16)
 
-    # Legend
-    ax.legend(fontsize=12, loc='upper right', framealpha=0.95, edgecolor='gray')
+    # Legend — placed below the x-axis in a compact multi-column layout
+    handles, labels = ax.get_legend_handles_labels()
+    n_legend_items = len(handles)
+    ncols = min(n_legend_items, 4)  # up to 4 columns
+    legend = fig.legend(
+        handles, labels,
+        loc='lower center',
+        bbox_to_anchor=(0.5, 0.0),
+        ncol=ncols,
+        fontsize=10,
+        framealpha=0.95,
+        edgecolor='gray',
+        columnspacing=1.0,
+        handlelength=1.5,
+        handletextpad=0.5,
+    )
 
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
     plt.tight_layout()
+    # Reserve space at the bottom for the legend
+    fig.subplots_adjust(bottom=0.28)
 
     # Save figure
     if save_path is None:
         out_folder = os.path.join(dirs["fig"], model, "architecture_comparison")
         os.makedirs(out_folder, exist_ok=True)
 
-        fname = f"arch_comparison_{variable}_{region}_{subregion}.png"
+        fname = f"arch_comparison_{variable}_global_eval_{subregion}.png"
         save_path = os.path.join(out_folder, fname)
 
     plt.savefig(save_path, dpi=300, bbox_inches='tight')

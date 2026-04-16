@@ -1,0 +1,30 @@
+{
+  "hyperparams": {
+    "batch_size": 64,
+    "dropout_rate": 0.263756915485847,
+    "hidden_dim": 64,
+    "learning_rate": 0.0008089438385099818,
+    "num_layers": 2,
+    "snapshot_T0": 10,
+    "snapshot_T_mult": 1,
+    "weight_decay": 0.00010085217697753286
+  },
+  "loss": 0.8744232033689817,
+  "epochs_trained": 210,
+  "architecture": "mlp",
+  "mode": "block_ltho",
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": 210,
+  "n_snapshots": null,
+  "cell_info": "south_america patch 36; oceania patch 4; oceania patch 18",
+  "cell_losses": [
+    1.7109703123569489,
+    0.5360365509986877,
+    0.37626274675130844
+  ],
+  "cell_infos": [
+    "south_america patch 36",
+    "oceania patch 4",
+    "oceania patch 18"
+  ]
+}
