@@ -162,21 +162,6 @@ _ARCH_TEMPLATES = [
         'swa_ensemble': None,
         'per_lead_time': True,
     },
-    # Experiment 2: Pooled FiLM
-    # Single global model across all patches, conditioned per-region via FiLM.
-    # Trained separately in run_pooled_film_experiment() — listed here for completeness.
-    {
-        'name_prefix': 'Pooled FiLM',
-        'nn_architecture': 'pooled_film',
-        'block_ensemble': False,
-        'block_holdout': 1,
-        'snapshot_ensemble': 3,
-        'snapshot_epochs': 270,
-        'snapshot_T0': 90,
-        'snapshot_T_mult': 1,
-        'ensemble': None,
-        'swa_ensemble': None,
-    },
 ]
 
 # Build the full experiment list by crossing each architecture template with

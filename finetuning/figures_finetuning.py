@@ -2082,10 +2082,9 @@ def plot_arch_experiment_results(
     arch_templates = [
         {'name': 'MLP', 'architecture': 'mlp', 'snapshot_ensemble': None, 'block_ensemble': False, 'block_holdout': 1, 'color': '#1f77b4'},
         {'name': f'MLP Snapshot Ensemble ×{SNAPSHOT_RUNS}', 'architecture': 'mlp', 'snapshot_ensemble': SNAPSHOT_RUNS, 'block_ensemble': False, 'block_holdout': 1, 'color': '#2ca02c'},
-        {'name': 'UNet', 'architecture': 'unet', 'snapshot_ensemble': None, 'block_ensemble': False, 'block_holdout': 1, 'color': '#ff7f0e'},
         {'name': 'Block LTHO Ensemble', 'architecture': 'mlp', 'snapshot_ensemble': BLOCK_LTHO_RUNS, 'block_ensemble': True, 'block_holdout': 3, 'color': '#9467bd'},
         {'name': f'Per-LT MLP Snapshot ×{SNAPSHOT_RUNS}', 'architecture': 'mlp', 'snapshot_ensemble': SNAPSHOT_RUNS, 'block_ensemble': False, 'block_holdout': 1, 'color': '#d62728', 'per_lead_time': True},
-        {'name': 'Pooled FiLM', 'architecture': 'pooled_film', 'snapshot_ensemble': None, 'block_ensemble': False, 'block_holdout': 1, 'color': '#17becf'},
+        {'name': 'UNet', 'architecture': 'unet', 'snapshot_ensemble': None, 'block_ensemble': False, 'block_holdout': 1, 'color': '#ff7f0e'},
     ]
 
     experiments = [
