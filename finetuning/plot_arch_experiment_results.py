@@ -17,23 +17,42 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from helper_funcs import setup_directories
-from finetuning.figures_finetuning import plot_arch_experiment_results
+from helper_funcs import setup_directories, sample_continent_patches
+from finetuning.figures_finetuning import (
+    plot_arch_experiment_results,
+    map_arch_exeriment_regions,
+)
+
+
+VAR_CONFIGS = [
+    {
+        'label': '2m Temperature',
+        'training_vars': ['2m_temperature'],
+        'output_vars': ['2m_temperature'],
+    },
+    {
+        'label': '10m Wind Speed',
+        'training_vars': ['10m_wind_speed'],
+        'output_vars': ['10m_wind_speed'],
+    },
+    {
+        'label': '2m Temperature + 1000hPa T & q',
+        'training_vars': ['2m_temperature', 'temperature_1000hPa', 'specific_humidity_1000hPa'],
+        'output_vars': ['2m_temperature'],
+    },
+]
 
 
 def main():
-    """Generate architecture comparison plots."""
-    # Setup directories
+    """Generate one architecture comparison plot per variable config."""
     dirs = setup_directories()
 
-    # Configuration matching run_arch_experiments.sh
     train_start = "2018-01-01"
     train_end = "2021-12-31"
     test_start = "2022-01-01"
     test_end = "2022-12-31"
     model = "pangu"
     subregion = "6x6"
-    variable = "2m_temperature"
 
     print("=" * 80)
     print("ARCHITECTURE COMPARISON PLOT GENERATION")
@@ -42,35 +61,37 @@ def main():
     print(f"  Model: {model}")
     print(f"  Eval: 5% continent cell sample (global, averaged)")
     print(f"  Subregion: {subregion}")
-    print(f"  Variable: {variable}")
     print(f"  Training: {train_start} to {train_end}")
     print(f"  Testing: {test_start} to {test_end}")
-    print("\nExperiments (all averaged across global eval cells):")
-    print("  1. MLP — single variable")
-    print("  2. MLP — 3 variables (+ 1000hPa T & q)")
-    print("  3. MLP Snapshot Ensemble x3 — single variable")
-    print("  4. MLP Snapshot Ensemble x3 — 3 variables")
-    print("  5. UNet — single variable")
-    print("  6. UNet — 3 variables")
-    print("  7. Block LTHO Ensemble k=3 — single variable")
-    print("  8. Block LTHO + LT-Weighted — 5x weight on 24h in snapshot training")
-    print("  9. Per-LT Block LTHO — separate model per lead time")
-    print(" 10. Block LTHO + SmallInit — zero-init final layer")
-    print(" 11. Block LTHO + DRN (Gaussian CRPS) — probabilistic head, CRPS loss")
-    print(" 12. Block LTHO + BQN d=6 (Bernstein Quantile) — median as point estimate")
+    print(f"\nGenerating {len(VAR_CONFIGS)} plots:")
+    for i, vc in enumerate(VAR_CONFIGS, 1):
+        print(f"  {i}. {vc['label']}")
     print("\n" + "=" * 80)
 
-    # Generate plot
-    plot_arch_experiment_results(
+    eval_cells = sample_continent_patches(dirs['processed'], fraction=0.05, seed=42, split='eval')
+    map_arch_exeriment_regions(
         dirs=dirs,
+        eval_cells=eval_cells,
+        fraction=0.05,
+        seed=42,
+        split='eval',
         model=model,
         subregion=subregion,
-        variable=variable,
-        train_start=train_start,
-        train_end=train_end,
-        test_start=test_start,
-        test_end=test_end
     )
+
+    shared_kwargs = dict(
+        dirs=dirs, model=model, subregion=subregion,
+        train_start=train_start, train_end=train_end,
+        test_start=test_start, test_end=test_end,
+        eval_cells=eval_cells,
+    )
+    for vc in VAR_CONFIGS:
+        plot_arch_experiment_results(
+            label=vc['label'],
+            training_vars=vc['training_vars'],
+            output_vars=vc['output_vars'],
+            **shared_kwargs,
+        )
 
     print("\n" + "=" * 80)
     print("Plot generation complete!")

@@ -37,114 +37,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path, sample_continent_patches
 from finetuning.finetune import (
-    load_optimal_hyperparameters, create_dataloader, apply_correction, save_output
+    load_optimal_hyperparameters, create_dataloader, apply_correction, save_output,
+    PooledFiLMMLP,
 )
 from finetuning.prepare_forecasts_and_targets import load_forecasts
 
 
 # ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
-
-class PooledFiLMMLP(nn.Module):
-    """
-    Shared MLP with FiLM region conditioning.
-
-    A single backbone MLP trained on pooled data from many 6x6 patches. Each hidden
-    layer is modulated by Feature-wise Linear Modulation (FiLM) conditioned on a
-    region descriptor [sin(lat), cos(lat), sin(lon), cos(lon), elevation_mean, SDOR,
-    koppen_zone_onehot (5)]. This lets the shared backbone adapt its activations
-    per-region without needing separate model weights.
-
-    The (1 + gamma) * h + beta FiLM formulation initialises as an identity modulation
-    (gamma=0, beta=0) so that training begins as a standard shared MLP.
-
-    Reference: Perez et al. 2018, AAAI "FiLM: Visual Reasoning with a General
-    Conditioning Layer". Applied to pooled post-processing following Rasp & Lerch 2018.
-    """
-
-    # Region descriptor dimension:
-    # sin(lat), cos(lat), sin(lon), cos(lon) = 4
-    # elevation_mean, SDOR = 2
-    # Koppen zone one-hot (5 zones: tropical, arid, temperate, cold, polar) = 5
-    REGION_DIM = 11
-
-    def __init__(self, input_dim, output_dim, hidden_dim=256, num_layers=4,
-                 n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.25):
-        super().__init__()
-
-        self.n_lead_times = n_lead_times
-        self.lead_time_embedding = None
-        self.hidden_dim = hidden_dim
-
-        # Day-of-year sin/cos + optional lead time embedding
-        actual_input_dim = input_dim + 2
-        if n_lead_times > 1:
-            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
-            actual_input_dim += lead_time_embedding_dim
-
-        # Shared backbone layers
-        self.input_proj = nn.Linear(actual_input_dim, hidden_dim)
-        self.hidden_layers = nn.ModuleList(
-            [nn.Linear(hidden_dim, hidden_dim) for _ in range(num_layers - 1)]
-        )
-        self.dropout = nn.Dropout(dropout_rate)
-        self.output_layer = nn.Linear(hidden_dim, output_dim)
-
-        # FiLM hypernetwork: maps region descriptor -> (gamma, beta) for each hidden layer
-        # Apply FiLM after input_proj and after each hidden layer (num_layers total)
-        self.film_layers = nn.ModuleList([
-            nn.Linear(self.REGION_DIM, 2 * hidden_dim) for _ in range(num_layers)
-        ])
-
-        # Initialize FiLM layers near zero so they start as identity modulations
-        for film in self.film_layers:
-            nn.init.zeros_(film.weight)
-            nn.init.zeros_(film.bias)
-
-        # Initialize output layer near zero (small-correction prior)
-        nn.init.normal_(self.output_layer.weight, std=0.01)
-        nn.init.zeros_(self.output_layer.bias)
-
-    def forward(self, x, region_desc, lead_time_idx=None, day_of_year_features=None):
-        """
-        Args:
-            x: Forecast input features (batch, input_dim)
-            region_desc: Region descriptor (batch, REGION_DIM)
-            lead_time_idx: Lead time indices (batch,)
-            day_of_year_features: sin/cos DOY (batch, 2)
-        Returns:
-            Predicted error correction (batch, output_dim)
-        """
-        if day_of_year_features is not None:
-            x = torch.cat([x, day_of_year_features], dim=-1)
-        if self.lead_time_embedding is not None and lead_time_idx is not None:
-            lead_emb = self.lead_time_embedding(lead_time_idx)
-            x = torch.cat([x, lead_emb], dim=-1)
-
-        # Input projection + first FiLM
-        h = self.input_proj(x)
-        gamma_beta = self.film_layers[0](region_desc)
-        gamma, beta = gamma_beta.chunk(2, dim=-1)
-        h = (1.0 + gamma) * h + beta
-        h = F.relu(h)
-        h = self.dropout(h)
-
-        # Hidden layers with FiLM
-        for i, layer in enumerate(self.hidden_layers):
-            h = layer(h)
-            gamma_beta = self.film_layers[i + 1](region_desc)
-            gamma, beta = gamma_beta.chunk(2, dim=-1)
-            h = (1.0 + gamma) * h + beta
-            h = F.relu(h)
-            h = self.dropout(h)
-
-        return self.output_layer(h)
-
-
-# ---------------------------------------------------------------------------
 # Region descriptor builder
 # ---------------------------------------------------------------------------
+
+REGION_DIM = 11
 
 KOPPEN_ZONES = ['tropical', 'arid', 'temperate', 'cold', 'polar']
 
@@ -571,6 +474,7 @@ def main():
     # Build model — smaller hidden_dim than per-patch since data is pooled
     model = PooledFiLMMLP(
         input_dim=input_dim,
+        region_dim=REGION_DIM,
         output_dim=output_dim,
         hidden_dim=256,
         num_layers=4,

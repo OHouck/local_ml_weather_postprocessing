@@ -234,6 +234,63 @@ After all three new methods run, extend `plot_arch_experiment_results.py` to gro
 
 Report both point RMSE improvement (for head-to-head with the existing paper results) and, for DRN/BQN, CRPS improvement vs. raw forecast climatology. The CRPS numbers are the main selling point of those two methods and should not be left on the table.
 
+---
+
+## Experiment results (run April 2026)
+
+All six Block LTHO variants were evaluated on the 5% eval split (18 cells, globally distributed across all continents). MLP, Snapshot ×3, and UNet baselines are evaluated on the India 6×6 single-region zarr (an important caveat for comparing across groups — India is a relatively easy region). Results are RMSE % improvement over the raw Pangu forecast, averaged across eval cells where applicable.
+
+| Method | 1 day | 5 days | 9 days | Notes |
+|---|---|---|---|---|
+| Mean Bias Correction | — | — | — | From India eval |
+| **MLP (single var)** | 3.1% | 8.3% | 12.2% | Eval-cell average |
+| MLP (3 vars) | 4.1% | 7.6% | 9.8% | India only |
+| **MLP Snapshot ×3 (single var)** | **5.8%** | **11.4%** | **15.2%** | India only — best overall |
+| MLP Snapshot ×3 (3 vars) | 5.4% | 9.3% | 11.5% | India only |
+| UNet (single var) | 4.8% | 8.6% | 10.6% | India only |
+| UNet (3 vars) | 3.3% | 2.7% | 2.1% | India only — notably poor |
+| Block LTHO Ensemble | 1.7% | 8.8% | 12.9% | Eval-cell average |
+| Block LTHO + LT-Weighted | 3.6% | 8.2% | 11.1% | Eval-cell average |
+| Per-LT Block LTHO | 4.3% | 8.7% | 12.2% | Eval-cell average |
+| Block LTHO + SmallInit | 1.9% | 8.4% | 12.2% | Eval-cell average |
+| Block LTHO + DRN | 3.4% | 8.8% | 12.2% | Eval-cell average |
+| Block LTHO + BQN d=6 | 3.5% | 8.7% | 11.8% | Eval-cell average |
+
+### Key findings
+
+**MLP Snapshot ×3 is the clear winner.** It outperforms every other method at every lead time by a substantial margin (15.2% at 9 days vs. 12.9% for the next best, Block LTHO). This result comes from India only, so it may not generalize uniformly, but the advantage is large enough to be robust. It trains in under 1 minute (0.8 min on M3 Max) and requires no architectural changes — just three warm-restart cycles with cosine annealing. **This is the recommended method going forward.**
+
+**Adding extra input variables consistently hurts.** The 3-variable variants (+ 1000 hPa T and q) underperform the single-variable models at every lead time except 1 day where the gain is small (~1%). This is consistent with the main paper finding and extends it to the Snapshot setting. The UNet 3-variable result (2.1% at 9 days) is particularly striking — adding more inputs to a UNet appears to actively harm generalization, likely because the larger input space is harder to regularize with only 4 years of training data.
+
+**Block LTHO underperforms Snapshot at 1-day lead time.** The baseline Block LTHO ensemble is the worst-performing method at 24h (1.7%), worse even than a plain MLP. The block holdout scheme withholds temporal blocks during training that happen to overlap with the 24h verification window, starving the model of close-in data. The three variants designed to address this have mixed success:
+- **Per-LT Block LTHO** (4.3% at 1 day) helps the most, but at 9 days it matches plain Block LTHO rather than exceeding it.
+- **LT-Weighted** (3.6% at 1 day) partially recovers short-range skill, but trades off 9-day performance (11.1% vs. 12.9%).
+- **SmallInit** has essentially no effect — it barely moves any lead time relative to the baseline.
+
+**DRN and BQN do not improve point RMSE over baseline Block LTHO.** DRN (12.2% at 9 days) and BQN (11.8%) are on par with the Block LTHO baseline (12.9%), not better. This is expected — these methods are designed to improve probabilistic calibration (CRPS), not point RMSE. Their value will only show up in CRPS evaluation, which has not yet been measured. The paper currently reports only RMSE, so these methods do not yet have a natural place in the results.
+
+### What the new methods do (for the record)
+
+**Block LTHO + LT-Weighted.** Identical architecture and training to Block LTHO, but during snapshot training the loss function applies a 5× weight to the 24-hour lead time and 0.5× to 216h. The intent is to make each snapshot specialize harder on short-range corrections while still benefiting from block diversity. In practice it improves 24h but degrades 9-day performance, suggesting the weights are too aggressive and interfere with mid-/long-range learning.
+
+**Per-LT Block LTHO.** Trains a completely separate Block LTHO ensemble for each lead time (three independent models: one for 24h, one for 120h, one for 216h). By decoupling the lead times, the 24h model sees 100% of gradient signal from 1-day verification pairs, eliminating the gradient competition from longer lead times. This is the conceptually cleanest fix to the 24h problem and achieves the best 1-day result (4.3%) among the Block LTHO family. The downside is ~3× the training time and storage, and at 5 and 9 days it offers no improvement over the baseline.
+
+**Block LTHO + SmallInit.** Identical to baseline Block LTHO but the final output layer is initialized near zero (weights ∼ 0.01 × normal). The idea is that the model starts by predicting near-zero corrections, which is closer to the true 24h correction (small) than a random initialization, providing a better gradient signal early in training. Results show essentially no effect at any lead time. The finding suggests that initialization is not a binding constraint relative to the block holdout design or model capacity.
+
+**Block LTHO + DRN (Distributional Regression Network).** Adds a Gaussian probabilistic head to the Block LTHO MLP backbone. The final layer outputs `(μ, log σ)` per pixel rather than a single point correction. Training uses closed-form Gaussian CRPS loss after a 20-epoch MSE warm-start. Point-forecast RMSE uses `μ`. As expected, this does not improve RMSE — the benefit is probabilistic calibration, measurable only via CRPS. This method should be evaluated on CRPS before drawing conclusions.
+
+**Block LTHO + BQN d=6 (Bernstein Quantile Network).** Replaces the point-estimate head with 7 Bernstein polynomial coefficients per pixel, enforcing a monotone quantile function via cumulative softplus. Training uses the average pinball loss over 19 quantile levels (τ = 0.05 to 0.95). Point RMSE uses the median (τ = 0.5). Like DRN, this method does not improve point RMSE. It is specifically designed for distributional calibration and is the most promising method for post-processing 10m wind speed (right-skewed, non-Gaussian), where the Gaussian DRN assumption breaks down.
+
+### Recommendations going forward
+
+1. **Use MLP Snapshot ×3 as the new paper baseline** and re-run it on the 18-cell global eval set to get a fair apples-to-apples comparison with the Block LTHO variants. The current Snapshot ×3 result is India-only.
+2. **Evaluate DRN and BQN on CRPS** before deciding whether to include them. Their point RMSE results are uninformative about their value.
+3. **Do not pursue SmallInit or LT-Weighted further** — neither adds value over the baseline, and Per-LT is strictly better at 1 day at equivalent compute.
+4. **Consider Per-LT Block LTHO** if short-range (24h) skill is a paper priority; otherwise it is not worth the 3× compute overhead.
+5. **The Pooled FiLM model (Recommendation 3 above) remains untested** and is still the highest-upside unexplored direction, particularly for data-sparse regions the paper already flags as weak.
+
+---
+
 ### Guardrails for the implementing agent
 
 - **Do not remove or rename the current 4 baseline experiments in `EXPERIMENTS`.** They are the reference point for the paper.

@@ -92,17 +92,12 @@ CONTINENT_MAP = {
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=1024, output_dim=1, num_hidden_layers=2,
                 n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.244,
-                small_output_init=False, probabilistic_head='none', bernstein_degree=6):
+                small_output_init=False):
         super(SimpleMLP, self).__init__()
 
         # Lead time embedding
         self.n_lead_times = n_lead_times
         self.lead_time_embedding = None
-
-        # Probabilistic head configuration
-        self.probabilistic_head = probabilistic_head
-        self.bernstein_degree = bernstein_degree
-        self.base_output_dim = output_dim  # save for inference-time head extraction
 
         # Day-of-year features (sin/cos) - 2 features
         # Calculate actual input dimension
@@ -112,13 +107,7 @@ class SimpleMLP(nn.Module):
             self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
             actual_input_dim += lead_time_embedding_dim
 
-        # Determine raw output dimension based on probabilistic head type
-        if probabilistic_head == 'gaussian':
-            raw_output_dim = output_dim * 2  # (mu_error, log_sigma) per pixel
-        elif probabilistic_head == 'bernstein':
-            raw_output_dim = output_dim * (bernstein_degree + 1)
-        else:
-            raw_output_dim = output_dim
+        raw_output_dim = output_dim
 
         layers = [nn.Linear(actual_input_dim, hidden_dim), nn.ReLU()]
 
@@ -231,6 +220,83 @@ class SwiGLUBlock(nn.Module):
         x = self.w_out(gate * value)
         x = self.dropout(x)
         return residual + x
+
+
+# ------------------------------
+# PooledFiLMMLP: globally-pooled backbone with FiLM region conditioning
+# ------------------------------
+class PooledFiLMMLP(nn.Module):
+    """
+    Globally-pooled MLP with Feature-wise Linear Modulation (FiLM) for region conditioning.
+
+    Trains one shared backbone across all patches. Each hidden layer is modulated by
+    per-region (gamma, beta) vectors produced by a tiny hypernetwork from the region
+    descriptor. This multiplies effective training data by the number of patches and
+    lets data-sparse regions borrow strength from similar regions.
+
+    Sources: Rasp & Lerch 2018 (pooled NN); Perez et al. 2018 AAAI (FiLM).
+    """
+
+    def __init__(self, input_dim, region_dim, output_dim, hidden_dim=256, num_layers=4,
+                 n_lead_times=1, lead_time_embedding_dim=8, dropout_rate=0.25):
+        """
+        Args:
+            input_dim: Flattened forecast feature dimension (n_vars * n_lat * n_lon)
+            region_dim: Region descriptor dimension (e.g. 4 for sin/cos lat/lon)
+            output_dim: Flattened output dimension (n_output_vars * n_lat * n_lon)
+            hidden_dim: Hidden layer width (default 256, smaller than per-patch MLP)
+            num_layers: Number of hidden layers
+            n_lead_times: Number of distinct lead times (for embedding)
+            lead_time_embedding_dim: Lead time embedding size
+            dropout_rate: Dropout probability
+        """
+        super().__init__()
+        self.n_lead_times = n_lead_times
+        self.lead_time_embedding = None
+
+        actual_input_dim = input_dim + 2  # +2 for sin/cos day_of_year
+        if n_lead_times > 1:
+            self.lead_time_embedding = nn.Embedding(n_lead_times, lead_time_embedding_dim)
+            actual_input_dim += lead_time_embedding_dim
+
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(actual_input_dim, hidden_dim))
+        for _ in range(num_layers - 1):
+            self.layers.append(nn.Linear(hidden_dim, hidden_dim))
+
+        # FiLM hypernetwork: one linear per layer → (gamma, beta) of size hidden_dim each
+        self.film = nn.ModuleList([
+            nn.Linear(region_dim, 2 * hidden_dim) for _ in range(num_layers)
+        ])
+
+        self.dropout = nn.Dropout(dropout_rate)
+        self.out = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x, region_desc, lead_time_idx=None, day_of_year_features=None):
+        """
+        Args:
+            x: Normalized forecast features (batch, input_dim)
+            region_desc: Region descriptor (batch, region_dim) - same for all samples in a patch
+            lead_time_idx: Lead time indices (batch,)
+            day_of_year_features: Sin/cos DOY features (batch, 2)
+
+        Returns:
+            Predicted forecast error correction (batch, output_dim)
+        """
+        if day_of_year_features is not None:
+            x = torch.cat([x, day_of_year_features], dim=-1)
+        if self.lead_time_embedding is not None and lead_time_idx is not None:
+            lead_emb = self.lead_time_embedding(lead_time_idx)
+            x = torch.cat([x, lead_emb], dim=-1)
+
+        for layer, film_layer in zip(self.layers, self.film):
+            h = layer(x)
+            gamma, beta = film_layer(region_desc).chunk(2, dim=-1)
+            # (1+gamma) form: identity modulation at init
+            h = (1.0 + gamma) * h + beta
+            x = self.dropout(F.gelu(h))
+
+        return self.out(x)
 
 
 # ------------------------------
@@ -782,18 +848,6 @@ def parse_args():
                              'model for all lead times jointly. Each model sees only data '
                              'from its lead time, so 24h model optimizes purely for 24h. '
                              'Works with --block_ensemble and --snapshot_ensemble.')
-
-    # Probabilistic head — DRN (Gaussian CRPS) or BQN (Bernstein quantile network)
-    parser.add_argument('--probabilistic_head', type=str, default='none',
-                        choices=['none', 'gaussian', 'bernstein'],
-                        help='Probabilistic output head. "gaussian": Gaussian CRPS loss (DRN, '
-                             'Rasp & Lerch 2018). "bernstein": Bernstein quantile network (BQN, '
-                             'Bremnes 2020). Point-forecast RMSE uses mean/median respectively. '
-                             'Default: none (standard MSE).')
-    parser.add_argument('--bernstein_degree', type=int, default=6,
-                        help='Degree d of Bernstein polynomials for BQN head (default: 6). '
-                             'Output dim = output_dim * (d+1). Lower d = less overfitting '
-                             'for small datasets. Schulz & Lerch 2022 use d=12 at full stations.')
 
     return parser.parse_args()
 
@@ -1569,9 +1623,7 @@ def train_model_weighted(model, train_loader, valid_loader, epochs, lr, device,
 
 def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, device,
                             weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1,
-                            lead_time_weights=None, n_lead_times=1,
-                            probabilistic_head='none', bernstein_degree=6,
-                            warm_start_epochs=20):
+                            lead_time_weights=None, n_lead_times=1):
     """
     Train a single model and save snapshots at the end of each cosine annealing cycle.
 
@@ -1605,13 +1657,8 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
         snapshots: List of (state_dict, val_loss) tuples for each snapshot
         training_time_minutes: Training duration in minutes
     """
-    from finetuning.custom_loss_fns import gaussian_crps_loss, bernstein_quantile_loss
-
-    use_probabilistic = probabilistic_head in ('gaussian', 'bernstein')
-
-    # Build lead-time weight tensor if provided (not combined with probabilistic heads)
     lt_weight_tensor = None
-    if lead_time_weights is not None and not use_probabilistic:
+    if lead_time_weights is not None:
         lt_weight_tensor = torch.ones(n_lead_times, device=device)
         for lt_idx, w in lead_time_weights.items():
             lt_weight_tensor[lt_idx] = w
@@ -1619,10 +1666,6 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
         criterion = nn.MSELoss(reduction='none')  # per-sample for weighting
     else:
         criterion = nn.MSELoss()
-
-    if use_probabilistic:
-        print(f"  Snapshot training with probabilistic head: {probabilistic_head}"
-              f" (warm-start MSE for first {warm_start_epochs} epochs)")
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -1645,24 +1688,7 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
             optimizer.zero_grad()
             pred_raw = model(fc_input_batch, lead_time_batch, doy_batch)
 
-            if use_probabilistic:
-                output_dim = fc_output_batch.shape[-1]
-                if probabilistic_head == 'gaussian':
-                    mu_error = pred_raw[:, :output_dim]
-                    preds_mu = fc_output_batch + mu_error
-                    if epoch <= warm_start_epochs:
-                        # Warm-start: MSE on mean only; sigma branch unfrozen but not penalized yet
-                        loss = F.mse_loss(preds_mu, y_batch)
-                    else:
-                        log_sigma = pred_raw[:, output_dim:].clamp(-3.0, 3.0)
-                        sigma = log_sigma.exp()
-                        loss = gaussian_crps_loss(preds_mu, sigma, y_batch)
-                else:  # bernstein
-                    loss = bernstein_quantile_loss(
-                        pred_raw, fc_output_batch, y_batch,
-                        degree=bernstein_degree, n_quantiles=19
-                    )
-            elif lt_weight_tensor is not None:
+            if lt_weight_tensor is not None:
                 preds = fc_output_batch + pred_raw
                 per_sample_loss = criterion(preds, y_batch).mean(dim=-1)  # [batch]
                 weights = lt_weight_tensor[lead_time_batch]  # [batch]
@@ -1707,15 +1733,7 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
                     lead_time_batch = lead_time_batch.to(device)
                     doy_batch = doy_batch.to(device)
                     pred_raw = model(fc_input_batch, lead_time_batch, doy_batch)
-                    if use_probabilistic:
-                        output_dim = fc_output_batch.shape[-1]
-                        if probabilistic_head == 'gaussian':
-                            preds = fc_output_batch + pred_raw[:, :output_dim]
-                        else:  # bernstein
-                            from finetuning.custom_loss_fns import bernstein_median
-                            preds = bernstein_median(pred_raw, fc_output_batch, degree=bernstein_degree)
-                    else:
-                        preds = fc_output_batch + pred_raw
+                    preds = fc_output_batch + pred_raw
                     loss = val_criterion(preds, y_batch)
                     val_loss += loss.item() * fc_output_batch.size(0)
             val_loss /= len(valid_loader.dataset)
@@ -1840,6 +1858,84 @@ def train_swa_ensemble(model, train_loader, valid_loader, warmup_epochs, swa_epo
     print(f"  SWA training complete: {n_swa_updates} weight updates, val_loss={val_loss:.6f}, "
           f"time={training_time_minutes:.2f} min")
     return swa_model, val_loss, training_time_minutes
+
+
+def train_pooled_film_model(model, train_loader, valid_loader, epochs, lr, device,
+                            weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1):
+    """
+    Train a PooledFiLMMLP with snapshot ensemble across all pooled patches.
+
+    Saves one snapshot per cosine annealing cycle end; total snapshots = epochs // T_0.
+
+    Args:
+        model: PooledFiLMMLP instance
+        train_loader: DataLoader yielding (fc, fc_out, obs, lt_idx, doy, region_desc)
+        valid_loader: DataLoader yielding same
+        epochs: Total training epochs
+        lr: Peak learning rate
+        device: Torch device
+        weight_decay: AdamW weight decay
+        grad_clip: Gradient norm clip (0 to disable)
+        T_0: Cosine annealing cycle period (determines snapshot frequency)
+        T_mult: Cycle period multiplier
+
+    Returns:
+        snapshots: List of (state_dict, val_loss) tuples
+        training_time_minutes: Training duration
+    """
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=T_0, T_mult=T_mult, eta_min=1e-6
+    )
+
+    snapshots = []
+    train_start = time.time()
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        train_loss = 0.0
+        for batch in train_loader:
+            fc_in, fc_out, y, lt_idx, doy, region_desc = [b.to(device) for b in batch]
+            optimizer.zero_grad()
+            pred_error = model(fc_in, region_desc, lt_idx, doy)
+            loss = criterion(fc_out + pred_error, y)
+            loss.backward()
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+            train_loss += loss.item() * fc_out.size(0)
+        train_loss /= len(train_loader.dataset)
+        scheduler.step()
+
+        # Snapshot at cosine cycle boundary
+        is_cycle_end = (epoch % T_0 == 0) if T_mult == 1 else False
+        if not is_cycle_end and T_mult != 1:
+            cycle_sum = 0
+            for c in range(20):
+                cycle_sum += T_0 * (T_mult ** c)
+                if epoch == cycle_sum:
+                    is_cycle_end = True
+                    break
+
+        if is_cycle_end:
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch in valid_loader:
+                    fc_in, fc_out, y, lt_idx, doy, region_desc = [b.to(device) for b in batch]
+                    pred_error = model(fc_in, region_desc, lt_idx, doy)
+                    val_loss += criterion(fc_out + pred_error, y).item() * fc_out.size(0)
+            val_loss /= len(valid_loader.dataset)
+            snapshots.append((copy.deepcopy(model.state_dict()), val_loss))
+            print(f"  FiLM snapshot at epoch {epoch}/{epochs}, val_loss={val_loss:.6f}")
+
+        if epoch % 50 == 0:
+            print(f"  Epoch {epoch}/{epochs} - Train Loss: {train_loss:.6f}")
+
+    training_time_minutes = (time.time() - train_start) / 60.0
+    print(f"  Pooled FiLM training: {len(snapshots)} snapshots in {training_time_minutes:.2f} min")
+    return snapshots, training_time_minutes
 
 
 def train_classifier(model, train_loader, valid_loader, epochs, lr, device,
@@ -2260,8 +2356,7 @@ def evaluate_classifier(model, test_loader, device, n_classes, class_names=None,
 
 
 def apply_correction(model, forecast_input_data, forecast_output_data, lead_time_indices,
-                     day_of_year_features, device, mc_dropout_samples=0,
-                     probabilistic_head='none', bernstein_degree=6):
+                     day_of_year_features, device, mc_dropout_samples=0):
     """
     Apply the correction to forecast output data using forecast input data.
     Uses mixed precision for CUDA devices.
@@ -2274,20 +2369,14 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
         device: Device to run on
         mc_dropout_samples: If > 0, enable dropout at inference and average over this many
                             stochastic forward passes (Monte Carlo dropout).
-        probabilistic_head: 'none', 'gaussian', or 'bernstein'. For probabilistic heads
-                            the model output is larger; this extracts the point estimate.
-        bernstein_degree: Bernstein polynomial degree (used only when probabilistic_head='bernstein')
 
     Returns:
-        Corrected forecast for output variables (point estimate for probabilistic heads)
+        Corrected forecast for output variables
     """
-    from finetuning.custom_loss_fns import bernstein_median
-
     batch_size = 128
     n_samples = forecast_input_data.shape[0]
     use_amp = device.type == 'cuda'
     non_blocking = device.type == 'cuda'
-    output_dim = forecast_output_data.shape[-1]
 
     def _run_inference():
         corrected_all = []
@@ -2305,17 +2394,7 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
                 else:
                     pred_raw = model(fc_input_batch, lt_batch, doy_batch)
 
-                if probabilistic_head == 'gaussian':
-                    # pred_raw: (batch, 2*output_dim); first half is mu_error
-                    mu_error = pred_raw[:, :output_dim]
-                    corrected_batch = (fc_output_batch + mu_error).cpu().numpy()
-                elif probabilistic_head == 'bernstein':
-                    # Extract median (tau=0.5) as point estimate
-                    median = bernstein_median(pred_raw, fc_output_batch, degree=bernstein_degree)
-                    corrected_batch = median.cpu().numpy()
-                else:
-                    # Standard: pred_raw is the error, add to forecast
-                    corrected_batch = (fc_output_batch + pred_raw).cpu().numpy()
+                corrected_batch = (fc_output_batch + pred_raw).cpu().numpy()
 
                 corrected_all.append(corrected_batch)
         return np.concatenate(corrected_all, axis=0)
@@ -2864,8 +2943,6 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
 
     use_small_init = getattr(args, 'small_output_init', False)
     use_per_lt = getattr(args, 'per_lead_time', False)
-    prob_head = getattr(args, 'probabilistic_head', 'none')
-    bern_degree = getattr(args, 'bernstein_degree', 6)
 
     # Helper to create a fresh model instance
     def _create_model(n_lt_override=None):
@@ -2896,11 +2973,86 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                              n_lead_times=_n_lt,
                              lead_time_embedding_dim=lead_time_emb_dim,
                              dropout_rate=args.mlp_dropout,
-                             small_output_init=use_small_init,
-                             probabilistic_head=prob_head,
-                             bernstein_degree=bern_degree).to(device)
+                             small_output_init=use_small_init).to(device)
 
-    if use_per_lt and use_block:
+    if use_per_lt and use_snapshot and not use_block:
+        # ---- Per-Lead-Time Snapshot Ensemble ----
+        # Train a separate snapshot ensemble for each lead time. Each model sees only
+        # data from its lead time, eliminating gradient competition across horizons.
+        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
+
+        print(f"\nPER-LEAD-TIME Snapshot Ensemble x{n_snapshot}: training {n_lead_times} separate models")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        corrected_per_lt = np.zeros_like(test_fc_output)
+
+        for lt_idx in range(n_lead_times):
+            lt_hours = args.lead_time_hours[lt_idx]
+            print(f"\n{'='*50}")
+            print(f"  Training snapshot ensemble for lead time {lt_hours}h")
+            print(f"{'='*50}")
+
+            lt_train_mask = (lead_time_indices == lt_idx)
+            lt_test_mask = (test_lead_time_indices == lt_idx)
+
+            fc_lt = fc_norm[lt_train_mask]
+            fc_out_lt = fc_output_norm[lt_train_mask]
+            obs_lt = obs_norm[lt_train_mask]
+            doy_lt = day_of_year_features[lt_train_mask]
+            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
+
+            test_fc_lt = test_fc_norm[lt_test_mask]
+            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
+            test_doy_lt = test_day_of_year_features[lt_test_mask]
+            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
+
+            lt_corrections = []
+
+            for run_i in range(n_snapshot):
+                seed = run_i * 17 + lt_idx * 1000 + 1
+                torch.manual_seed(seed)
+                np.random.seed(seed * 13 + 7)
+
+                n_lt_samples = len(fc_lt)
+                run_idx = np.arange(n_lt_samples)
+                np.random.shuffle(run_idx)
+                split = int(0.8 * n_lt_samples)
+                t_idx_run, v_idx_run = run_idx[:split], run_idx[split:]
+
+                run_train_loader = create_dataloader(
+                    fc_lt[t_idx_run], fc_out_lt[t_idx_run], obs_lt[t_idx_run],
+                    lti_lt[t_idx_run], doy_lt[t_idx_run],
+                    batch_size=batch_size, device=device)
+                run_val_loader = create_dataloader(
+                    fc_lt[v_idx_run], fc_out_lt[v_idx_run], obs_lt[v_idx_run],
+                    lti_lt[v_idx_run], doy_lt[v_idx_run],
+                    batch_size=batch_size, device=device)
+
+                model = _create_model(n_lt_override=1)
+                snapshots, run_time = train_snapshot_ensemble(
+                    model, run_train_loader, run_val_loader,
+                    epochs=snapshot_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, grad_clip=1.0,
+                    T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                training_time_minutes += run_time
+
+                for snap_weights, _ in snapshots:
+                    model.load_state_dict(snap_weights)
+                    snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                 test_lti_lt, test_doy_lt, device)
+                    snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
+                    lt_corrections.append(snap_corr)
+
+            corrected_per_lt[lt_test_mask] = np.mean(lt_corrections, axis=0)
+            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} total snapshots")
+
+        corrected = corrected_per_lt
+        print(f"\nPer-LT snapshot ensemble complete: {n_lead_times} models, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_per_lt and use_block:
         # ---- Per-Lead-Time Block Ensemble ----
         # Train a SEPARATE block ensemble for each lead time. Each model only sees
         # data from its lead time, so 24h model optimizes purely for 24h without
@@ -2980,16 +3132,13 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                             model, run_train_loader, run_val_loader,
                             epochs=snapshot_epochs, lr=lr, device=device,
                             weight_decay=weight_decay, grad_clip=1.0,
-                            T_0=snapshot_T0, T_mult=snapshot_T_mult,
-                            probabilistic_head=prob_head, bernstein_degree=bern_degree)
+                            T_0=snapshot_T0, T_mult=snapshot_T_mult)
                         training_time_minutes += run_time
 
                         for snap_weights, snap_val_loss in snapshots:
                             model.load_state_dict(snap_weights)
                             snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
-                                                         test_lti_lt, test_doy_lt, device,
-                                                         probabilistic_head=prob_head,
-                                                         bernstein_degree=bern_degree)
+                                                         test_lti_lt, test_doy_lt, device)
                             snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
                             lt_corrections.append(snap_corr)
                             lt_weights.append(1.0 / max(snap_val_loss, 1e-12))
@@ -3076,8 +3225,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                         weight_decay=weight_decay, grad_clip=1.0,
                         T_0=snapshot_T0, T_mult=snapshot_T_mult,
                         lead_time_weights=lt_weight_dict,
-                        n_lead_times=n_lead_times,
-                        probabilistic_head=prob_head, bernstein_degree=bern_degree)
+                        n_lead_times=n_lead_times)
                     training_time_minutes += run_time
 
                     mc_samples = getattr(args, 'mc_dropout_samples', 0) # currenlty not using this
@@ -3086,9 +3234,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                         snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
                                                           test_lead_time_indices,
                                                           test_day_of_year_features, device,
-                                                          mc_dropout_samples=mc_samples,
-                                                          probabilistic_head=prob_head,
-                                                          bernstein_degree=bern_degree)
+                                                          mc_dropout_samples=mc_samples)
                         snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
                         ensemble_corrections.append(snap_corrected)
                         ensemble_weights.append(1.0 / max(snap_val_loss, 1e-12))
@@ -3153,8 +3299,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model, run_train_loader, run_val_loader,
                 epochs=snapshot_epochs, lr=lr, device=device,
                 weight_decay=weight_decay, grad_clip=1.0,
-                T_0=snapshot_T0, T_mult=snapshot_T_mult,
-                probabilistic_head=prob_head, bernstein_degree=bern_degree)
+                T_0=snapshot_T0, T_mult=snapshot_T_mult)
             training_time_minutes += run_time
 
             # Generate predictions from each snapshot
@@ -3162,9 +3307,7 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model.load_state_dict(snap_weights)
                 snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
                                                   test_lead_time_indices,
-                                                  test_day_of_year_features, device,
-                                                  probabilistic_head=prob_head,
-                                                  bernstein_degree=bern_degree)
+                                                  test_day_of_year_features, device)
                 snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
                 ensemble_corrections.append(snap_corrected)
 

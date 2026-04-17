@@ -46,6 +46,8 @@ def generate_output_path(args):
         model_str = "unet"
     elif args.nn_architecture == 'gated_mlp':
         model_str = "gated_mlp"
+    elif args.nn_architecture == 'pooled_film':
+        model_str = "pooled_film"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:
@@ -91,14 +93,6 @@ def generate_output_path(args):
     # Append small output init suffix
     if getattr(args, 'small_output_init', False):
         model_str += "_soi"
-
-    # Append probabilistic head suffix (DRN / BQN)
-    prob_head = getattr(args, 'probabilistic_head', 'none')
-    if prob_head == 'gaussian':
-        model_str += "_drn"
-    elif prob_head == 'bernstein':
-        bern_degree = getattr(args, 'bernstein_degree', 6)
-        model_str += f"_bqn_d{bern_degree}"
 
     if args.growing_season_only:
         grow_str = "_growing_season"
