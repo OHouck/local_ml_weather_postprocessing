@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=run_experiments_pangu_mlp_snapshot
+#SBATCH --job-name=run_experiments_pangu_mlp_snapshot3
 #SBATCH --account=pi-jfranke
-#SBATCH --output=run_experiments_pangu_mlp_snapshot%J.txt
+#SBATCH --output=run_experiments_pangu_mlp_snapshot3%J.txt
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=120G
@@ -124,8 +124,8 @@ for region in "${regions[@]}"; do
                         fi
 
                         # Build base command
-                        # Uses snapshot ensemble of 3 runs (21 total snapshots) —
-                        # best accuracy/speed tradeoff per architecture experiments.
+                        # Uses the MLP snapshot ensemble x3 configuration tested in
+                        # run_arch_experiments_eval.py.
                         cmd="python3 finetuning/finetune.py \
                             --data_dir=\"$data_dir\" \
                             --output_dir=\"$output_dir\" \
@@ -138,10 +138,9 @@ for region in "${regions[@]}"; do
                             --subregion=\"$subregion\" \
                             --lead_time_hours ${all_lead_times[@]} \
                             --nn_architecture=\"$nn_architecture\" \
-                            --block_ensemble \
-                            --block_holdout=3 \
-                            --snapshot_ensemble=1 \
-                            --snapshot_T0=10 --snapshot_T_mult=1"
+                            --snapshot_ensemble=3 \
+                            --snapshot_epochs=210 \
+                            --snapshot_T0=30 --snapshot_T_mult=1"
                         
                         # Add growing_season_only flag if model_name is aifs
                         if [[ "$model_name" == "aifs" ]]; then

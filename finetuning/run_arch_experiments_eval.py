@@ -223,10 +223,6 @@ def main():
         print(f"EXPERIMENT: {exp['name']}")
         print(f"{'#'*70}")
 
-        if '10m_wind_speed' in exp['training_vars'] or 'temperature_1000hPa' in exp['training_vars']:
-            print("  Skipping non 2m temp experiments")
-            continue
-
         for i, (continent, patch_idx, patch_array) in enumerate(eval_cells):
             lat_vals = patch_array[0]
             lon_vals = patch_array[1]
