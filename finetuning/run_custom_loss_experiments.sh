@@ -45,12 +45,12 @@ training_output_vars=(
 )
 
 subregions=(6x6)
-regions=("corn_belt")
+regions=("ethiopia" "india")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
-# loss_functions=("extreme_heat_loss" "mortality_weighted_loss" heatwave_loss)
-loss_functions=("mortality_weighted_loss")
+# loss_functions=("extreme_heat_loss" "mortality_weighted_loss" "heatwave_loss" "mse")
+loss_functions=("extreme_heat_loss" "mse")
 
 for region in "${regions[@]}"; do
     for subregion in "${subregions[@]}"; do
@@ -108,13 +108,12 @@ for region in "${regions[@]}"; do
                             --region=\"$region\" \
                             --subregion=\"$subregion\" \
                             --lead_time_hours ${all_lead_times[@]} \
-                            --nn_architecture=\"$nn_architecture\""
+                            --nn_architecture=\"$nn_architecture\" \
+                            --snapshot_ensemble=3 \
+                            --snapshot_epochs=210 \
+                            --snapshot_T0=30 --snapshot_T_mult=1"
                         
-                        # Add growing_season_only flag if model_name is aifs
-                        # skip winter months for heatwave loss
-                        if [[ "$model_name" == "aifs" || "$loss_function" == "heatwave_loss" || "$loss_function" == "mortality_weighted_loss"  || "$loss_function" == "extreme_heat_loss" ]]; then
-                            cmd="$cmd --growing_season_only"
-                        fi
+                        cmd="$cmd --growing_season_only"
 
                         if [[ "$loss_function" == "extreme_heat_loss" || "$loss_function" == "mortality_weighted_loss" || "$loss_function" == "heatwave_loss" ]]; then
                             cmd="$cmd --alternate_loss_fn=\"$loss_function\""

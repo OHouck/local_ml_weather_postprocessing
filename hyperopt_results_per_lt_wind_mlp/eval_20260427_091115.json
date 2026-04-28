@@ -1,0 +1,21 @@
+{
+  "hyperparams": {
+    "batch_size": 64,
+    "dropout_rate": 0.18762173326226156,
+    "hidden_dim": 512,
+    "lead_time_embedding_dim": 8,
+    "learning_rate": 0.00011065482574978645,
+    "min_delta": 0.00020149000352887283,
+    "num_layers": 8,
+    "patience": 25,
+    "weight_decay": 5.9536000951092114e-06
+  },
+  "loss": 0.422879159450531,
+  "epochs_trained": 210,
+  "architecture": "mlp",
+  "mode": "per_lt_snapshot",
+  "snapshot_objective_runs": 3,
+  "snapshot_epochs": 210,
+  "n_snapshots": null,
+  "cell_info": "india"
+}

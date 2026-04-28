@@ -195,11 +195,11 @@ def extreme_heat_loss(preds, targets, is_normalized, std_out=None, mean_out=None
     if _is_torch_tensor(weights):
         # PyTorch path
         weights = weights + ((targets_c > 25) & (targets_c <= 30)).float() * 5  # 6x total
-        weights = weights + (targets_c > 30).float() * 10  # 11x total
+        weights = weights + (targets_c > 30).float() * 100  # 11x total
     else:
         # NumPy path
         weights = weights + ((targets_c > 25) & (targets_c <= 30)).astype(float) * 5
-        weights = weights + (targets_c > 30).astype(float) * 10
+        weights = weights + (targets_c > 30).astype(float) * 100
 
     # Compute weighted MSE
     weighted_mse = (weights * squared_errors).mean()

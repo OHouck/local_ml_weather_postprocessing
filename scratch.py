@@ -14,10 +14,11 @@ patch_files = ["/Users/ohouck/globus/forecast_data/processed/africa_patches.npy"
                "/Users/ohouck/globus/forecast_data/processed/south_america_patches.npy",
                "/Users/ohouck/globus/forecast_data/processed/oceania_patches.npy"]
 
+africa_patches = np.load("/Users/ohouck/globus/forecast_data/processed/africa_patches.npy")
+asia_patches = np.load("/Users/ohouck/globus/forecast_data/processed/asia_patches.npy")
 
-total_patches = 0
-for patch_file in patch_files:
-    patches = np.load(patch_file)
-    n_patches = len(patches)
-    total_patches += n_patches
-print(f"Total number of patches across all continents: {total_patches}")
+print(f"Africa patches shape: {africa_patches.shape}"
+      f"\nAsia patches shape: {asia_patches.shape}")
+
+print(africa_patches)
+

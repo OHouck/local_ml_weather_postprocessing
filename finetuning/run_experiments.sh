@@ -38,7 +38,7 @@ fi
 # Examples:
 #   "2m_temperature|2m_temperature" - Predict temp using only temp
 #   "2m_temperature 10m_u_component_of_wind|2m_temperature" - Predict temp using temp and wind
-#
+
 training_output_vars=(
     # Minimal: Use only the output variable for training
     "2m_temperature|2m_temperature"
@@ -49,7 +49,7 @@ training_output_vars=(
     # Full: Use all 6 variables for training (best performance from experiments)
     # "2m_temperature 10m_wind_speed|2m_temperature 10m_wind_speed"
 
-    # "10m_wind_speed|10m_wind_speed"
+    "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(6x6)
@@ -58,7 +58,7 @@ subregions=(6x6)
 # subregions=(2x2)
 # regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
-# regions=("north_america" "south_america" "oceania")
+# regions=("africa" "asia")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
 model_names=("pangu")
@@ -140,6 +140,7 @@ for region in "${regions[@]}"; do
                             --nn_architecture=\"$nn_architecture\" \
                             --snapshot_ensemble=3 \
                             --snapshot_epochs=210 \
+                            --per_lead_time \
                             --snapshot_T0=30 --snapshot_T_mult=1"
                         
                         # Add growing_season_only flag if model_name is aifs

@@ -297,3 +297,88 @@ All six Block LTHO variants were evaluated on the 5% eval split (18 cells, globa
 - **Do not change the output-file naming scheme** beyond appending new architecture tags — `filter_patch_zarr_files` in [figures_finetuning.py](finetuning/figures_finetuning.py) parses filenames and will silently drop renamed files.
 - **Re-use `load_optimal_hyperparameters`** where it applies (DRN and BQN share the backbone with the existing MLP, so the learned hidden_dim / num_layers / lr are valid starting points). The pooled FiLM model has a different topology and should be hyperparameter-searched separately — but do that only after the pooled baseline beats the per-patch baseline at default settings. Do not spend compute on hyperparameter search for a method that is not yet winning.
 - **Smoke-test each new method on a single patch before launching the full eval sweep.** A silent numerical bug in the Bernstein basis or the CRPS formula will not be caught by existing tests.
+
+
+## Summary and explanation of the settled models
+
+This section describes every model variant evaluated in the architecture experiments, covering architecture, training method, and the rationale for including it.
+
+---
+
+### Plain MLP
+
+**Architecture.** `SimpleMLP` flattens the spatial patch into a 1-D feature vector and passes it through a stack of fully-connected ReLU layers (default: hidden dim 1024, 6 layers, dropout 0.25). Day-of-year is encoded as sin/cos and appended to the input. Lead-time is represented via a learned embedding of dimension 4 (tuned by hyperopt) that is also concatenated to the input. The output is a flat vector matching the spatial patch; added to the raw forecast to produce the corrected value.
+
+**Training method.** Adam optimizer with ReduceLROnPlateau scheduler and early stopping. A single 80/20 random train/validation split. Standard MSE loss on the normalized correction target. No ensembling: one model, one run.
+
+**Why it was tested.** The plain MLP is the paper's original baseline and the simplest post-processing model in the experiment suite. Every other method is compared against it to isolate the contribution of each architectural or training innovation. It also trains in approximately 0.3 min per patch on an M3 Max, providing the speed floor for all comparisons.
+
+---
+
+### MLP with 3-variable input
+
+**Architecture.** Identical to the plain MLP except the input also includes 1000 hPa temperature and specific humidity from the same forecast model, concatenated as additional spatial channels alongside the 2 m temperature. Input dimension increases accordingly; output is still only 2 m temperature.
+
+**Training method.** Same as the plain MLP.
+
+**Why it was tested.** Including pressure-level variables provides the model with information about the free-tropospheric state that can modulate surface temperature errors—particularly at 5- and 9-day lead times where boundary-layer decoupling makes surface fields less predictive of their own future errors. The experiment tests whether the additional predictors offset the cost of the larger input space on a 4-year training dataset.
+
+---
+
+### MLP Snapshot Ensemble ×3
+
+**Architecture.** Same `SimpleMLP` backbone as the plain MLP. The only change is in the training procedure.
+
+**Training method.** Three independent snapshot ensemble runs are launched in sequence. Within each run the scheduler is `CosineAnnealingWarmRestarts` with T₀ = 30 and T_mult = 1 (seven cosine cycles over 210 epochs). At each cosine cycle minimum the current model weights are checkpointed; all checkpoints across all three runs are averaged at inference time. AdamW optimizer with gradient clipping (clip norm 1.0) is used in place of Adam+ReduceLROnPlateau. A fresh random 80/20 train/validation split is drawn for each run to add additional diversity. Model selection within each cycle uses best validation loss.
+
+**Why it was tested.** Snapshot ensembling (Huang et al. 2017) achieves ensemble-level variance reduction at roughly the cost of a single training run: the cosine warm restarts drive the model through multiple distinct loss-basin neighborhoods before each checkpoint. Ensembling then averages over those diverse solutions. The ×3 multiplier adds further diversity by re-running the warm-restart schedule from a fresh random initialization. This was predicted to help most at long lead times where forecast error variance is high, and is the single architectural change with the largest expected benefit for a small compute budget.
+
+---
+
+### UNet
+
+**Architecture.** `UNet` encodes the 6×6 spatial patch as a 2-D image where input variables form the channel dimension. A series of convolutional encoder blocks (Conv→BatchNorm→ReLU→Dropout2d, ×2 per level) halve the spatial resolution at each level via MaxPool2d; the decoder symmetrically upsamples with ConvTranspose2d and skip connections that concatenate encoder activations. Channel width doubles at each encoder level up to a maximum of 128. Day-of-year and lead-time embeddings are tiled as extra input channels rather than being appended after flattening. The number of pooling levels is determined automatically to maintain at least a 2×2 bottleneck (capped at 5 levels). Final 1×1 conv maps back to n_output_vars channels.
+
+**Training method.** Same schedule as the plain MLP: Adam optimizer, ReduceLROnPlateau, early stopping, single 80/20 split, MSE loss. No ensembling.
+
+**Why it was tested.** U-Nets explicitly preserve and exploit local spatial structure through skip connections and the encoder-decoder bottleneck. The hypothesis was that spatial correlations in forecast error—evident in topographic gradients, coastlines, and mesoscale circulation patterns—would be better captured by a convolutional model than by a fully-flattened MLP. The U-Net had already been established as a reasonable alternative to the MLP in earlier experiments; this comparison placed it alongside the snapshot and block-ensemble variants to see whether spatial inductive bias adds value at the 6×6 patch scale.
+
+---
+
+### Block Leave-Three-Out (LTHO) Ensemble
+
+**Architecture.** Same `SimpleMLP` backbone as the plain MLP, with snapshot training applied within each block.
+
+**Training method.** The four training years (2018–2021) define C(4,3) = 4 distinct held-out blocks, each consisting of three years. One snapshot ensemble run is trained per block using only the held-in year as training data; the three held-out years serve as the validation set for that block. All snapshot checkpoints from all four blocks are pooled and weighted by inverse validation loss before averaging. Within each block, the snapshot scheduler is CosineAnnealingWarmRestarts with T₀ = 10 (producing exactly 21 snapshots over 210 epochs), chosen so many cycles fit within the single-year training period.
+
+**Why it was tested.** The block holdout scheme creates temporally diverse ensemble members: each member has never seen the training data pattern of its validation years, so the ensemble spans a wider range of climate-variability regimes than a random-split snapshot ensemble. This is expected to improve generalization in years with unusual anomaly patterns and to reduce over-fitting to the specific weather of 2018–2021. The method is the main novel training contribution of the paper.
+
+---
+
+### Per-Lead-Time MLP Snapshot ×3 (Per-LT Snapshot)
+
+**Architecture.** Three independent `SimpleMLP` models, one for each lead time (24 h, 120 h, 216 h). Because each model sees only data from a single lead time, the lead-time embedding is omitted (n_lead_times = 1). *Note: the results table labels this "Per-LT Block LTHO," which reflects an earlier experiment variant that used block holdout per lead time (`block_ensemble=True`). The current `_ARCH_TEMPLATES` entry (`'Per-LT MLP Snapshot x3'`) uses plain snapshot ensembling (`block_ensemble=False`, `snapshot_ensemble=3`). Both variants decouple lead times; the key difference is whether temporal diversity comes from block holdout or from random train/val splits.*
+
+**Training method.** For each lead time, three independent snapshot ensemble runs are launched (T₀ = 30, 210 epochs, CosineAnnealingWarmRestarts). Each run uses a fresh random 80/20 train/val split drawn from the single-lead-time data subset. All snapshots across all three runs are pooled and weighted by inverse validation loss. At inference the three models are applied separately to their corresponding test samples and the results are concatenated.
+
+**Why it was tested.** Training a single model jointly on all three lead times creates gradient competition: the 120-h and 216-h errors dominate training loss because they are numerically larger, starving the 24-h head of useful gradient signal. Training a completely separate model per lead time eliminates this interference—the 24-h model devotes 100% of its capacity to 1-day corrections. The cost is roughly 3× the training time and storage.
+
+---
+
+### Block LTHO + Distributional Regression Network (DRN)
+
+**Architecture.** `SimpleMLP` backbone with an expanded output head: instead of a single correction value per pixel, the final layer outputs two values per pixel—`μ` (the mean correction) and `σ` (the predictive standard deviation, parameterized as `exp(log σ)` internally). `σ` is clamped to a minimum of `1e-6` to prevent degenerate collapse. At inference, `μ` is used as the point-forecast correction and `σ` provides a per-sample uncertainty estimate.
+
+**Training method.** The loss is the closed-form Gaussian CRPS (Gneiting & Raftery 2007, Rasp & Lerch 2018), implemented as `gaussian_crps_loss` in `custom_loss_fns.py`. Training uses a 20-epoch MSE warm-start on `μ` alone (σ branch frozen at `log σ = 0`) before switching to full CRPS loss, to stabilize σ when data is scarce. The Block LTHO outer loop is otherwise identical to the standard Block LTHO setup.
+
+**Why it was tested.** MSE training is a consistent scoring rule only for the conditional mean; it gives the network no reason to learn heteroscedastic uncertainty. The Gaussian CRPS jointly optimizes the mean and spread, which can pull `μ` more aggressively toward climatology when `σ` is large (e.g., high-topography cells with large forecast variance). This was expected to improve RMSE in the hardest cells even though the primary benefit of CRPS training is probabilistic calibration. In practice it did not improve point RMSE over the Block LTHO baseline (see Key Findings above); its value lies in the calibrated uncertainty estimates, which have not yet been evaluated against CRPS. The DRN is the dominant baseline in the weather post-processing literature (Rasp & Lerch 2018) and is a natural comparison.
+
+---
+
+### Block LTHO + Bernstein Quantile Network (BQN, d = 6)
+
+**Architecture.** `SimpleMLP` backbone with an expanded output head: instead of one value per pixel, the final layer outputs `(degree + 1) = 7` raw values per pixel. These are transformed via `softplus` followed by `cumsum` to produce monotone Bernstein polynomial coefficients `α₀ ≤ α₁ ≤ … ≤ α₆`, defining a non-parametric quantile function. The mean of the coefficients is subtracted and the forecast value is added, so the coefficients represent the corrected-forecast quantile function centered on the raw forecast. At inference, the median (`τ = 0.5`) is evaluated as the point-forecast correction.
+
+**Training method.** The loss is the average pinball (quantile) loss over 19 quantile levels τ ∈ {0.05, 0.10, …, 0.95}, which is an unbiased Monte Carlo estimator of CRPS. Implemented as `bernstein_quantile_loss` in `custom_loss_fns.py`. The Block LTHO outer loop is otherwise identical to the standard Block LTHO setup; there is no MSE warm-start because the median of the Bernstein function is a stable estimator from the first epoch.
+
+**Why it was tested.** BQN is distribution-free: unlike DRN it makes no Gaussian assumption, which makes it the preferred probabilistic method for right-skewed, bounded-below variables such as 10 m wind speed. Schulz & Lerch 2022 found BQN ranked first or tied-first against DRN, QRF, GBM, and EMOS on wind gust post-processing specifically because the Gaussian assumption breaks down for wind. Degree 6 (7 coefficients) was chosen as the minimum that can represent a unimodal skewed distribution without overfitting on the ~1,460 training samples per patch.

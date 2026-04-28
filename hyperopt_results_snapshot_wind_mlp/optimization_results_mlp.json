@@ -1,0 +1,30 @@
+{
+  "architecture": "mlp",
+  "mode": "snapshot",
+  "best_hyperparams": {
+    "batch_size": 256,
+    "dropout_rate": 0.24050757320513474,
+    "hidden_dim": 512,
+    "lead_time_embedding_dim": 8,
+    "learning_rate": 0.0002365290032177622,
+    "num_layers": 2,
+    "snapshot_T0": 30,
+    "snapshot_T_mult": 2,
+    "weight_decay": 0.00038082142557175415
+  },
+  "best_loss": 0.3741624653339386,
+  "best_epochs_trained": 210,
+  "snapshot_objective_runs": 3,
+  "snapshot_epochs": 210,
+  "best_n_snapshots": 9,
+  "n_evaluations": 100,
+  "region": "india",
+  "variables": [
+    "10m_wind_speed"
+  ],
+  "lead_times": [
+    24,
+    120,
+    216
+  ]
+}

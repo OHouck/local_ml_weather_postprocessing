@@ -66,7 +66,9 @@ for region in "${regions[@]}"; do
                 --subregion=\"$subregion\" \
                 --lead_time_hours ${all_lead_times[@]} \
                 --nn_architecture=\"$nn_architecture\" \
-                --snapshot_ensemble=${snapshot_ensemble_runs}"
+                --snapshot_ensemble=${snapshot_ensemble_runs} \
+                --snapshot_epochs=210 \
+                --snapshot_T0=30 --snapshot_T_mult=1
 
             # Execute command
             eval $cmd

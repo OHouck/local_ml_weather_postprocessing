@@ -1,18 +1,22 @@
 {
   "architecture": "mlp",
+  "mode": "early-stopping",
   "best_hyperparams": {
-    "batch_size": 256,
-    "dropout_rate": 0.2443318284460679,
+    "batch_size": 64,
+    "dropout_rate": 0.2535898644789818,
     "hidden_dim": 1024,
     "lead_time_embedding_dim": 8,
-    "learning_rate": 0.00033049633451749834,
-    "min_delta": 5.917022172596213e-05,
+    "learning_rate": 0.0001663509276181593,
+    "min_delta": 1.6076215952404196e-05,
     "num_layers": 2,
-    "patience": 20,
-    "weight_decay": 2.2070827571154726e-06
+    "patience": 50,
+    "weight_decay": 1.338384321718969e-05
   },
-  "best_loss": 0.05576397650880522,
-  "best_epochs_trained": 247,
+  "best_loss": 0.05915204671479014,
+  "best_epochs_trained": 258,
+  "snapshot_objective_runs": null,
+  "snapshot_epochs": null,
+  "best_n_snapshots": null,
   "n_evaluations": 100,
   "region": "india",
   "variables": [

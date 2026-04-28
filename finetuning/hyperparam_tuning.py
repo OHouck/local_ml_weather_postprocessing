@@ -12,6 +12,7 @@ Uses Bayesian optimization with early stopping for both MLP and UNet architectur
 import os
 import sys
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -33,6 +34,24 @@ from finetuning.custom_loss_fns import (
 )
 from functools import partial
 from helper_funcs import setup_directories, sample_continent_patches
+
+
+def _year_holdout_split(times):
+    """
+    Split sample indices by holding out the last year as validation.
+
+    Args:
+        times: Array-like of timestamps (numpy datetime64 or pandas-compatible).
+
+    Returns:
+        train_idx: Indices for all years except the last.
+        val_idx: Indices for the last year.
+        holdout_year: The held-out year (int).
+    """
+    years = pd.DatetimeIndex(times).year.values
+    holdout_year = int(np.max(years))
+    val_mask = years == holdout_year
+    return np.where(~val_mask)[0], np.where(val_mask)[0], holdout_year
 
 
 def make_eval_dataloader(fc_norm_sub, fc_output_norm_sub, obs_norm_sub,
@@ -77,7 +96,6 @@ def create_mlp_search_space():
         'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6, 8, 10]),
 
         # Training parameters - OPTIMIZED: Higher learning rates
-        # 'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-2)),
         'batch_size': hp.choice('batch_size', [64, 128, 256]),
         'weight_decay': hp.loguniform('weight_decay', np.log(1e-6), np.log(1e-3)),
@@ -87,8 +105,7 @@ def create_mlp_search_space():
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
         # Embedding and regularization
-        # 'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16, 32]),
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [1]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),  
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.3),
     }
 
@@ -119,7 +136,7 @@ def create_unet_search_space():
         'min_delta': hp.loguniform('min_delta', np.log(1e-5), np.log(1e-3)),
 
         # Embedding and regularization - centered on optimal dropout of 0.1
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [8, 16]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
         'dropout_rate': hp.uniform('dropout_rate', 0.05, 0.20),
     }
 
@@ -132,11 +149,13 @@ def create_mlp_snapshot_search_space():
     (the cosine cycle period, which determines how many snapshots are saved per run).
     snapshot_epochs is fixed at 210 across all trials so that trial runtime is
     predictable (~0.2 min each on MPS/GPU).
+
     """
     return {
         # Model architecture
         'hidden_dim': hp.choice('hidden_dim', [32, 64, 128, 256, 512, 1024]),
         'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6, 8, 10]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(1e-4), np.log(1e-2)),
@@ -151,8 +170,6 @@ def create_mlp_snapshot_search_space():
         # T_mult=1 keeps fixed cycle lengths; T_mult=2 doubles cycle lengths.
         'snapshot_T_mult': hp.choice('snapshot_T_mult', [1, 2]),
 
-        # Embedding and regularization
-        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [1]),
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.3),
     }
 
@@ -173,15 +190,12 @@ def create_block_ltho_search_space():
       - Each fold holds out 1 year; trains snapshot ensembles on each remaining year
       - All training-year snapshots are combined into a mega-ensemble (mirrors production)
       - Objective = mean mega-ensemble MSE on held-out year across all folds
-
-    Note: lead_time_embedding_dim is not tuned here — it is fixed at 4 to match the
-    production default in finetune.py. Tuning it at [1] (old behavior) caused the
-    hyperopt to tune for a different architecture than production uses by default.
     """
     return {
         # Model architecture
         'hidden_dim': hp.choice('hidden_dim', [64, 128, 256, 512, 1024]),
         'num_layers': hp.choice('num_layers', [2, 3, 4, 5, 6]),
+        'lead_time_embedding_dim': hp.choice('lead_time_embedding_dim', [4, 8, 16]),  
 
         # Training parameters
         'learning_rate': hp.loguniform('learning_rate', np.log(5e-5), np.log(5e-3)),
@@ -197,97 +211,6 @@ def create_block_ltho_search_space():
         'dropout_rate': hp.uniform('dropout_rate', 0.1, 0.4),
     }
 
-
-def train_with_snapshot_for_hyperopt(model, train_loader, valid_loader, hyperparams, device,
-                                     snapshot_epochs=210):
-    """
-    Train a model using snapshot ensemble and return the ensemble-averaged validation loss.
-
-    Used in place of train_with_early_stopping when USE_SNAPSHOT_ENSEMBLE=True.
-    Each trial runs for a fixed number of epochs (snapshot_epochs) so trial time is
-    predictable and no patience hyperparameter is needed.
-
-    The objective is the MSE of the ENSEMBLE-AVERAGED prediction on the validation set,
-    not the mean of individual snapshot losses. This matters because:
-    - Mean(individual losses) = E[MSE(single_snap, target)]  ← what was used before (wrong)
-    - Ensemble loss = MSE(mean(all_snap_preds), target)      ← what we optimize now (correct)
-    Due to variance reduction, the ensemble loss is always <= mean individual loss. Optimizing
-    the ensemble loss directly finds hyperparameters (e.g. T0, dropout) that encourage diverse,
-    complementary snapshots rather than merely good individual ones.
-
-    Args:
-        model: The neural network model
-        train_loader: Training data loader
-        valid_loader: Validation data loader
-        hyperparams: Dictionary including 'learning_rate', 'weight_decay',
-                'snapshot_T0', and optional 'snapshot_T_mult'
-        device: torch device
-        snapshot_epochs: Fixed epochs per trial (default 210 → 7 snapshots at T0=30)
-
-    Returns:
-        tuple: (ensemble_val_loss, n_snapshots)
-    """
-    import torch.nn as nn
-    T0 = hyperparams.get('snapshot_T0', 30)
-    T_mult = hyperparams.get('snapshot_T_mult', 1)
-    snapshots, _ = train_snapshot_ensemble(
-        model, train_loader, valid_loader,
-        epochs=snapshot_epochs,
-        lr=hyperparams['learning_rate'],
-        device=device,
-        weight_decay=hyperparams['weight_decay'],
-        grad_clip=1.0,
-        T_0=T0,
-        T_mult=T_mult
-    )
-    if not snapshots:
-        return float('inf'), 0
-
-    # Compute ensemble-averaged prediction loss on the validation set.
-    # Average the raw model outputs (before denormalization) across all snapshots,
-    # then compute MSE of the averaged prediction against the target.
-    #
-    # NOTE: We must use a non-shuffling eval loader here. valid_loader uses shuffle=True
-    # (required for training), so each iteration over it returns a different sample order.
-    # Stacking predictions from multiple passes of a shuffled loader produces misaligned
-    # tensors where snapshot[i] and snapshot[j] predict different samples at each position.
-    # make_eval_dataloader creates an identical dataset with shuffle=False.
-    criterion = nn.MSELoss()
-    dataset = valid_loader.dataset
-    tensors = dataset.tensors
-    eval_loader = make_eval_dataloader(
-        tensors[0].numpy(), tensors[1].numpy(), tensors[2].numpy(),
-        tensors[3].numpy(), tensors[4].numpy(),
-        batch_size=valid_loader.batch_size
-    )
-
-    all_snap_preds = []  # list of (n_val, output_dim) tensors, one per snapshot
-    all_targets = None
-    with torch.no_grad():
-        for snap_weights, _ in snapshots:
-            model.load_state_dict(snap_weights)
-            model.eval()
-            batch_preds = []
-            batch_targets = []
-            for fc_input_batch, fc_output_batch, y_batch, lead_time_batch, doy_batch in eval_loader:
-                fc_input_batch = fc_input_batch.to(device)
-                fc_output_batch = fc_output_batch.to(device)
-                lead_time_batch = lead_time_batch.to(device)
-                doy_batch = doy_batch.to(device)
-                pred_error = model(fc_input_batch, lead_time_batch, doy_batch)
-                preds = fc_output_batch + pred_error
-                batch_preds.append(preds.cpu())
-                batch_targets.append(y_batch)
-            all_snap_preds.append(torch.cat(batch_preds, dim=0))
-            if all_targets is None:
-                all_targets = torch.cat(batch_targets, dim=0)
-
-    # Average across snapshots and compute MSE against targets
-    ensemble_pred = torch.stack(all_snap_preds, dim=0).mean(dim=0).to(device)
-    all_targets = all_targets.to(device)
-
-    ensemble_val_loss = float(criterion(ensemble_pred, all_targets).item())
-    return ensemble_val_loss, len(snapshots)
 
 
 def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, device,
@@ -352,19 +275,18 @@ def train_with_early_stopping(model, train_loader, valid_loader, hyperparams, de
         weight_decay=hyperparams['weight_decay']
     )
 
-    # Add ReduceLROnPlateau scheduler for better convergence
-    # FIXED: Increased patience to match early_stopping patience to avoid premature LR reduction
+    # Match production train_model exactly: scheduler_patience=10, min_lr=1e-7
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode='min',
         factor=0.5,
-        patience=max(10, hyperparams['patience'] // 2),  # At least half of early stopping patience
-        min_lr=1e-6  # Prevent LR from getting too small
+        patience=10,
+        min_lr=1e-7
     )
 
     patience = hyperparams['patience']
     min_delta = hyperparams['min_delta']
-    max_epochs = 300  # OPTIMIZED: Reduced from 1000 to 300 for faster hyperparameter search
+    max_epochs = 750  # Match production num_epochs so trials aren't artificially truncated
 
     # Setup mixed precision training for CUDA
     use_amp = device.type == 'cuda'
@@ -510,13 +432,15 @@ def preload_training_data(args: SimpleNamespace,
 
     This function loads the training data once, normalizes it, and performs train/val split.
     The cached data can be reused across all hyperparameter trials, dramatically reducing
-    data loading overhead.
+    data loading overhead. The split holds out the last training year as validation, mirroring
+    the year-separated evaluation used in production (train 2018-2021, test 2022).
 
     Args:
         args: Configuration with region, variables, lead times, etc.
         data_dir: Path to data directory
         device: torch device
         use_legacy_global_data: Whether to use legacy global data format
+        split_seed: Unused; kept for API compatibility.
 
     Returns:
         dict: Cached training data including normalized arrays, indices, and metadata
@@ -545,15 +469,11 @@ def preload_training_data(args: SimpleNamespace,
     fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
     obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-    # Split train/validation (80/20) using local RNG for deterministic behavior.
-    # This avoids dependence on external global RNG state.
-    n_samples = len(fc)
-    rng = np.random.default_rng(split_seed)
-    indices = rng.permutation(n_samples)
-    split_idx = int(0.8 * n_samples)
-    train_idx = indices[:split_idx]
-    val_idx = indices[split_idx:]
+    # Hold out the last training year as validation so tuning objective matches the
+    # year-separated production evaluation (train 2018-2021, test 2022).
+    train_idx, val_idx, holdout_year = _year_holdout_split(train_times)
 
+    print(f"  Holdout year: {holdout_year} ({(val_idx.size)} val samples)")
     print(f"  Train samples: {len(train_idx)}, Validation samples: {len(val_idx)}")
     print("  Data caching complete!")
     print("="*70 + "\n")
@@ -594,7 +514,7 @@ def preload_multi_cell_data(cell_patches: list,
         data_dir: Path to data directory
         device: torch device
         use_legacy_global_data: Whether to use legacy global data format
-        split_seed: Seed for train/val split
+        split_seed: Unused; kept for API compatibility.
 
     Returns:
         list of cached_data dicts (one per cell), same format as preload_training_data()
@@ -625,13 +545,8 @@ def preload_multi_cell_data(cell_patches: list,
             fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
             obs_norm = (obs - stats_out['mean']) / stats_out['std']
 
-            # Split train/validation (80/20)
             n_samples = len(fc)
-            rng = np.random.default_rng(split_seed)
-            indices = rng.permutation(n_samples)
-            split_idx = int(0.8 * n_samples)
-            train_idx = indices[:split_idx]
-            val_idx = indices[split_idx:]
+            train_idx, val_idx, holdout_year = _year_holdout_split(train_times)
 
             cached_cells.append({
                 'fc_norm': fc_norm,
@@ -651,7 +566,7 @@ def preload_multi_cell_data(cell_patches: list,
                 'continent': continent,
                 'patch_idx': patch_idx,
             })
-            print(f"    Loaded {n_samples} samples ({len(train_idx)} train, {len(val_idx)} val)")
+            print(f"    Loaded {n_samples} samples ({len(train_idx)} train, {len(val_idx)} val, holdout_year={holdout_year})")
 
         except Exception as e:
             print(f"    WARNING: Failed to load cell {continent} patch {patch_idx}: {e}")
@@ -670,6 +585,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
                             cached_data: Dict[str, Any] = None,
                             use_snapshot: bool = False,
                             use_block_ltho: bool = False,
+                            use_per_lt: bool = False,
                             split_seed: int = 42,
                             snapshot_objective_runs: int = 3,
                             snapshot_epochs: int = 210) -> Dict[str, Any]:
@@ -685,11 +601,19 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
         cached_data: Optional pre-loaded training data to avoid repeated loading
         use_snapshot: Use random-split snapshot ensemble objective
         use_block_ltho: Use leave-three-out block CV objective (overrides use_snapshot)
+        use_per_lt: Use per-lead-time snapshot ensemble objective (overrides use_snapshot)
 
     Returns:
         dict: {'loss': validation_loss, 'status': STATUS_OK, 'epochs_trained': num_epochs}
     """
-    mode = 'block_ltho' if use_block_ltho else ('snapshot' if use_snapshot else 'early-stopping')
+    if use_block_ltho:
+        mode = 'block_ltho'
+    elif use_per_lt:
+        mode = 'per_lt_snapshot'
+    elif use_snapshot:
+        mode = 'snapshot'
+    else:
+        mode = 'early-stopping'
     print(f"\nEvaluating hyperparameters:")
     print(f"  Architecture: {architecture} ({mode})")
     print(f"  Learning rate: {hyperparams['learning_rate']:.6f}")
@@ -714,6 +638,26 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
             'epochs_trained': snapshot_epochs,
             'hyperparams': hyperparams,
         }
+
+    # --- Per-LT snapshot path ---
+    if use_per_lt:
+        if cached_data is None:
+            raise ValueError("Per-LT evaluation requires cached_data (call preload_training_data first).")
+        print(f"  Snapshot T0: {hyperparams.get('snapshot_T0', 30)}")
+        print(f"  Snapshot T_mult: {hyperparams.get('snapshot_T_mult', 1)}")
+        print(f"  Objective runs per lead time: {snapshot_objective_runs}")
+        val_loss = evaluate_per_lt_hyperparameters(
+            hyperparams, args, cached_data, device,
+            snapshot_epochs=snapshot_epochs,
+            snapshot_objective_runs=snapshot_objective_runs
+        )
+        return {
+            'loss': val_loss,
+            'status': STATUS_OK,
+            'epochs_trained': snapshot_epochs,
+            'hyperparams': hyperparams,
+        }
+
     if use_snapshot:
         print(f"  Snapshot T0: {hyperparams.get('snapshot_T0', 30)}")
         print(f"  Snapshot T_mult: {hyperparams.get('snapshot_T_mult', 1)}")
@@ -779,7 +723,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
                 output_dim=output_dim,
                 num_hidden_layers=hyperparams['num_layers'],
                 n_lead_times=n_lead_times,
-                lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
+                lead_time_embedding_dim=hyperparams.get('lead_time_embedding_dim', 4),
                 dropout_rate=hyperparams['dropout_rate']
             ).to(device)
 
@@ -934,7 +878,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
             output_dim=output_dim,
             num_hidden_layers=hyperparams['num_layers'],
             n_lead_times=n_lead_times,
-            lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
+            lead_time_embedding_dim=hyperparams.get('lead_time_embedding_dim', 4),
             dropout_rate=hyperparams['dropout_rate']
         ).to(device)
     elif architecture == 'unet':
@@ -947,7 +891,7 @@ def evaluate_hyperparameters(hyperparams: Dict[str, Any],
             n_input_vars=n_training_vars,
             n_output_vars=n_output_vars,
             n_lead_times=n_lead_times,
-            lead_time_embedding_dim=hyperparams['lead_time_embedding_dim'],
+            lead_time_embedding_dim=hyperparams.get('lead_time_embedding_dim', 4),
             dropout_rate=hyperparams['dropout_rate']
         ).to(device)
     else:
@@ -1171,6 +1115,176 @@ def evaluate_block_ltho_hyperparameters(hyperparams: Dict[str, Any],
     return mean_loss
 
 
+def evaluate_per_lt_hyperparameters(hyperparams: Dict[str, Any],
+                                    args: SimpleNamespace,
+                                    cached_data: Dict[str, Any],
+                                    device: torch.device,
+                                    snapshot_epochs: int = 210,
+                                    snapshot_objective_runs: int = 3) -> float:
+    """
+    Evaluate hyperparameters using the per-lead-time snapshot ensemble objective.
+
+    Mirrors the per-LT production path in run_subregion_experiment(): trains a
+    separate snapshot ensemble for each lead time using n_lead_times=1, so that
+    each model only sees samples from its own horizon (no gradient competition
+    across horizons). Seeds and the 80/20 shuffle-split within each lead time
+    match production exactly (seed = run_i * 17 + lt_idx * 1000 + 1).
+
+    Args:
+        hyperparams: Dict with hidden_dim, num_layers, dropout_rate, learning_rate,
+            weight_decay, batch_size, snapshot_T0, snapshot_T_mult,
+            lead_time_embedding_dim.
+        args: SimpleNamespace with lead_time_hours.
+        cached_data: From preload_training_data; must include lead_time_indices.
+        device: torch device.
+        snapshot_epochs: Fixed epochs per snapshot run (default 210).
+        snapshot_objective_runs: Independent snapshot runs per lead time (default 3).
+
+    Returns:
+        float: MSE of the per-LT ensemble on the held-out validation set,
+            combining predictions across all lead times.
+    """
+    fc_norm = cached_data['fc_norm']
+    fc_output_norm = cached_data['fc_output_norm']
+    obs_norm = cached_data['obs_norm']
+    lead_time_indices = cached_data['lead_time_indices']
+    day_of_year_features = cached_data['day_of_year_features']
+    train_idx = cached_data['train_idx']
+    val_idx = cached_data['val_idx']
+    n_lat = cached_data['n_lat']
+    n_lon = cached_data['n_lon']
+    n_training_vars = cached_data['n_training_vars']
+    n_output_vars = cached_data['n_output_vars']
+
+    input_dim = n_training_vars * n_lat * n_lon
+    output_dim = n_output_vars * n_lat * n_lon
+    n_lead_times = len(args.lead_time_hours)
+
+    T0 = hyperparams.get('snapshot_T0', 30)
+    T_mult = hyperparams.get('snapshot_T_mult', 1)
+    batch_size = hyperparams['batch_size']
+    lead_time_emb_dim = hyperparams.get('lead_time_embedding_dim', 4)
+    criterion = nn.MSELoss()
+
+    def _build_model():
+        """Create a single-lead-time SimpleMLP (n_lead_times=1)."""
+        return SimpleMLP(
+            input_dim=input_dim,
+            hidden_dim=hyperparams['hidden_dim'],
+            output_dim=output_dim,
+            num_hidden_layers=hyperparams['num_layers'],
+            n_lead_times=1,
+            lead_time_embedding_dim=lead_time_emb_dim,
+            dropout_rate=hyperparams['dropout_rate']
+        ).to(device)
+
+    train_pool = np.array(train_idx)
+    all_lt_preds = []
+    all_lt_targets = []
+
+    for lt_idx in range(n_lead_times):
+        lt_hours = args.lead_time_hours[lt_idx]
+
+        # Filter train pool and eval set to this lead time only.
+        lt_train_pool = train_pool[lead_time_indices[train_pool] == lt_idx]
+        lt_val_mask = lead_time_indices[val_idx] == lt_idx
+        lt_val_idx = val_idx[lt_val_mask]
+
+        if len(lt_train_pool) == 0 or len(lt_val_idx) == 0:
+            print(f"  Skipping lt_idx={lt_idx} ({lt_hours}h): empty split")
+            continue
+
+        # Each per-LT model uses a single lead-time slot (index 0).
+        lti_zeros_val = np.zeros(len(lt_val_idx), dtype=np.int64)
+        eval_loader = make_eval_dataloader(
+            fc_norm[lt_val_idx], fc_output_norm[lt_val_idx],
+            obs_norm[lt_val_idx], lti_zeros_val,
+            day_of_year_features[lt_val_idx],
+            batch_size=batch_size
+        )
+
+        lt_snapshot_preds = []
+        lt_targets = None
+
+        for run_i in range(snapshot_objective_runs):
+            seed = run_i * 17 + lt_idx * 1000 + 1
+            torch.manual_seed(seed)
+            np.random.seed(seed * 13 + 7)
+
+            run_idx = np.arange(len(lt_train_pool))
+            np.random.shuffle(run_idx)
+            split = int(0.8 * len(run_idx))
+            run_train_idx = lt_train_pool[run_idx[:split]]
+            run_val_idx = lt_train_pool[run_idx[split:]]
+
+            run_train_loader = create_dataloader(
+                fc_norm[run_train_idx], fc_output_norm[run_train_idx],
+                obs_norm[run_train_idx], np.zeros(len(run_train_idx), dtype=np.int64),
+                day_of_year_features[run_train_idx],
+                batch_size=batch_size, device=device
+            )
+            run_val_loader = create_dataloader(
+                fc_norm[run_val_idx], fc_output_norm[run_val_idx],
+                obs_norm[run_val_idx], np.zeros(len(run_val_idx), dtype=np.int64),
+                day_of_year_features[run_val_idx],
+                batch_size=batch_size, device=device
+            )
+
+            model = _build_model()
+            snapshots, _ = train_snapshot_ensemble(
+                model, run_train_loader, run_val_loader,
+                epochs=snapshot_epochs,
+                lr=hyperparams['learning_rate'],
+                device=device,
+                weight_decay=hyperparams['weight_decay'],
+                grad_clip=1.0,
+                T_0=T0, T_mult=T_mult
+            )
+
+            if not snapshots:
+                continue
+
+            for snap_weights, _ in snapshots:
+                model.load_state_dict(snap_weights)
+                model.eval()
+                preds_batches = []
+                targets_batches = []
+                with torch.no_grad():
+                    for fc_in, fc_out, y, lt, doy in eval_loader:
+                        fc_in = fc_in.to(device)
+                        fc_out = fc_out.to(device)
+                        lt = lt.to(device)
+                        doy = doy.to(device)
+                        pred_error = model(fc_in, lt, doy)
+                        preds = fc_out + pred_error
+                        preds_batches.append(preds.cpu())
+                        targets_batches.append(y.cpu())
+                lt_snapshot_preds.append(torch.cat(preds_batches, dim=0))
+                if lt_targets is None:
+                    lt_targets = torch.cat(targets_batches, dim=0)
+
+        if not lt_snapshot_preds or lt_targets is None:
+            print(f"  lt={lt_hours}h: no snapshots collected, skipping")
+            continue
+
+        lt_ensemble_pred = torch.stack(lt_snapshot_preds, dim=0).mean(dim=0)
+        lt_mse = float(criterion(lt_ensemble_pred, lt_targets).item())
+        print(f"  lt={lt_hours}h: {len(lt_snapshot_preds)} snapshots → MSE={lt_mse:.6f}")
+        all_lt_preds.append(lt_ensemble_pred)
+        all_lt_targets.append(lt_targets)
+
+    if not all_lt_preds:
+        print("  WARNING: No lead times produced predictions — returning inf")
+        return float('inf')
+
+    combined_preds = torch.cat(all_lt_preds, dim=0)
+    combined_targets = torch.cat(all_lt_targets, dim=0)
+    val_loss = float(criterion(combined_preds, combined_targets).item())
+    print(f"  Per-LT objective: {val_loss:.6f} (across {len(all_lt_preds)} lead times, "
+          f"{snapshot_objective_runs} runs each)")
+    return val_loss
+
+
 def optimize_hyperparameters(args: SimpleNamespace,
                             data_dir: str,
                             architecture: str,
@@ -1181,6 +1295,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
                             resume: bool = False,
                             use_snapshot: bool = False,
                             use_block_ltho: bool = False,
+                            use_per_lt: bool = False,
                             snapshot_objective_runs: int = 3,
                             snapshot_epochs: int = 210,
                             multi_cell_data: list = None) -> Dict[str, Any]:
@@ -1198,6 +1313,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
         resume: If True, continue from previous trials
         use_snapshot: Optimize for random-split snapshot ensemble
         use_block_ltho: Optimize for block leave-three-out ensemble (overrides use_snapshot)
+        use_per_lt: Optimize for per-lead-time snapshot ensemble (overrides use_snapshot)
         multi_cell_data: If provided, list of cached_data dicts from preload_multi_cell_data().
             Each trial evaluates on a different cell (round-robin), making hyperparameters
             robust across diverse geographic regions.
@@ -1208,10 +1324,14 @@ def optimize_hyperparameters(args: SimpleNamespace,
     # Validate inputs
     if architecture not in ['mlp', 'unet']:
         raise ValueError(f"Architecture must be 'mlp' or 'unet', got: {architecture}")
-    if (use_snapshot or use_block_ltho) and architecture != 'mlp':
-        raise ValueError("Snapshot/block LTHO ensemble tuning is only supported for 'mlp' architecture")
+    if (use_snapshot or use_block_ltho or use_per_lt) and architecture != 'mlp':
+        raise ValueError("Snapshot/block LTHO/per-LT ensemble tuning is only supported for 'mlp' architecture")
+    # Enforce mutual exclusivity: block_ltho > per_lt > snapshot
     if use_block_ltho:
-        use_snapshot = False  # block_ltho has its own code path
+        use_snapshot = False
+        use_per_lt = False
+    elif use_per_lt:
+        use_snapshot = False
 
     # Set random seeds
     np.random.seed(random_seed)
@@ -1225,7 +1345,14 @@ def optimize_hyperparameters(args: SimpleNamespace,
             'cpu'
         )
     print(f"Using device: {device}")
-    mode_str = 'block_ltho' if use_block_ltho else ('snapshot' if use_snapshot else 'early-stopping')
+    if use_block_ltho:
+        mode_str = 'block_ltho'
+    elif use_per_lt:
+        mode_str = 'per_lt_snapshot'
+    elif use_snapshot:
+        mode_str = 'snapshot'
+    else:
+        mode_str = 'early-stopping'
 
     use_multi_cell = multi_cell_data is not None and len(multi_cell_data) > 0
     if use_multi_cell:
@@ -1238,6 +1365,8 @@ def optimize_hyperparameters(args: SimpleNamespace,
         print(f"Snapshot objective settings: runs={snapshot_objective_runs}, epochs={snapshot_epochs}")
     if use_block_ltho:
         print(f"Block LTHO objective: 4-fold year CV, epochs={snapshot_epochs} per block")
+    if use_per_lt:
+        print(f"Per-LT snapshot objective: runs={snapshot_objective_runs} per lead time, epochs={snapshot_epochs}")
 
     # Persist seed/objective settings in args for downstream helpers.
     args.random_seed = random_seed
@@ -1306,6 +1435,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
                     cached_data=cell_data,
                     use_snapshot=use_snapshot,
                     use_block_ltho=use_block_ltho,
+                    use_per_lt=use_per_lt,
                     split_seed=random_seed,
                     snapshot_objective_runs=snapshot_objective_runs,
                     snapshot_epochs=snapshot_epochs
@@ -1332,6 +1462,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
                 cached_data=cached_data,
                 use_snapshot=use_snapshot,
                 use_block_ltho=use_block_ltho,
+                use_per_lt=use_per_lt,
                 split_seed=random_seed,
                 snapshot_objective_runs=snapshot_objective_runs,
                 snapshot_epochs=snapshot_epochs
@@ -1347,7 +1478,7 @@ def optimize_hyperparameters(args: SimpleNamespace,
             'epochs_trained': result['epochs_trained'],
             'architecture': architecture,
             'mode': mode_str,
-            'snapshot_objective_runs': snapshot_objective_runs if use_snapshot else None,
+            'snapshot_objective_runs': snapshot_objective_runs if (use_snapshot or use_per_lt) else None,
             'snapshot_epochs': snapshot_epochs,
             'n_snapshots': result.get('n_snapshots'),
             'cell_info': cell_info_str,
@@ -1412,8 +1543,8 @@ def optimize_hyperparameters(args: SimpleNamespace,
         'best_hyperparams': best_hyperparams,
         'best_loss': best_trial['result']['loss'],
         'best_epochs_trained': best_trial['result']['epochs_trained'],
-        'snapshot_objective_runs': snapshot_objective_runs if use_snapshot else None,
-        'snapshot_epochs': snapshot_epochs if (use_snapshot or use_block_ltho) else None,
+        'snapshot_objective_runs': snapshot_objective_runs if (use_snapshot or use_per_lt) else None,
+        'snapshot_epochs': snapshot_epochs if (use_snapshot or use_block_ltho or use_per_lt) else None,
         'best_n_snapshots': best_trial['result'].get('n_snapshots') if use_snapshot else None,
         'n_evaluations': len(trials.trials),
         'region': region_info,
@@ -1460,7 +1591,7 @@ if __name__ == "__main__":
     # LEGACY FLAG: Set to True to use global yearly files (legacy format)
     # TO REMOVE: Remove this flag when legacy data is no longer needed
     # ========================================================================
-    USE_LEGACY_GLOBAL_DATA = False  # <-- EDIT THIS FLAG
+    USE_LEGACY_GLOBAL_DATA = True # <-- EDIT THIS FLAG
     # ========================================================================
 
     # ========================================================================
@@ -1470,10 +1601,12 @@ if __name__ == "__main__":
     #   "temperature"            — tune standard MLP for 2m_temperature correction
     #   "wind"                   — tune standard MLP for 10m_wind_speed correction
     #   "joint"                  — tune joint temp+wind MLP (joint_temp_wind_loss)
-    #   "block_ltho_temperature" — tune Block LTHO MLP for 2m_temperature  ← RECOMMENDED
+    #   "block_ltho_temperature" — tune Block LTHO MLP for 2m_temperature
     #   "block_ltho_wind"        — tune Block LTHO MLP for 10m_wind_speed
+    #   "per_lt_temperature"     — tune per-lead-time snapshot MLP for 2m_temperature ← RECOMMENDED for per-LT
+    #   "per_lt_wind"            — tune per-lead-time snapshot MLP for 10m_wind_speed
     #
-    # USE_SNAPSHOT_ENSEMBLE (ignored for block_ltho_* modes):
+    # USE_SNAPSHOT_ENSEMBLE (ignored for block_ltho_* and per_lt_* modes):
     #   True  — tune for random-split snapshot ensemble MLP
     #           Results saved to hyperopt_results_snapshot_{var}_mlp/
     #   False — tune for standard MLP with early stopping
@@ -1485,18 +1618,26 @@ if __name__ == "__main__":
     #   - Results saved to hyperopt_results_block_ltho_{var}_mlp/
     #   - finetune.py auto-loads these when --block_ensemble is passed
     #
+    # For per_lt_* modes:
+    #   - USE_SNAPSHOT_ENSEMBLE is automatically set to False
+    #   - Objective = per-lead-time snapshot ensemble; trains n_lead_times × SNAPSHOT_OBJECTIVE_RUNS
+    #     models per trial (one model per lead time per run, each with n_lead_times=1)
+    #   - Results saved to hyperopt_results_per_lt_{var}_mlp/
+    #   - finetune.py auto-loads these when --per_lead_time is passed
+    #
     # SNAPSHOT_OBJECTIVE_RUNS:
-    #   Number of independent snapshot runs per hyperopt trial (use_snapshot only).
+    #   Number of independent snapshot runs per hyperopt trial.
+    #   For per_lt_* modes, this applies per lead time (total runs = SNAPSHOT_OBJECTIVE_RUNS × n_lead_times).
     #
     # SNAPSHOT_EPOCHS:
     #   Fixed training epochs per run/block during hyperopt.
     #   For block LTHO, each of the 4 blocks trains for this many epochs.
-    #   Runtime estimate (M3 Max): ~0.1 min/block × 4 blocks = ~0.4 min/trial
+    #   Runtime estimate (M3 Max): ~0.1 min/run × 3 runs × 3 lead times = ~0.9 min/trial for per_lt
     # ========================================================================
-    TUNING_MODE = "block_ltho_wind"   # <-- EDIT THIS
-    USE_SNAPSHOT_ENSEMBLE = False            # <-- EDIT THIS (ignored for block_ltho_*)
-    SNAPSHOT_OBJECTIVE_RUNS = 3             # <-- EDIT THIS (ignored for block_ltho_*)
-    SNAPSHOT_EPOCHS = 210                   # <-- EDIT THIS
+    TUNING_MODE = "per_lt_wind"   # <-- EDIT THIS
+    USE_SNAPSHOT_ENSEMBLE = True  # <-- EDIT THIS (ignored for block_ltho_* and per_lt_* modes)
+    SNAPSHOT_OBJECTIVE_RUNS = 3   # <-- EDIT THIS
+    SNAPSHOT_EPOCHS = 210         # <-- EDIT THIS
     # ========================================================================
 
     dirs = setup_directories()
@@ -1516,7 +1657,8 @@ if __name__ == "__main__":
         print("Using mixed precision training (AMP) for CUDA operations")
 
     use_block_ltho = TUNING_MODE.startswith("block_ltho_")
-    if use_block_ltho:
+    use_per_lt = TUNING_MODE.startswith("per_lt_")
+    if use_block_ltho or use_per_lt:
         USE_SNAPSHOT_ENSEMBLE = False
     snapshot_prefix = "snapshot_" if USE_SNAPSHOT_ENSEMBLE else ""
 
@@ -1569,7 +1711,7 @@ if __name__ == "__main__":
         output_dir = f"hyperopt_results_{snapshot_prefix}joint_wind_temperature_24h_mlp"
 
     elif TUNING_MODE == "block_ltho_temperature":
-        # Block LTHO: tune across a 10% random sample of continent 6x6 cells.
+        # Block LTHO: tune across a 25% random sample of continent 6x6 cells.
         # Each trial trains on a different cell (round-robin), so hyperparameters
         # are optimized for diverse geographic conditions rather than a single region.
         config = SimpleNamespace(
@@ -1603,24 +1745,59 @@ if __name__ == "__main__":
         )
         output_dir = "hyperopt_results_block_ltho_wind_mlp"
 
+    elif TUNING_MODE == "per_lt_temperature":
+        config = SimpleNamespace(
+            model_name="pangu",
+            training_vars=["2m_temperature"],
+            output_vars=["2m_temperature"],
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            region="india",
+            subregion="6x6",
+            ground_truth_source="",
+            lead_time_hours=[24, 120, 216],
+            alternate_loss_fn=None,
+            growing_season_only=False
+        )
+        output_dir = "hyperopt_results_per_lt_temperature_mlp"
+
+    elif TUNING_MODE == "per_lt_wind":
+        config = SimpleNamespace(
+            model_name="pangu",
+            training_vars=["10m_wind_speed"],
+            output_vars=["10m_wind_speed"],
+            train_start="2018-01-01",
+            train_end="2021-12-31",
+            region="india",
+            subregion="6x6",
+            ground_truth_source="",
+            lead_time_hours=[24, 120, 216],
+            alternate_loss_fn=None,
+            growing_season_only=False
+        )
+        output_dir = "hyperopt_results_per_lt_wind_mlp"
+
     else:
         raise ValueError(
             f"Unknown TUNING_MODE: '{TUNING_MODE}'. "
-            "Choose 'temperature', 'wind', 'joint', 'block_ltho_temperature', or 'block_ltho_wind'."
+            "Choose 'temperature', 'wind', 'joint', 'block_ltho_temperature', 'block_ltho_wind', "
+            "'per_lt_temperature', or 'per_lt_wind'."
         )
 
     print(f"\nTuning mode: {TUNING_MODE}")
     if use_block_ltho:
         print(f"Block LTHO objective: 4-fold year CV, {SNAPSHOT_EPOCHS} epochs/block")
+    elif use_per_lt:
+        print(f"Per-LT snapshot objective: {SNAPSHOT_OBJECTIVE_RUNS} runs/lead time, {SNAPSHOT_EPOCHS} epochs/run")
     else:
         print(f"Snapshot ensemble: {USE_SNAPSHOT_ENSEMBLE}")
     print(f"Output dir: {output_dir}\n")
 
-    # For block LTHO modes, pre-load a 10% sample of continent cells
+    # For block LTHO modes, pre-load a 25% sample of continent cells
     multi_cell_data = None
     if use_block_ltho:
         cell_patches = sample_continent_patches(
-            dirs['processed'], fraction=0.1, seed=42, split='hyperopt'
+            dirs['processed'], fraction=0.25, seed=42, split='hyperopt'
         )
         print(f"Sampled {len(cell_patches)} continent cells for hyperopt")
         multi_cell_data = preload_multi_cell_data(
@@ -1639,6 +1816,7 @@ if __name__ == "__main__":
         resume=False,  # Set to True to continue from a previous run
         use_snapshot=USE_SNAPSHOT_ENSEMBLE,
         use_block_ltho=use_block_ltho,
+        use_per_lt=use_per_lt,
         snapshot_objective_runs=SNAPSHOT_OBJECTIVE_RUNS,
         snapshot_epochs=SNAPSHOT_EPOCHS,
         multi_cell_data=multi_cell_data

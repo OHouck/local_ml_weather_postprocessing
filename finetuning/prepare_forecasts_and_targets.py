@@ -1099,54 +1099,64 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # ====================================================================
         # STEP 2: If regional data exists, load it
         # ====================================================================
+        regional_load_succeeded = False
         if forecast_all_exist and target_all_exist:
             print(f"  ✓ All regional data files exist with required variables")
             print(f"\n  Loading forecast data from regional files...")
 
-            forecast_datasets = []
-            for year in years_needed:
-                file_path = get_data_path(data_dir, args.model_name, args.region, year)
-                print(f"    Loading {year} from {file_path}")
-                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+            try:
+                forecast_datasets = []
+                for year in years_needed:
+                    file_path = get_data_path(data_dir, args.model_name, args.region, year)
+                    print(f"    Loading {year} from {file_path}")
+                    ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
-                # Select requested lead times
-                ds = ds.sel(prediction_timedelta=lead_times_td)
+                    # Select requested lead times
+                    ds = ds.sel(prediction_timedelta=lead_times_td)
 
-                # Select region if needed (data is already regional, but may need sub-region)
-                ds = ds.sel(latitude=lat_values, longitude=lon_values)
-                forecast_datasets.append(ds)
+                    # Select region if needed (data is already regional, but may need sub-region)
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                    forecast_datasets.append(ds)
 
-            # Combine years
-            forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
-            forecast_ds = forecast_ds.sortby('time')
+                # Combine years
+                forecast_ds = xr.concat(forecast_datasets, dim='time', combine_attrs='override')
+                forecast_ds = forecast_ds.sortby('time')
 
-            # Remove duplicates
-            _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
-            forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
+                # Remove duplicates
+                _, unique_indices = np.unique(forecast_ds.time.values, return_index=True)
+                forecast_ds = forecast_ds.isel(time=sorted(unique_indices))
 
-            print(f"\n  Loading target data from regional files...")
-            target_datasets = []
-            for year in years_needed:
-                file_path = get_data_path(data_dir, target, args.region, year)
-                print(f"    Loading {year} from {file_path}")
-                ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
+                print(f"\n  Loading target data from regional files...")
+                target_datasets = []
+                for year in years_needed:
+                    file_path = get_data_path(data_dir, target, args.region, year)
+                    print(f"    Loading {year} from {file_path}")
+                    ds = xr.open_zarr(file_path, chunks='auto', consolidated=True)
 
-                # Select region if needed
-                ds = ds.sel(latitude=lat_values, longitude=lon_values)
-                target_datasets.append(ds)
+                    # Select region if needed
+                    ds = ds.sel(latitude=lat_values, longitude=lon_values)
+                    target_datasets.append(ds)
 
-            # Combine years
-            obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
-            obs_ds = obs_ds.sortby('time')
+                # Combine years
+                obs_ds = xr.concat(target_datasets, dim='time', combine_attrs='override')
+                obs_ds = obs_ds.sortby('time')
 
-            # Remove duplicates
-            _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
-            obs_ds = obs_ds.isel(time=sorted(unique_indices))
+                # Remove duplicates
+                _, unique_indices = np.unique(obs_ds.time.values, return_index=True)
+                obs_ds = obs_ds.isel(time=sorted(unique_indices))
+
+                regional_load_succeeded = True
+
+            except (KeyError, ValueError):
+                # Regional file exists but doesn't cover this patch's lat/lon —
+                # e.g. a single-patch zarr stored under the continent name.
+                # Fall through to Step 3 so the global/download path is used instead.
+                print(f"  ✗ Regional file does not cover requested lat/lon — falling back to global data")
 
         # ====================================================================
         # STEP 3: If data doesn't exist and only basic vars needed, try global
         # ====================================================================
-        elif basic_vars_only:
+        elif not regional_load_succeeded and basic_vars_only:
             print(f"  ✗ Regional data not found")
             print(f"  ✓ Only basic variables needed - trying global data files...")
 
@@ -1203,7 +1213,7 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
         # ====================================================================
         # STEP 4: If more variables needed, download with standard atmos vars
         # ====================================================================
-        else:
+        elif not regional_load_succeeded:
             print(f"  ✗ Regional data not found")
             print(f"  → Atmospheric variables needed - downloading regional data with standard variables...")
             print(f"     Standard variables: 2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind")

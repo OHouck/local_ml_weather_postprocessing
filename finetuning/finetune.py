@@ -630,7 +630,7 @@ class UNet(nn.Module):
 # Load optimal hyperparameters
 # ------------------------------
 def load_optimal_hyperparameters(architecture, training_vars, output_vars, alternate_loss_fn,
-                                 use_snapshot=False, use_block_ltho=False):
+                                 use_snapshot=False, use_block_ltho=False, use_per_lt=False):
     """
     Load optimal hyperparameters from hyperopt results.
 
@@ -643,6 +643,9 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
         use_block_ltho: Whether tuning was done with block LTHO objective.
             When True, looks for hyperopt_results_block_ltho_{var}_mlp/ first,
             then falls back to snapshot or non-snapshot results.
+        use_per_lt: Whether tuning was done with per-lead-time snapshot objective.
+            When True, looks for hyperopt_results_per_lt_{var}_mlp/ first,
+            then falls back to snapshot results.
 
     Returns:
         Dictionary of optimal hyperparameters, or None if file not found
@@ -696,11 +699,21 @@ def load_optimal_hyperparameters(architecture, training_vars, output_vars, alter
             if output_key is None:
                 print(f"Warning: No hyperparameter results available for output variable '{output_vars[0]}'")
                 return None
+            # Per-LT: use dedicated per_lt hyperparameters, fall back to snapshot results.
+            if use_per_lt and multi_flag == "":
+                per_lt_file = script_dir / f"hyperopt_results_per_lt_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
+                print(f"Checking for per-LT hyperparameter file at {per_lt_file}")
+                if per_lt_file.exists():
+                    print(f"Using per-LT hyperparameters from {per_lt_file}")
+                    results_file = per_lt_file
+                else:
+                    print(f"Note: No per-LT hyperparameter file found at {per_lt_file}; "
+                          "falling back to snapshot hyperopt results.")
+                    results_file = script_dir / f"hyperopt_results_snapshot_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
             # Block LTHO: use dedicated block_ltho hyperparameters (tuned across continent cells)
-            if use_block_ltho and multi_flag == "":
+            elif use_block_ltho and multi_flag == "":
                 block_ltho_file = script_dir / f"hyperopt_results_block_ltho_{output_key}_{architecture}" / f"optimization_results_{architecture}.json"
                 print(f"Checking for block LTHO hyperparameter file at {block_ltho_file}")
-
                 if block_ltho_file.exists():
                     print(f"Using block LTHO hyperparameters from {block_ltho_file}")
                     results_file = block_ltho_file
@@ -1623,7 +1636,8 @@ def train_model_weighted(model, train_loader, valid_loader, epochs, lr, device,
 
 def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, device,
                             weight_decay=0, grad_clip=1.0, T_0=30, T_mult=1,
-                            lead_time_weights=None, n_lead_times=1):
+                            lead_time_weights=None, n_lead_times=1,
+                            stats_out=None, alternate_loss_fn=None):
     """
     Train a single model and save snapshots at the end of each cosine annealing cycle.
 
@@ -1652,11 +1666,17 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
             per-lead-time loss weighting. E.g., {0: 3.0, 1: 1.0, 2: 0.5} gives
             3x weight to the first lead time (typically 24h). None = equal weighting.
         n_lead_times: Number of distinct lead times (required if lead_time_weights given)
+        stats_out: Dict with 'mean' and 'std' arrays for denormalizing outputs.
+            Required when alternate_loss_fn needs temperature thresholding in Celsius.
+        alternate_loss_fn: Name of custom loss function (e.g. 'extreme_heat_loss').
+            Validation always uses MSE for fair snapshot comparison regardless.
 
     Returns:
         snapshots: List of (state_dict, val_loss) tuples for each snapshot
         training_time_minutes: Training duration in minutes
     """
+    NORMALIZED_LOSS_FNS = {"extreme_heat_loss", "mortality_weighted_loss", "joint_temp_wind_loss"}
+
     lt_weight_tensor = None
     if lead_time_weights is not None:
         lt_weight_tensor = torch.ones(n_lead_times, device=device)
@@ -1666,6 +1686,23 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
         criterion = nn.MSELoss(reduction='none')  # per-sample for weighting
     else:
         criterion = nn.MSELoss()
+
+    use_custom_loss = alternate_loss_fn is not None
+    custom_criterion = None
+    mean_out = std_out = None
+    if use_custom_loss:
+        loss_fn_map = {
+            "extreme_heat_loss": extreme_heat_loss,
+            "mortality_weighted_loss": mortality_weighted_loss,
+            "quantile_loss": quantile_loss,
+            "joint_temp_wind_loss": joint_temp_wind_loss,
+        }
+        if alternate_loss_fn not in loss_fn_map:
+            raise ValueError(f"alternate_loss_fn '{alternate_loss_fn}' not supported in snapshot ensemble")
+        custom_criterion = loss_fn_map[alternate_loss_fn]
+        if alternate_loss_fn in NORMALIZED_LOSS_FNS and stats_out is not None:
+            mean_out = torch.from_numpy(stats_out['mean']).float().to(device)
+            std_out = torch.from_numpy(stats_out['std']).float().to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -1688,13 +1725,15 @@ def train_snapshot_ensemble(model, train_loader, valid_loader, epochs, lr, devic
             optimizer.zero_grad()
             pred_raw = model(fc_input_batch, lead_time_batch, doy_batch)
 
-            if lt_weight_tensor is not None:
-                preds = fc_output_batch + pred_raw
+            preds = fc_output_batch + pred_raw
+            if use_custom_loss:
+                loss = custom_criterion(preds, y_batch, is_normalized=True,
+                                        std_out=std_out, mean_out=mean_out)
+            elif lt_weight_tensor is not None:
                 per_sample_loss = criterion(preds, y_batch).mean(dim=-1)  # [batch]
                 weights = lt_weight_tensor[lead_time_batch]  # [batch]
                 loss = (per_sample_loss * weights).mean()
             else:
-                preds = fc_output_batch + pred_raw
                 loss = criterion(preds, y_batch)
 
             loss.backward()
@@ -3299,7 +3338,8 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
                 model, run_train_loader, run_val_loader,
                 epochs=snapshot_epochs, lr=lr, device=device,
                 weight_decay=weight_decay, grad_clip=1.0,
-                T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                stats_out=stats_out, alternate_loss_fn=args.alternate_loss_fn)
             training_time_minutes += run_time
 
             # Generate predictions from each snapshot
@@ -3521,10 +3561,12 @@ def main():
     # Load optimal hyperparameters based on architecture
     use_snapshot = bool(getattr(args, 'snapshot_ensemble', None))
     use_block = getattr(args, 'block_ensemble', False)
+    use_per_lt = getattr(args, 'per_lead_time', False)
     # gated_mlp uses same hyperparams as mlp (same input/output dims, similar capacity)
     hyperopt_arch = 'mlp' if args.nn_architecture == 'gated_mlp' else args.nn_architecture
     optimal_hyperparams = load_optimal_hyperparameters(hyperopt_arch, args.training_vars, args.output_vars, args.alternate_loss_fn,
-                                                       use_snapshot=use_snapshot, use_block_ltho=use_block)
+                                                       use_snapshot=use_snapshot, use_block_ltho=use_block,
+                                                       use_per_lt=use_per_lt)
     if optimal_hyperparams:
         # Override defaults with optimal hyperparameters
         if args.nn_architecture in ('mlp', 'gated_mlp'):

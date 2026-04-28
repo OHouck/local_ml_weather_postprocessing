@@ -169,8 +169,12 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
     #   ..._mlp_blockk3_snapshot1.zarr                (plain run)
     #   ..._mlp_blockk3_snapshot1_bs40.zarr           (bootstrap, no zone label)
     #   ..._mlp_blockk3_snapshot1_africa_bs40.zarr    (bootstrap with zone label)
+    # Negative lookahead prevents matching files that have additional arch-suffix tokens
+    # (e.g. _perlt, _ltw, _soi) inserted between arch_str and the zone/bootstrap suffix.
+    # Such files come from different training configurations and must not be mixed in.
+    _extra_arch = r'(?!_(?:perlt|ltw|soi|block(?:k\d+)?|pca\d*|cmix\w*|swa\d+|ensemble\d+))'
     arch_pattern = _re.compile(
-        rf"_{_re.escape(arch_str)}(?:(?:_[a-z_]+)?_bs\d+)?\.zarr$"
+        rf"_{_re.escape(arch_str)}{_extra_arch}(?:(?:_[a-z_]+)?_bs\d+)?\.zarr$"
     )
 
     # Filter files that match the model configuration
@@ -1927,12 +1931,20 @@ def plot_rmse_improvement(csv_path, dirs, variable, model="pangu",
 
 def _load_eval_cell_results(exp, eval_cells, input_folder, model, variable,
                             train_start, train_end, test_start, test_end,
-                            lead_times, results, training_times, mean_bias_results):
+                            lead_times, results, std_results, training_times,
+                            mean_bias_cell_values):
     """
     Load block LTHO results from eval cell zarr files and compute average improvement.
 
     Searches for zarr files matching each eval cell (continent + patch index), computes
-    per-cell RMSE improvement, and stores the mean across cells.
+    per-cell RMSE improvement, and stores the mean and std across cells.
+
+    Parameters
+    ----------
+    std_results : dict
+        {exp_name: {lead_time: std_pct_improvement}} — populated in place.
+    mean_bias_cell_values : dict
+        {lead_time: list} — per-cell mean-bias improvement values, accumulated in place.
     """
     cell_improvements = {lt: [] for lt in lead_times}
     cell_training_times = []
@@ -1993,14 +2005,15 @@ def _load_eval_cell_results(exp, eval_cells, input_folder, model, variable,
                 pct_improvement = calculate_improvement_percentage(rmse_original, rmse_corrected)
                 cell_improvements[lead_time].append(pct_improvement)
 
-                # Mean bias correction baseline from first cell with data
-                if mean_bias_results[lead_time] is None and mean_corrected is not None:
+                if mean_bias_cell_values is not None and mean_corrected is not None:
                     mc_flat = mean_corrected.values.flatten()
                     mc_mask = ~(np.isnan(gt_flat) | np.isnan(orig_flat) | np.isnan(mc_flat))
                     if mc_mask.sum() > 0:
                         rmse_mc = calculate_rmse(mc_flat[mc_mask], gt_flat[mc_mask])
                         rmse_orig_mc = calculate_rmse(orig_flat[mc_mask], gt_flat[mc_mask])
-                        mean_bias_results[lead_time] = calculate_improvement_percentage(rmse_orig_mc, rmse_mc)
+                        mean_bias_cell_values[lead_time].append(
+                            calculate_improvement_percentage(rmse_orig_mc, rmse_mc)
+                        )
 
         except FileNotFoundError:
             print(f"  Missing: {zarr_path}")
@@ -2015,6 +2028,7 @@ def _load_eval_cell_results(exp, eval_cells, input_folder, model, variable,
             mean_imp = np.mean(cell_improvements[lead_time])
             std_imp = np.std(cell_improvements[lead_time])
             results[exp['name']][lead_time] = mean_imp
+            std_results[exp['name']][lead_time] = std_imp
             print(f"    {lead_time}h: {mean_imp:.2f}% ± {std_imp:.2f}% improvement "
                   f"(n={len(cell_improvements[lead_time])} cells)")
 
@@ -2099,21 +2113,30 @@ def plot_arch_experiment_results(
         )
 
     results = {exp['name']: {lt: None for lt in lead_times} for exp in experiments}
+    std_results = {exp['name']: {lt: None for lt in lead_times} for exp in experiments}
     training_times = {exp['name']: None for exp in experiments}
-    mean_bias_results = {lt: None for lt in lead_times}
+    mean_bias_cell_values = {lt: [] for lt in lead_times}
 
-    for exp in experiments:
+    for i, exp in enumerate(experiments):
         print(f"\nProcessing {exp['name']}...")
         _load_eval_cell_results(
             exp, eval_cells, input_folder, model, variable,
             train_start, train_end, test_start, test_end,
-            lead_times, results, training_times, mean_bias_results
+            lead_times, results, std_results, training_times,
+            mean_bias_cell_values if i == 0 else None,
         )
+
+    mean_bias_results, mean_bias_std = {}, {}
+    for lt in lead_times:
+        vals = mean_bias_cell_values[lt]
+        mean_bias_results[lt] = np.mean(vals) if vals else None
+        mean_bias_std[lt] = np.std(vals) if vals else None
 
     out_folder = os.path.join(dirs["fig"], model, "architecture_comparison")
     os.makedirs(out_folder, exist_ok=True)
     _plot_arch_bar_chart(
-        experiments, results, training_times, mean_bias_results,
+        experiments, results, std_results, training_times,
+        mean_bias_results, mean_bias_std,
         lead_times, lead_times_days, model, subregion, label,
         eval_cells, out_folder,
     )
@@ -2243,7 +2266,8 @@ def map_arch_exeriment_regions(
 
 
 def _plot_arch_bar_chart(
-    experiments, results, training_times, mean_bias_results,
+    experiments, results, std_results, training_times,
+    mean_bias_results, mean_bias_std,
     lead_times, lead_times_days, model, subregion, var_label,
     eval_cells, out_folder,
 ):
@@ -2256,10 +2280,14 @@ def _plot_arch_bar_chart(
         Experiment configs with 'name' and 'color' keys.
     results : dict
         {exp_name: {lead_time: pct_improvement}} loaded by _load_eval_cell_results.
+    std_results : dict
+        {exp_name: {lead_time: std_pct_improvement}} loaded by _load_eval_cell_results.
     training_times : dict
         {exp_name: minutes} or None when unavailable.
     mean_bias_results : dict
-        {lead_time: pct_improvement} for the mean-bias-correction baseline.
+        {lead_time: mean_pct_improvement} for the mean-bias-correction baseline.
+    mean_bias_std : dict
+        {lead_time: std_pct_improvement} for the mean-bias-correction baseline.
     lead_times : list of int
         Lead times in hours.
     lead_times_days : list of float
@@ -2281,11 +2309,15 @@ def _plot_arch_bar_chart(
     n_bars = len(experiments) + (1 if has_mean_bias else 0)
     bar_width = 0.6 / n_bars
 
+    err_kw = dict(ecolor='black', capsize=3, capthick=1, elinewidth=1.2, zorder=4)
+
     if has_mean_bias:
         mean_improvements = [mean_bias_results[lt] if mean_bias_results[lt] is not None else 0 for lt in lead_times]
+        stds = [mean_bias_std.get(lt) or 0 for lt in lead_times]
         x_pos = np.arange(len(lead_times)) + (0 - n_bars / 2 + 0.5) * bar_width
         ax.bar(x_pos, mean_improvements, width=bar_width, color='#999999', alpha=0.8,
-               edgecolor='black', linewidth=0.5, label='Mean Bias Correction', zorder=3)
+               edgecolor='black', linewidth=0.5, label='Mean Bias Correction', zorder=3,
+               yerr=stds, error_kw=err_kw)
 
     for exp_idx, exp in enumerate(experiments):
         improvements = [results[exp['name']][lt] for lt in lead_times]
@@ -2293,12 +2325,14 @@ def _plot_arch_bar_chart(
             print(f"Warning: No data for {exp['name']}")
             continue
         improvements = [v if v is not None else 0 for v in improvements]
+        stds = [std_results[exp['name']].get(lt) or 0 for lt in lead_times]
         bar_offset = exp_idx + (1 if has_mean_bias else 0)
         x_pos = np.arange(len(lead_times)) + (bar_offset - n_bars / 2 + 0.5) * bar_width
         t = training_times[exp['name']]
         legend_label = f"{exp['name']} ({t:.1f} min)" if t is not None else exp['name']
         ax.bar(x_pos, improvements, width=bar_width, color=exp['color'], alpha=0.8,
-               edgecolor='black', linewidth=0.5, label=legend_label, zorder=3)
+               edgecolor='black', linewidth=0.5, label=legend_label, zorder=3,
+               yerr=stds, error_kw=err_kw)
 
     ax.set_ylim(-2.5, 20)
     ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
@@ -2318,21 +2352,37 @@ def _plot_arch_bar_chart(
     ax.set_axisbelow(True)
     ax.tick_params(axis='both', labelsize=16)
 
+    ax.annotate("Whiskers show ±1 std across eval cells", xy=(1, 0), xycoords='axes fraction',
+                fontsize=10, color='gray', ha='right', va='top',
+                xytext=(0, -6), textcoords='offset points')
+
     handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, 0.0),
-               ncol=min(len(handles), 4), fontsize=10, framealpha=0.95, edgecolor='gray',
-               columnspacing=1.0, handlelength=1.5, handletextpad=0.5)
+    ax.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.12),
+              ncol=3, fontsize=10, framealpha=0.95, edgecolor='gray',
+              columnspacing=1.0, handlelength=1.5, handletextpad=0.5)
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     plt.tight_layout()
-    fig.subplots_adjust(bottom=0.28)
 
     safe_label = var_label.lower().replace(' ', '_').replace('+', 'plus').replace('&', 'and')
     save_path = os.path.join(out_folder, f"arch_comparison_{safe_label}_global_eval_{subregion}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"\nArchitecture comparison plot saved to: {save_path}")
+
+
+def _plot_bin_line(ax, bin_centers, corr_values, orig_values, metric, marker, color, linestyle):
+    """Plot one binned metric line; for raw_error plots both original (hollow) and corrected (filled)."""
+    kw = dict(linewidth=2.5, markersize=8, color=color, linestyle=linestyle, alpha=0.9)
+    if metric in ["rmse", "extreme_heat_rmse", "mortality_weighted_rmse", "error_difference"]:
+        ax.plot(bin_centers, corr_values, marker=marker,
+                markerfacecolor=color, markeredgecolor=color, **kw)
+    elif metric == "raw_error":
+        ax.plot(bin_centers, orig_values, marker=marker,
+                markerfacecolor='none', markeredgecolor=color, markeredgewidth=2, **kw)
+        ax.plot(bin_centers, corr_values, marker=marker,
+                markerfacecolor=color, markeredgecolor=color, **kw)
 
 
 def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, test_end,
@@ -2342,6 +2392,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                                     metric="rmse",
                                     n_bins=10, growing_season_only=False,
                                     ground_truth_source="",
+                                    average_over_lead_times=False,
+                                    snapshot_ensemble=None,
                                     save_path=None):
     """
     Plot forecast performance metrics binned by weather variable values.
@@ -2400,6 +2452,14 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
         Whether to use results from model trained only on growing season
     ground_truth_source : str
         Ground truth source identifier (default: "")
+    snapshot_ensemble : int or None
+        Number of snapshot ensemble runs used during training (e.g. 3).
+        Must match the value passed to --snapshot_ensemble at training time,
+        since it is encoded in the output filename as _snapshot{N}.
+    average_over_lead_times : bool
+        When True, averages metric values across all lead times before plotting,
+        reducing line count from (regions × losses × lead_times) to (regions × losses).
+        Default: False
     save_path : str
         Custom save path. If None, auto-generates based on parameters
 
@@ -2466,12 +2526,7 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
     for region in regions:
         for loss_trained in loss_trained_on_list:
             # Build path using generate_output_path
-            if loss_trained == "extreme_heat":
-                alternate_loss_fn = "extreme_heat_loss"
-            if loss_trained == "mortality_weighted_loss":
-                alternate_loss_fn = "mortality_weighted_loss"
-            else:
-                alternate_loss_fn = None
+            alternate_loss_fn = loss_trained if loss_trained != "mse" else None
 
             args = SimpleNamespace(
                 model_name=model,
@@ -2487,7 +2542,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                 lead_time_hours=[24, 120, 216],
                 nn_architecture=nn_architecture,
                 growing_season_only=growing_season_only,
-                ground_truth_source=ground_truth_source
+                ground_truth_source=ground_truth_source,
+                snapshot_ensemble=snapshot_ensemble,
             )
 
             zarr_path = os.path.join(input_folder, generate_output_path(args))
@@ -2541,10 +2597,12 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
     bin_edges = np.linspace(global_min, global_max, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # Second pass: Calculate metrics and plot using cached data
-    # Iterate over regions, loss functions, and lead times
+    # Second pass: compute per-bin metrics and plot (per lead time or averaged).
     for region_idx, region in enumerate(regions):
         for loss_idx, loss_trained in enumerate(loss_trained_on_list):
+            collected_corr = []
+            collected_orig = []
+
             for lt in lead_times_list:
                 key = (region, loss_trained, lt)
                 if key not in loaded_data:
@@ -2554,16 +2612,12 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                 orig_flat = loaded_data[key]['orig']
                 corr_flat = loaded_data[key]['corr']
 
-                # Store for histogram (per region, aggregating across loss functions and lead times)
                 if region not in region_histogram_data:
                     region_histogram_data[region] = gt_flat
-                # For multiple loss functions/lead times, we can use any of them since gt_flat should be the same
 
-                # Bin the data
                 bin_indices = np.digitize(gt_flat, bin_edges) - 1
-                bin_indices = np.clip(bin_indices, 0, n_bins - 1)  # Handle edge cases
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
 
-                # Calculate metric for each bin
                 metric_values_orig = []
                 metric_values_corr = []
 
@@ -2580,101 +2634,63 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                     corr_bin = corr_flat[bin_mask]
 
                     if metric == "rmse":
-                        # Calculate RMSE improvement
                         rmse_orig = np.sqrt(np.mean((orig_bin - gt_bin) ** 2))
                         rmse_corr = np.sqrt(np.mean((corr_bin - gt_bin) ** 2))
-
-                        if rmse_orig == 0:
-                            improvement = 0
-                        else:
-                            improvement = (rmse_orig - rmse_corr) / rmse_orig * 100
+                        improvement = 0 if rmse_orig == 0 else (rmse_orig - rmse_corr) / rmse_orig * 100
                         metric_values_corr.append(improvement)
-                        # For improvement metrics, we don't plot original
                         metric_values_orig.append(np.nan)
 
                     elif metric == "extreme_heat_rmse":
-                        # Calculate extreme heat RMSE using the weighted loss function
                         rmse_orig_extreme = extreme_heat_loss(orig_bin, gt_bin, is_normalized=False, return_rmse=True)
                         rmse_corr_extreme = extreme_heat_loss(corr_bin, gt_bin, is_normalized=False, return_rmse=True)
-
-                        if rmse_orig_extreme == 0:
-                            improvement = 0
-                        else:
-                            improvement = (rmse_orig_extreme - rmse_corr_extreme) / rmse_orig_extreme * 100
+                        improvement = 0 if rmse_orig_extreme == 0 else (rmse_orig_extreme - rmse_corr_extreme) / rmse_orig_extreme * 100
                         metric_values_corr.append(improvement)
-                        # For improvement metrics, we don't plot original
                         metric_values_orig.append(np.nan)
+
                     elif metric == "mortality_weighted_rmse":
-                        # Calculate mortality weighted RMSE using the weighted loss function
                         rmse_orig_mortality = mortality_weighted_loss(orig_bin, gt_bin, is_normalized=False, return_rmse=True)
                         rmse_corr_mortality = mortality_weighted_loss(corr_bin, gt_bin, is_normalized=False, return_rmse=True)
-
-                        if rmse_orig_mortality == 0:
-                            improvement = 0
-                        else:
-                            improvement = (rmse_orig_mortality - rmse_corr_mortality) / rmse_orig_mortality * 100
+                        improvement = 0 if rmse_orig_mortality == 0 else (rmse_orig_mortality - rmse_corr_mortality) / rmse_orig_mortality * 100
                         metric_values_corr.append(improvement)
-                        # For improvement metrics, we don't plot original
                         metric_values_orig.append(np.nan)
 
                     elif metric == "raw_error":
-                        # Calculate mean raw error (prediction - ground_truth)
-                        orig_error = np.mean(orig_bin - gt_bin)
-                        corr_error = np.mean(corr_bin - gt_bin)
-                        metric_values_orig.append(orig_error)
-                        metric_values_corr.append(corr_error)
+                        metric_values_orig.append(np.mean(orig_bin - gt_bin))
+                        metric_values_corr.append(np.mean(corr_bin - gt_bin))
 
                     elif metric == "error_difference":
-                        # Calculate difference between original and corrected error
                         orig_error = np.mean(np.abs(orig_bin - gt_bin))
                         corr_error = np.mean(np.abs(corr_bin - gt_bin))
-                        # Difference: positive means corrected is better (lower error)
-                        error_diff = orig_error - corr_error
                         metric_values_orig.append(orig_error)
-                        metric_values_corr.append(error_diff)  # Store difference in corr
+                        metric_values_corr.append(orig_error - corr_error)
 
-                # Get color for region
-                if region in climate_region_colors:
-                    color = climate_region_colors[region]
-                elif region in topographic_region_colors:
-                    color = topographic_region_colors[region]
-                else:
-                    color = region_colors.get(region, '#1f77b4')
+                collected_corr.append(np.array(metric_values_corr, dtype=float))
+                if metric == "raw_error":
+                    collected_orig.append(np.array(metric_values_orig, dtype=float))
 
-                # Get line style for this loss function
-                linestyle = line_styles[loss_idx % len(line_styles)]
+            if not collected_corr:
+                continue
 
-                # Get marker for this lead time
-                marker = marker_map.get(lt, 'o')
+            if region in climate_region_colors:
+                color = climate_region_colors[region]
+            elif region in topographic_region_colors:
+                color = topographic_region_colors[region]
+            else:
+                color = region_colors.get(region, '#1f77b4')
 
-                # Plot based on metric type
-                # For improvement metrics, only plot corrected (improvement values)
-                if metric in ["rmse", "extreme_heat_rmse", "mortality_weighted_rmse"]:
-                    ax_main.plot(bin_centers, metric_values_corr, marker=marker, linewidth=2.5,
-                                markersize=8, color=color, linestyle=linestyle,
-                                markerfacecolor=color, markeredgecolor=color,
-                                alpha=0.9)
+            linestyle = line_styles[loss_idx % len(line_styles)]
 
-                elif metric == "error_difference":
-                    # For error difference, only plot the difference (stored in corr)
-                    ax_main.plot(bin_centers, metric_values_corr, marker=marker, linewidth=2.5,
-                                markersize=8, color=color, linestyle=linestyle,
-                                markerfacecolor=color, markeredgecolor=color,
-                                alpha=0.9)
-
-                elif metric == "raw_error":
-                    # Plot both original (hollow) and corrected (filled)
-                    # Original forecast - hollow markers
-                    ax_main.plot(bin_centers, metric_values_orig, marker=marker, linewidth=2.5,
-                                markersize=8, color=color, linestyle=linestyle,
-                                markerfacecolor='none', markeredgecolor=color, markeredgewidth=2,
-                                alpha=0.9)
-
-                    # Corrected forecast - filled markers
-                    ax_main.plot(bin_centers, metric_values_corr, marker=marker, linewidth=2.5,
-                                markersize=8, color=color, linestyle=linestyle,
-                                markerfacecolor=color, markeredgecolor=color,
-                                alpha=0.9)
+            if average_over_lead_times and len(lead_times_list) > 1:
+                avg_corr = np.nanmean(collected_corr, axis=0)
+                avg_orig = np.nanmean(collected_orig, axis=0) if collected_orig else None
+                _plot_bin_line(ax_main, bin_centers, avg_corr, avg_orig, metric, 'o', color, linestyle)
+            else:
+                for lt_idx, lt in enumerate(lead_times_list):
+                    if lt_idx >= len(collected_corr):
+                        continue
+                    orig_val = collected_orig[lt_idx] if collected_orig else None
+                    _plot_bin_line(ax_main, bin_centers, collected_corr[lt_idx], orig_val,
+                                   metric, marker_map.get(lt, 'o'), color, linestyle)
 
     # Set up main axis
     # Determine ylabel and reference line based on metric
@@ -2735,6 +2751,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
     # Format lead times for title
     if len(lead_times_list) == 1:
         lead_time_str = f"Lead Time: {lead_times_list[0]}h"
+    elif average_over_lead_times:
+        lead_time_str = f"Lead Times: {', '.join(str(lt) + 'h' for lt in lead_times_list)} (averaged)"
     else:
         lead_time_str = f"Lead Times: {', '.join(str(lt) + 'h' for lt in lead_times_list)}"
 
@@ -2759,7 +2777,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
                                      label=region.replace('_', ' ').title()))
 
     # Add separator if there are more visual encodings to show
-    if len(loss_trained_on_list) > 1 or len(lead_times_list) > 1 or metric == "raw_error":
+    show_lead_time_legend = len(lead_times_list) > 1 and not average_over_lead_times
+    if len(loss_trained_on_list) > 1 or show_lead_time_legend or metric == "raw_error":
         legend_elements.append(Line2D([0], [0], color='none', label=''))
 
     # Add line style indicators for loss functions (only if multiple)
@@ -2769,8 +2788,8 @@ def plot_improvement_by_weather_bin(dirs, train_start, train_end, test_start, te
             legend_elements.append(Line2D([0], [0], color='gray', linestyle=linestyle,
                                          linewidth=2.5, label=f"Trained on {loss_trained}"))
 
-    # Add marker shape indicators for lead times (only if multiple)
-    if len(lead_times_list) > 1:
+    # Add marker shape indicators for lead times (only if multiple and not averaged)
+    if len(lead_times_list) > 1 and not average_over_lead_times:
         if len(loss_trained_on_list) > 1:
             legend_elements.append(Line2D([0], [0], color='none', label=''))
         for lt in lead_times_list:

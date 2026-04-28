@@ -42,12 +42,14 @@ from helper_funcs import setup_directories, generate_output_path
 if __name__ == "__main__":
     dirs = setup_directories()
 
-    # Model configuration: MLP with block-k3 + snapshot ensemble
+    # Model configuration: MLP snapshot ensemble x3
+    # Matches finetuning/run_experiments.sh:
+    #   --nn_architecture mlp --snapshot_ensemble=3
     model_kwargs = dict(
         nn_architecture="mlp",
-        block_ensemble=True,
-        block_holdout=3,
-        snapshot_ensemble=1,
+        snapshot_ensemble=3,
+        block_ensemble=False,
+        block_holdout=1,
         subregion="6x6",
     )
 

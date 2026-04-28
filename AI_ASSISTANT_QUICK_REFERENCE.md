@@ -10,6 +10,7 @@
 **Language**: Python 3.11+  
 **Primary Libraries**: PyTorch, xarray, Dask  
 **Main Output**: Regional temperature forecast bias correction models  
+**Environment Management**: uv using local .venv
 
 ---
 

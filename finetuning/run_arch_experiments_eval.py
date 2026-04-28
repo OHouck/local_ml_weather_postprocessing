@@ -86,11 +86,11 @@ VAR_CONFIGS = [
         'training_vars': ['10m_wind_speed'],
         'output_vars':   ['10m_wind_speed'],
     },
-    {
-        'label': '2m Temperature + 1000hPa T & q',
-        'training_vars': ['2m_temperature', 'temperature_1000hPa', 'specific_humidity_1000hPa'],
-        'output_vars':   ['2m_temperature'],
-    },
+    # {
+    #     'label': '2m Temperature + 1000hPa T & q',
+    #     'training_vars': ['2m_temperature', 'temperature_1000hPa', 'specific_humidity_1000hPa'],
+    #     'output_vars':   ['2m_temperature'],
+    # },
 ]
 
 # ---------------------------------------------------------------------------
@@ -98,57 +98,54 @@ VAR_CONFIGS = [
 # training_vars / output_vars are filled in from VAR_CONFIGS above.
 # ---------------------------------------------------------------------------
 _ARCH_TEMPLATES = [
-    {
-        'name_prefix': 'MLP',
-        'nn_architecture': 'mlp',
-        'block_ensemble': False,
-        'block_holdout': 1,
-        'snapshot_ensemble': None,
-        'snapshot_epochs': 210,
-        'snapshot_T0': 10,
-        'snapshot_T_mult': 1,
-        'ensemble': None,
-        'swa_ensemble': None,
-    },
-    {
-        'name_prefix': 'MLP Snapshot Ensemble x3',
-        'nn_architecture': 'mlp',
-        'block_ensemble': False,
-        'block_holdout': 1,
-        'snapshot_ensemble': 3,
-        'snapshot_epochs': 210,
-        'snapshot_T0': 30,
-        'snapshot_T_mult': 1,
-        'ensemble': None,
-        'swa_ensemble': None,
-    },
-    {
-        'name_prefix': 'UNet',
-        'nn_architecture': 'unet',
-        'block_ensemble': False,
-        'block_holdout': 1,
-        'snapshot_ensemble': None,
-        'snapshot_epochs': 210,
-        'snapshot_T0': 10,
-        'snapshot_T_mult': 1,
-        'ensemble': None,
-        'swa_ensemble': None,
-    },
-    {
-        'name_prefix': 'Block LTHO Ensemble',
-        'nn_architecture': 'mlp',
-        'block_ensemble': True,
-        'block_holdout': 3,
-        'snapshot_ensemble': 1,
-        'snapshot_epochs': 210,
-        'snapshot_T0': 10,
-        'snapshot_T_mult': 1,
-        'ensemble': None,
-        'swa_ensemble': None,
-    },
-    # Experiment 1: Per-Lead-Time MLP Snapshot x3
-    # Trains a separate snapshot ensemble for each lead time so each model optimizes
-    # purely for its horizon without gradient competition from other lead times.
+    # {
+    #     'name_prefix': 'MLP',
+    #     'nn_architecture': 'mlp',
+    #     'block_ensemble': False,
+    #     'block_holdout': 1,
+    #     'snapshot_ensemble': None,
+    #     'snapshot_epochs': 210,
+    #     'snapshot_T0': 10,
+    #     'snapshot_T_mult': 1,
+    #     'ensemble': None,
+    #     'swa_ensemble': None,
+    # },
+    # {
+    #     'name_prefix': 'MLP Snapshot Ensemble x3',
+    #     'nn_architecture': 'mlp',
+    #     'block_ensemble': False,
+    #     'block_holdout': 1,
+    #     'snapshot_ensemble': 3,
+    #     'snapshot_epochs': 210,
+    #     'snapshot_T0': 30,
+    #     'snapshot_T_mult': 1,
+    #     'ensemble': None,
+    #     'swa_ensemble': None,
+    # },
+    # {
+    #     'name_prefix': 'UNet',
+    #     'nn_architecture': 'unet',
+    #     'block_ensemble': False,
+    #     'block_holdout': 1,
+    #     'snapshot_ensemble': None,
+    #     'snapshot_epochs': 210,
+    #     'snapshot_T0': 10,
+    #     'snapshot_T_mult': 1,
+    #     'ensemble': None,
+    #     'swa_ensemble': None,
+    # },
+    # {
+    #     'name_prefix': 'Block LTHO Ensemble',
+    #     'nn_architecture': 'mlp',
+    #     'block_ensemble': True,
+    #     'block_holdout': 3,
+    #     'snapshot_ensemble': 1,
+    #     'snapshot_epochs': 210,
+    #     'snapshot_T0': 10,
+    #     'snapshot_T_mult': 1,
+    #     'ensemble': None,
+    #     'swa_ensemble': None,
+    # },
     {
         'name_prefix': 'Per-LT MLP Snapshot x3',
         'nn_architecture': 'mlp',
@@ -207,14 +204,15 @@ def main():
     # Each experiment picks the set that matches its architecture / training mode.
     _hp_cache = {}
 
-    def get_hyperparams(arch, training_vars, use_snapshot, use_block_ltho):
-        key = (arch, tuple(training_vars), use_snapshot, use_block_ltho)
+    def get_hyperparams(arch, training_vars, output_vars, use_snapshot, use_block_ltho, use_per_lt):
+        key = (arch, tuple(training_vars), tuple(output_vars), use_snapshot, use_block_ltho, use_per_lt)
         if key not in _hp_cache:
             _hp_cache[key] = load_optimal_hyperparameters(
-                arch, training_vars, ['2m_temperature'],
+                arch, training_vars, output_vars,
                 alternate_loss_fn=None,
                 use_snapshot=use_snapshot,
                 use_block_ltho=use_block_ltho,
+                use_per_lt=use_per_lt,
             )
         return _hp_cache[key]
 
@@ -255,15 +253,18 @@ def main():
             args.small_output_init = exp.get('small_output_init', False)
 
             # Apply optimal hyperparameters — select the right set per experiment.
-            # Block LTHO uses its own dedicated hyperopt; plain MLP/Snapshot use
-            # the snapshot-tuned set; UNet uses non-snapshot results.
+            # Block LTHO uses its own dedicated hyperopt; per-LT uses per_lt hyperopt;
+            # plain MLP/Snapshot use the snapshot-tuned set; UNet uses non-snapshot results.
             use_block = exp['block_ensemble']
             use_snap = exp['snapshot_ensemble'] is not None
+            use_per_lt = exp.get('per_lead_time', False)
             hp = get_hyperparams(
                 exp['nn_architecture'],
                 exp.get('training_vars', ['2m_temperature']),
+                exp.get('output_vars', ['2m_temperature']),
                 use_snapshot=use_block or use_snap,
                 use_block_ltho=use_block,
+                use_per_lt=use_per_lt,
             )
             if hp:
                 args.mlp_hidden_dim = hp.get('hidden_dim', args.mlp_hidden_dim)
@@ -289,7 +290,7 @@ def main():
             # Skip if already exists
             if os.path.exists(out_path):
                 print(f"  Skipping (already exists)")
-                continue
+                # continue
 
             try:
                 run_subregion_experiment(
@@ -534,8 +535,8 @@ def run_pooled_film_experiment(exp, eval_cells, dirs, device, train_start, train
         out_path = base_path.replace('.zarr', f'_{continent}_bs{patch_idx}.zarr')
 
         if os.path.exists(out_path):
-            print(f"  Skipping {continent} patch {patch_idx} (already exists)")
-            continue
+            print(f" NOT Skipping {continent} patch {patch_idx} (already exists)")
+            # continue #XX uncomment to overwrite existing outputs
 
         test_fc_norm = patch_info['test_fc_norm']
         test_fc_out_norm = patch_info['test_fc_out_norm']
