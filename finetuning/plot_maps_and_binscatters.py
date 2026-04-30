@@ -53,6 +53,20 @@ if __name__ == "__main__":
         subregion="6x6",
     )
 
+    # large boxplot comparing IFS and pangu. currently in appendix
+    model_compare_boxplot( 
+        dirs=dirs,
+        models=["pangu", "ifs"],
+        variables=["2m_temperature", "10m_wind_speed"],
+        regions=None,  # Use default continents
+        save_dir=None,  # Auto-generate based on parameters
+        train_start="2018-01-01",
+        train_end="2021-12-31",
+        test_start="2022-01-01",
+        test_end="2022-12-31",
+        **model_kwargs
+    )
+
     #=============================================
     # Global Improvement Map Plots
     #=============================================
@@ -75,12 +89,12 @@ if __name__ == "__main__":
                 **model_kwargs
             )
 
-    # Create plot comparing model binscatters: Currently in Appendix
-    for x_metric in ["sdor", "equator_distance"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            _ = model_compare_binscatter(
-                dirs=dirs,
-                variable=variable,
-                x_metric=x_metric,
-                **model_kwargs
-            )
+    # Create plot comparing model binscatters: Currently unused
+    # for x_metric in ["sdor", "equator_distance"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         _ = model_compare_binscatter(
+    #             dirs=dirs,
+    #             variable=variable,
+    #             x_metric=x_metric,
+    #             **model_kwargs
+    #         )

@@ -22,21 +22,32 @@ Key findings in the paper:
 
 ```
 ai_weather_ag/
-├── finetuning/                          # PRIMARY MODULE
-│   ├── finetune.py                      # Main training entry point
-│   ├── prepare_forecasts_and_targets.py # Data loading (load_forecasts)
-│   ├── figures_finetuning.py            # All paper figure generation
-│   ├── process_forecasts.py             # Compute statistics across output files
-│   ├── custom_loss_fns.py               # Alternative loss functions
-│   ├── hyperparam_tuning.py             # Bayesian hyperparameter search
-│   ├── clean_and_sample_climate_zones.py  # Bootstrap zone sampling
-│   ├── plot_maps_and_binscatters.py     # Script → paper Figs 1–3
-│   ├── plot_arch_experiment_results.py  # Script → paper Fig 4
-│   └── plot_region_size_results.py      # Script → paper Fig 5
+├── finetuning/                              # PRIMARY MODULE
+│   ├── finetune.py                          # Main training entry point
+│   ├── prepare_forecasts_and_targets.py     # Data loading (load_forecasts)
+│   ├── figures_finetuning.py                # All paper figure generation
+│   ├── process_forecasts.py                 # Compute statistics across output files
+│   ├── custom_loss_fns.py                   # Alternative loss functions
+│   ├── hyperparam_tuning.py                 # Bayesian hyperparameter search
+│   ├── hyperparam_tuning.sh                 # SLURM script for hyperopt
+│   ├── clean_and_sample_climate_zones.py    # Bootstrap zone sampling
+│   │
+│   ├── run_experiments.sh                   # SLURM: main global experiment runs (continents)
+│   ├── run_region_size_experiments.sh       # SLURM: region size ablation (Finland/Amazon)
+│   ├── run_custom_loss_experiments.sh       # SLURM: custom loss experiments (Ethiopia/India)
+│   ├── run_arch_experiments.sh              # SLURM: architecture experiment driver
+│   ├── run_arch_experiments_eval.py         # Python: run arch experiments on 5% eval cell sample
+│   ├── run_improvement_regression.py        # OLS regression of improvement on geographic features
+│   │
+│   ├── plot_maps_and_binscatters.py         # Script → paper Figs 1–3
+│   ├── plot_arch_experiment_results.py      # Script → paper Fig 4
+│   ├── plot_region_size_results.py          # Script → paper Fig 5
+│   └── plot_custom_loss.py                  # Script → custom loss evaluation figures
 │
-├── helper_funcs.py                      # setup_directories(), generate_output_path()
-├── hyperopt_results_*/                  # Saved Bayesian hyperopt results (JSON)
-└── CLAUDE.md                            # This file
+├── helper_funcs.py                          # setup_directories(), generate_output_path(),
+│                                            #   load_all_continent_patches(), sample_continent_patches()
+├── hyperopt_results_*/                      # Saved Bayesian hyperopt results (JSON)
+└── CLAUDE.md                                # This file
 ```
 
 ---
@@ -67,17 +78,22 @@ forecast_data/
 Entry point for training a post-processing model on a region.
 
 **Model classes defined here**:
-- `SimpleMLP` — flattens spatial patch, concatenates day-of-year sin/cos and learned lead-time embedding, passes through fully connected layers
+- `SimpleMLP` — flattens spatial patch, concatenates day-of-year sin/cos and learned lead-time embedding, passes through fully connected layers; supports `small_output_init`
 - `UNet` — encoder-decoder with skip connections; caps channels at 128; number of pooling levels auto-calculated from patch size
+- `PooledFiLMMLP` — global model trained across all patches simultaneously; uses FiLM conditioning on a 4-dim region descriptor (sin/cos lat/lon); designed for multi-patch pooled training experiments
 - `ClassifierMLP` — used only for classification-based loss experiments (e.g., heatwave duration)
 
 **Key functions**:
 - `parse_args()` — defines all CLI flags (see below)
 - `get_region_grid(args)` — returns lat/lon arrays for named regions or global grids
 - `train_model(...)` — training loop with Adam optimizer, ReduceLROnPlateau scheduler, early stopping, AMP on CUDA
-- `apply_correction(...)` — inference: predicts error and adds to raw forecast
+- `train_model_cosine(...)` — cosine annealing training (used for snapshot ensembles)
+- `train_model_weighted(...)` — training with optional lead-time loss weights and C-Mixup augmentation
+- `train_swa_ensemble(...)` — stochastic weight averaging ensemble training
+- `apply_correction(...)` — inference: predicts error and adds to raw forecast; supports MC dropout
 - `save_output(...)` — writes corrected+original+ground_truth to zarr, organized by lead time
-- `load_optimal_hyperparameters(arch, training_vars, output_vars, loss_fn)` — reads best params from `hyperopt_results_*/optimization_results_{arch}.json`
+- `load_optimal_hyperparameters(arch, training_vars, output_vars, alternate_loss_fn, use_snapshot, use_block_ltho, use_per_lt)` — reads best params from appropriate `hyperopt_results_*/optimization_results_{arch}.json`
+- `run_subregion_experiment(...)` — trains and evaluates a single patch; called by `run_arch_experiments_eval.py`
 
 **The model predicts forecast error, not the weather value directly**:
 ```
@@ -103,35 +119,57 @@ REGION_CENTERS = {
 
 **CLI flags**:
 ```
---data_dir           Raw data directory
---output_dir         Where to write output zarrs (REQUIRED)
---model_name         pangu | ifs | aifs (REQUIRED)
---region             Region name (default: india)
---subregion          Patch size, e.g. 6x6 (default: 2x2)
---lead_time_hours    List of lead times in hours, e.g. 24 120 216
---training_vars      Input variable(s), e.g. 2m_temperature
---output_vars        Variable(s) to correct, e.g. 2m_temperature
---train_start/end    Date range YYYY-MM-DD
---test_start/end     Date range YYYY-MM-DD
---nn_architecture    mlp | unet | resmlp | rescnn (default: mlp)
---alternate_loss_fn  extreme_heat_loss | mortality_weighted_loss | quantile_loss |
-                     heatwave_loss | joint_temp_wind_loss
---bootstrap          N  (run N bootstrap samples of subregions)
---growing_season_only  Filter training to growing season only
---ensemble           N  (train N seed-diverse MLPs, average predictions)
---snapshot_ensemble  N  (train N snapshot ensemble runs, recommended: 3-5)
---snapshot_epochs    Total epochs per snapshot run (default: 210)
---snapshot_T0        Cosine cycle period for snapshots (default: 30)
---mlp_hidden_dim     (default: 1024)
---mlp_num_layers     (default: 6)
---mlp_dropout        (default: 0.25)
---unet_hidden_dim    (default: 64, max channels capped at 128)
---unet_dropout       (default: 0.1)
+--data_dir               Raw data directory
+--output_dir             Where to write output zarrs (REQUIRED)
+--model_name             pangu | ifs | aifs (REQUIRED)
+--ground_truth_source    Alternate ground truth source (default: "")
+--region                 Region name (default: india)
+--subregion              Patch size, e.g. 6x6 (default: 2x2)
+--lead_time_hours        List of lead times in hours, e.g. 24 120 216
+--training_vars          Input variable(s), e.g. 2m_temperature
+--output_vars            Variable(s) to correct, e.g. 2m_temperature
+--train_start/end        Date range YYYY-MM-DD
+--test_start/end         Date range YYYY-MM-DD
+--nn_architecture        mlp | unet | gated_mlp (default: mlp)
+--alternate_loss_fn      extreme_heat_loss | mortality_weighted_loss | quantile_loss |
+                         heatwave_loss | joint_temp_wind_loss
+--bootstrap              N  (run N bootstrap samples of subregions)
+--growing_season_only    Filter training to growing season only
+--pca_components         N  (reduce input dim via PCA before training; 0 = disabled)
+
+# Ensemble methods
+--ensemble               N  (train N seed-diverse MLPs, average predictions)
+--snapshot_ensemble      N  (train N snapshot ensemble runs, recommended: 3)
+--snapshot_epochs        Total epochs per snapshot run (default: 210)
+--snapshot_T0            Cosine cycle period for snapshots (default: auto)
+--snapshot_T_mult        Cosine annealing multiplier (default: 1)
+--swa_ensemble           N  (stochastic weight averaging ensemble runs)
+--swa_warmup_epochs      Warmup epochs before SWA (default: 150)
+--swa_epochs             SWA averaging epochs (default: 60)
+--swa_T0                 SWA cosine cycle period (default: 20)
+--mc_dropout_samples     N  (MC dropout inference samples; 0 = disabled)
+
+# Block leave-time-holdout ensemble
+--block_ensemble         Train separate model per held-out year block
+--block_holdout          N  years held out per block (default: 3)
+
+# Per-lead-time training
+--per_lead_time          Train separate model per lead time (works with snapshot and block ensembles)
+
+# Advanced
+--lead_time_loss_weights  Per-lead-time loss weights (space-separated floats)
+--cmixup_alpha           C-Mixup data augmentation alpha (0 = disabled)
+--small_output_init      Initialize output layer with small weights
+--mlp_hidden_dim         (default: 1024)
+--mlp_num_layers         (default: 2)
+--mlp_dropout            (default: 0.244)
+--unet_hidden_dim        (default: 64, max channels capped at 128)
+--unet_dropout           (default: 0.1)
 ```
 
 **Standard training periods by model**:
 - Pangu / IFS: train 2018–2021, test 2022
-- AIFS: train 2021–2023, test 2024
+- AIFS: train 2022–2023, test 2024
 
 ### 2. `finetuning/figures_finetuning.py` — Figure Generation
 
@@ -143,9 +181,19 @@ All paper figures come from functions in this file. The `plot_*.py` scripts call
 |----------|-------------|-------------|
 | `map_global_improvements(pixel_level=True)` | Fig 1, Appendix maps | Global map of RMSE % improvement per pixel |
 | `lead_time_compare_binscatter()` | Figs 2, 3 | Binscatter of improvement vs equator distance or SDOR, by lead time |
-| `plot_rmse_improvement()` | Fig 4 | Bar chart comparing architectures/input configs on India 6x6 |
+| `plot_rmse_improvement()` | Fig 4 | Bar chart comparing architectures/input configs |
 | `generate_subregion_comparison_plots()` | Fig 5 | RMSE improvement vs training domain size (Finland/Amazon) |
 | `model_compare_boxplot()` | Appendix Fig 6 | IFS vs Pangu improvement comparison boxplot |
+
+**Additional figure functions**:
+- `map_forecasts(...)` — maps of original vs corrected forecasts for a region; used for joint temp-wind model visualizations
+- `plot_improvement_by_weather_bin(...)` — improvement vs weather value bin (evaluates custom loss functions; called by `plot_custom_loss.py`)
+- `plot_arch_experiment_results(...)` — aggregated bar chart from eval-cell architecture experiments
+- `map_arch_exeriment_regions(...)` — map showing which patches were used in arch experiments
+- `plot_raw_forecast_values(...)` — raw forecast value distributions
+- `plot_error_cutoff(...)` — error frequency above cutoff threshold
+- `plot_scatter_forecast_improvement(...)` — scatter: improvement vs geographic features
+- `model_compare_binscatter(...)` — binscatter comparing IFS vs Pangu
 
 **Supporting functions**:
 - `load_region_data(dirs, model, variable, regions, ...)` — loads all matching zarr files for given model/arch/subregion config, returns dict keyed by lead time
@@ -208,14 +256,25 @@ pangu/india/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h
 
 ## Hyperparameter Search
 
-Hyperparameters are tuned via Bayesian optimization in `hyperparam_tuning.py`, run on central India 6×6. Results saved to:
+Hyperparameters are tuned via Bayesian optimization in `hyperparam_tuning.py`, run on a random 10% sample of continent patches. Results saved to mode-specific directories:
+
 ```
-hyperopt_results_{temperature|wind}_{mlp|unet}/optimization_results_{arch}.json
-hyperopt_results_multivar_{temperature|wind}_{mlp|unet}/...  (multi-variable input)
-hyperopt_results_joint_{mlp|unet}/...                         (multi-output)
+hyperopt_results_temperature_mlp/         # Single MLP (temperature)
+hyperopt_results_wind_mlp/                # Single MLP (wind speed)
+hyperopt_results_temperature_unet/        # UNet (temperature)
+hyperopt_results_wind_speed_unet/         # UNet (wind speed)
+hyperopt_results_snapshot_temperature_mlp/  # Snapshot ensemble (temperature)
+hyperopt_results_snapshot_wind_mlp/         # Snapshot ensemble (wind speed)
+hyperopt_results_multivar_temperature_mlp/  # Multi-variable input
+hyperopt_results_multivar_temperature_unet/
+hyperopt_results_per_lt_temperature_mlp/    # Per-lead-time MLP (temperature)
+hyperopt_results_per_lt_wind_mlp/           # Per-lead-time MLP (wind speed)
+hyperopt_results_block_ltho_temperature_mlp/ # Block leave-time-holdout ensemble
+hyperopt_results_block_ltho_wind_mlp/
+hyperopt_results_joint_wind_temperature_24h_mlp/  # Joint temp+wind model
 ```
 
-`finetune.py` loads these automatically via `load_optimal_hyperparameters()` unless architecture flags are passed explicitly on the CLI.
+`finetune.py` loads the appropriate set automatically via `load_optimal_hyperparameters()` based on the architecture and training mode flags, unless architecture flags are passed explicitly on the CLI.
 
 ---
 
@@ -224,10 +283,10 @@ hyperopt_results_joint_{mlp|unet}/...                         (multi-output)
 | Name | Use Case |
 |------|----------|
 | MSE (default) | Standard mean squared error |
-| `extreme_heat_loss` | Penalizes errors on hot days more heavily |
-| `mortality_weighted_loss` | Weights errors by mortality risk curve |
+| `extreme_heat_loss` | Penalizes errors on hot days more heavily (T>25°C: 6×, T>30°C: 11×) |
+| `mortality_weighted_loss` | Weights errors by mortality risk curve (Carleton et al. 2022) |
 | `quantile_loss` | Quantile regression |
-| `heatwave_loss` | Classification of heatwave duration events |
+| `heatwave_loss` | Duration-weighted MSE based on consecutive days above threshold |
 | `joint_temp_wind_loss` | Jointly optimizes temperature and wind speed |
 
 Custom losses that operate on Celsius (not normalized) values use `is_normalized=True` during training and `is_normalized=False` for evaluation.
@@ -248,7 +307,34 @@ python3 finetuning/finetune.py \
     --lead_time_hours 24 120 216 \
     --train_start 2018-01-01 --train_end 2021-12-31 \
     --test_start 2022-01-01 --test_end 2022-12-31 \
-    --nn_architecture mlp
+    --nn_architecture mlp \
+    --snapshot_ensemble 3 \
+    --per_lead_time
+```
+
+### Run global experiments (continent patches, IFS)
+```bash
+sbatch finetuning/run_experiments.sh
+```
+
+### Run architecture experiments
+```bash
+sbatch finetuning/run_arch_experiments.sh   # calls run_arch_experiments_eval.py
+```
+
+### Run custom loss experiments
+```bash
+sbatch finetuning/run_custom_loss_experiments.sh
+```
+
+### Run region size ablation
+```bash
+sbatch finetuning/run_region_size_experiments.sh
+```
+
+### Run improvement regression analysis
+```bash
+python3 finetuning/run_improvement_regression.py
 ```
 
 ### Regenerate paper figures
@@ -256,6 +342,7 @@ python3 finetuning/finetune.py \
 python3 finetuning/plot_maps_and_binscatters.py   # Figs 1, 2, 3
 python3 finetuning/plot_arch_experiment_results.py # Fig 4
 python3 finetuning/plot_region_size_results.py     # Fig 5
+python3 finetuning/plot_custom_loss.py             # Custom loss evaluation figures
 ```
 
 ### Run hyperparameter tuning
@@ -272,8 +359,9 @@ python3 finetuning/hyperparam_tuning.py \
 
 - **Don't hardcode data paths** — always use `setup_directories()` from `helper_funcs.py`
 - **Adding a new machine**: edit the hostname check in `helper_funcs.setup_directories()`
-- **MLP with snapshot ensemble is the recommended approach**: `--snapshot_ensemble 3` gives ~+20% MSE improvement in <1 min. Single MLP trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
+- **MLP with snapshot ensemble + per_lead_time is the recommended approach**: `--snapshot_ensemble 3 --per_lead_time` trains separate models per lead time with 3-run snapshot ensembles. Single MLP trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
 - **Extra input variables hurt or are neutral**: paper shows single-variable input is best for correcting 2m_temperature
 - **Bootstrap regions**: climate/topographic zones use `--bootstrap N`; filenames contain `bs*` and `filter_patch_zarr_files` matches on that pattern
 - **SDOR data** (standard deviation of orography from ERA5) must be loaded separately before calling `lead_time_compare_binscatter` with `x_metric="sdor"`
 - **Paper uses 6×6 degree patches globally** — all continent-based training runs use `--subregion 6x6`
+- **Continent patch sampling**: `helper_funcs.sample_continent_patches()` samples a reproducible fraction of patches from continent zarr outputs; `split='hyperopt'` and `split='eval'` produce disjoint subsets so hyperopt and arch-experiment evaluation don't overlap

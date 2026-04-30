@@ -61,7 +61,7 @@ regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 # regions=("africa" "asia")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
-model_names=("pangu")
+model_names=("ifs")
 loss_functions=("mse") # options: mse, extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
 # Define bootstrap regions
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")

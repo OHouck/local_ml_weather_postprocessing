@@ -76,7 +76,8 @@ def calculate_improvement_percentage(rmse_original, rmse_corrected):
 
 
 def _build_arch_suffix(nn_architecture, block_ensemble=False, block_holdout=1,
-                       snapshot_ensemble=None):
+                       snapshot_ensemble=None, alternate_loss_fn=None,
+                       per_lead_time=False):
     """
     Build the architecture string that appears in output filenames,
     replicating the logic in helper_funcs.generate_output_path().
@@ -90,6 +91,9 @@ def _build_arch_suffix(nn_architecture, block_ensemble=False, block_holdout=1,
     _build_arch_suffix("unet")                                     -> "unet"
     """
     suffix = nn_architecture
+    if alternate_loss_fn:
+        suffix += f"_{alternate_loss_fn}"
+
     if block_ensemble:
         holdout_str = f"k{block_holdout}" if block_holdout != 1 else ""
         suffix += f"_block{holdout_str}"
@@ -97,13 +101,19 @@ def _build_arch_suffix(nn_architecture, block_ensemble=False, block_holdout=1,
             suffix += f"_snapshot{snapshot_ensemble}"
     elif snapshot_ensemble:
         suffix += f"_snapshot{snapshot_ensemble}"
+
+    if per_lead_time:
+        suffix += "_perlt"
+
     return suffix
 
 
 def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_end="2021-12-31",
                             test_start="2022-01-01", test_end="2022-12-31",
                             nn_architecture="mlp", subregion="2x2", alternate_loss_fn=None,
-                            snapshot_ensemble=None, block_ensemble=False, block_holdout=1):
+                            snapshot_ensemble=None, block_ensemble=False, block_holdout=1,
+                            per_lead_time=False,
+                            training_vars=None, output_vars=None, lead_times=None):
     """
     Filter zarr files in a zone directory to match specific model configuration.
 
@@ -143,48 +153,53 @@ def filter_patch_zarr_files(zone_dir, variable, train_start="2018-01-01", train_
     list
         List of matching zarr file paths
     """
-    import re as _re
-
     if not os.path.exists(zone_dir):
         return []
 
-    # Get all zarr files containing the variable
-    all_files = glob.glob(os.path.join(zone_dir, f"*{variable}*.zarr"))
+    if training_vars is None:
+        training_vars = [variable]
+    if output_vars is None:
+        output_vars = [variable]
+    if lead_times is None:
+        lead_times = [24, 120, 216]
 
-    # Build the pattern to match based on generate_output_path structure
-    dates_str = f"train{train_start}-{train_end}_test{test_start}-{test_end}"
-    dim_str = f"dim{subregion}"
-
-    # Build architecture string replicating generate_output_path logic
-    arch_str = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
-                                  snapshot_ensemble)
-    if alternate_loss_fn:
-        # loss fn is inserted between nn_architecture and the block/snapshot suffixes,
-        # so rebuild: base_arch + loss + block/snapshot
-        base = nn_architecture + f"_{alternate_loss_fn}"
-        arch_str = _build_arch_suffix(base, block_ensemble, block_holdout, snapshot_ensemble)
-
-    # Match arch_str as an exact suffix, allowing for optional zone label and bootstrap index.
-    # Handles three forms:
-    #   ..._mlp_blockk3_snapshot1.zarr                (plain run)
-    #   ..._mlp_blockk3_snapshot1_bs40.zarr           (bootstrap, no zone label)
-    #   ..._mlp_blockk3_snapshot1_africa_bs40.zarr    (bootstrap with zone label)
-    # Negative lookahead prevents matching files that have additional arch-suffix tokens
-    # (e.g. _perlt, _ltw, _soi) inserted between arch_str and the zone/bootstrap suffix.
-    # Such files come from different training configurations and must not be mixed in.
-    _extra_arch = r'(?!_(?:perlt|ltw|soi|block(?:k\d+)?|pca\d*|cmix\w*|swa\d+|ensemble\d+))'
-    arch_pattern = _re.compile(
-        rf"_{_re.escape(arch_str)}{_extra_arch}(?:(?:_[a-z_]+)?_bs\d+)?\.zarr$"
+    # Build the exact filename stem that generate_output_path() would produce,
+    # then glob a wildcard suffix so eval/bootstrap variants still match.
+    path_args = SimpleNamespace(
+        model_name="pangu",
+        ground_truth_source="",
+        region=os.path.basename(zone_dir),
+        subregion=subregion,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        training_vars=training_vars,
+        output_vars=output_vars,
+        lead_time_hours=lead_times,
+        nn_architecture=nn_architecture,
+        alternate_loss_fn=alternate_loss_fn,
+        snapshot_ensemble=snapshot_ensemble,
+        block_ensemble=block_ensemble,
+        block_holdout=block_holdout,
+        per_lead_time=per_lead_time,
     )
+    expected_stem = os.path.splitext(os.path.basename(generate_output_path(path_args)))[0]
 
-    # Filter files that match the model configuration
+    # Match the exact file (regular continent run) OR eval/bootstrap variants.
+    # Bootstrap/eval files are named {stem}_{region}_bs{N}.zarr (with the
+    # region name anchored immediately after the stem and no wildcard between
+    # them). This avoids false matches from other variants sharing the same
+    # stem prefix (e.g. mlp_snapshot3_perlt_asia_bs{N} when searching for
+    # mlp_snapshot3).
+    region_name = os.path.basename(zone_dir)
+    exact_file = os.path.join(zone_dir, f"{expected_stem}.zarr")
     matching_files = []
-    for file_path in all_files:
-        basename = os.path.basename(file_path)
-        if (dates_str in basename and
-                dim_str in basename and
-                arch_pattern.search(basename)):
-            matching_files.append(file_path)
+    if os.path.exists(exact_file):
+        matching_files.append(exact_file)
+    matching_files.extend(
+        glob.glob(os.path.join(zone_dir, f"{expected_stem}_{region_name}_bs*.zarr"))
+    )
 
     return matching_files
 
@@ -193,6 +208,8 @@ def load_region_data(
     dirs,
     model="pangu",
     variable="10m_wind_speed",
+    training_vars=None,
+    output_vars=None,
     regions=None,
     train_start="2018-01-01",
     train_end="2021-12-31",
@@ -205,7 +222,8 @@ def load_region_data(
     sdor_da=None,
     snapshot_ensemble=None,
     block_ensemble=False,
-    block_holdout=1
+    block_holdout=1,
+    per_lead_time=False,
 ):
     """
     Load and process zarr data for multiple regions.
@@ -221,6 +239,10 @@ def load_region_data(
         Model to use: "pangu" or "ifs"
     variable : str
         Variable to plot: "2m_temperature", "10m_wind_speed", or "total_precipitation"
+    training_vars : list, optional
+        Training variables used in the saved model filename. Defaults to [variable].
+    output_vars : list, optional
+        Output variables used in the saved model filename. Defaults to [variable].
     regions : list, optional
         List of regions to include. If None, uses:
         ["asia", "africa", "north_america", "south_america", "europe", "oceania"]
@@ -248,6 +270,8 @@ def load_region_data(
         Whether block leave-one-out ensemble was used (default: False)
     block_holdout : int, optional
         Block holdout size for block ensemble (default: 1)
+    per_lead_time : bool, optional
+        Whether the model was trained separately per lead time (default: False)
 
     Returns
     -------
@@ -272,6 +296,10 @@ def load_region_data(
     # Default lead times
     if lead_times is None:
         lead_times = [24, 120, 216]
+    if training_vars is None:
+        training_vars = [variable]
+    if output_vars is None:
+        output_vars = [variable]
 
     # Base directory for the model
     base_dir = os.path.join(dirs["raw"], "..", "processed", "finetuning_output", model)
@@ -282,12 +310,16 @@ def load_region_data(
     print(f"Lead times: {lead_times}")
     print(f"Model config: {nn_architecture}, subregion={subregion}, "
           f"train={train_start} to {train_end}, test={test_start} to {test_end}")
+    print(f"Training vars: {training_vars}")
+    print(f"Output vars: {output_vars}")
     if alternate_loss_fn:
         print(f"Alternate loss function: {alternate_loss_fn}")
     if block_ensemble:
         print(f"Block ensemble: block_holdout={block_holdout}, snapshot_ensemble={snapshot_ensemble}")
     elif snapshot_ensemble:
         print(f"Snapshot ensemble: {snapshot_ensemble}")
+    if per_lead_time:
+        print("Per-lead-time training: enabled")
 
     # Collect patch data for each lead time
     all_patch_data = {lt: [] for lt in lead_times}
@@ -305,8 +337,21 @@ def load_region_data(
             test_start, test_end, nn_architecture, subregion, alternate_loss_fn,
             snapshot_ensemble=snapshot_ensemble,
             block_ensemble=block_ensemble,
-            block_holdout=block_holdout
+            block_holdout=block_holdout,
+            per_lead_time=per_lead_time,
+            training_vars=training_vars,
+            output_vars=output_vars,
+            lead_times=lead_times,
         )
+
+        # Validate file count against the expected number of region patches
+        patches_npy = os.path.join(dirs["processed"], f"{region}_patches.npy")
+        if os.path.exists(patches_npy):
+            expected_count = len(np.load(patches_npy, allow_pickle=True))
+            if len(zarr_files) != expected_count:
+                print(f"  Warning: {region} has {len(zarr_files)} matching zarr files "
+                      f"but {expected_count} patches in {region}_patches.npy "
+                      f"(expected 1 file per patch).")
 
         print(f"\nProcessing {region}: found {len(zarr_files)} matching files")
 
@@ -1333,7 +1378,7 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                         test_end, model, variable, nn_architecture="mlp",
                                         growing_season_only=False, alternate_loss_fn=None,
                                         snapshot_ensemble=None, block_ensemble=False,
-                                        block_holdout=1):
+                                        block_holdout=1, per_lead_time=False):
     """
     Creates single-panel plot showing RMSE improvement for different subregion sizes for a specific variable.
     Compares center 4x4 region across different training region sizes.
@@ -1356,6 +1401,14 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
         Whether to use growing season data only
     alternate_loss_fn : str or None
         Alternative loss function name
+    snapshot_ensemble : int or None
+        Number of snapshot ensemble runs (default: None)
+    block_ensemble : bool
+        Whether block leave-time-holdout ensemble was used (default: False)
+    block_holdout : int
+        Block holdout size for block ensemble (default: 1)
+    per_lead_time : bool
+        Whether separate models were trained per lead time (default: False)
     """
     from matplotlib.lines import Line2D
 
@@ -1406,7 +1459,8 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
             alternate_loss_fn=alternate_loss_fn,
             snapshot_ensemble=snapshot_ensemble,
             block_ensemble=block_ensemble,
-            block_holdout=block_holdout
+            block_holdout=block_holdout,
+            per_lead_time=per_lead_time
         )
 
         path_6x6 = os.path.join(input_folder, generate_output_path(args_6x6))
@@ -1453,7 +1507,8 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                 alternate_loss_fn=alternate_loss_fn,
                 snapshot_ensemble=snapshot_ensemble,
                 block_ensemble=block_ensemble,
-                block_holdout=block_holdout
+                block_holdout=block_holdout,
+                per_lead_time=per_lead_time
             )
 
             path = os.path.join(input_folder, generate_output_path(args))
@@ -1965,18 +2020,11 @@ def _load_eval_cell_results(exp, eval_cells, input_folder, model, variable,
             lead_time_hours=lead_times,
             nn_architecture=exp['architecture'],
             snapshot_ensemble=exp.get('snapshot_ensemble', None),
-            ensemble=None,
-            swa_ensemble=None,
             block_ensemble=exp.get('block_ensemble', False),
             block_holdout=exp.get('block_holdout', 1),
-            growing_season_only=False,
             alternate_loss_fn=None,
             ground_truth_source="",
-            pca_components=0,
-            lead_time_loss_weights=exp.get('lead_time_loss_weights', None),
-            cmixup_alpha=exp.get('cmixup_alpha', 0.0),
             per_lead_time=exp.get('per_lead_time', False),
-            small_output_init=exp.get('small_output_init', False),
         )
 
         base_path = os.path.join(input_folder, generate_output_path(args))
@@ -4672,7 +4720,10 @@ def model_compare_boxplot(
     test_end="2022-12-31",
     nn_architecture="mlp",
     subregion="6x6",
-    alternate_loss_fn=None
+    alternate_loss_fn=None,
+    snapshot_ensemble=None,
+    block_ensemble=False,
+    block_holdout=1
 ):
     """
     Create grouped boxplot comparing RMSE % improvement across models and lead times.
@@ -4707,6 +4758,12 @@ def model_compare_boxplot(
         Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    snapshot_ensemble : int, optional
+        Number of snapshot ensemble runs (default: None = plain training)
+    block_ensemble : bool, optional
+        Whether block leave-one-out ensemble was used (default: False)
+    block_holdout : int, optional
+        Block holdout size for block ensemble (default: 1)
 
     Returns
     -------
@@ -4764,7 +4821,10 @@ def model_compare_boxplot(
                 subregion=subregion,
                 alternate_loss_fn=alternate_loss_fn,
                 lead_times=lead_times,
-                sdor_da=None
+                sdor_da=None,
+                snapshot_ensemble=snapshot_ensemble,
+                block_ensemble=block_ensemble,
+                block_holdout=block_holdout
             )
 
             if all_patch_data is None:

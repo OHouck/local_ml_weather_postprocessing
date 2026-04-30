@@ -44,24 +44,13 @@ def generate_output_path(args):
         model_str = "mlp"
     elif args.nn_architecture == 'unet':
         model_str = "unet"
-    elif args.nn_architecture == 'gated_mlp':
-        model_str = "gated_mlp"
-    elif args.nn_architecture == 'pooled_film':
-        model_str = "pooled_film"
     else:
         raise ValueError(f"Unknown nn_architecture: {args.nn_architecture}")
     if args.alternate_loss_fn is not None:
         model_str += f"_{args.alternate_loss_fn}"
 
-    # Append PCA suffix if PCA dimensionality reduction is used
-    pca_components = getattr(args, 'pca_components', 0)
-    if pca_components > 0:
-        model_str += f"_pca{pca_components}"
-
-    # Append snapshot/ensemble/swa/block suffix so runs don't collide in the output directory
+    # Append snapshot/block suffix so runs don't collide in the output directory
     n_snapshot = getattr(args, 'snapshot_ensemble', None)
-    n_ensemble = getattr(args, 'ensemble', None)
-    n_swa = getattr(args, 'swa_ensemble', None)
     use_block = getattr(args, 'block_ensemble', False)
     block_holdout = getattr(args, 'block_holdout', 1)
     if use_block:
@@ -71,30 +60,12 @@ def generate_output_path(args):
             model_str += f"_snapshot{n_snapshot}"
     elif n_snapshot:
         model_str += f"_snapshot{n_snapshot}"
-    elif n_swa:
-        model_str += f"_swa{n_swa}"
-    elif n_ensemble:
-        model_str += f"_ensemble{n_ensemble}"
-
-    # Append lead-time-weighted loss suffix
-    lt_weights = getattr(args, 'lead_time_loss_weights', None)
-    if lt_weights is not None:
-        model_str += "_ltw"
-
-    # Append C-Mixup suffix
-    cmixup_alpha = getattr(args, 'cmixup_alpha', 0.0)
-    if cmixup_alpha > 0:
-        model_str += f"_cmix{cmixup_alpha:.1f}".replace('.', 'p')
 
     # Append per-lead-time suffix
     if getattr(args, 'per_lead_time', False):
         model_str += "_perlt"
 
-    # Append small output init suffix
-    if getattr(args, 'small_output_init', False):
-        model_str += "_soi"
-
-    if args.growing_season_only:
+    if getattr(args, 'growing_season_only', False):
         grow_str = "_growing_season"
     else:
         grow_str = ""

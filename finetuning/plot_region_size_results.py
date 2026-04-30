@@ -29,6 +29,8 @@ def main():
     test_end = "2022-12-31"
     model = "pangu"
     nn_architecture = "mlp"
+    snapshot_ensemble = 3
+    per_lead_time = False  # Set to True if using per-lead-time training
 
     for var in ["2m_temperature", "10m_wind_speed"]:
         # Generate plots
@@ -42,7 +44,9 @@ def main():
             variable=var,
             nn_architecture=nn_architecture,
             growing_season_only=False,
-            alternate_loss_fn=None
+            alternate_loss_fn=None,
+            snapshot_ensemble=snapshot_ensemble,
+            per_lead_time=per_lead_time
         )
 
     print("\n" + "=" * 80)

@@ -27,9 +27,25 @@ from finetuning.figures_finetuning import load_region_data
 CLIMATE_ZONE_NAMES = {1: "tropical", 2: "arid", 3: "temperate", 4: "cold", 5: "polar"}
 
 
-def build_pixel_dataframe(dirs, model, variable, lead_times, nn_architecture="mlp",
-                          subregion="6x6", train_start="2018-01-01", train_end="2021-12-31",
-                          test_start="2022-01-01", test_end="2022-12-31"):
+def build_pixel_level_dataframe(
+    dirs,
+    model,
+    variable,
+    lead_times,
+    nn_architecture="mlp",
+    training_vars=None,
+    output_vars=None,
+    snapshot_ensemble=None,
+    per_lead_time=False,
+    block_ensemble=False,
+    block_holdout=1,
+    alternate_loss_fn=None,
+    subregion="6x6",
+    train_start="2018-01-01",
+    train_end="2021-12-31",
+    test_start="2022-01-01",
+    test_end="2022-12-31",
+):
     """
     Build a pixel-level DataFrame with improvement, latitude, SDOR, and climate zone.
     Uses vectorized xarray lookups for speed.
@@ -45,15 +61,26 @@ def build_pixel_dataframe(dirs, model, variable, lead_times, nn_architecture="ml
     cz_ds = xr.open_dataset(climate_zones_path, engine="netcdf4")
     cz_da = cz_ds["climate_zones"] if "climate_zones" in cz_ds else cz_ds[list(cz_ds.data_vars)[0]]
 
+    if training_vars is None:
+        training_vars = [variable]
+    if output_vars is None:
+        output_vars = [variable]
+
     # Load region data (returns dict keyed by lead time)
     print(f"Loading region data for {variable}...")
     all_patch_data = load_region_data(
         dirs=dirs, model=model, variable=variable,
+        training_vars=training_vars, output_vars=output_vars,
         regions=None,  # all continents
         train_start=train_start, train_end=train_end,
         test_start=test_start, test_end=test_end,
         nn_architecture=nn_architecture, subregion=subregion,
-        lead_times=lead_times, sdor_da=None  # we'll do SDOR ourselves vectorized
+        alternate_loss_fn=alternate_loss_fn,
+        lead_times=lead_times, sdor_da=None,  # do SDOR separately later
+        snapshot_ensemble=snapshot_ensemble,
+        block_ensemble=block_ensemble,
+        block_holdout=block_holdout,
+        per_lead_time=per_lead_time,
     )
 
     if all_patch_data is None:
@@ -131,6 +158,11 @@ def build_pixel_dataframe(dirs, model, variable, lead_times, nn_architecture="ml
     df = pd.concat(all_rows, ignore_index=True)
     print(f"  Total pixels: {len(df):,}")
     return df
+
+
+def build_pixel_dataframe(*args, **kwargs):
+    """Compatibility wrapper for older callers of build_pixel_level_dataframe."""
+    return build_pixel_level_dataframe(*args, **kwargs)
 
 
 def run_regression(df, variable_name):
@@ -217,7 +249,9 @@ def main():
         print(f"\n{'='*60}")
         print(f"Building dataframe: {variable}")
         print(f"{'='*60}")
-        df = build_pixel_dataframe(dirs, model, variable, lead_times)
+        df = build_pixel_level_dataframe(dirs, model, variable, lead_times, 
+            nn_architecture="mlp", snapshot_ensemble=3, block_ensemble=False, 
+            block_holdout=1, per_lead_time=False)
         if df is not None and len(df) > 0:
             m = run_regression(df, variable.replace('_', ' ').title())
             reg_models.append(m)
