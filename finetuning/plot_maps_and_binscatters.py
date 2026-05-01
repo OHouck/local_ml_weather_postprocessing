@@ -54,28 +54,29 @@ if __name__ == "__main__":
     )
 
     # large boxplot comparing IFS and pangu. currently in appendix
-    model_compare_boxplot( 
-        dirs=dirs,
-        models=["pangu", "ifs"],
-        variables=["2m_temperature", "10m_wind_speed"],
-        regions=None,  # Use default continents
-        save_dir=None,  # Auto-generate based on parameters
-        train_start="2018-01-01",
-        train_end="2021-12-31",
-        test_start="2022-01-01",
-        test_end="2022-12-31",
-        **model_kwargs
-    )
+    # model_compare_boxplot( 
+    #     dirs=dirs,
+    #     models=["pangu", "ifs"],
+    #     variables=["2m_temperature", "10m_wind_speed"],
+    #     regions=None,  # Use default continents
+    #     save_dir=None,  # Auto-generate based on parameters
+    #     train_start="2018-01-01",
+    #     train_end="2021-12-31",
+    #     test_start="2022-01-01",
+    #     test_end="2022-12-31",
+    #     **model_kwargs
+    # )
+
 
     #=============================================
     # Global Improvement Map Plots
     #=============================================
-    for model in ["pangu", "ifs"]:
-        for variable in ["2m_temperature", "10m_wind_speed"]:
-            print(f"Creating global improvement map for {model} - {variable}")
-            map_global_improvements(dirs=dirs, model=model,
-                                    variable=variable, map_type="improvement",
-                                    pixel_level=True, **model_kwargs)
+    # for model in ["pangu", "ifs"]:
+    #     for variable in ["2m_temperature", "10m_wind_speed"]:
+    #         print(f"Creating global improvement map for {model} - {variable}")
+    #         map_global_improvements(dirs=dirs, model=model,
+    #                                 variable=variable, map_type="improvement",
+    #                                 pixel_level=True, **model_kwargs)
     #=============================================
     # Binscatter Plots
     #=============================================
@@ -86,6 +87,7 @@ if __name__ == "__main__":
                 dirs=dirs,
                 model=model,
                 x_metric=x_metric,
+                include_mean_bias_correction_baseline=True,
                 **model_kwargs
             )
 

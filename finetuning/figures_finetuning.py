@@ -2382,7 +2382,24 @@ def _plot_arch_bar_chart(
                edgecolor='black', linewidth=0.5, label=legend_label, zorder=3,
                yerr=stds, error_kw=err_kw)
 
-    ax.set_ylim(-2.5, 20)
+    sources = [
+        (results[exp['name']][lt], std_results[exp['name']].get(lt, 0))
+        for exp in experiments for lt in lead_times
+        if results[exp['name']][lt] is not None
+    ] + [
+        (mean_bias_results[lt], mean_bias_std.get(lt, 0))
+        for lt in lead_times
+        if mean_bias_results[lt] is not None
+    ]
+    if sources:
+        tops = [v + (s or 0) for v, s in sources]
+        bottoms = [v - (s or 0) for v, s in sources]
+        ymax = max(tops) * 1.12
+        ymin = min(0, min(bottoms) - 0.5)
+    else:
+        ymax, ymin = 25, 0
+    ax.set_ylim(ymin, ymax)
+
     ax.set_ylabel("RMSE Improvement (%)", fontsize=20)
     ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
     ax.set_xticks(range(len(lead_times)))
@@ -2400,13 +2417,12 @@ def _plot_arch_bar_chart(
     ax.set_axisbelow(True)
     ax.tick_params(axis='both', labelsize=16)
 
-    ax.annotate("Whiskers show ±1 std across eval cells", xy=(1, 0), xycoords='axes fraction',
-                fontsize=10, color='gray', ha='right', va='top',
-                xytext=(0, -6), textcoords='offset points')
+    ax.annotate("Whiskers show ±1 std across eval cells", xy=(0.99, 0.02), xycoords='axes fraction',
+                fontsize=12, color='gray', ha='right', va='bottom')
 
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.12),
-              ncol=3, fontsize=10, framealpha=0.95, edgecolor='gray',
+              ncol=3, fontsize=14, framealpha=0.95, edgecolor='gray',
               columnspacing=1.0, handlelength=1.5, handletextpad=0.5)
 
     ax.spines['top'].set_visible(False)
@@ -3905,7 +3921,8 @@ def lead_time_compare_binscatter(
     alternate_loss_fn=None,
     snapshot_ensemble=None,
     block_ensemble=False,
-    block_holdout=1
+    block_holdout=1,
+    include_mean_bias_correction_baseline=False,
 ):
     """
     Create 2x2 binscatter comparison across lead times.
@@ -3945,6 +3962,11 @@ def lead_time_compare_binscatter(
         Subregion size pattern (default: "6x6")
     alternate_loss_fn : str, optional
         Alternate loss function name if used (default: None)
+    include_mean_bias_correction_baseline : bool, optional
+        If True, overlay mean-bias-correction benchmark lines on the improvement
+        panels using hollow semi-transparent markers and dotted fit lines.
+        Legend distinguishes filled circles (main model) from hollow circles
+        (benchmark). Default: False.
 
     Returns
     -------
@@ -4054,6 +4076,21 @@ def lead_time_compare_binscatter(
                 add_zero_line=True
             )
 
+            # Overlay mean-bias-correction benchmark (hollow markers, dotted line)
+            mb_data = pixel_data.get('mean_bias_improvement')
+            if include_mean_bias_correction_baseline and mb_data is not None:
+                _plot_binscatter(
+                    ax=ax_improvement,
+                    x=pixel_data['x'],
+                    y=mb_data,
+                    color=colors[lead_time],
+                    label=None,
+                    lead_time=lead_time,
+                    is_first=False,
+                    add_zero_line=False,
+                    hollow=True,
+                )
+
         # Set labels and titles for this row
         variable_title = variable.replace("_", " ").title()
 
@@ -4076,7 +4113,30 @@ def lead_time_compare_binscatter(
 
         # Add legend to first row
         if row_idx == 0:
-            axes[row_idx, 1].legend(loc='upper right', fontsize=10, framealpha=0.9)
+            if include_mean_bias_correction_baseline:
+                lead_time_handles = [
+                    Line2D([0], [0], color=colors[lt], marker='o', markersize=8,
+                           linewidth=2, label=lead_time_labels[lt])
+                    for lt in lead_times
+                ]
+                method_handles = [
+                    Line2D([0], [0], color='black', marker='o', markersize=8,
+                           linewidth=2, label='Main model (filled)'),
+                    Line2D([0], [0], color='black', marker='o', markersize=8,
+                           linewidth=2, linestyle=':', mfc='none',
+                           label='Mean bias correction (hollow)'),
+                ]
+                legend1 = axes[row_idx, 1].legend(
+                    handles=lead_time_handles, title='Lead time',
+                    loc='upper right', fontsize=10, framealpha=0.9
+                )
+                axes[row_idx, 1].add_artist(legend1)
+                axes[row_idx, 1].legend(
+                    handles=method_handles, title='Method',
+                    loc='lower right', fontsize=10, framealpha=0.9
+                )
+            else:
+                axes[row_idx, 1].legend(loc='upper right', fontsize=10, framealpha=0.9)
 
     # Add overall title
     title = f'{model.upper()} - Lead Time Comparison\n'
@@ -4345,7 +4405,8 @@ def _plot_binscatter(ax, x, y, color, label,
                      lead_time=None,
                      is_first=False,
                      add_zero_line=False,
-                     add_styling=False):
+                     add_styling=False,
+                     hollow=False):
     """
     Create a binscatter plot with cubic polynomial fit.
 
@@ -4382,6 +4443,9 @@ def _plot_binscatter(ax, x, y, color, label,
         Whether to add horizontal line at y=0 (only if is_first=True)
     add_styling : bool, default=False
         Whether to add axis labels, grid, and legend (for standalone plots)
+    hollow : bool, default=False
+        If True, render hollow markers with a dotted fit line at reduced opacity,
+        used for the mean-bias-correction benchmark overlay.
 
     Returns
     -------
@@ -4519,8 +4583,11 @@ def _plot_binscatter(ax, x, y, color, label,
     actual_marker_size = np.sqrt(marker_size) if add_styling else marker_size
     ax.errorbar(bin_x, bin_y, yerr=yerr,
                 fmt='o', color=color,
+                mfc='none' if hollow else color,
+                mew=1.5 if hollow else 1.0,
                 markersize=actual_marker_size,
-                ecolor=color, alpha=0.7, capsize=3, capthick=1.5,
+                ecolor=color, alpha=0.35 if hollow else 0.7,
+                capsize=3, capthick=1.5,
                 label=scatter_label)
 
     # Fit a cubic polynomial to the bin means
@@ -4534,10 +4601,13 @@ def _plot_binscatter(ax, x, y, color, label,
 
         # Plot cubic fit line
         line_label = 'Cubic fit' if add_styling else None
-        line_style = 'r--' if add_styling else '--'
-        line_color = None if add_styling else color
-        ax.plot(x_smooth, y_smooth, line_style, color=line_color,
-                linewidth=2, alpha=0.8, label=line_label)
+        if add_styling:
+            ax.plot(x_smooth, y_smooth, 'r--', linewidth=2, alpha=0.8, label=line_label)
+        else:
+            ax.plot(x_smooth, y_smooth, color=color, linewidth=2,
+                    alpha=0.4 if hollow else 0.8,
+                    linestyle=':' if hollow else '--',
+                    label=line_label)
 
         print(f"  Plotted cubic polynomial fit to {len(bin_x)} bin means")
     else:
@@ -4588,6 +4658,7 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
     rmse_original = []
     rmse_corrected = []
     improvement = []
+    mean_bias_improvement = []
 
     var_suffix = f"_lt{lead_time}h"
 
@@ -4606,62 +4677,70 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
         # Check shape of data - could be (time, lat, lon) or just (lat, lon)
         data_shape = ground_truth.shape
 
+        # Load mean-corrected baseline data once (shape-independent)
+        mean_corr_key = f"{variable}_mean_corrected{var_suffix}"
+        mc_data = ds[mean_corr_key].values if mean_corr_key in ds else None
+
         if len(data_shape) == 3:
             # Data has time dimension: (time, lat, lon)
-            # Calculate pixel-level RMSE by averaging across time
             n_time, n_lat, n_lon = data_shape
 
-            # Calculate squared errors: (time, lat, lon)
             orig_se = (original - ground_truth) ** 2
             corr_se = (corrected - ground_truth) ** 2
 
-            # Calculate RMSE for each pixel by taking sqrt of mean across time
-            # This gives us (lat, lon) arrays
             pixel_rmse_original = np.sqrt(np.nanmean(orig_se, axis=0))
             pixel_rmse_corrected = np.sqrt(np.nanmean(corr_se, axis=0))
-
-            # Calculate improvement percentage for each pixel
             pixel_improvement = ((pixel_rmse_original - pixel_rmse_corrected) /
                                (pixel_rmse_original + 1e-10)) * 100
 
-            # Create spatial grids (no time dimension needed)
+            pixel_rmse_mean_corr = (
+                np.sqrt(np.nanmean((mc_data - ground_truth) ** 2, axis=0))
+                if mc_data is not None else None
+            )
             lon_grid, lat_grid = np.meshgrid(lons, lats)
 
         elif len(data_shape) == 2:
             # Data has no time dimension: (lat, lon)
-            # Calculate squared errors directly
             orig_se = (original - ground_truth) ** 2
             corr_se = (corrected - ground_truth) ** 2
 
-            # RMSE is just sqrt of squared error (no time averaging)
             pixel_rmse_original = np.sqrt(orig_se)
             pixel_rmse_corrected = np.sqrt(corr_se)
-
-            # Calculate improvement percentage
             pixel_improvement = ((pixel_rmse_original - pixel_rmse_corrected) /
                                (pixel_rmse_original + 1e-10)) * 100
 
-            # Create spatial grids
+            pixel_rmse_mean_corr = (
+                np.sqrt((mc_data - ground_truth) ** 2)
+                if mc_data is not None else None
+            )
             lon_grid, lat_grid = np.meshgrid(lons, lats)
 
         else:
             print(f"Warning: Unexpected data shape {data_shape}")
             continue
 
+        if pixel_rmse_mean_corr is not None:
+            pixel_mean_bias_impr = ((pixel_rmse_original - pixel_rmse_mean_corr) /
+                                    (pixel_rmse_original + 1e-10)) * 100
+        else:
+            pixel_mean_bias_impr = np.full_like(pixel_improvement, np.nan)
+
         # Now flatten the pixel-level statistics (one value per spatial pixel)
         pixel_rmse_original_flat = pixel_rmse_original.flatten()
         pixel_rmse_corrected_flat = pixel_rmse_corrected.flatten()
         pixel_improvement_flat = pixel_improvement.flatten()
+        pixel_mean_bias_impr_flat = pixel_mean_bias_impr.flatten()
         lat_flat = lat_grid.flatten()
         lon_flat = lon_grid.flatten()
 
-        # Remove NaN values
+        # Remove NaN values (only based on the three required fields)
         mask = ~(np.isnan(pixel_rmse_original_flat) |
                  np.isnan(pixel_rmse_corrected_flat) |
                  np.isnan(pixel_improvement_flat))
         pixel_rmse_original_flat = pixel_rmse_original_flat[mask]
         pixel_rmse_corrected_flat = pixel_rmse_corrected_flat[mask]
         pixel_improvement_flat = pixel_improvement_flat[mask]
+        pixel_mean_bias_impr_flat = pixel_mean_bias_impr_flat[mask]
         lat_flat = lat_flat[mask]
         lon_flat = lon_flat[mask]
 
@@ -4685,6 +4764,7 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
             pixel_rmse_original_flat = pixel_rmse_original_flat[valid_mask]
             pixel_rmse_corrected_flat = pixel_rmse_corrected_flat[valid_mask]
             pixel_improvement_flat = pixel_improvement_flat[valid_mask]
+            pixel_mean_bias_impr_flat = pixel_mean_bias_impr_flat[valid_mask]
         else:
             print(f"Warning: Unknown x_metric '{x_metric}' or missing sdor_da")
             return None
@@ -4694,13 +4774,16 @@ def _extract_pixel_level_data(patch_data, variable, lead_time, x_metric, sdor_da
         rmse_original.extend(pixel_rmse_original_flat)
         rmse_corrected.extend(pixel_rmse_corrected_flat)
         improvement.extend(pixel_improvement_flat)
+        mean_bias_improvement.extend(pixel_mean_bias_impr_flat)
 
     # Convert to numpy arrays
+    mb_arr = np.array(mean_bias_improvement) if mean_bias_improvement else None
     result = {
         'x': np.array(x_values),
         'rmse_original': np.array(rmse_original),
         'rmse_corrected': np.array(rmse_corrected),
-        'improvement': np.array(improvement)
+        'improvement': np.array(improvement),
+        'mean_bias_improvement': None if (mb_arr is None or np.all(np.isnan(mb_arr))) else mb_arr,
     }
 
     print(f"  Extracted {len(result['x'])} pixels")
