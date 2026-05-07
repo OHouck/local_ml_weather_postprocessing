@@ -1378,7 +1378,8 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
                                         test_end, model, variable, nn_architecture="mlp",
                                         growing_season_only=False, alternate_loss_fn=None,
                                         snapshot_ensemble=None, block_ensemble=False,
-                                        block_holdout=1, per_lead_time=False):
+                                        block_holdout=1, per_lead_time=False,
+                                        save_dir=None):
     """
     Creates single-panel plot showing RMSE improvement for different subregion sizes for a specific variable.
     Compares center 4x4 region across different training region sizes.
@@ -1600,17 +1601,20 @@ def generate_subregion_comparison_plots(dirs, train_start, train_end, test_start
     plt.tight_layout()
 
     # Save figure
-    out_folder = os.path.join(dirs["fig"], model, "subregion")
-    os.makedirs(out_folder, exist_ok=True)
-
     arch_suffix = _build_arch_suffix(nn_architecture, block_ensemble, block_holdout,
                                      snapshot_ensemble)
     fname = f"region_size_comparison_{variable}_{arch_suffix}_{model}.png"
+    if save_dir is not None:
+        out_folder = save_dir
+    else:
+        out_folder = os.path.join(dirs["fig"], model, "subregion")
+    os.makedirs(out_folder, exist_ok=True)
     save_path = os.path.join(out_folder, fname)
 
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     print(f"\nFigure saved to: {save_path}")
     plt.close()
+    return save_path
 
 
 def _prepare_dataframe(csv_path, variable, regions, subregion, nn_architectures, 
@@ -2096,6 +2100,7 @@ def plot_arch_experiment_results(
     test_start="2022-01-01",
     test_end="2022-12-31",
     eval_cells=None,
+    save_dir=None,
 ):
     """
     Plot RMSE improvement for all architecture variants for one variable config.
@@ -2180,7 +2185,10 @@ def plot_arch_experiment_results(
         mean_bias_results[lt] = np.mean(vals) if vals else None
         mean_bias_std[lt] = np.std(vals) if vals else None
 
-    out_folder = os.path.join(dirs["fig"], model, "architecture_comparison")
+    if save_dir is not None:
+        out_folder = save_dir
+    else:
+        out_folder = os.path.join(dirs["fig"], model, "architecture_comparison")
     os.makedirs(out_folder, exist_ok=True)
     _plot_arch_bar_chart(
         experiments, results, std_results, training_times,
@@ -5035,101 +5043,4 @@ if __name__ == "__main__":
     dirs = setup_directories()
 
 
-    # model_compare_boxplot(
-    #     dirs=dirs,
-    #     models=["pangu", "ifs"],
-    #     variables=["2m_temperature", "10m_wind_speed"],
-    #     regions=None,  # Use default continents
-    #     save_dir=None,  # Auto-generate based on parameters
-    #     train_start="2018-01-01",
-    #     train_end="2021-12-31",
-    #     test_start="2022-01-01",
-    #     test_end="2022-12-31",
-    #     nn_architecture="mlp",
-    #     subregion="6x6",
-    #     alternate_loss_fn=None
-    # )
 
-
-#=============================================
-# Binned RMSE Improvement Plots
-#=============================================
-    # dirs = setup_directories()
-    # var = "2m_temperature"
-    # loss_train_on = ["extreme_heat", "mse"]
-    # metric = "error_difference"  
-    # lead_time =216  # 9 days
-    # training_outptut_vars = ([var], [var])
-    # variable = var
-    # plot_improvement_by_weather_bin(dirs = dirs, train_start="2018-01-01", train_end ="2021-12-31",
-    #                             test_start="2022-01-01", test_end="2022-12-31",
-    #                             model="pangu",
-    #                             training_output_vars=training_outptut_vars,
-    #                             variable=variable,
-    #                             nn_architecture="mlp",
-    #                             lead_time=lead_time,
-    #                             regions=["india", "ethiopia"],
-    #                             subregion="6x6",
-    #                             n_bins=10,
-    #                             loss_trained_on=loss_train_on,
-    #                             metric=metric
-    #                             )
-
-
-#=============================================
-# Lead Time Plots (by region and lead time)
-#=============================================
-
-    nn_architectures = ['mlp'] # can be ['mlp'], ['unet'], or ['mlp', 'unet'] which plots both at once
-    variable_list = ["2m_temperature", "10m_wind_speed"]
-    model_list = ["pangu"]
-    geo_regions = ["india", "amazon", "ethiopia", "usa_south", "corn_belt"]
-    climate_regions = ["tropical", "arid", "temperate"]
-    topo_regions = ["flat", "hilly", "mountainous"]
-    growing_season_flags = [False]
-    stat_path = os.path.join(dirs["processed"], "forecast_improvement_stats.csv")
-    for var in variable_list:
-        for model in model_list:
-            for gs_flag in growing_season_flags:
-                for regions in [geo_regions, climate_regions, topo_regions]:
-                    if regions == climate_regions or regions == topo_regions:
-                        subregion = "2x2"
-                    elif regions == geo_regions:
-                        subregion = "6x6"
-                    for loss_train_on in ["mse", "extreme_heat"]:
-                        if model == "aifs" and not gs_flag:
-                            # aifs results are only for growing season
-                            continue
-
-                        # for evaluation_loss in ["rmse", "extreme_heat"]:
-                        #     plot_rmse_improvement(csv_path = stat_path,
-                        #         dirs=dirs,
-                        #         variable=var,
-                        #         model=model,
-                        #         regions=regions,
-                        #         subregion=subregion,
-                        #         nn_architectures=nn_architectures,
-                        #         growing_season_only=gs_flag,
-                        #         loss_trained_on=loss_train_on,
-                        #         evaluation_loss=evaluation_loss
-                        #     )
-                        # plot_raw_forecast_values(csv_path = stat_path,
-                        #     dirs=dirs,
-                        #     variable=var,
-                        #     model=model,
-                        #     regions=regions,
-                        #     subregion=subregion,
-                        #     nn_architectures=nn_architectures,
-                        #     growing_season_only=gs_flag,
-                        #     loss_trained_on=loss_train_on
-                        # )
-                        plot_error_cutoff(csv_path = stat_path,
-                            dirs=dirs,
-                            variable=var,
-                            model=model,
-                            regions=regions,
-                            subregion=subregion,
-                            nn_architectures=nn_architectures,
-                            growing_season_only=gs_flag,
-                            loss_trained_on=loss_train_on
-                        )

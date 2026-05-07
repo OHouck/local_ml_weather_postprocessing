@@ -71,25 +71,25 @@ if __name__ == "__main__":
     #=============================================
     # Global Improvement Map Plots
     #=============================================
-    # for model in ["pangu", "ifs"]:
-    #     for variable in ["2m_temperature", "10m_wind_speed"]:
-    #         print(f"Creating global improvement map for {model} - {variable}")
-    #         map_global_improvements(dirs=dirs, model=model,
-    #                                 variable=variable, map_type="improvement",
-    #                                 pixel_level=True, **model_kwargs)
+    for model in ["pangu", "ifs"]:
+        for variable in ["2m_temperature", "10m_wind_speed"]:
+            print(f"Creating global improvement map for {model} - {variable}")
+            map_global_improvements(dirs=dirs, model=model,
+                                    variable=variable, map_type="original",
+                                    pixel_level=False, **model_kwargs)
     #=============================================
     # Binscatter Plots
     #=============================================
     # overlaying lead times for single model: Currently plot used for main paper
-    for model in ["pangu", "ifs"]:
-        for x_metric in ["sdor", "equator_distance"]:
-            _ = lead_time_compare_binscatter(
-                dirs=dirs,
-                model=model,
-                x_metric=x_metric,
-                include_mean_bias_correction_baseline=True,
-                **model_kwargs
-            )
+    # for model in ["pangu", "ifs"]:
+    #     for x_metric in ["sdor", "equator_distance"]:
+    #         _ = lead_time_compare_binscatter(
+    #             dirs=dirs,
+    #             model=model,
+    #             x_metric=x_metric,
+    #             include_mean_bias_correction_baseline=True,
+    #             **model_kwargs
+    #         )
 
     # Create plot comparing model binscatters: Currently unused
     # for x_metric in ["sdor", "equator_distance"]:
