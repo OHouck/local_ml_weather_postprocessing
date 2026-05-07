@@ -43,27 +43,17 @@ training_output_vars=(
     # Minimal: Use only the output variable for training
     "2m_temperature|2m_temperature"
 
-    # partial:use 3 vars
-    # "2m_temperature temperature_1000hPa specific_humidity_1000hPa|2m_temperature"
-
-    # Full: Use all 6 variables for training (best performance from experiments)
-    # "2m_temperature 10m_wind_speed|2m_temperature 10m_wind_speed"
-
     "10m_wind_speed|10m_wind_speed"
 )
 
 subregions=(6x6)
-# regions=("tropical" "temperate" "arid")
-# regions=("flat" "mountainous" "hilly")
-# subregions=(2x2)
-# regions=("ethiopia" "india" "amazon" "usa_south" "tropical" "temperate" "arid" "flat" "mountainous" "hilly")
 regions=("africa" "asia" "europe" "north_america" "south_america" "oceania")
 # regions=("africa" "asia")
 all_lead_times=(24 120 216)
 nn_architectures=("mlp")
-model_names=("ifs")
+model_names=("pangu") # set to be either pangu or ifs
 loss_functions=("mse") # options: mse, extreme_heat_loss, mortality_weighted_loss, joint_temp_wind_loss
-# Define bootstrap regions
+# Define bootstrap regions (no longer used)
 bootstrap_regions=("temperate" "tropical" "arid" "flat" "hilly" "mountainous")
 
 for region in "${regions[@]}"; do
