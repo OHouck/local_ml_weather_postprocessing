@@ -23,7 +23,7 @@ Key findings in the paper:
 ```
 ai_weather_ag/
 ├── finetuning/                              # PRIMARY MODULE
-│   ├── finetune.py                          # Main training entry point
+│   ├── post_process.py                          # Main training entry point
 │   ├── prepare_forecasts_and_targets.py     # Data loading (load_forecasts)
 │   ├── figures_finetuning.py                # All paper figure generation
 │   ├── process_forecasts.py                 # Compute statistics across output files
@@ -73,7 +73,7 @@ forecast_data/
 
 ## Three Key Files
 
-### 1. `finetuning/finetune.py` — Training Script
+### 1. `finetuning/post_process.py` — Training Script
 
 Entry point for training a post-processing model on a region.
 
@@ -83,6 +83,9 @@ Entry point for training a post-processing model on a region.
 - `PooledFiLMMLP` — global model trained across all patches simultaneously; uses FiLM conditioning on a 4-dim region descriptor (sin/cos lat/lon); designed for multi-patch pooled training experiments
 - `ClassifierMLP` — used only for classification-based loss experiments (e.g., heatwave duration)
 
+**Configuration object**:
+- `PostProcessConfig` — dataclass replacing the argparse `Namespace` in the core training path. All fields have defaults matching `parse_args()`. Accepted anywhere `args` was used. `PostProcessConfig.from_args(args)` builds a config from a CLI Namespace.
+
 **Key functions**:
 - `parse_args()` — defines all CLI flags (see below)
 - `get_region_grid(args)` — returns lat/lon arrays for named regions or global grids
@@ -91,9 +94,16 @@ Entry point for training a post-processing model on a region.
 - `train_model_weighted(...)` — training with optional lead-time loss weights and C-Mixup augmentation
 - `train_swa_ensemble(...)` — stochastic weight averaging ensemble training
 - `apply_correction(...)` — inference: predicts error and adds to raw forecast; supports MC dropout
-- `save_output(...)` — writes corrected+original+ground_truth to zarr, organized by lead time
+- `build_output_dataset(...)` — builds the `xr.Dataset` with `{var}_{kind}_lt{N}h` variables (does not write to disk)
+- `write_output_zarr(ds_out, output_path)` — writes a built dataset to zarr with standard chunking/encoding
+- `save_output(...)` — thin wrapper over `build_output_dataset` + `write_output_zarr`; kept for backward compat
 - `load_optimal_hyperparameters(arch, training_vars, output_vars, alternate_loss_fn, use_snapshot, use_block_ltho, use_per_lt)` — reads best params from appropriate `hyperopt_results_*/optimization_results_{arch}.json`
 - `run_subregion_experiment(...)` — trains and evaluates a single patch; called by `run_arch_experiments_eval.py`
+
+**Importable public API** (for "bring your own forecast" use):
+- `post_process_forecasts(forecast_ds, ground_truth_ds, config, output_path=None, device=None, return_model=True)` — top-level entry point; takes xarray Datasets plus a `PostProcessConfig`, trains the model, optionally writes zarr, returns a `PostProcessResult`
+- `PostProcessResult` — dataclass holding `output_dataset`, `metrics` (pd.DataFrame), `training_time_minutes`, `model`, `stats_train`, `stats_out`, `pca_transformer`
+- `compute_test_metrics(output_ds, config)` — computes RMSE/improvement DataFrame from an output dataset using the same metric definitions as `process_forecasts.py`
 
 **The model predicts forecast error, not the weather value directly**:
 ```
@@ -160,6 +170,8 @@ REGION_CENTERS = {
 --lead_time_loss_weights  Per-lead-time loss weights (space-separated floats)
 --cmixup_alpha           C-Mixup data augmentation alpha (0 = disabled)
 --small_output_init      Initialize output layer with small weights
+--seed                   Base random seed for all draws (default: 58); used as offset for all
+                         per-branch seeds so the full run is reproducible
 --mlp_hidden_dim         (default: 1024)
 --mlp_num_layers         (default: 2)
 --mlp_dropout            (default: 0.244)
@@ -205,7 +217,23 @@ All paper figures come from functions in this file. The `plot_*.py` scripts call
 - `cartopy` for map projections
 - SDOR (standard deviation of orography) data from ERA5 for Figure 3
 
-### 3. `finetuning/process_forecasts.py` — Statistics Aggregation
+### 3. `finetuning/prepare_forecasts_and_targets.py` — Data Loading
+
+Loads and preprocesses forecast and ground-truth data into the numpy arrays consumed by the training core.
+
+**Public functions**:
+- `load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, ...)` — opens zarr files, slices the requested region/time range, and returns a 13-tuple of numpy arrays: `(fc, fc_output, obs, lead_time_indices, day_of_year_features, time_values, lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error)`
+- `prepare_arrays_from_datasets(forecast_ds, ground_truth_ds, config, train=True)` — BYO entry point; accepts xarray Datasets with dims `(time, prediction_timedelta, latitude, longitude)` and returns the same 13-tuple as `load_forecasts`
+
+**Internal helpers**:
+- `_arrays_from_inmemory_datasets(forecast_ds, obs_ds, config, time_values_np, lead_times_td)` — shared processing body called by both `load_forecasts` and `prepare_arrays_from_datasets`; single source of truth for wind-speed derivation, stacking/reshape, NaN removal, and mean forecast error
+- `_compute_time_selection(config, train)` — returns `(time_values_np, lead_times_td)` from config date ranges
+
+**xarray Dataset conventions** for `prepare_arrays_from_datasets`:
+- `forecast_ds`: dims `time`, `prediction_timedelta` (timedelta64 at requested lead times), `latitude`, `longitude`; variables named per `config.training_vars`; if `10m_wind_speed` is requested, `10m_u_component_of_wind` and `10m_v_component_of_wind` must be present
+- `ground_truth_ds`: dims `time`, `latitude`, `longitude`; same variable names and grid as `forecast_ds`
+
+### 4. `finetuning/process_forecasts.py` — Statistics Aggregation
 
 Reads output zarr files across all region/model/variable combinations and aggregates into a summary CSV. Used for structured comparison tables.
 
@@ -214,6 +242,10 @@ Reads output zarr files across all region/model/variable combinations and aggreg
 Computes per-file: RMSE original, RMSE corrected, % improvement, extreme-heat RMSE, mean forecast values, error frequency above cutoff threshold.
 
 For bootstrap regions (climate/topographic zones): aggregates across bootstrap samples with 95% CIs via t-distribution.
+
+**Factored helper** (also used by the importable API):
+- `compute_metrics_for_output_dataset(ds, prediction_var, lead_time, bootstrap_idx=None)` — computes all per-lead-time metrics for one variable/lead-time combination; called by both `calculate_and_save_statistics` and `compute_test_metrics` in `post_process.py`
+- `ERROR_CUTOFFS` — module-level dict of per-variable error thresholds used in frequency-above-cutoff stats
 
 ---
 
@@ -274,7 +306,7 @@ hyperopt_results_block_ltho_wind_mlp/
 hyperopt_results_joint_wind_temperature_24h_mlp/  # Joint temp+wind model
 ```
 
-`finetune.py` loads the appropriate set automatically via `load_optimal_hyperparameters()` based on the architecture and training mode flags, unless architecture flags are passed explicitly on the CLI.
+`post_process.py` loads the appropriate set automatically via `load_optimal_hyperparameters()` based on the architecture and training mode flags, unless architecture flags are passed explicitly on the CLI.
 
 ---
 
@@ -297,7 +329,7 @@ Custom losses that operate on Celsius (not normalized) values use `is_normalized
 
 ### Train a post-processing model
 ```bash
-python3 finetuning/finetune.py \
+python3 finetuning/post_process.py \
     --output_dir ~/data/fine_tuning_output \
     --model_name pangu \
     --region india \

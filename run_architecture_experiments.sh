@@ -86,7 +86,7 @@ run_experiment() {
 
     local log_file=${LOG_DIR}/${exp_name}_$(date +%Y%m%d_%H%M%S).log
 
-    python3 -u finetuning/finetune.py \
+    python3 -u finetuning/post_process.py \
         --region=${REGION} \
         --subregion=${SUBREGION} \
         --model_name=${MODEL} \

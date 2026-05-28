@@ -25,9 +25,9 @@ import pickle
 from types import SimpleNamespace
 from typing import Dict, Any
 
-# Import model classes and utilities from finetune.py
+# Import model classes and utilities from post_process.py
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from finetuning.finetune import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid, train_snapshot_ensemble
+from finetuning.post_process import SimpleMLP, UNet, load_forecasts, create_dataloader, get_region_grid, train_snapshot_ensemble
 from finetuning.custom_loss_fns import (
     mortality_weighted_loss, extreme_heat_loss, quantile_loss,
     heatwave_loss, joint_temp_wind_loss
@@ -972,7 +972,7 @@ def evaluate_block_ltho_hyperparameters(hyperparams: Dict[str, Any],
     output_dim = n_output_vars * n_lat * n_lon
     n_lead_times = len(args.lead_time_hours)
 
-    # lead_time_embedding_dim is fixed at 4 to match the production default in finetune.py.
+    # lead_time_embedding_dim is fixed at 4 to match the production default in post_process.py.
     # It is not part of the search space so that the hyperopt tunes for the same
     # architecture that production uses when no explicit override is given.
     LEAD_TIME_EMB_DIM = 4
@@ -1616,14 +1616,14 @@ if __name__ == "__main__":
     #   - USE_SNAPSHOT_ENSEMBLE is automatically set to False
     #   - Objective = 4-fold leave-three-out year CV (each fold trains 1 yr, evals 3 yrs)
     #   - Results saved to hyperopt_results_block_ltho_{var}_mlp/
-    #   - finetune.py auto-loads these when --block_ensemble is passed
+    #   - post_process.py auto-loads these when --block_ensemble is passed
     #
     # For per_lt_* modes:
     #   - USE_SNAPSHOT_ENSEMBLE is automatically set to False
     #   - Objective = per-lead-time snapshot ensemble; trains n_lead_times × SNAPSHOT_OBJECTIVE_RUNS
     #     models per trial (one model per lead time per run, each with n_lead_times=1)
     #   - Results saved to hyperopt_results_per_lt_{var}_mlp/
-    #   - finetune.py auto-loads these when --per_lead_time is passed
+    #   - post_process.py auto-loads these when --per_lead_time is passed
     #
     # SNAPSHOT_OBJECTIVE_RUNS:
     #   Number of independent snapshot runs per hyperopt trial.

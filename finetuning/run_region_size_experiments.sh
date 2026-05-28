@@ -54,7 +54,7 @@ for region in "${regions[@]}"; do
             # Build base command
             # Snapshot ensemble of 3 runs (best accuracy/speed tradeoff per
             # architecture_experiments_notes.md; replaces previous UNet baseline)
-            cmd="python3 finetuning/finetune.py \
+            cmd="python3 finetuning/post_process.py \
                 --data_dir=\"$data_dir\" \
                 --output_dir=\"$output_dir\" \
                 --training_vars $training_vars \

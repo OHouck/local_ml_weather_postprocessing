@@ -4,7 +4,7 @@ description: New architectures/methods implemented to improve 24h forecast corre
 type: project
 ---
 
-Added three new methods to finetuning/finetune.py to improve 24h forecast RMSE:
+Added three new methods to finetuning/post_process.py to improve 24h forecast RMSE:
 
 **Why:** 24h lead time is hardest because errors are small and dominated by mean bias;
 the training loss is dominated by larger errors at longer lead times (120h, 216h).
@@ -12,25 +12,25 @@ the training loss is dominated by larger errors at longer lead times (120h, 216h
 ## Implemented
 
 ### 1. GatedMLP (new architecture)
-- `GatedMLP` class + `SwiGLUBlock` in finetune.py
+- `GatedMLP` class + `SwiGLUBlock` in post_process.py
 - SwiGLU gating (gate × value, SiLU activation), LayerNorm, residual connections
 - Small output initialization (std=0.01) so model starts near-zero correction
 - Auto-scales hidden_dim to match SimpleMLP param count via `_compute_gated_mlp_hidden_dim()`
   (binary search to match params; at production config h=256/layers=2, GatedMLP h=167 ≈ 364K params)
 
 ### 2. Lead-Time-Weighted Loss (`--lead_time_loss_weights`)
-- New `train_model_weighted()` function in finetune.py
+- New `train_model_weighted()` function in post_process.py
 - Weights MSE loss by lead time: e.g., 3.0x for 24h, 1.0x for 120h, 0.5x for 216h
 - Benchmark config: `lead_time_loss_weights=[3.0, 1.0, 0.5]`
 
 ### 3. C-Mixup Data Augmentation (`--cmixup_alpha`)
-- `cmixup_batch()` function in finetune.py
+- `cmixup_batch()` function in post_process.py
 - Label-aware mixup: pairs samples with similar targets (Gaussian kernel on label distance)
 - Benchmark config: `cmixup_alpha=0.4`
 - Used together with lead_time_loss_weights in the "full combo" experiment
 
 ## Files changed
-- `finetuning/finetune.py`: GatedMLP, SwiGLUBlock, cmixup_batch, train_model_weighted,
+- `finetuning/post_process.py`: GatedMLP, SwiGLUBlock, cmixup_batch, train_model_weighted,
   _compute_gated_mlp_hidden_dim; updated model init, _create_model, CLI args
 - `helper_funcs.py`: generate_output_path handles gated_mlp, _ltw, _cmix suffixes
 - `finetuning/run_arch_experiments_eval.py`: EXPERIMENTS list with 4 configs

@@ -115,7 +115,7 @@ The goal is to add three new experiments to `EXPERIMENTS` in [run_arch_experimen
 
 ### Preliminaries (read before touching code)
 
-1. Read [finetune.py](finetuning/finetune.py) end-to-end with particular attention to:
+1. Read [post_process.py](finetuning/post_process.py) end-to-end with particular attention to:
    - `SimpleMLP.__init__` / `forward` — this is the backbone you will reuse.
    - `train_model(...)` — the single-patch training loop. Note how loss is computed and where `loss_fn` is dispatched.
    - `apply_correction(...)` — inference: `corrected = raw_forecast + model(...)`. For probabilistic heads you return `μ` here.
@@ -140,7 +140,7 @@ The goal is to add three new experiments to `EXPERIMENTS` in [run_arch_experimen
        crps = sigma * (z * (2 * cdf - 1) + 2 * pdf - 1 / sqrt(pi))
        return crps.mean()
    ```
-   Register it in the `alternate_loss_fn` dispatch path in `finetune.py`.
+   Register it in the `alternate_loss_fn` dispatch path in `post_process.py`.
 2. **Add a Gaussian head to `SimpleMLP`.** Add constructor arg `probabilistic_head: str = "none"`. When `"gaussian"`, append one extra output dimension (size `2 * output_dim`) and reshape in `forward` to `(..., output_dim, 2)`. Store `head_type` so `apply_correction` knows to slice `[..., 0]` as the point estimate.
 3. **Gate on a new CLI flag.** Add `--probabilistic_head {none, gaussian}` to `parse_args`. Thread it through `run_subregion_experiment → train_model → SimpleMLP`.
 4. **Warm-start the sigma branch.** In `train_model`, when `probabilistic_head="gaussian"`, train with plain MSE on `μ` for the first 20 epochs (treat the σ branch as frozen at `log σ = 0`), then swap to `gaussian_crps_loss`. This is 3 extra lines in the epoch loop.
@@ -199,7 +199,7 @@ This one needs a **new driver**, not just a new `EXPERIMENTS` entry, because it 
    - Call `sample_continent_patches` with the full eval set (no 5% restriction — we want all land patches).
    - For each patch, call `load_forecasts` once to get `(X_patch, y_patch, lead_time, doy)`. Concatenate all patches into one big tensor, and build a parallel tensor `R_patch` of region descriptors (sin/cos lat, sin/cos lon, elevation mean, SDOR from ERA5 — already used for Figure 3, see `figures_finetuning.py::lead_time_compare_binscatter`).
    - Store a `patch_id` column so you can split the held-out test year per patch later.
-2. **New model class `PooledFiLMMLP` in `finetune.py`:**
+2. **New model class `PooledFiLMMLP` in `post_process.py`:**
    ```python
    class PooledFiLMMLP(nn.Module):
        def __init__(self, input_dim, region_dim, output_dim,

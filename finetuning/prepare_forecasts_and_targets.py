@@ -963,6 +963,207 @@ def load_combined_dataset_legacy_global(lat_values, lon_values, time_values, roo
 
 
 # ============================================================================
+# SHARED IN-MEMORY PROCESSING (used by both file-based and BYO-dataset paths)
+# ============================================================================
+
+def _compute_time_selection(config, train):
+    """Compute the requested daily time stamps and lead-time deltas for a run.
+
+    Inputs:
+        config: object with attributes train_start/train_end/test_start/test_end
+            (YYYY-MM-DD strings), growing_season_only (bool), and lead_time_hours
+            (list[int]).
+        train (bool): if True use the train_* date range, else the test_* range.
+
+    Returns:
+        tuple (time_values_np, lead_times_td) where time_values_np is a numpy
+        datetime64 array of candidate init times and lead_times_td is a list of
+        numpy.timedelta64 lead times.
+    """
+    ver_str = "train" if train else "test"
+    time_start = getattr(config, f"{ver_str}_start")
+    time_end = getattr(config, f"{ver_str}_end")
+
+    # Create time range (daily; forecasts are midnight-only and intersection filters further)
+    time_values = pd.date_range(start=time_start, end=time_end, freq='D')
+
+    # Only keep growing season dates if requested: 3-15 to 10-31
+    if config.growing_season_only:
+        time_values = time_values[
+            (((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15))) &
+            (time_values.month <= 10))
+        ]
+
+    time_values_np = time_values.to_numpy()
+    lead_times_td = [np.timedelta64(h, 'h') for h in config.lead_time_hours]
+    return time_values_np, lead_times_td
+
+
+def _arrays_from_inmemory_datasets(forecast_ds, obs_ds, config, time_values_np, lead_times_td):
+    """Convert in-memory forecast/observation Datasets into flat training arrays.
+
+    This is the single source of truth for turning aligned xarray Datasets into the
+    numpy arrays the post-processing models consume. It derives 10m wind speed from
+    u/v components when requested, intersects forecast/obs/requested times, stacks
+    (time, prediction_timedelta) into a sample dimension, reshapes spatial fields to
+    flat (n_samples, n_vars*n_lat*n_lon) feature vectors ordered [variable, lat, lon],
+    builds lead-time indices and day-of-year sin/cos features, drops NaN samples, and
+    computes the per-lead-time mean forecast error baseline.
+
+    Inputs:
+        forecast_ds (xr.Dataset): forecast fields with dims time, prediction_timedelta,
+            latitude, longitude and data vars named per config.training_vars/output_vars.
+        obs_ds (xr.Dataset): ground-truth fields with dims time, latitude, longitude.
+        config: object with training_vars, output_vars, lead_time_hours attributes.
+        time_values_np (np.ndarray): candidate init times to intersect against.
+        lead_times_td (list[np.timedelta64]): requested lead times.
+
+    Returns:
+        13-tuple: (fc, fc_output, obs, lead_time_indices, day_of_year_features,
+        times, lat_values, lon_values, n_lat, n_lon, n_training_vars, n_output_vars,
+        training_mean_forecast_error).
+    """
+    # Create wind speed if needed
+    if "10m_wind_speed" in config.training_vars or "10m_wind_speed" in config.output_vars:
+        forecast_ds["10m_wind_speed"] = np.sqrt(
+            forecast_ds["10m_u_component_of_wind"]**2 +
+            forecast_ds["10m_v_component_of_wind"]**2
+        )
+
+    if "10m_wind_speed" in config.output_vars:
+        obs_ds["10m_wind_speed"] = np.sqrt(
+            obs_ds["10m_u_component_of_wind"]**2 +
+            obs_ds["10m_v_component_of_wind"]**2
+        )
+
+    # Select common time range
+    if 'prediction_timedelta' in forecast_ds.dims:
+        forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
+    else:
+        raise ValueError("Forecast dataset is missing 'prediction_timedelta' dimension")
+
+    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
+    common_times = np.intersect1d(common_times, time_values_np)
+    forecast_ds = forecast_ds.sel(time=common_times)
+    obs_ds = obs_ds.sel(time=common_times)
+
+    # Get dimensions
+    n_time = len(common_times)
+    n_lead_times = len(lead_times_td)
+    n_lat = len(forecast_ds.latitude)
+    n_lon = len(forecast_ds.longitude)
+    n_training_vars = len(config.training_vars)
+    n_output_vars = len(config.output_vars)
+
+    # Stack all dimensions except variables
+    forecast_stacked = forecast_ds[config.training_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    forecast_output_stacked = forecast_ds[config.output_vars].stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    obs_repeated = obs_ds[config.output_vars].expand_dims(
+        prediction_timedelta=lead_times_td
+    ).stack(
+        sample=['time', 'prediction_timedelta']
+    ).to_array()
+
+    # Reorder to (sample, variable, latitude, longitude) and reshape to (n_samples, n_features)
+    # Note: .to_array() produces dims (variable, latitude, longitude, sample).
+    # We use explicit .transpose() rather than .T to get the correct
+    # (sample, variable, latitude, longitude) ordering. This ensures the flattened
+    # features are ordered as [variable, latitude, longitude], which is what
+    # downstream reshape/view operations expect (UNet, save_output, mean error).
+    if hasattr(forecast_stacked.data, 'compute'):
+        fc_vals, fc_out_vals, obs_vals = dask.compute(
+            forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
+            forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
+            obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values
+        )
+        fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
+        fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
+        obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
+    else:
+        fc_combined = forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_training_vars * n_lat * n_lon)
+        fc_output_combined = forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
+        obs_combined = obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
+
+    # Create lead time indices
+    lead_time_indices = np.tile(np.arange(n_lead_times), n_time)
+
+    # Create time array
+    all_times = np.repeat(common_times, n_lead_times)
+
+    # Create day-of-year sin/cos features
+    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
+    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
+    day_of_year_sin = np.sin(day_of_year_rad)
+    day_of_year_cos = np.cos(day_of_year_rad)
+    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
+    day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
+
+    # Remove any samples with NaN
+    valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
+    fc_combined = fc_combined[valid_mask]
+    fc_output_combined = fc_output_combined[valid_mask]
+    obs_combined = obs_combined[valid_mask]
+    lead_time_indices_combined = lead_time_indices[valid_mask]
+    day_of_year_features_combined = day_of_year_features[valid_mask]
+    all_times = all_times[valid_mask]
+
+    # Calculate mean forecast error
+    training_mean_forecast_error = {}
+
+    for lt_idx, lead_time_hours in enumerate(config.lead_time_hours):
+        mask = lead_time_indices_combined == lt_idx
+        if not np.any(mask):
+            continue
+
+        fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+        obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
+
+        mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
+
+        for var_idx, var_name in enumerate(config.output_vars):
+            key = f"{var_name}_lt{lead_time_hours}h"
+            training_mean_forecast_error[key] = mean_error[var_idx]
+
+    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
+            day_of_year_features_combined, all_times, forecast_ds.latitude.values,
+            forecast_ds.longitude.values, n_lat, n_lon,
+            n_training_vars, n_output_vars, training_mean_forecast_error)
+
+
+def prepare_arrays_from_datasets(forecast_ds, ground_truth_ds, config, train=True):
+    """Build post-processing training arrays from user-supplied xarray Datasets.
+
+    Public entry point for the "bring your own forecast" workflow: it bypasses the
+    project's on-disk zarr layout and works directly with in-memory Datasets, while
+    producing arrays identical in structure to load_forecasts().
+
+    Inputs:
+        forecast_ds (xr.Dataset): forecast fields with dims time, prediction_timedelta,
+            latitude, longitude and data vars named per config.training_vars/output_vars.
+            prediction_timedelta must be timedelta64 covering config.lead_time_hours. If
+            10m_wind_speed is requested it is derived from the u/v wind components, which
+            must then be present.
+        ground_truth_ds (xr.Dataset): observation fields with dims time, latitude,
+            longitude and the same variable names/grid as the forecast.
+        config: PostProcessConfig (or compatible object) providing training_vars,
+            output_vars, lead_time_hours, train/test date ranges, growing_season_only.
+        train (bool): select the train_* date range if True, else the test_* range.
+
+    Returns:
+        The same 13-tuple as load_forecasts().
+    """
+    time_values_np, lead_times_td = _compute_time_selection(config, train)
+    return _arrays_from_inmemory_datasets(forecast_ds, ground_truth_ds, config,
+                                          time_values_np, lead_times_td)
+
+
+# ============================================================================
 # MAIN DATA LOADING FUNCTION
 # ============================================================================
 
@@ -1007,27 +1208,8 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
              lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars,
              training_mean_forecast_error)
     """
-    # Determine time period
-    if train:
-        ver_str = "train"
-    else:
-        ver_str = "test"
-
-    time_start = getattr(args, f"{ver_str}_start")
-    time_end = getattr(args, f"{ver_str}_end")
-
-    # Create time range (daily; forecasts are midnight-only and intersection filters further)
-    time_values = pd.date_range(start=time_start, end=time_end, freq='D')
-
-    # Only keep growing season dates if requested: 3-15 to 10-31
-    if args.growing_season_only:
-        time_values = time_values[
-            (((time_values.month > 3) | ((time_values.month == 3) & (time_values.day >= 15))) &
-            (time_values.month <= 10))
-        ]
-
-    time_values_np = time_values.to_numpy()
-    lead_times_td = [np.timedelta64(h, 'h') for h in args.lead_time_hours]
+    # Determine time period and lead-time deltas (shared with BYO-dataset path)
+    time_values_np, lead_times_td = _compute_time_selection(args, train)
 
     # Determine target dataset name
     if args.ground_truth_source == "":
@@ -1298,131 +1480,12 @@ def load_forecasts(data_dir, args, lat_values, lon_values, train=True, patch_num
             print(f"  ✓ Data loaded into memory successfully")
 
     # ========================================================================
-    # PROCESS DATA FOR TRAINING
+    # PROCESS DATA FOR TRAINING (shared with BYO-dataset path)
     # ========================================================================
-
-    # Create wind speed if needed
-    if "10m_wind_speed" in args.training_vars or "10m_wind_speed" in args.output_vars:
-        forecast_ds["10m_wind_speed"] = np.sqrt(
-            forecast_ds["10m_u_component_of_wind"]**2 +
-            forecast_ds["10m_v_component_of_wind"]**2
-        )
-
-    if "10m_wind_speed" in args.output_vars:
-        obs_ds["10m_wind_speed"] = np.sqrt(
-            obs_ds["10m_u_component_of_wind"]**2 +
-            obs_ds["10m_v_component_of_wind"]**2
-        )
-
-    # Select common time range
-    if 'prediction_timedelta' in forecast_ds.dims:
-        forecast_ds = forecast_ds.sel(prediction_timedelta=lead_times_td)
-    else:
-        raise ValueError("Forecast dataset is missing 'prediction_timedelta' dimension")
-
-    common_times = np.intersect1d(forecast_ds.time.values, obs_ds.time.values)
-    common_times = np.intersect1d(common_times, time_values_np)
-    forecast_ds = forecast_ds.sel(time=common_times)
-    obs_ds = obs_ds.sel(time=common_times)
-
-    # Get dimensions
-    n_time = len(common_times)
-    n_lead_times = len(lead_times_td)
-    n_lat = len(forecast_ds.latitude)
-    n_lon = len(forecast_ds.longitude)
-    n_training_vars = len(args.training_vars)
-    n_output_vars = len(args.output_vars)
-
-    # print(f"\n  Data dimensions:")
-    # print(f"    Time steps: {n_time}")
-    # print(f"    Lead times: {n_lead_times}")
-    # print(f"    Latitude: {n_lat}")
-    # print(f"    Longitude: {n_lon}")
-    # print(f"    Training vars: {n_training_vars}")
-    # print(f"    Output vars: {n_output_vars}")
-
-    # Stack all dimensions except variables
-    forecast_stacked = forecast_ds[args.training_vars].stack(
-        sample=['time', 'prediction_timedelta']
-    ).to_array()
-
-    forecast_output_stacked = forecast_ds[args.output_vars].stack(
-        sample=['time', 'prediction_timedelta']
-    ).to_array()
-
-    obs_repeated = obs_ds[args.output_vars].expand_dims(
-        prediction_timedelta=lead_times_td
-    ).stack(
-        sample=['time', 'prediction_timedelta']
-    ).to_array()
-
-    # Reorder to (sample, variable, latitude, longitude) and reshape to (n_samples, n_features)
-    # Note: .to_array() produces dims (variable, latitude, longitude, sample).
-    # We use explicit .transpose() rather than .T to get the correct
-    # (sample, variable, latitude, longitude) ordering. This ensures the flattened
-    # features are ordered as [variable, latitude, longitude], which is what
-    # downstream reshape/view operations expect (UNet, save_output, mean error).
-    if hasattr(forecast_stacked.data, 'compute'):
-        fc_vals, fc_out_vals, obs_vals = dask.compute(
-            forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
-            forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values,
-            obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values
-        )
-        fc_combined = fc_vals.reshape(-1, n_training_vars * n_lat * n_lon)
-        fc_output_combined = fc_out_vals.reshape(-1, n_output_vars * n_lat * n_lon)
-        obs_combined = obs_vals.reshape(-1, n_output_vars * n_lat * n_lon)
-    else:
-        fc_combined = forecast_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_training_vars * n_lat * n_lon)
-        fc_output_combined = forecast_output_stacked.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
-        obs_combined = obs_repeated.transpose('sample', 'variable', 'latitude', 'longitude').values.reshape(-1, n_output_vars * n_lat * n_lon)
-
-    # Create lead time indices
-    lead_time_indices = np.tile(np.arange(n_lead_times), n_time)
-
-    # Create time array
-    all_times = np.repeat(common_times, n_lead_times)
-
-    # Create day-of-year sin/cos features
-    day_of_year = pd.DatetimeIndex(common_times).dayofyear.to_numpy()
-    day_of_year_rad = 2 * np.pi * day_of_year / 365.0
-    day_of_year_sin = np.sin(day_of_year_rad)
-    day_of_year_cos = np.cos(day_of_year_rad)
-    day_of_year_features = np.stack([day_of_year_sin, day_of_year_cos], axis=1)
-    day_of_year_features = np.repeat(day_of_year_features, n_lead_times, axis=0)
-
-    # Remove any samples with NaN
-    valid_mask = ~(np.isnan(fc_combined).any(axis=1) | np.isnan(obs_combined).any(axis=1))
-    fc_combined = fc_combined[valid_mask]
-    fc_output_combined = fc_output_combined[valid_mask]
-    obs_combined = obs_combined[valid_mask]
-    lead_time_indices_combined = lead_time_indices[valid_mask]
-    day_of_year_features_combined = day_of_year_features[valid_mask]
-    all_times = all_times[valid_mask]
-
-
-    # Calculate mean forecast error
-    training_mean_forecast_error = {}
-
-    for lt_idx, lead_time_hours in enumerate(args.lead_time_hours):
-        mask = lead_time_indices_combined == lt_idx
-        if not np.any(mask):
-            continue
-
-        fc_output_lt = fc_output_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
-        obs_lt = obs_combined[mask].reshape(-1, n_output_vars, n_lat, n_lon)
-
-        mean_error = fc_output_lt.mean(axis=0) - obs_lt.mean(axis=0)
-
-        for var_idx, var_name in enumerate(args.output_vars):
-            key = f"{var_name}_lt{lead_time_hours}h"
-            training_mean_forecast_error[key] = mean_error[var_idx]
-
     print(f"{'='*70}\n")
 
-    return (fc_combined, fc_output_combined, obs_combined, lead_time_indices_combined,
-            day_of_year_features_combined, all_times, forecast_ds.latitude.values,
-            forecast_ds.longitude.values, n_lat, n_lon,
-            n_training_vars, n_output_vars, training_mean_forecast_error)
+    return _arrays_from_inmemory_datasets(forecast_ds, obs_ds, args,
+                                          time_values_np, lead_times_td)
 
 
 def load_forecasts_classification(data_dir, args, lat_values, lon_values, train=True,

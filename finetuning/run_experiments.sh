@@ -116,7 +116,7 @@ for region in "${regions[@]}"; do
                         # Build base command
                         # Uses the MLP snapshot ensemble x3 configuration tested in
                         # run_arch_experiments_eval.py.
-                        cmd="python3 finetuning/finetune.py \
+                        cmd="python3 finetuning/post_process.py \
                             --data_dir=\"$data_dir\" \
                             --output_dir=\"$output_dir\" \
                             --training_vars $training_vars \

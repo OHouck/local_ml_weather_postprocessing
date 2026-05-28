@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories, generate_output_path, sample_continent_patches
-from finetuning.finetune import (
+from finetuning.post_process import (
     run_subregion_experiment, load_optimal_hyperparameters, parse_args
 )
 

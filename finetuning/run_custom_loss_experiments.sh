@@ -97,7 +97,7 @@ for region in "${regions[@]}"; do
                         fi
 
                         # Build base command
-                        cmd="python3 finetuning/finetune.py \
+                        cmd="python3 finetuning/post_process.py \
                             --data_dir=\"$data_dir\" \
                             --output_dir=\"$output_dir\" \
                             --training_vars $training_vars \

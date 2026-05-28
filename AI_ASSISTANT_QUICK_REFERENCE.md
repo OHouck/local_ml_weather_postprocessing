@@ -18,7 +18,7 @@
 
 | Path | Purpose |
 |------|---------|
-| `/finetuning/finetune.py` | **MAIN ENTRY POINT** - Train bias correction models |
+| `/finetuning/post_process.py` | **MAIN ENTRY POINT** - Train bias correction models |
 | `/finetuning/prepare_forecasts_and_targets.py` | Data loading with auto-download from WeatherBench2 |
 | `/helper_funcs.py` | Shared utilities (path generation, setup) |
 | `/aurora/run_aurora.py` | Aurora weather model execution |
@@ -32,7 +32,7 @@
 
 ### Running Fine-tuning
 ```bash
-python3 finetuning/finetune.py \
+python3 finetuning/post_process.py \
     --output_dir ~/output \
     --model_name pangu \
     --region india \
@@ -62,13 +62,13 @@ python3 analyze_architecture_results.py
 
 ## KEY CLASSES & FUNCTIONS
 
-### Models (in finetune.py)
+### Models (in post_process.py)
 ```python
 class SimpleMLP(nn.Module)          # For 1D flattened inputs
 class UNet(nn.Module)               # For 2D spatial grids
 ```
 
-### Main Functions (in finetune.py)
+### Main Functions (in post_process.py)
 ```python
 def parse_args()                    # CLI argument parsing
 def load_combined_dataset()         # Load forecast + target data
@@ -140,7 +140,7 @@ def generate_output_path()          # Construct output file paths
 ## DATA FLOW OVERVIEW
 
 ```
-1. User runs: python3 finetuning/finetune.py --args
+1. User runs: python3 finetuning/post_process.py --args
                     ↓
 2. parse_args() → Reads CLI arguments
                     ↓
@@ -168,7 +168,7 @@ def generate_output_path()          # Construct output file paths
 ```
 /home/user/ai_weather_ag/
 ├── finetuning/              # Core training code
-│   ├── finetune.py          # MAIN FILE - start here
+│   ├── post_process.py          # MAIN FILE - start here
 │   ├── prepare_forecasts_and_targets.py
 │   ├── process_forecasts.py
 │   ├── figures_finetuning.py

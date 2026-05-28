@@ -21,7 +21,7 @@ source .venv/bin/activate
 # Results are averaged across cells in plot_arch_experiment_results.py.
 #
 # The Python driver handles cell sampling, lat/lon extraction, and calling
-# finetune.py's run_subregion_experiment directly for each cell.
+# post_process.py's run_subregion_experiment directly for each cell.
 # ============================================================================
 
 python3 finetuning/run_arch_experiments_eval.py

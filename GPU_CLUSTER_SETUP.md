@@ -174,7 +174,7 @@ RuntimeError: CUDA out of memory
 ```
 
 **Solutions:**
-1. Reduce batch size in `finetune.py` (change `batch_size=128` to `batch_size=64` or `32`)
+1. Reduce batch size in `post_process.py` (change `batch_size=128` to `batch_size=64` or `32`)
 2. Use lighter architecture (UNet Light or MLP Skinny Deep)
 3. Reduce region size: `--subregion=4x4` instead of `6x6`
 4. Request GPU with more memory: `--gres=gpu:v100:1` (32GB) or `--gres=gpu:a100:1` (40GB)
@@ -249,7 +249,7 @@ DataLoader settings: num_workers=4, pin_memory=True
 2. **Use scratch storage**: Copy data to `$TMPDIR` (local SSD) for faster I/O:
    ```bash
    cp -r ~/data $TMPDIR/
-   python3 finetune.py --data_dir $TMPDIR/data ...
+   python3 post_process.py --data_dir $TMPDIR/data ...
    ```
 
 3. **Monitor resource usage**: Keep `nvidia-smi` and `htop` running to identify bottlenecks
@@ -282,7 +282,7 @@ source ~/envs/weather/bin/activate
 cd ~/ai_weather_ag
 
 # 4. Run quick test (1 month)
-python3 finetuning/finetune.py \
+python3 finetuning/post_process.py \
     --region=india --subregion=6x6 \
     --model_name=pangu \
     --nn_architecture=mlp \

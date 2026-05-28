@@ -7,7 +7,7 @@ imports directory set up from helper_funcs.py
 Data inputs:
 
 Post-processed zarr files from finetuning output directory structure. 
-These are all created by finetune.py with different runs managed by run_experiments.sh
+These are all created by post_process.py with different runs managed by run_experiments.sh
 
 The helper function all_patch_data is used
 as a data processing function but i have saved the output and commented it out 

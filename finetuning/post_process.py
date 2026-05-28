@@ -1,26 +1,38 @@
 #!/usr/bin/env python3
 """
-Author: Ozma Houck 
-Filename: finetune/finetune.py
+Author: Ozma Houck
+Filename: finetuning/post_process.py
 
-# Purpose: use a simple MLP to post-process weather forecasts trained on
-specific regions and variables. Call this script from command line or with 
-1_run_experiments.sh script. 
+Purpose: train lightweight neural networks (MLP / U-Net) to post-process weather
+forecast errors for specific regions and variables, then write corrected forecasts.
 
-# Modified to support multiple lead times training
+Two ways to use this module:
 
-# example call
-python3 finetuning/1_finetune.py \
-    --data_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/raw/ \
-    --output_dir="/Users/ohouck/Library/CloudStorage/OneDrive-TheUniversityofChicago/ai_weather_ag/data/fine_tuning_output" \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --train_start="2018-01-01" --train_end="2021-12-31" \
-    --test_start="2022-01-01" --test_end="2022-12-31" \
-    --model_name="pangu" \
-    --region="india" \
-    --subregion="2x2" \
-    --lead_time_hours 144 168
+1. Command line (drives the project's results pipeline):
+    python3 finetuning/post_process.py \
+        --data_dir="/path/to/data/raw" \
+        --output_dir="/path/to/fine_tuning_output" \
+        --training_vars 2m_temperature \
+        --output_vars 2m_temperature \
+        --train_start="2018-01-01" --train_end="2021-12-31" \
+        --test_start="2022-01-01" --test_end="2022-12-31" \
+        --model_name="pangu" \
+        --region="india" \
+        --subregion="2x2" \
+        --lead_time_hours 144 168
+
+2. As an importable library (bring your own forecast + ground truth):
+    from finetuning.post_process import post_process_forecasts, PostProcessConfig
+    config = PostProcessConfig(training_vars=["2m_temperature"],
+                               output_vars=["2m_temperature"],
+                               lead_time_hours=[24],
+                               train_start="2018-01-01", train_end="2021-12-31",
+                               test_start="2022-01-01", test_end="2022-12-31")
+    result = post_process_forecasts(forecast_ds, ground_truth_ds, config,
+                                    output_path="corrected.zarr")
+    # result.model, result.metrics, result.output_dataset
+
+Supports multiple lead times per run.
 """
 import argparse
 from html import parser
@@ -30,6 +42,7 @@ import random
 import glob
 import math
 import json
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -50,7 +63,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from helper_funcs import setup_directories
 from helper_funcs import generate_output_path
-from finetuning.prepare_forecasts_and_targets import load_forecasts, load_forecasts_classification
+from finetuning.prepare_forecasts_and_targets import (
+    load_forecasts, load_forecasts_classification, prepare_arrays_from_datasets
+)
 from finetuning.custom_loss_fns import (
     mortality_weighted_loss, extreme_heat_loss, quantile_loss,
     heatwave_loss, HeatWaveBatchSampler, joint_temp_wind_loss,
@@ -862,7 +877,106 @@ def parse_args():
                              'from its lead time, so 24h model optimizes purely for 24h. '
                              'Works with --block_ensemble and --snapshot_ensemble.')
 
+    parser.add_argument('--seed', type=int, default=58,
+                        help='Base random seed for all random draws (torch, numpy, python random). '
+                             'Used as starting point for all per-branch seeds so results are '
+                             'reproducible. Default 58 preserves original behavior.')
+
     return parser.parse_args()
+
+
+# ------------------------------
+# Configuration object for the post-processing core path
+# ------------------------------
+
+@dataclass
+class PostProcessConfig:
+    """Configuration for the post-processing core path (replaces the CLI args object).
+
+    Field defaults match parse_args() and the inline getattr defaults used inside the
+    training dispatch, so a run driven by this config is equivalent to the CLI run with
+    the same settings. It is also accepted by getattr(cfg, name, default) call sites,
+    so the dispatch code can read it exactly as it read the argparse Namespace.
+
+    Inputs/fields: variable lists, lead times, train/test date ranges, architecture and
+    its hyperparameters, PCA, all ensemble/training-mode flags, and the resolved
+    optimal_* hyperparameters (None means "use the code default"). model_name and
+    ground_truth_source are carried for output metadata.
+    """
+    # Variables and horizons
+    training_vars: list = field(default_factory=lambda: ["2m_temperature"])
+    output_vars: list = field(default_factory=lambda: ["2m_temperature"])
+    lead_time_hours: list = field(default_factory=lambda: [24])
+
+    # Date ranges and seasonal filtering (used to slice the input datasets)
+    train_start: str = "2018-01-01"
+    train_end: str = "2019-12-31"
+    test_start: str = "2020-01-01"
+    test_end: str = "2020-12-31"
+    growing_season_only: bool = False
+
+    # Architecture and its hyperparameters
+    nn_architecture: str = "mlp"
+    alternate_loss_fn: object = None
+    mlp_hidden_dim: int = 1024
+    mlp_num_layers: int = 2
+    mlp_dropout: float = 0.244
+    unet_hidden_dim: int = 64
+    unet_dropout: float = 0.1
+    gated_mlp_hidden_dim: object = None
+    pca_components: int = 0
+
+    # Ensemble / training-mode flags
+    ensemble: object = None
+    snapshot_ensemble: object = None
+    snapshot_epochs: int = 210
+    snapshot_T0: object = None
+    snapshot_T_mult: int = 1
+    swa_ensemble: object = None
+    swa_warmup_epochs: int = 150
+    swa_epochs: int = 60
+    swa_T0: int = 20
+    mc_dropout_samples: int = 0
+    block_ensemble: bool = False
+    block_holdout: int = 3
+    per_lead_time: bool = False
+    lead_time_loss_weights: object = None
+    cmixup_alpha: float = 0.0
+    small_output_init: bool = False
+
+    # Resolved optimal hyperparameters (None => use the code default)
+    optimal_lr: object = None
+    optimal_batch_size: object = None
+    optimal_weight_decay: object = None
+    optimal_patience: object = None
+    optimal_min_delta: object = None
+    optimal_lead_time_embedding_dim: object = None
+    optimal_snapshot_T0: object = None
+    optimal_snapshot_T_mult: object = None
+
+    # Reproducibility
+    seed: int = 58
+
+    # Metadata
+    model_name: str = ""
+    ground_truth_source: str = ""
+
+    @classmethod
+    def from_args(cls, args):
+        """Build a PostProcessConfig from an argparse Namespace (or any object).
+
+        Inputs:
+            args: object whose attributes mirror the dataclass field names (e.g. the
+                Namespace produced by parse_args after optimal hyperparameters are
+                merged in main()).
+
+        Returns:
+            PostProcessConfig populated from args; fields absent on args keep their
+            dataclass defaults.
+        """
+        kwargs = {f.name: getattr(args, f.name) for f in fields(cls) if hasattr(args, f.name)}
+        return cls(**kwargs)
+
 
 # ------------------------------
 # Region grid and patch helpers
@@ -2449,15 +2563,36 @@ def apply_correction(model, forecast_input_data, forecast_output_data, lead_time
         return _run_inference()
 
 
-def save_output(output_path, model_name, output_vars, lon_values, lat_values,
-                time_values, lead_times, original_fc, corrected_fc, lead_time_indices,
-                ground_truth_data=None, training_mean_forecast_error=None, training_time_minutes=None):
-    """
-    Save original and corrected forecasts organized by lead time.
+def build_output_dataset(model_name, output_vars, lon_values, lat_values,
+                         time_values, lead_times, original_fc, corrected_fc, lead_time_indices,
+                         ground_truth_data=None, training_mean_forecast_error=None,
+                         training_time_minutes=None):
+    """Build the in-memory output Dataset of original/corrected forecasts.
+
+    Produces the same variable layout that downstream statistics expect:
+    {var}_original_lt{h}h, {var}_corrected_lt{h}h, optionally {var}_mean_corrected_lt{h}h
+    and {var}_ground_truth_lt{h}h, each with dims (time, latitude, longitude), organized
+    by lead time. The returned Dataset is fully computed (no dask) and carries run
+    metadata in its attrs.
+
+    Inputs:
+        model_name (str): forecast source name, recorded in attrs.
+        output_vars (list[str]): variables that were corrected.
+        lon_values, lat_values (np.ndarray): output grid coordinates.
+        time_values (sequence): per-sample init times (length n_samples).
+        lead_times (list[int]): lead times in hours, indexed by lead_time_indices.
+        original_fc, corrected_fc (np.ndarray): flat (n_samples, n_vars*n_lat*n_lon).
+        lead_time_indices (np.ndarray): per-sample lead-time index.
+        ground_truth_data (np.ndarray or None): flat ground truth, same shape as original_fc.
+        training_mean_forecast_error (dict or None): per-{var}_lt{h}h mean error baseline.
+        training_time_minutes (float or None): training wall time recorded in attrs.
+
+    Returns:
+        xr.Dataset: the computed output dataset.
     """
     # Create separate datasets for each lead time
     data_vars = {}
-    
+
     for lt_idx, lead_time in enumerate(lead_times):
         # Get mask for this lead time
         mask = lead_time_indices == lt_idx
@@ -2528,7 +2663,7 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
 
     # Create dataset and FORCE COMPUTATION before saving
     ds_out = xr.Dataset(data_vars)
-    
+
     # Compute all dask arrays before saving
     print("Computing all variables before saving...")
     ds_out = ds_out.compute()
@@ -2537,18 +2672,49 @@ def save_output(output_path, model_name, output_vars, lon_values, lat_values,
     ds_out.attrs['description'] = f'Original and corrected forecasts from {model_name} using MLP fine-tuning'
     ds_out.attrs['lead_times_hours'] = lead_times
     ds_out.attrs['training_time_minutes'] = training_time_minutes if training_time_minutes is not None else -1
-    
+
+    return ds_out
+
+
+def write_output_zarr(ds_out, output_path):
+    """Write a computed output Dataset to zarr with the project's chunking.
+
+    Inputs:
+        ds_out (xr.Dataset): dataset from build_output_dataset.
+        output_path (str): destination zarr path (user "~" is expanded).
+
+    Returns:
+        None. Overwrites any existing zarr at output_path.
+    """
     # Save to zarr with consistent chunking (without custom compression)
     encoding = {}
     for var_name in ds_out.data_vars:
         encoding[var_name] = {
             'chunks': (365, 20, 20)  # Just specify chunks, use default compression
         }
-    
+
     # Save to zarr
     output_path = os.path.expanduser(output_path)
     ds_out.to_zarr(output_path, mode='w')
     print(f"Forecasts saved to {output_path}")
+
+
+def save_output(output_path, model_name, output_vars, lon_values, lat_values,
+                time_values, lead_times, original_fc, corrected_fc, lead_time_indices,
+                ground_truth_data=None, training_mean_forecast_error=None, training_time_minutes=None):
+    """Build and write original/corrected forecasts to zarr, organized by lead time.
+
+    Thin wrapper over build_output_dataset + write_output_zarr, preserving the original
+    save_output signature and behavior. See build_output_dataset for argument details.
+    """
+    ds_out = build_output_dataset(
+        model_name, output_vars, lon_values, lat_values, time_values, lead_times,
+        original_fc, corrected_fc, lead_time_indices,
+        ground_truth_data=ground_truth_data,
+        training_mean_forecast_error=training_mean_forecast_error,
+        training_time_minutes=training_time_minutes,
+    )
+    write_output_zarr(ds_out, output_path)
 
 
 def _compute_gated_mlp_hidden_dim(input_dim, output_dim, mlp_hidden_dim, num_layers,
@@ -2596,6 +2762,777 @@ def _compute_gated_mlp_hidden_dim(input_dim, output_dim, mlp_hidden_dim, num_lay
             hi = mid - 1
 
     return best_h
+
+
+def _post_process_regression(train_arrays, test_arrays, config, output_path, device, write_output=True):
+    """Run the regression post-processing core on pre-loaded arrays.
+
+    Shared by the CLI/results pipeline (run_subregion_experiment) and the importable
+    BYO entry point (post_process_forecasts). It normalizes inputs, optionally applies
+    PCA, trains the configured model via the selected ensemble/training mode, applies the
+    correction to the test set, and builds the output dataset (writing it to zarr when
+    requested). The numeric path is identical to the original monolith.
+
+    Inputs:
+        train_arrays, test_arrays: the 13-tuples returned by load_forecasts /
+            prepare_arrays_from_datasets for the train and test periods.
+        config: PostProcessConfig (or args Namespace) driving model/ensemble choices.
+        output_path (str or None): destination zarr path.
+        device (torch.device): compute device.
+        write_output (bool): if True and output_path is set, write the zarr.
+
+    Returns:
+        tuple (ds_out, training_time_minutes).
+    """
+    start_time = time.time()
+
+    # Seed all RNGs at the start of every run so results are reproducible.
+    # Per-branch seeds below add base_seed as an offset to preserve their
+    # relative structure while letting the user shift the full trajectory.
+    base_seed = getattr(config, 'seed', 58)
+    torch.manual_seed(base_seed)
+    np.random.seed(base_seed)
+    random.seed(base_seed)
+
+    # ========================================================================
+    # REGRESSION MODE (standard temperature correction)
+    # ========================================================================
+
+    # Unpack pre-loaded training arrays
+    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
+     n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = train_arrays
+
+    # Normalize data
+    stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
+    stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
+
+    fc_norm = (fc - stats_train['mean']) / stats_train['std']
+    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
+
+    # PCA dimensionality reduction on forecast inputs (if requested).
+    # Reduces the spatial input from n_vars*n_lat*n_lon to K principal components,
+    # retaining the dominant spatial patterns while greatly reducing overfitting.
+    pca_components = getattr(config, 'pca_components', 0)
+    pca_transformer = None  # dict with 'mean' and 'components' arrays
+    if pca_components > 0:
+        max_components = min(pca_components, fc_norm.shape[0] - 1, fc_norm.shape[1])
+        print(f"\nApplying PCA reduction: {fc_norm.shape[1]} → {max_components} components")
+        pca_mean = fc_norm.mean(axis=0)
+        X_c = fc_norm - pca_mean
+        # Thin SVD: U [n,k], s [k], Vt [k, n_features]
+        _, s, Vt = np.linalg.svd(X_c, full_matrices=False)
+        pca_components_mat = Vt[:max_components]  # [K, n_features]
+        var_total = (s ** 2).sum()
+        var_explained = (s[:max_components] ** 2).sum() / var_total
+        pca_transformer = {'mean': pca_mean, 'components': pca_components_mat}
+        fc_norm = X_c @ pca_components_mat.T  # [n_samples, K]
+        print(f"  Variance explained: {var_explained*100:.1f}% with {max_components} PCs")
+
+    # normalize target observations using forecasts to be corrected
+    obs_norm = (obs - stats_out['mean']) / stats_out['std']
+
+    # Use optimal batch size if available, otherwise default to 128
+    batch_size = config.optimal_batch_size if config.optimal_batch_size else 128
+    print(f"Using batch_size: {batch_size}")
+
+    # Compute n_lead_times and lead_time_days
+    n_lead_times = len(config.lead_time_hours)
+    lead_time_days = [lt / 24 for lt in config.lead_time_hours]
+
+    # Split train/validation
+    n_samples = len(fc)
+
+    # Standard random split
+    idx = np.arange(n_samples)
+    np.random.shuffle(idx)
+    split = int(0.8 * n_samples)
+    t_idx, v_idx = idx[:split], idx[split:]
+
+    train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                    lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                    batch_size=batch_size, device=device)
+    val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                  lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                  batch_size=batch_size, device=device)
+
+    # Log DataLoader settings
+    print(f"DataLoader settings: num_workers={train_loader.num_workers}, pin_memory={train_loader.pin_memory}")
+    if device.type == 'cuda':
+        print(f"  CPU cores available: {os.cpu_count()}")
+
+    # Initialize model
+    input_dim = fc_norm.shape[1]  # either n_training_vars * n_lat * n_lon, or pca_components if PCA used
+    output_dim = n_output_vars * n_lat * n_lon
+
+    # Use optimal lead time embedding dimension if available
+    lead_time_emb_dim = config.optimal_lead_time_embedding_dim if config.optimal_lead_time_embedding_dim else 4
+
+    arch = getattr(config, 'nn_architecture', 'mlp')
+    if arch == 'unet':
+        print(f"  UNet hidden_dim: {config.unet_hidden_dim}")
+        print(f"  UNet dropout: {config.unet_dropout}")
+        print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = UNet(input_dim, config.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
+                     n_input_vars=n_training_vars, n_output_vars=n_output_vars,
+                     n_lead_times=n_lead_times,
+                     lead_time_embedding_dim=lead_time_emb_dim,
+                     dropout_rate=config.unet_dropout).to(device)
+        num_epochs = 500
+    elif arch == 'gated_mlp':
+        # GatedMLP uses SwiGLU (3 linear layers per block vs 1 for SimpleMLP).
+        # Scale hidden_dim so parameter count matches SimpleMLP for a fair comparison.
+        # gated_mlp_hidden_dim can be set explicitly; otherwise auto-compute to match SimpleMLP.
+        gated_hidden_dim = getattr(config, 'gated_mlp_hidden_dim', None)
+        if gated_hidden_dim is None:
+            gated_hidden_dim = _compute_gated_mlp_hidden_dim(
+                input_dim=input_dim,
+                output_dim=output_dim,
+                mlp_hidden_dim=config.mlp_hidden_dim,
+                num_layers=config.mlp_num_layers,
+                n_lead_times=n_lead_times,
+                lead_time_embedding_dim=lead_time_emb_dim,
+            )
+        print(f"Using GatedMLP (SwiGLU + LayerNorm + residual) with {n_lead_times} lead times")
+        print(f"  hidden_dim: {gated_hidden_dim} (auto-scaled to match SimpleMLP param count)")
+        print(f"  num_layers: {config.mlp_num_layers}")
+        print(f"  dropout: {config.mlp_dropout}")
+        print(f"  lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = GatedMLP(input_dim=input_dim,
+                         hidden_dim=gated_hidden_dim,
+                         output_dim=output_dim,
+                         num_hidden_layers=config.mlp_num_layers,
+                         n_lead_times=n_lead_times,
+                         lead_time_embedding_dim=lead_time_emb_dim,
+                         dropout_rate=config.mlp_dropout
+                         ).to(device)
+        num_epochs = 750
+    else:
+        print(f"Using SimpleMLP with {n_lead_times} lead times")
+        print(f"  MLP hidden_dim: {config.mlp_hidden_dim}")
+        print(f"  MLP num_layers: {config.mlp_num_layers}")
+        print(f"  MLP dropout: {config.mlp_dropout}")
+        print(f"  MLP lead_time_embedding_dim: {lead_time_emb_dim}")
+        model = SimpleMLP(input_dim=input_dim,
+                          hidden_dim=config.mlp_hidden_dim,
+                          output_dim=output_dim,
+                          num_hidden_layers=config.mlp_num_layers,
+                          n_lead_times=n_lead_times,
+                          lead_time_embedding_dim=lead_time_emb_dim,
+                          dropout_rate=config.mlp_dropout
+                          ).to(device)
+        num_epochs = 750
+
+    # Use optimal training hyperparameters if available
+    # Block LTHO empirical best: lr=3.3e-4, wd=2.2e-6 (found via architecture experiments)
+    lr = config.optimal_lr if config.optimal_lr else 3.3e-4
+    weight_decay = config.optimal_weight_decay if config.optimal_weight_decay else 2.2e-6
+    patience = config.optimal_patience if config.optimal_patience else 50
+    min_delta = config.optimal_min_delta if config.optimal_min_delta else 1e-5
+
+    print(f"\nTraining with:")
+    print(f"  lr: {lr}")
+    print(f"  weight_decay: {weight_decay}")
+    print(f"  patience: {patience}")
+    print(f"  min_delta: {min_delta}")
+
+    # Determine ensemble mode
+    n_ensemble = getattr(config, 'ensemble', None) or 1
+    n_snapshot = getattr(config, 'snapshot_ensemble', None) or 0
+    n_swa = getattr(config, 'swa_ensemble', None) or 0
+    use_block = getattr(config, 'block_ensemble', False)
+    use_ensemble = n_ensemble > 1
+    use_snapshot = n_snapshot > 0
+    use_swa = n_swa > 0
+
+    if use_block:
+        print(f"\n{'='*50}")
+        print(f"BLOCK ENSEMBLE (leave-{getattr(config, 'block_holdout', 3)}-out)")
+        if use_snapshot:
+            print(f"  + SNAPSHOT (T0={getattr(config, 'snapshot_T0', 30)}) per block")
+        print(f"{'='*50}")
+    elif use_snapshot:
+        print(f"\n{'='*50}")
+        print(f"SNAPSHOT ENSEMBLE: {n_snapshot} runs")
+        print(f"{'='*50}")
+    elif use_swa:
+        print(f"\n{'='*50}")
+        print(f"SWA ENSEMBLE: {n_swa} runs")
+        print(f"{'='*50}")
+    elif use_ensemble:
+        print(f"\n{'='*50}")
+        print(f"ENSEMBLE TRAINING: {n_ensemble} members")
+        print(f"{'='*50}")
+
+    # Unpack pre-loaded test arrays
+    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
+     test_times, _, _, _, _, _, _, _) = test_arrays
+    test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
+    test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
+
+    # Apply same PCA transform to test data (using fit from training data)
+    if pca_transformer is not None:
+        test_fc_norm = (test_fc_norm - pca_transformer['mean']) @ pca_transformer['components'].T
+
+    ensemble_corrections = []
+    ensemble_weights = []  # val_loss-based weights for snapshot members; empty = equal weight
+    training_time_minutes = 0.0
+
+    # Build lead-time weight dict for snapshot training (if specified)
+    lt_weights_raw = getattr(config, 'lead_time_loss_weights', None)
+    lt_weight_dict = None
+    if lt_weights_raw is not None:
+        lt_weight_dict = {i: w for i, w in enumerate(lt_weights_raw)}
+        print(f"Lead-time loss weights: {lt_weight_dict}")
+
+    use_small_init = getattr(config, 'small_output_init', False)
+    use_per_lt = getattr(config, 'per_lead_time', False)
+
+    # Helper to create a fresh model instance
+    def _create_model(n_lt_override=None):
+        """Create a fresh model. n_lt_override: override n_lead_times (for per-LT training)."""
+        _n_lt = n_lt_override if n_lt_override is not None else n_lead_times
+        if arch == 'unet':
+            return UNet(input_dim, config.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
+                        n_input_vars=n_training_vars, n_output_vars=n_output_vars,
+                        n_lead_times=_n_lt,
+                        lead_time_embedding_dim=lead_time_emb_dim,
+                        dropout_rate=config.unet_dropout).to(device)
+        elif arch == 'gated_mlp':
+            _gated_hd = getattr(config, 'gated_mlp_hidden_dim', None) or _compute_gated_mlp_hidden_dim(
+                input_dim=input_dim, output_dim=output_dim,
+                mlp_hidden_dim=config.mlp_hidden_dim, num_layers=config.mlp_num_layers,
+                n_lead_times=_n_lt, lead_time_embedding_dim=lead_time_emb_dim,
+            )
+            return GatedMLP(input_dim=input_dim, hidden_dim=_gated_hd,
+                            output_dim=output_dim,
+                            num_hidden_layers=config.mlp_num_layers,
+                            n_lead_times=_n_lt,
+                            lead_time_embedding_dim=lead_time_emb_dim,
+                            dropout_rate=config.mlp_dropout).to(device)
+        else:
+            return SimpleMLP(input_dim=input_dim, hidden_dim=config.mlp_hidden_dim,
+                             output_dim=output_dim,
+                             num_hidden_layers=config.mlp_num_layers,
+                             n_lead_times=_n_lt,
+                             lead_time_embedding_dim=lead_time_emb_dim,
+                             dropout_rate=config.mlp_dropout,
+                             small_output_init=use_small_init).to(device)
+
+    if use_per_lt and use_snapshot and not use_block:
+        # ---- Per-Lead-Time Snapshot Ensemble ----
+        # Train a separate snapshot ensemble for each lead time. Each model sees only
+        # data from its lead time, eliminating gradient competition across horizons.
+        snapshot_epochs = getattr(config, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(config, 'optimal_snapshot_T0', None) or getattr(config, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(config, 'optimal_snapshot_T_mult', None) or getattr(config, 'snapshot_T_mult', 1)
+
+        print(f"\nPER-LEAD-TIME Snapshot Ensemble x{n_snapshot}: training {n_lead_times} separate models")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        corrected_per_lt = np.zeros_like(test_fc_output)
+
+        for lt_idx in range(n_lead_times):
+            lt_hours = config.lead_time_hours[lt_idx]
+            print(f"\n{'='*50}")
+            print(f"  Training snapshot ensemble for lead time {lt_hours}h")
+            print(f"{'='*50}")
+
+            lt_train_mask = (lead_time_indices == lt_idx)
+            lt_test_mask = (test_lead_time_indices == lt_idx)
+
+            fc_lt = fc_norm[lt_train_mask]
+            fc_out_lt = fc_output_norm[lt_train_mask]
+            obs_lt = obs_norm[lt_train_mask]
+            doy_lt = day_of_year_features[lt_train_mask]
+            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
+
+            test_fc_lt = test_fc_norm[lt_test_mask]
+            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
+            test_doy_lt = test_day_of_year_features[lt_test_mask]
+            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
+
+            lt_corrections = []
+
+            for run_i in range(n_snapshot):
+                seed = base_seed + run_i * 17 + lt_idx * 1000
+                torch.manual_seed(seed)
+                np.random.seed(seed * 13 + 7)
+
+                n_lt_samples = len(fc_lt)
+                run_idx = np.arange(n_lt_samples)
+                np.random.shuffle(run_idx)
+                split = int(0.8 * n_lt_samples)
+                t_idx_run, v_idx_run = run_idx[:split], run_idx[split:]
+
+                run_train_loader = create_dataloader(
+                    fc_lt[t_idx_run], fc_out_lt[t_idx_run], obs_lt[t_idx_run],
+                    lti_lt[t_idx_run], doy_lt[t_idx_run],
+                    batch_size=batch_size, device=device)
+                run_val_loader = create_dataloader(
+                    fc_lt[v_idx_run], fc_out_lt[v_idx_run], obs_lt[v_idx_run],
+                    lti_lt[v_idx_run], doy_lt[v_idx_run],
+                    batch_size=batch_size, device=device)
+
+                model = _create_model(n_lt_override=1)
+                snapshots, run_time = train_snapshot_ensemble(
+                    model, run_train_loader, run_val_loader,
+                    epochs=snapshot_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, grad_clip=1.0,
+                    T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                training_time_minutes += run_time
+
+                for snap_weights, _ in snapshots:
+                    model.load_state_dict(snap_weights)
+                    snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                 test_lti_lt, test_doy_lt, device)
+                    snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
+                    lt_corrections.append(snap_corr)
+
+            corrected_per_lt[lt_test_mask] = np.mean(lt_corrections, axis=0)
+            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} total snapshots")
+
+        corrected = corrected_per_lt
+        print(f"\nPer-LT snapshot ensemble complete: {n_lead_times} models, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_per_lt and use_block:
+        # ---- Per-Lead-Time Block Ensemble ----
+        # Train a SEPARATE block ensemble for each lead time. Each model only sees
+        # data from its lead time, so 24h model optimizes purely for 24h without
+        # gradient competition from 120h/216h. Results are stitched back together.
+        snapshot_epochs = getattr(config, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(config, 'optimal_snapshot_T0', None) or getattr(config, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(config, 'optimal_snapshot_T_mult', None) or getattr(config, 'snapshot_T_mult', 1)
+
+        import pandas as pd
+        from itertools import combinations
+        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
+        block_holdout = getattr(config, 'block_holdout', 3)
+        held_year_sets = list(combinations(train_years, block_holdout))
+        sample_years = pd.DatetimeIndex(train_times).year.values
+
+        print(f"\nPER-LEAD-TIME Block Ensemble: training {n_lead_times} separate models")
+        print(f"Training years: {train_years}, blocks: {len(held_year_sets)}")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        # Allocate output array matching test data shape
+        corrected_per_lt = np.zeros_like(test_fc_output)
+
+        for lt_idx in range(n_lead_times):
+            lt_hours = config.lead_time_hours[lt_idx]
+            print(f"\n{'='*50}")
+            print(f"  Training model for lead time {lt_hours}h (index {lt_idx})")
+            print(f"{'='*50}")
+
+            # Filter train data to this lead time only
+            lt_train_mask = (lead_time_indices == lt_idx)
+            lt_test_mask = (test_lead_time_indices == lt_idx)
+
+            fc_lt = fc_norm[lt_train_mask]
+            fc_out_lt = fc_output_norm[lt_train_mask]
+            obs_lt = obs_norm[lt_train_mask]
+            doy_lt = day_of_year_features[lt_train_mask]
+            # Lead time index is always 0 for single-LT model
+            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
+            times_lt = train_times[lt_train_mask] if hasattr(train_times, '__getitem__') else np.array(train_times)[lt_train_mask]
+            sample_years_lt = sample_years[lt_train_mask]
+
+            test_fc_lt = test_fc_norm[lt_test_mask]
+            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
+            test_doy_lt = test_day_of_year_features[lt_test_mask]
+            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
+
+            lt_corrections = []
+            lt_weights = []
+
+            for held_years_tuple in held_year_sets:
+                seed_key = base_seed + sum(held_years_tuple) + lt_idx * 1000
+                torch.manual_seed(seed_key)
+                np.random.seed(seed_key * 13)
+
+                v_mask = np.isin(sample_years_lt, held_years_tuple)
+                t_mask = ~v_mask
+                print(f"  Block held={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()}")
+
+                run_train_loader = create_dataloader(
+                    fc_lt[t_mask], fc_out_lt[t_mask], obs_lt[t_mask],
+                    lti_lt[t_mask], doy_lt[t_mask],
+                    batch_size=batch_size, device=device)
+                run_val_loader = create_dataloader(
+                    fc_lt[v_mask], fc_out_lt[v_mask], obs_lt[v_mask],
+                    lti_lt[v_mask], doy_lt[v_mask],
+                    batch_size=batch_size, device=device)
+
+                if use_snapshot:
+                    n_seeds_per_block = max(1, n_snapshot)
+                    for seed_idx in range(n_seeds_per_block):
+                        seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
+                        torch.manual_seed(seed)
+                        np.random.seed(seed)
+                        # n_lead_times=1 for per-LT model (no lead time embedding needed)
+                        model = _create_model(n_lt_override=1)
+                        snapshots, run_time = train_snapshot_ensemble(
+                            model, run_train_loader, run_val_loader,
+                            epochs=snapshot_epochs, lr=lr, device=device,
+                            weight_decay=weight_decay, grad_clip=1.0,
+                            T_0=snapshot_T0, T_mult=snapshot_T_mult)
+                        training_time_minutes += run_time
+
+                        for snap_weights, snap_val_loss in snapshots:
+                            model.load_state_dict(snap_weights)
+                            snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                         test_lti_lt, test_doy_lt, device)
+                            snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
+                            lt_corrections.append(snap_corr)
+                            lt_weights.append(1.0 / max(snap_val_loss, 1e-12))
+                else:
+                    model = _create_model(n_lt_override=1)
+                    model, run_time = train_model(
+                        model, run_train_loader, run_val_loader,
+                        epochs=num_epochs, lr=lr, device=device,
+                        weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                        scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
+                    training_time_minutes += run_time
+                    member_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
+                                                   test_lti_lt, test_doy_lt, device)
+                    member_corr = (member_corr * stats_out['std']) + stats_out['mean']
+                    lt_corrections.append(member_corr)
+
+            # Weighted average for this lead time
+            if lt_weights:
+                w = np.array(lt_weights)
+                w = w / w.sum()
+                lt_corrected = np.average(lt_corrections, weights=w, axis=0)
+            else:
+                lt_corrected = np.mean(lt_corrections, axis=0)
+
+            corrected_per_lt[lt_test_mask] = lt_corrected
+            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} ensemble members")
+
+        corrected = corrected_per_lt
+        print(f"\nPer-LT block ensemble complete: {n_lead_times} models, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_block:
+        # ---- Block ensemble: leave-k-out cross-validation ensemble ----
+        # For each held-out block of training years, train a snapshot ensemble on the remaining years.
+        # This creates temporally diverse models that generalize better across climate variability.
+        snapshot_epochs = getattr(config, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(config, 'optimal_snapshot_T0', None) or getattr(config, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(config, 'optimal_snapshot_T_mult', None) or getattr(config, 'snapshot_T_mult', 1)
+
+        import pandas as pd
+        from itertools import combinations
+        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
+        block_holdout = getattr(config, 'block_holdout', 3)
+        held_year_sets = list(combinations(train_years, block_holdout))
+        print(f"Training years available: {train_years}")
+        print(f"Block holdout: {block_holdout} years per block ({len(held_year_sets)} blocks total)")
+        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        # Extract year per sample
+        sample_years = pd.DatetimeIndex(train_times).year.values
+
+        for held_years_tuple in held_year_sets:
+            seed_key = base_seed + sum(held_years_tuple)
+            torch.manual_seed(seed_key)
+            np.random.seed(seed_key * 13)
+
+            v_mask = np.isin(sample_years, held_years_tuple)
+            t_mask = ~v_mask
+            held_year = held_years_tuple  # keep as tuple for logging
+
+            print(f"\n--- Block: held_years={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()} ---")
+
+            run_train_loader = create_dataloader(
+                fc_norm[t_mask], fc_output_norm[t_mask], obs_norm[t_mask],
+                lead_time_indices[t_mask], day_of_year_features[t_mask],
+                batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(
+                fc_norm[v_mask], fc_output_norm[v_mask], obs_norm[v_mask],
+                lead_time_indices[v_mask], day_of_year_features[v_mask],
+                batch_size=batch_size, device=device)
+
+            if use_snapshot:
+                # Snapshot ensemble within each block; n_snapshot controls number of seed-diverse runs
+                n_seeds_per_block = max(1, n_snapshot)
+                for seed_idx in range(n_seeds_per_block):
+                    # seed_idx=0 uses seed_key (sum of held years) to preserve original behavior
+                    seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
+                    torch.manual_seed(seed)
+                    np.random.seed(seed)
+                    model = _create_model()
+                    snapshots, run_time = train_snapshot_ensemble(
+                        model, run_train_loader, run_val_loader,
+                        epochs=snapshot_epochs, lr=lr, device=device,
+                        weight_decay=weight_decay, grad_clip=1.0,
+                        T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                        lead_time_weights=lt_weight_dict,
+                        n_lead_times=n_lead_times)
+                    training_time_minutes += run_time
+
+                    mc_samples = getattr(config, 'mc_dropout_samples', 0) # currenlty not using this
+                    for snap_weights, snap_val_loss in snapshots:
+                        model.load_state_dict(snap_weights)
+                        snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                          test_lead_time_indices,
+                                                          test_day_of_year_features, device,
+                                                          mc_dropout_samples=mc_samples)
+                        snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
+                        ensemble_corrections.append(snap_corrected)
+                        ensemble_weights.append(1.0 / max(snap_val_loss, 1e-12))
+            else:
+                # Single model per block (early stopping)
+                model = _create_model()
+                model, run_time = train_model(
+                    model, run_train_loader, run_val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
+                training_time_minutes += run_time
+
+                mc_samples = getattr(config, 'mc_dropout_samples', 0)
+                member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                    test_lead_time_indices,
+                                                    test_day_of_year_features, device,
+                                                    mc_dropout_samples=mc_samples)
+                member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+                ensemble_corrections.append(member_corrected)
+
+        if ensemble_weights:
+            w = np.array(ensemble_weights)
+            w = w / w.sum()
+            corrected = np.average(ensemble_corrections, weights=w, axis=0)
+        else:
+            corrected = np.mean(ensemble_corrections, axis=0)
+        total_preds = len(ensemble_corrections)
+        print(f"\nBlock ensemble complete: {len(held_year_sets)} blocks, {total_preds} total predictions, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_snapshot: # snapshot but not block training
+        # ---- Snapshot ensemble: train N runs, save snapshots at cosine cycle minima ----
+        snapshot_epochs = getattr(config, 'snapshot_epochs', 210)
+        snapshot_T0 = getattr(config, 'optimal_snapshot_T0', None) or getattr(config, 'snapshot_T0', None) or 30
+        snapshot_T_mult = getattr(config, 'optimal_snapshot_T_mult', None) or getattr(config, 'snapshot_T_mult', 1)
+
+        print(f"Snapshot scheduler settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
+
+        for run_i in range(n_snapshot):
+            ens_seed = base_seed + run_i * 17
+            torch.manual_seed(ens_seed)
+            np.random.seed(ens_seed * 13 + 7)
+
+            print(f"\n--- Snapshot run {run_i+1}/{n_snapshot} (seed={ens_seed}) ---")
+
+            # Different train/val split per run
+            idx = np.arange(n_samples)
+            np.random.shuffle(idx)
+            split = int(0.8 * n_samples)
+            t_idx, v_idx = idx[:split], idx[split:]
+
+            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                 batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                               batch_size=batch_size, device=device)
+
+            model = _create_model()
+            snapshots, run_time = train_snapshot_ensemble(
+                model, run_train_loader, run_val_loader,
+                epochs=snapshot_epochs, lr=lr, device=device,
+                weight_decay=weight_decay, grad_clip=1.0,
+                T_0=snapshot_T0, T_mult=snapshot_T_mult,
+                stats_out=stats_out, alternate_loss_fn=config.alternate_loss_fn)
+            training_time_minutes += run_time
+
+            # Generate predictions from each snapshot
+            for snap_weights, snap_val_loss in snapshots:
+                model.load_state_dict(snap_weights)
+                snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                  test_lead_time_indices,
+                                                  test_day_of_year_features, device)
+                snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
+                ensemble_corrections.append(snap_corrected)
+
+        # Uniform averaging across all snapshot predictions
+        corrected = np.mean(ensemble_corrections, axis=0)
+        total_snapshots = len(ensemble_corrections)
+        print(f"\nSnapshot ensemble complete: {n_snapshot} runs, {total_snapshots} total snapshots, "
+              f"training: {training_time_minutes:.2f} minutes")
+
+    elif use_swa:
+        # ---- SWA ensemble: train N independent SWA models, ensemble predictions ----
+        swa_warmup = getattr(config, 'swa_warmup_epochs', 150)
+        swa_epochs = getattr(config, 'swa_epochs', 60)
+        swa_T0 = getattr(config, 'swa_T0', 20)
+
+        print(f"SWA settings: warmup={swa_warmup}, swa_epochs={swa_epochs}, T0={swa_T0}")
+
+        for run_i in range(n_swa):
+            ens_seed = base_seed + run_i * 17
+            torch.manual_seed(ens_seed)
+            np.random.seed(ens_seed * 13 + 7)
+
+            print(f"\n--- SWA run {run_i+1}/{n_swa} (seed={ens_seed}) ---")
+
+            # Different train/val split per run
+            idx = np.arange(n_samples)
+            np.random.shuffle(idx)
+            split = int(0.8 * n_samples)
+            t_idx, v_idx = idx[:split], idx[split:]
+
+            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                 batch_size=batch_size, device=device)
+            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                               batch_size=batch_size, device=device)
+
+            model = _create_model()
+            swa_model, swa_val_loss, run_time = train_swa_ensemble(
+                model, run_train_loader, run_val_loader,
+                warmup_epochs=swa_warmup, swa_epochs=swa_epochs, lr=lr,
+                device=device, weight_decay=weight_decay, grad_clip=1.0,
+                swa_T0=swa_T0)
+            training_time_minutes += run_time
+
+            # Generate predictions from the SWA-averaged model
+            swa_model.eval()
+            member_corrected = apply_correction(swa_model, test_fc_norm, test_fc_output_norm,
+                                                test_lead_time_indices,
+                                                test_day_of_year_features, device)
+            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+            ensemble_corrections.append(member_corrected)
+
+        corrected = np.mean(ensemble_corrections, axis=0)
+        print(f"\nSWA ensemble complete: {n_swa} runs, training: {training_time_minutes:.2f} minutes")
+
+    else:
+        # ---- Standard training (single or seed-diverse ensemble) ----
+        for ens_i in range(n_ensemble):
+            if use_ensemble:
+                ens_seed = base_seed + ens_i * 17
+                print(f"\n--- Ensemble member {ens_i+1}/{n_ensemble} (seed={ens_seed}) ---")
+                # Different seed and train/val split per ensemble member
+                torch.manual_seed(ens_seed)
+                np.random.seed(ens_seed * 13 + 7)
+
+                # Re-split train/validation with new seed
+                idx = np.arange(n_samples)
+                np.random.shuffle(idx)
+                split = int(0.8 * n_samples)
+                t_idx, v_idx = idx[:split], idx[split:]
+
+                train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
+                                                lead_time_indices[t_idx], day_of_year_features[t_idx],
+                                                batch_size=batch_size, device=device)
+                val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
+                                              lead_time_indices[v_idx], day_of_year_features[v_idx],
+                                              batch_size=batch_size, device=device)
+
+                model = _create_model()
+
+            # Train this model - use cosine annealing for ensemble, standard for single
+            # Use weighted training if lead-time weights or C-Mixup are specified
+            lt_weights = getattr(config, 'lead_time_loss_weights', None)
+            cmixup_alpha = getattr(config, 'cmixup_alpha', 0.0)
+            use_weighted = (lt_weights is not None or cmixup_alpha > 0) and config.alternate_loss_fn is None
+
+            if use_ensemble:
+                model, member_time = train_model_cosine(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience,
+                    min_delta=min_delta, grad_clip=1.0)
+            elif use_weighted:
+                # Build lead-time weight dict from list
+                lt_weight_dict = None
+                if lt_weights is not None:
+                    lt_weight_dict = {i: w for i, w in enumerate(lt_weights)}
+                model, member_time = train_model_weighted(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                    lead_time_weights=lt_weight_dict, n_lead_times=n_lead_times,
+                    cmixup_alpha=cmixup_alpha)
+            else:
+                model, member_time = train_model(
+                    model, train_loader, val_loader,
+                    epochs=num_epochs, lr=lr, device=device,
+                    weight_decay=weight_decay, stats_out=stats_out,
+                    alternate_loss_fn=config.alternate_loss_fn,
+                    patience=patience, min_delta=min_delta,
+                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
+                    n_lead_times=n_lead_times, lead_time_days=lead_time_days,
+                    n_output_vars=n_output_vars, n_lat=n_lat, n_lon=n_lon)
+
+            training_time_minutes += member_time
+            print(f"{'Member' if use_ensemble else 'Training'} complete in {member_time:.2f} minutes")
+
+            # Apply correction
+            member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
+                                                test_lead_time_indices,
+                                                test_day_of_year_features, device)
+            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
+            ensemble_corrections.append(member_corrected)
+
+        # Average ensemble predictions (or just use the single model's correction)
+        if use_ensemble:
+            corrected = np.mean(ensemble_corrections, axis=0)
+            print(f"\nEnsemble of {n_ensemble} members complete. Total training: {training_time_minutes:.2f} minutes")
+        else:
+            corrected = ensemble_corrections[0]
+
+    # Calculate MSE per lead time (aggregate and per-variable)
+    for lt_idx, lead_time in enumerate(config.lead_time_hours):
+        mask = test_lead_time_indices == lt_idx
+        if mask.sum() > 0:
+            mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
+            mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
+            print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
+
+            # Per-variable breakdown when predicting multiple output variables
+            if n_output_vars > 1:
+                n_masked = mask.sum()
+                orig_reshaped = test_fc_output[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+                obs_reshaped = test_obs[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+                corr_reshaped = corrected[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
+
+                for var_idx, var_name in enumerate(config.output_vars):
+                    var_mse_orig = np.mean((orig_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
+                    var_mse_corr = np.mean((corr_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
+                    print(f"  {var_name}: MSE original: {var_mse_orig:.6f}, MSE corrected: {var_mse_corr:.6f}")
+
+
+
+    save_start_time = time.time()
+    # Build the output dataset (and optionally write it to zarr)
+    ds_out = build_output_dataset(
+        model_name=config.model_name,
+        output_vars=config.output_vars,
+        lon_values=lon_u,
+        lat_values=lat_u,
+        time_values=test_times,
+        lead_times=config.lead_time_hours,
+        original_fc=test_fc_output,
+        corrected_fc=corrected,
+        lead_time_indices=test_lead_time_indices,
+        ground_truth_data=test_obs,
+        training_mean_forecast_error=training_mean_forecast_error,
+        training_time_minutes=training_time_minutes
+    )
+    if write_output and output_path is not None:
+        write_output_zarr(ds_out, output_path)
+    print(f"time to save output: {(time.time() - save_start_time) / 60:.2f} minutes")
+
+    end_time = time.time()
+    total_time_minutes = (end_time - start_time) / 60
+    print(f"Total experiment time: {total_time_minutes:.2f} minutes")
+    # model is the last-trained network (a single model for the default path; the final
+    # ensemble member otherwise). stats/pca let callers re-apply a single model.
+    return ds_out, training_time_minutes, model, stats_train, stats_out, pca_transformer
 
 
 def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, device, patch_num=None, use_legacy_global_data=False):
@@ -2786,746 +3723,125 @@ def run_subregion_experiment(lat_vals, lon_vals, output_path, args, data_dir, de
     # ========================================================================
     # REGRESSION MODE (standard temperature correction)
     # ========================================================================
-
-    # Load training data
-    (fc, fc_output, obs, lead_time_indices, day_of_year_features, train_times, lat_u, lon_u,
-     n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
-                       patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
-
-    loading_time = time.time()
-    print(f"Data loaded in {(loading_time - start_time) / 60:.2f} minutes")
-
-    # Normalize data
-    stats_train = {'mean': fc.mean(0), 'std': fc.std(0) + 1e-8}
-    stats_out = {'mean': fc_output.mean(0), 'std': fc_output.std(0) + 1e-8}
-
-    fc_norm = (fc - stats_train['mean']) / stats_train['std']
-    fc_output_norm = (fc_output - stats_out['mean']) / stats_out['std']
-
-    # PCA dimensionality reduction on forecast inputs (if requested).
-    # Reduces the spatial input from n_vars*n_lat*n_lon to K principal components,
-    # retaining the dominant spatial patterns while greatly reducing overfitting.
-    pca_components = getattr(args, 'pca_components', 0)
-    pca_transformer = None  # dict with 'mean' and 'components' arrays
-    if pca_components > 0:
-        max_components = min(pca_components, fc_norm.shape[0] - 1, fc_norm.shape[1])
-        print(f"\nApplying PCA reduction: {fc_norm.shape[1]} → {max_components} components")
-        pca_mean = fc_norm.mean(axis=0)
-        X_c = fc_norm - pca_mean
-        # Thin SVD: U [n,k], s [k], Vt [k, n_features]
-        _, s, Vt = np.linalg.svd(X_c, full_matrices=False)
-        pca_components_mat = Vt[:max_components]  # [K, n_features]
-        var_total = (s ** 2).sum()
-        var_explained = (s[:max_components] ** 2).sum() / var_total
-        pca_transformer = {'mean': pca_mean, 'components': pca_components_mat}
-        fc_norm = X_c @ pca_components_mat.T  # [n_samples, K]
-        print(f"  Variance explained: {var_explained*100:.1f}% with {max_components} PCs")
-
-    # normalize target observations using forecasts to be corrected
-    obs_norm = (obs - stats_out['mean']) / stats_out['std']
-
-    # Use optimal batch size if available, otherwise default to 128
-    batch_size = args.optimal_batch_size if args.optimal_batch_size else 128
-    print(f"Using batch_size: {batch_size}")
-
-    # Compute n_lead_times and lead_time_days
-    n_lead_times = len(args.lead_time_hours)
-    lead_time_days = [lt / 24 for lt in args.lead_time_hours]
-
-    # Split train/validation
-    n_samples = len(fc)
-
-    # Standard random split
-    idx = np.arange(n_samples)
-    np.random.shuffle(idx)
-    split = int(0.8 * n_samples)
-    t_idx, v_idx = idx[:split], idx[split:]
-
-    train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
-                                    lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                    batch_size=batch_size, device=device)
-    val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
-                                  lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                  batch_size=batch_size, device=device)
-
-    # Log DataLoader settings
-    print(f"DataLoader settings: num_workers={train_loader.num_workers}, pin_memory={train_loader.pin_memory}")
-    if device.type == 'cuda':
-        print(f"  CPU cores available: {os.cpu_count()}")
-
-    # Initialize model
-    input_dim = fc_norm.shape[1]  # either n_training_vars * n_lat * n_lon, or pca_components if PCA used
-    output_dim = n_output_vars * n_lat * n_lon
-
-    # Use optimal lead time embedding dimension if available
-    lead_time_emb_dim = args.optimal_lead_time_embedding_dim if args.optimal_lead_time_embedding_dim else 4
-
-    arch = getattr(args, 'nn_architecture', 'mlp')
-    if arch == 'unet':
-        print(f"  UNet hidden_dim: {args.unet_hidden_dim}")
-        print(f"  UNet dropout: {args.unet_dropout}")
-        print(f"  UNet lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
-                     n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                     n_lead_times=n_lead_times,
-                     lead_time_embedding_dim=lead_time_emb_dim,
-                     dropout_rate=args.unet_dropout).to(device)
-        num_epochs = 500
-    elif arch == 'gated_mlp':
-        # GatedMLP uses SwiGLU (3 linear layers per block vs 1 for SimpleMLP).
-        # Scale hidden_dim so parameter count matches SimpleMLP for a fair comparison.
-        # gated_mlp_hidden_dim can be set explicitly; otherwise auto-compute to match SimpleMLP.
-        gated_hidden_dim = getattr(args, 'gated_mlp_hidden_dim', None)
-        if gated_hidden_dim is None:
-            gated_hidden_dim = _compute_gated_mlp_hidden_dim(
-                input_dim=input_dim,
-                output_dim=output_dim,
-                mlp_hidden_dim=args.mlp_hidden_dim,
-                num_layers=args.mlp_num_layers,
-                n_lead_times=n_lead_times,
-                lead_time_embedding_dim=lead_time_emb_dim,
-            )
-        print(f"Using GatedMLP (SwiGLU + LayerNorm + residual) with {n_lead_times} lead times")
-        print(f"  hidden_dim: {gated_hidden_dim} (auto-scaled to match SimpleMLP param count)")
-        print(f"  num_layers: {args.mlp_num_layers}")
-        print(f"  dropout: {args.mlp_dropout}")
-        print(f"  lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = GatedMLP(input_dim=input_dim,
-                         hidden_dim=gated_hidden_dim,
-                         output_dim=output_dim,
-                         num_hidden_layers=args.mlp_num_layers,
-                         n_lead_times=n_lead_times,
-                         lead_time_embedding_dim=lead_time_emb_dim,
-                         dropout_rate=args.mlp_dropout
-                         ).to(device)
-        num_epochs = 750
-    else:
-        print(f"Using SimpleMLP with {n_lead_times} lead times")
-        print(f"  MLP hidden_dim: {args.mlp_hidden_dim}")
-        print(f"  MLP num_layers: {args.mlp_num_layers}")
-        print(f"  MLP dropout: {args.mlp_dropout}")
-        print(f"  MLP lead_time_embedding_dim: {lead_time_emb_dim}")
-        model = SimpleMLP(input_dim=input_dim,
-                          hidden_dim=args.mlp_hidden_dim,
-                          output_dim=output_dim,
-                          num_hidden_layers=args.mlp_num_layers,
-                          n_lead_times=n_lead_times,
-                          lead_time_embedding_dim=lead_time_emb_dim,
-                          dropout_rate=args.mlp_dropout
-                          ).to(device)
-        num_epochs = 750
-
-    # Use optimal training hyperparameters if available
-    # Block LTHO empirical best: lr=3.3e-4, wd=2.2e-6 (found via architecture experiments)
-    lr = args.optimal_lr if args.optimal_lr else 3.3e-4
-    weight_decay = args.optimal_weight_decay if args.optimal_weight_decay else 2.2e-6
-    patience = args.optimal_patience if args.optimal_patience else 50
-    min_delta = args.optimal_min_delta if args.optimal_min_delta else 1e-5
-
-    print(f"\nTraining with:")
-    print(f"  lr: {lr}")
-    print(f"  weight_decay: {weight_decay}")
-    print(f"  patience: {patience}")
-    print(f"  min_delta: {min_delta}")
-
-    # Determine ensemble mode
-    n_ensemble = getattr(args, 'ensemble', None) or 1
-    n_snapshot = getattr(args, 'snapshot_ensemble', None) or 0
-    n_swa = getattr(args, 'swa_ensemble', None) or 0
-    use_block = getattr(args, 'block_ensemble', False)
-    use_ensemble = n_ensemble > 1
-    use_snapshot = n_snapshot > 0
-    use_swa = n_swa > 0
-
-    if use_block:
-        print(f"\n{'='*50}")
-        print(f"BLOCK ENSEMBLE (leave-{getattr(args, 'block_holdout', 3)}-out)")
-        if use_snapshot:
-            print(f"  + SNAPSHOT (T0={getattr(args, 'snapshot_T0', 30)}) per block")
-        print(f"{'='*50}")
-    elif use_snapshot:
-        print(f"\n{'='*50}")
-        print(f"SNAPSHOT ENSEMBLE: {n_snapshot} runs")
-        print(f"{'='*50}")
-    elif use_swa:
-        print(f"\n{'='*50}")
-        print(f"SWA ENSEMBLE: {n_swa} runs")
-        print(f"{'='*50}")
-    elif use_ensemble:
-        print(f"\n{'='*50}")
-        print(f"ENSEMBLE TRAINING: {n_ensemble} members")
-        print(f"{'='*50}")
-
-    # Load test data before ensemble loop (only need to load once)
-    load_time = time.time()
-    (test_fc, test_fc_output, test_obs, test_lead_time_indices, test_day_of_year_features,
-     test_times, _, _, _, _, _, _, _) = \
-        load_forecasts(data_dir, args, lat_vals, lon_vals, train=False, patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
-    test_fc_norm = (test_fc - stats_train['mean']) / stats_train['std']
-    test_fc_output_norm = (test_fc_output - stats_out['mean']) / stats_out['std']
-
-    # Apply same PCA transform to test data (using fit from training data)
-    if pca_transformer is not None:
-        test_fc_norm = (test_fc_norm - pca_transformer['mean']) @ pca_transformer['components'].T
-
-    ensemble_corrections = []
-    ensemble_weights = []  # val_loss-based weights for snapshot members; empty = equal weight
-    training_time_minutes = 0.0
-
-    # Build lead-time weight dict for snapshot training (if specified)
-    lt_weights_raw = getattr(args, 'lead_time_loss_weights', None)
-    lt_weight_dict = None
-    if lt_weights_raw is not None:
-        lt_weight_dict = {i: w for i, w in enumerate(lt_weights_raw)}
-        print(f"Lead-time loss weights: {lt_weight_dict}")
-
-    use_small_init = getattr(args, 'small_output_init', False)
-    use_per_lt = getattr(args, 'per_lead_time', False)
-
-    # Helper to create a fresh model instance
-    def _create_model(n_lt_override=None):
-        """Create a fresh model. n_lt_override: override n_lead_times (for per-LT training)."""
-        _n_lt = n_lt_override if n_lt_override is not None else n_lead_times
-        if arch == 'unet':
-            return UNet(input_dim, args.unet_hidden_dim, output_dim, n_lat=n_lat, n_lon=n_lon,
-                        n_input_vars=n_training_vars, n_output_vars=n_output_vars,
-                        n_lead_times=_n_lt,
-                        lead_time_embedding_dim=lead_time_emb_dim,
-                        dropout_rate=args.unet_dropout).to(device)
-        elif arch == 'gated_mlp':
-            _gated_hd = getattr(args, 'gated_mlp_hidden_dim', None) or _compute_gated_mlp_hidden_dim(
-                input_dim=input_dim, output_dim=output_dim,
-                mlp_hidden_dim=args.mlp_hidden_dim, num_layers=args.mlp_num_layers,
-                n_lead_times=_n_lt, lead_time_embedding_dim=lead_time_emb_dim,
-            )
-            return GatedMLP(input_dim=input_dim, hidden_dim=_gated_hd,
-                            output_dim=output_dim,
-                            num_hidden_layers=args.mlp_num_layers,
-                            n_lead_times=_n_lt,
-                            lead_time_embedding_dim=lead_time_emb_dim,
-                            dropout_rate=args.mlp_dropout).to(device)
-        else:
-            return SimpleMLP(input_dim=input_dim, hidden_dim=args.mlp_hidden_dim,
-                             output_dim=output_dim,
-                             num_hidden_layers=args.mlp_num_layers,
-                             n_lead_times=_n_lt,
-                             lead_time_embedding_dim=lead_time_emb_dim,
-                             dropout_rate=args.mlp_dropout,
-                             small_output_init=use_small_init).to(device)
-
-    if use_per_lt and use_snapshot and not use_block:
-        # ---- Per-Lead-Time Snapshot Ensemble ----
-        # Train a separate snapshot ensemble for each lead time. Each model sees only
-        # data from its lead time, eliminating gradient competition across horizons.
-        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
-        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
-        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
-
-        print(f"\nPER-LEAD-TIME Snapshot Ensemble x{n_snapshot}: training {n_lead_times} separate models")
-        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
-
-        corrected_per_lt = np.zeros_like(test_fc_output)
-
-        for lt_idx in range(n_lead_times):
-            lt_hours = args.lead_time_hours[lt_idx]
-            print(f"\n{'='*50}")
-            print(f"  Training snapshot ensemble for lead time {lt_hours}h")
-            print(f"{'='*50}")
-
-            lt_train_mask = (lead_time_indices == lt_idx)
-            lt_test_mask = (test_lead_time_indices == lt_idx)
-
-            fc_lt = fc_norm[lt_train_mask]
-            fc_out_lt = fc_output_norm[lt_train_mask]
-            obs_lt = obs_norm[lt_train_mask]
-            doy_lt = day_of_year_features[lt_train_mask]
-            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
-
-            test_fc_lt = test_fc_norm[lt_test_mask]
-            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
-            test_doy_lt = test_day_of_year_features[lt_test_mask]
-            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
-
-            lt_corrections = []
-
-            for run_i in range(n_snapshot):
-                seed = run_i * 17 + lt_idx * 1000 + 1
-                torch.manual_seed(seed)
-                np.random.seed(seed * 13 + 7)
-
-                n_lt_samples = len(fc_lt)
-                run_idx = np.arange(n_lt_samples)
-                np.random.shuffle(run_idx)
-                split = int(0.8 * n_lt_samples)
-                t_idx_run, v_idx_run = run_idx[:split], run_idx[split:]
-
-                run_train_loader = create_dataloader(
-                    fc_lt[t_idx_run], fc_out_lt[t_idx_run], obs_lt[t_idx_run],
-                    lti_lt[t_idx_run], doy_lt[t_idx_run],
-                    batch_size=batch_size, device=device)
-                run_val_loader = create_dataloader(
-                    fc_lt[v_idx_run], fc_out_lt[v_idx_run], obs_lt[v_idx_run],
-                    lti_lt[v_idx_run], doy_lt[v_idx_run],
-                    batch_size=batch_size, device=device)
-
-                model = _create_model(n_lt_override=1)
-                snapshots, run_time = train_snapshot_ensemble(
-                    model, run_train_loader, run_val_loader,
-                    epochs=snapshot_epochs, lr=lr, device=device,
-                    weight_decay=weight_decay, grad_clip=1.0,
-                    T_0=snapshot_T0, T_mult=snapshot_T_mult)
-                training_time_minutes += run_time
-
-                for snap_weights, _ in snapshots:
-                    model.load_state_dict(snap_weights)
-                    snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
-                                                 test_lti_lt, test_doy_lt, device)
-                    snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
-                    lt_corrections.append(snap_corr)
-
-            corrected_per_lt[lt_test_mask] = np.mean(lt_corrections, axis=0)
-            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} total snapshots")
-
-        corrected = corrected_per_lt
-        print(f"\nPer-LT snapshot ensemble complete: {n_lead_times} models, "
-              f"training: {training_time_minutes:.2f} minutes")
-
-    elif use_per_lt and use_block:
-        # ---- Per-Lead-Time Block Ensemble ----
-        # Train a SEPARATE block ensemble for each lead time. Each model only sees
-        # data from its lead time, so 24h model optimizes purely for 24h without
-        # gradient competition from 120h/216h. Results are stitched back together.
-        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
-        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
-        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
-
-        import pandas as pd
-        from itertools import combinations
-        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
-        block_holdout = getattr(args, 'block_holdout', 3)
-        held_year_sets = list(combinations(train_years, block_holdout))
-        sample_years = pd.DatetimeIndex(train_times).year.values
-
-        print(f"\nPER-LEAD-TIME Block Ensemble: training {n_lead_times} separate models")
-        print(f"Training years: {train_years}, blocks: {len(held_year_sets)}")
-        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
-
-        # Allocate output array matching test data shape
-        corrected_per_lt = np.zeros_like(test_fc_output)
-
-        for lt_idx in range(n_lead_times):
-            lt_hours = args.lead_time_hours[lt_idx]
-            print(f"\n{'='*50}")
-            print(f"  Training model for lead time {lt_hours}h (index {lt_idx})")
-            print(f"{'='*50}")
-
-            # Filter train data to this lead time only
-            lt_train_mask = (lead_time_indices == lt_idx)
-            lt_test_mask = (test_lead_time_indices == lt_idx)
-
-            fc_lt = fc_norm[lt_train_mask]
-            fc_out_lt = fc_output_norm[lt_train_mask]
-            obs_lt = obs_norm[lt_train_mask]
-            doy_lt = day_of_year_features[lt_train_mask]
-            # Lead time index is always 0 for single-LT model
-            lti_lt = np.zeros(lt_train_mask.sum(), dtype=np.int64)
-            times_lt = train_times[lt_train_mask] if hasattr(train_times, '__getitem__') else np.array(train_times)[lt_train_mask]
-            sample_years_lt = sample_years[lt_train_mask]
-
-            test_fc_lt = test_fc_norm[lt_test_mask]
-            test_fc_out_lt = test_fc_output_norm[lt_test_mask]
-            test_doy_lt = test_day_of_year_features[lt_test_mask]
-            test_lti_lt = np.zeros(lt_test_mask.sum(), dtype=np.int64)
-
-            lt_corrections = []
-            lt_weights = []
-
-            for held_years_tuple in held_year_sets:
-                seed_key = sum(held_years_tuple) + lt_idx * 1000
-                torch.manual_seed(seed_key)
-                np.random.seed(seed_key * 13)
-
-                v_mask = np.isin(sample_years_lt, held_years_tuple)
-                t_mask = ~v_mask
-                print(f"  Block held={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()}")
-
-                run_train_loader = create_dataloader(
-                    fc_lt[t_mask], fc_out_lt[t_mask], obs_lt[t_mask],
-                    lti_lt[t_mask], doy_lt[t_mask],
-                    batch_size=batch_size, device=device)
-                run_val_loader = create_dataloader(
-                    fc_lt[v_mask], fc_out_lt[v_mask], obs_lt[v_mask],
-                    lti_lt[v_mask], doy_lt[v_mask],
-                    batch_size=batch_size, device=device)
-
-                if use_snapshot:
-                    n_seeds_per_block = max(1, n_snapshot)
-                    for seed_idx in range(n_seeds_per_block):
-                        seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
-                        torch.manual_seed(seed)
-                        np.random.seed(seed)
-                        # n_lead_times=1 for per-LT model (no lead time embedding needed)
-                        model = _create_model(n_lt_override=1)
-                        snapshots, run_time = train_snapshot_ensemble(
-                            model, run_train_loader, run_val_loader,
-                            epochs=snapshot_epochs, lr=lr, device=device,
-                            weight_decay=weight_decay, grad_clip=1.0,
-                            T_0=snapshot_T0, T_mult=snapshot_T_mult)
-                        training_time_minutes += run_time
-
-                        for snap_weights, snap_val_loss in snapshots:
-                            model.load_state_dict(snap_weights)
-                            snap_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
-                                                         test_lti_lt, test_doy_lt, device)
-                            snap_corr = (snap_corr * stats_out['std']) + stats_out['mean']
-                            lt_corrections.append(snap_corr)
-                            lt_weights.append(1.0 / max(snap_val_loss, 1e-12))
-                else:
-                    model = _create_model(n_lt_override=1)
-                    model, run_time = train_model(
-                        model, run_train_loader, run_val_loader,
-                        epochs=num_epochs, lr=lr, device=device,
-                        weight_decay=weight_decay, patience=patience, min_delta=min_delta,
-                        scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
-                    training_time_minutes += run_time
-                    member_corr = apply_correction(model, test_fc_lt, test_fc_out_lt,
-                                                   test_lti_lt, test_doy_lt, device)
-                    member_corr = (member_corr * stats_out['std']) + stats_out['mean']
-                    lt_corrections.append(member_corr)
-
-            # Weighted average for this lead time
-            if lt_weights:
-                w = np.array(lt_weights)
-                w = w / w.sum()
-                lt_corrected = np.average(lt_corrections, weights=w, axis=0)
-            else:
-                lt_corrected = np.mean(lt_corrections, axis=0)
-
-            corrected_per_lt[lt_test_mask] = lt_corrected
-            print(f"  Lead time {lt_hours}h: {len(lt_corrections)} ensemble members")
-
-        corrected = corrected_per_lt
-        print(f"\nPer-LT block ensemble complete: {n_lead_times} models, "
-              f"training: {training_time_minutes:.2f} minutes")
-
-    elif use_block:
-        # ---- Block ensemble: leave-k-out cross-validation ensemble ----
-        # For each held-out block of training years, train a snapshot ensemble on the remaining years.
-        # This creates temporally diverse models that generalize better across climate variability.
-        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
-        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
-        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
-
-        import pandas as pd
-        from itertools import combinations
-        train_years = sorted(set(pd.DatetimeIndex(train_times).year.tolist()))
-        block_holdout = getattr(args, 'block_holdout', 3)
-        held_year_sets = list(combinations(train_years, block_holdout))
-        print(f"Training years available: {train_years}")
-        print(f"Block holdout: {block_holdout} years per block ({len(held_year_sets)} blocks total)")
-        print(f"Snapshot settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
-
-        # Extract year per sample
-        sample_years = pd.DatetimeIndex(train_times).year.values
-
-        for held_years_tuple in held_year_sets:
-            seed_key = sum(held_years_tuple)
-            torch.manual_seed(seed_key)
-            np.random.seed(seed_key * 13)
-
-            v_mask = np.isin(sample_years, held_years_tuple)
-            t_mask = ~v_mask
-            held_year = held_years_tuple  # keep as tuple for logging
-
-            print(f"\n--- Block: held_years={held_years_tuple}, train={t_mask.sum()}, val={v_mask.sum()} ---")
-
-            run_train_loader = create_dataloader(
-                fc_norm[t_mask], fc_output_norm[t_mask], obs_norm[t_mask],
-                lead_time_indices[t_mask], day_of_year_features[t_mask],
-                batch_size=batch_size, device=device)
-            run_val_loader = create_dataloader(
-                fc_norm[v_mask], fc_output_norm[v_mask], obs_norm[v_mask],
-                lead_time_indices[v_mask], day_of_year_features[v_mask],
-                batch_size=batch_size, device=device)
-
-            if use_snapshot:
-                # Snapshot ensemble within each block; n_snapshot controls number of seed-diverse runs
-                n_seeds_per_block = max(1, n_snapshot)
-                for seed_idx in range(n_seeds_per_block):
-                    # seed_idx=0 uses seed_key (sum of held years) to preserve original behavior
-                    seed = seed_key if seed_idx == 0 else seed_key * 100 + seed_idx
-                    torch.manual_seed(seed)
-                    np.random.seed(seed)
-                    model = _create_model()
-                    snapshots, run_time = train_snapshot_ensemble(
-                        model, run_train_loader, run_val_loader,
-                        epochs=snapshot_epochs, lr=lr, device=device,
-                        weight_decay=weight_decay, grad_clip=1.0,
-                        T_0=snapshot_T0, T_mult=snapshot_T_mult,
-                        lead_time_weights=lt_weight_dict,
-                        n_lead_times=n_lead_times)
-                    training_time_minutes += run_time
-
-                    mc_samples = getattr(args, 'mc_dropout_samples', 0) # currenlty not using this
-                    for snap_weights, snap_val_loss in snapshots:
-                        model.load_state_dict(snap_weights)
-                        snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                                          test_lead_time_indices,
-                                                          test_day_of_year_features, device,
-                                                          mc_dropout_samples=mc_samples)
-                        snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
-                        ensemble_corrections.append(snap_corrected)
-                        ensemble_weights.append(1.0 / max(snap_val_loss, 1e-12))
-            else:
-                # Single model per block (early stopping)
-                model = _create_model()
-                model, run_time = train_model(
-                    model, run_train_loader, run_val_loader,
-                    epochs=num_epochs, lr=lr, device=device,
-                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
-                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7)
-                training_time_minutes += run_time
-
-                mc_samples = getattr(args, 'mc_dropout_samples', 0)
-                member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                                    test_lead_time_indices,
-                                                    test_day_of_year_features, device,
-                                                    mc_dropout_samples=mc_samples)
-                member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
-                ensemble_corrections.append(member_corrected)
-
-        if ensemble_weights:
-            w = np.array(ensemble_weights)
-            w = w / w.sum()
-            corrected = np.average(ensemble_corrections, weights=w, axis=0)
-        else:
-            corrected = np.mean(ensemble_corrections, axis=0)
-        total_preds = len(ensemble_corrections)
-        print(f"\nBlock ensemble complete: {len(held_year_sets)} blocks, {total_preds} total predictions, "
-              f"training: {training_time_minutes:.2f} minutes")
-
-    elif use_snapshot: # snapshot but not block training
-        # ---- Snapshot ensemble: train N runs, save snapshots at cosine cycle minima ----
-        snapshot_epochs = getattr(args, 'snapshot_epochs', 210)
-        snapshot_T0 = getattr(args, 'optimal_snapshot_T0', None) or getattr(args, 'snapshot_T0', None) or 30
-        snapshot_T_mult = getattr(args, 'optimal_snapshot_T_mult', None) or getattr(args, 'snapshot_T_mult', 1)
-
-        print(f"Snapshot scheduler settings: T0={snapshot_T0}, T_mult={snapshot_T_mult}, epochs={snapshot_epochs}")
-
-        for run_i in range(n_snapshot):
-            ens_seed = run_i * 17 + 1
-            torch.manual_seed(ens_seed)
-            np.random.seed(ens_seed * 13 + 7)
-
-            print(f"\n--- Snapshot run {run_i+1}/{n_snapshot} (seed={ens_seed}) ---")
-
-            # Different train/val split per run
-            idx = np.arange(n_samples)
-            np.random.shuffle(idx)
-            split = int(0.8 * n_samples)
-            t_idx, v_idx = idx[:split], idx[split:]
-
-            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
-                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                                 batch_size=batch_size, device=device)
-            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
-                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                               batch_size=batch_size, device=device)
-
-            model = _create_model()
-            snapshots, run_time = train_snapshot_ensemble(
-                model, run_train_loader, run_val_loader,
-                epochs=snapshot_epochs, lr=lr, device=device,
-                weight_decay=weight_decay, grad_clip=1.0,
-                T_0=snapshot_T0, T_mult=snapshot_T_mult,
-                stats_out=stats_out, alternate_loss_fn=args.alternate_loss_fn)
-            training_time_minutes += run_time
-
-            # Generate predictions from each snapshot
-            for snap_weights, snap_val_loss in snapshots:
-                model.load_state_dict(snap_weights)
-                snap_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                                  test_lead_time_indices,
-                                                  test_day_of_year_features, device)
-                snap_corrected = (snap_corrected * stats_out['std']) + stats_out['mean']
-                ensemble_corrections.append(snap_corrected)
-
-        # Uniform averaging across all snapshot predictions
-        corrected = np.mean(ensemble_corrections, axis=0)
-        total_snapshots = len(ensemble_corrections)
-        print(f"\nSnapshot ensemble complete: {n_snapshot} runs, {total_snapshots} total snapshots, "
-              f"training: {training_time_minutes:.2f} minutes")
-
-    elif use_swa:
-        # ---- SWA ensemble: train N independent SWA models, ensemble predictions ----
-        swa_warmup = getattr(args, 'swa_warmup_epochs', 150)
-        swa_epochs = getattr(args, 'swa_epochs', 60)
-        swa_T0 = getattr(args, 'swa_T0', 20)
-
-        print(f"SWA settings: warmup={swa_warmup}, swa_epochs={swa_epochs}, T0={swa_T0}")
-
-        for run_i in range(n_swa):
-            ens_seed = run_i * 17 + 1
-            torch.manual_seed(ens_seed)
-            np.random.seed(ens_seed * 13 + 7)
-
-            print(f"\n--- SWA run {run_i+1}/{n_swa} (seed={ens_seed}) ---")
-
-            # Different train/val split per run
-            idx = np.arange(n_samples)
-            np.random.shuffle(idx)
-            split = int(0.8 * n_samples)
-            t_idx, v_idx = idx[:split], idx[split:]
-
-            run_train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
-                                                 lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                                 batch_size=batch_size, device=device)
-            run_val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
-                                               lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                               batch_size=batch_size, device=device)
-
-            model = _create_model()
-            swa_model, swa_val_loss, run_time = train_swa_ensemble(
-                model, run_train_loader, run_val_loader,
-                warmup_epochs=swa_warmup, swa_epochs=swa_epochs, lr=lr,
-                device=device, weight_decay=weight_decay, grad_clip=1.0,
-                swa_T0=swa_T0)
-            training_time_minutes += run_time
-
-            # Generate predictions from the SWA-averaged model
-            swa_model.eval()
-            member_corrected = apply_correction(swa_model, test_fc_norm, test_fc_output_norm,
-                                                test_lead_time_indices,
-                                                test_day_of_year_features, device)
-            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
-            ensemble_corrections.append(member_corrected)
-
-        corrected = np.mean(ensemble_corrections, axis=0)
-        print(f"\nSWA ensemble complete: {n_swa} runs, training: {training_time_minutes:.2f} minutes")
-
-    else:
-        # ---- Standard training (single or seed-diverse ensemble) ----
-        for ens_i in range(n_ensemble):
-            if use_ensemble:
-                print(f"\n--- Ensemble member {ens_i+1}/{n_ensemble} (seed={ens_i*17+1}) ---")
-                # Different seed and train/val split per ensemble member
-                ens_seed = ens_i * 17 + 1
-                torch.manual_seed(ens_seed)
-                np.random.seed(ens_seed * 13 + 7)
-
-                # Re-split train/validation with new seed
-                idx = np.arange(n_samples)
-                np.random.shuffle(idx)
-                split = int(0.8 * n_samples)
-                t_idx, v_idx = idx[:split], idx[split:]
-
-                train_loader = create_dataloader(fc_norm[t_idx], fc_output_norm[t_idx], obs_norm[t_idx],
-                                                lead_time_indices[t_idx], day_of_year_features[t_idx],
-                                                batch_size=batch_size, device=device)
-                val_loader = create_dataloader(fc_norm[v_idx], fc_output_norm[v_idx], obs_norm[v_idx],
-                                              lead_time_indices[v_idx], day_of_year_features[v_idx],
-                                              batch_size=batch_size, device=device)
-
-                model = _create_model()
-
-            # Train this model - use cosine annealing for ensemble, standard for single
-            # Use weighted training if lead-time weights or C-Mixup are specified
-            lt_weights = getattr(args, 'lead_time_loss_weights', None)
-            cmixup_alpha = getattr(args, 'cmixup_alpha', 0.0)
-            use_weighted = (lt_weights is not None or cmixup_alpha > 0) and args.alternate_loss_fn is None
-
-            if use_ensemble:
-                model, member_time = train_model_cosine(
-                    model, train_loader, val_loader,
-                    epochs=num_epochs, lr=lr, device=device,
-                    weight_decay=weight_decay, patience=patience,
-                    min_delta=min_delta, grad_clip=1.0)
-            elif use_weighted:
-                # Build lead-time weight dict from list
-                lt_weight_dict = None
-                if lt_weights is not None:
-                    lt_weight_dict = {i: w for i, w in enumerate(lt_weights)}
-                model, member_time = train_model_weighted(
-                    model, train_loader, val_loader,
-                    epochs=num_epochs, lr=lr, device=device,
-                    weight_decay=weight_decay, patience=patience, min_delta=min_delta,
-                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
-                    lead_time_weights=lt_weight_dict, n_lead_times=n_lead_times,
-                    cmixup_alpha=cmixup_alpha)
-            else:
-                model, member_time = train_model(
-                    model, train_loader, val_loader,
-                    epochs=num_epochs, lr=lr, device=device,
-                    weight_decay=weight_decay, stats_out=stats_out,
-                    alternate_loss_fn=args.alternate_loss_fn,
-                    patience=patience, min_delta=min_delta,
-                    scheduler_patience=10, scheduler_factor=0.5, min_lr=1e-7,
-                    n_lead_times=n_lead_times, lead_time_days=lead_time_days,
-                    n_output_vars=n_output_vars, n_lat=n_lat, n_lon=n_lon)
-
-            training_time_minutes += member_time
-            print(f"{'Member' if use_ensemble else 'Training'} complete in {member_time:.2f} minutes")
-
-            # Apply correction
-            member_corrected = apply_correction(model, test_fc_norm, test_fc_output_norm,
-                                                test_lead_time_indices,
-                                                test_day_of_year_features, device)
-            member_corrected = (member_corrected * stats_out['std']) + stats_out['mean']
-            ensemble_corrections.append(member_corrected)
-
-        # Average ensemble predictions (or just use the single model's correction)
-        if use_ensemble:
-            corrected = np.mean(ensemble_corrections, axis=0)
-            print(f"\nEnsemble of {n_ensemble} members complete. Total training: {training_time_minutes:.2f} minutes")
-        else:
-            corrected = ensemble_corrections[0]
-
-    # Calculate MSE per lead time (aggregate and per-variable)
-    for lt_idx, lead_time in enumerate(args.lead_time_hours):
-        mask = test_lead_time_indices == lt_idx
-        if mask.sum() > 0:
-            mse_original = np.mean((test_fc_output[mask] - test_obs[mask])**2)
-            mse_corrected = np.mean((corrected[mask] - test_obs[mask])**2)
-            print(f"Lead time {lead_time}h - MSE original: {mse_original:.6f}, MSE corrected: {mse_corrected:.6f}")
-
-            # Per-variable breakdown when predicting multiple output variables
-            if n_output_vars > 1:
-                n_masked = mask.sum()
-                orig_reshaped = test_fc_output[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
-                obs_reshaped = test_obs[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
-                corr_reshaped = corrected[mask].reshape(n_masked, n_output_vars, n_lat, n_lon)
-
-                for var_idx, var_name in enumerate(args.output_vars):
-                    var_mse_orig = np.mean((orig_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
-                    var_mse_corr = np.mean((corr_reshaped[:, var_idx] - obs_reshaped[:, var_idx])**2)
-                    print(f"  {var_name}: MSE original: {var_mse_orig:.6f}, MSE corrected: {var_mse_corr:.6f}")
-
-    print(f"Test data loaded in {(load_time - loading_time) / 60:.2f} minutes")
-
-
-    save_start_time = time.time()
-    # Save results
-    save_output(
-        output_path=output_path,
-        model_name=args.model_name,
-        output_vars=args.output_vars,
-        lon_values=lon_u,
-        lat_values=lat_u,
-        time_values=test_times,
-        lead_times=args.lead_time_hours,
-        original_fc=test_fc_output,
-        corrected_fc=corrected,
-        lead_time_indices=test_lead_time_indices,
-        ground_truth_data=test_obs,
-        training_mean_forecast_error=training_mean_forecast_error,
-        training_time_minutes=training_time_minutes
-    )
-    print(f"time to save output: {(time.time() - save_start_time) / 60:.2f} minutes")
+    config = PostProcessConfig.from_args(args)
+    train_arrays = load_forecasts(data_dir, args, lat_vals, lon_vals, train=True,
+                                  patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
+    test_arrays = load_forecasts(data_dir, args, lat_vals, lon_vals, train=False,
+                                 patch_num=patch_num, use_legacy_global_data=use_legacy_global_data)
+    _post_process_regression(train_arrays, test_arrays, config, output_path, device,
+                             write_output=True)
 
     end_time = time.time()
     total_time_minutes = (end_time - start_time) / 60
     print(f"Total experiment time: {total_time_minutes:.2f} minutes")
+
+
+# ============================================================================
+# Public importable API: post-process your own forecast
+# ============================================================================
+
+@dataclass
+class PostProcessResult:
+    """Result of post_process_forecasts.
+
+    Fields:
+        output_dataset (xr.Dataset): original/corrected/ground-truth forecasts by lead
+            time — identical to what is written to zarr.
+        metrics (pd.DataFrame): per (variable, lead_time) test-set statistics computed
+            with the project's standard logic (RMSE original/corrected, % improvement, etc.).
+        training_time_minutes (float): total training wall time.
+        model: the trained network (single model for the default path; the final ensemble
+            member when an ensemble/snapshot/block mode is used).
+        stats_train, stats_out (dict): normalization mean/std for inputs and outputs.
+        pca_transformer (dict or None): PCA mean/components if PCA was applied.
+    """
+    output_dataset: object
+    metrics: object
+    training_time_minutes: float
+    model: object = None
+    stats_train: object = None
+    stats_out: object = None
+    pca_transformer: object = None
+
+
+def compute_test_metrics(output_ds, config):
+    """Compute per-(variable, lead_time) test metrics for an output dataset.
+
+    Wraps process_forecasts.compute_metrics_for_output_dataset so the importable path
+    reports the same statistics the paper's tables use.
+
+    Inputs:
+        output_ds (xr.Dataset): dataset from build_output_dataset / post-processing.
+        config: object providing output_vars and lead_time_hours.
+
+    Returns:
+        pd.DataFrame with one row per (variable, lead_time) and the metric columns
+        returned by compute_metrics_for_output_dataset, plus 'variable' and 'lead_time'.
+    """
+    from finetuning.process_forecasts import compute_metrics_for_output_dataset
+    rows = []
+    for var in config.output_vars:
+        for lt in config.lead_time_hours:
+            result, _ = compute_metrics_for_output_dataset(output_ds, var, lt)
+            result['variable'] = var
+            result['lead_time'] = lt
+            rows.append(result)
+    return pd.DataFrame(rows)
+
+
+def post_process_forecasts(forecast_ds, ground_truth_ds, config,
+                           output_path=None, device=None, return_model=True):
+    """Train a post-processing model on user-supplied forecasts and evaluate it.
+
+    The importable entry point for the "bring your own forecast" workflow. Given a forecast
+    Dataset and a ground-truth Dataset (see prepare_arrays_from_datasets for the expected
+    coordinate/variable conventions) plus a PostProcessConfig, it slices the configured
+    train/test periods, trains the configured model, applies the correction to the test
+    period, optionally writes the corrected-forecast zarr, and returns the trained model
+    together with test-set performance metrics.
+
+    Inputs:
+        forecast_ds (xr.Dataset): forecast fields (dims time, prediction_timedelta,
+            latitude, longitude).
+        ground_truth_ds (xr.Dataset): observation fields (dims time, latitude, longitude).
+        config (PostProcessConfig): run configuration (variables, lead times, dates,
+            architecture, ensemble mode, etc.).
+        output_path (str or None): if set, the corrected-forecast zarr is written here.
+        device (torch.device or None): compute device; auto-selected if None.
+        return_model (bool): include the trained model in the result if True.
+
+    Returns:
+        PostProcessResult.
+    """
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else
+                              'mps' if torch.backends.mps.is_available() else
+                              'cpu')
+
+    if config.alternate_loss_fn is not None and config.alternate_loss_fn in CLASSIFICATION_LOSS_FNS:
+        raise NotImplementedError(
+            "post_process_forecasts supports regression only; classification loss "
+            f"'{config.alternate_loss_fn}' is not supported via the importable API."
+        )
+
+    train_arrays = prepare_arrays_from_datasets(forecast_ds, ground_truth_ds, config, train=True)
+    test_arrays = prepare_arrays_from_datasets(forecast_ds, ground_truth_ds, config, train=False)
+
+    ds_out, training_time_minutes, model, stats_train, stats_out, pca_transformer = \
+        _post_process_regression(train_arrays, test_arrays, config, output_path, device,
+                                 write_output=output_path is not None)
+
+    metrics = compute_test_metrics(ds_out, config)
+
+    return PostProcessResult(
+        output_dataset=ds_out,
+        metrics=metrics,
+        training_time_minutes=training_time_minutes,
+        model=model if return_model else None,
+        stats_train=stats_train,
+        stats_out=stats_out,
+        pca_transformer=pca_transformer,
+    )
 
 
 def main():
@@ -3637,8 +3953,8 @@ def main():
         torch.backends.cudnn.benchmark = True
         print("Enabled cudnn benchmarking for faster GPU training")
 
-    torch.manual_seed(58)
-    random.seed(58)
+    torch.manual_seed(args.seed)
+    random.seed(args.seed)
 
     if USE_LEGACY_GLOBAL_DATA:
         print("\n[LEGACY MODE] Will load global yearly files directly")
