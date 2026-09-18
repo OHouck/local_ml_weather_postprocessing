@@ -2652,6 +2652,13 @@ def build_output_dataset(model_name, output_vars, lon_values, lat_values,
                     )
             
             # Ground truth (if available)
+            # TODO: `time` is the forecast valid time, so ground_truth is just the
+            # observation at time T and is identical across lead times (verified:
+            # ground_truth_lt24h == ground_truth_lt120h == ground_truth_lt216h).
+            # Writing one ground_truth per lead time duplicates the same field N times.
+            # To save space, store a single `{var}_ground_truth` (no lt suffix) and
+            # update the readers in process_forecasts.py / figures_finetuning.py to
+            # look it up per variable instead of per lead time.
             if ground_truth_data is not None:
                 ground_truth_lt = ground_truth_data[mask]
                 ground_truth_lt = ground_truth_lt.reshape(n_time_lt, n_vars, n_lat, n_lon).transpose(1, 0, 2, 3)

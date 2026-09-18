@@ -143,6 +143,81 @@ def mortality_weighted_loss(preds, targets, is_normalized, std_out=None, mean_ou
 
     return mse
 
+# Temperature threshold (Celsius) above which observations are counted by
+# above_30_degree_loss. Kept as a module constant so evaluation code (e.g. the
+# science-policy figures) can reference the exact same cutoff.
+ABOVE_30_THRESHOLD_C = 30.0
+
+
+def above_30_degree_loss(preds, targets, is_normalized, std_out=None, mean_out=None,
+                         return_rmse=False):
+    """
+    Loss/metric that only considers errors where the target temperature is
+    above 30C.
+
+    Restricts the (R)MSE to observations warmer than ``ABOVE_30_THRESHOLD_C``,
+    ignoring all cooler samples entirely (rather than down-weighting them like
+    extreme_heat_loss). This isolates forecast skill during hot conditions,
+    which is what matters for heat-related local impacts.
+
+    Follows the same interface as extreme_heat_loss / mortality_weighted_loss so
+    it can be used both for training (normalized Kelvin tensors) and evaluation
+    (Celsius arrays).
+
+    Args:
+        preds: Predictions (torch.Tensor or np.ndarray)
+        targets: Ground truth targets (same type as preds)
+        is_normalized: bool - True if inputs are normalized Kelvin values,
+                       False if inputs are already in Celsius
+        std_out: Standard deviation for denormalization (required if is_normalized=True)
+        mean_out: Mean for denormalization (required if is_normalized=True)
+        return_rmse: If True, return RMSE; if False, return MSE (default)
+
+    Returns:
+        Loss value (torch.Tensor if inputs are tensors, float otherwise). If no
+        target exceeds the threshold the loss is 0 (no hot samples to score).
+
+    Raises:
+        ValueError: If is_normalized=True but std_out or mean_out not provided
+    """
+    ops, _, _ = _get_ops(preds)
+
+    if is_normalized:
+        if std_out is None or mean_out is None:
+            raise ValueError("std_out and mean_out required when is_normalized=True")
+        # Denormalize
+        preds = preds * std_out + mean_out
+        targets = targets * std_out + mean_out
+        # Convert Kelvin to Celsius
+        preds_c = preds - 273.15
+        targets_c = targets - 273.15
+    else:
+        # Already in Celsius
+        preds_c = preds
+        targets_c = targets
+
+    errors = targets_c - preds_c
+    squared_errors = errors ** 2
+
+    # Keep only observations above the threshold; everything else contributes
+    # nothing to the sum or the count.
+    if _is_torch_tensor(squared_errors):
+        mask = (targets_c > ABOVE_30_THRESHOLD_C).float()
+        count = mask.sum()
+        # clamp avoids a divide-by-zero when a batch has no hot samples
+        mse = (mask * squared_errors).sum() / count.clamp(min=1.0)
+    else:
+        mask = (targets_c > ABOVE_30_THRESHOLD_C).astype(float)
+        count = mask.sum()
+        mse = (mask * squared_errors).sum() / max(count, 1.0)
+
+    if return_rmse:
+        if _is_torch_tensor(mse):
+            return ops.sqrt(mse)
+        else:
+            return float(np.sqrt(mse))
+
+    return mse
 
 def extreme_heat_loss(preds, targets, is_normalized, std_out=None, mean_out=None,
                      return_rmse=False):
