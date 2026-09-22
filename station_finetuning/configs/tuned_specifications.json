@@ -1,0 +1,37 @@
+[
+  {
+    "name": "tuned",
+    "variables": ["2m_temperature"],
+    "hidden_units": 32,
+    "layers": 2,
+    "dropout": 0.2,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "use_huber_loss": true,
+    "seeds": [58, 59, 60, 61, 62]
+  },
+  {
+    "name": "tuned",
+    "variables": ["10m_wind_speed"],
+    "hidden_units": 128,
+    "layers": 2,
+    "dropout": 0.2,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "use_huber_loss": true,
+    "seeds": [58, 59, 60, 61, 62]
+  },
+  {
+    "name": "baseline_untuned",
+    "hidden_units": 64,
+    "layers": 2,
+    "dropout": 0.1,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "use_huber_loss": false,
+    "seeds": [58]
+  }
+]
