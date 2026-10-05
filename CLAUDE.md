@@ -1,8 +1,8 @@
 # CLAUDE.md — AI Weather Forecast Post-Processing
 
-**Project**: "Tailoring machine learning weather predictions for local impacts"
+**Project**: "Tailoring machine learning weather predictions for local impacts" (submitted to *Environmental Research Letters* — referred to internally as "the ERL paper")
 **Authors**: Ozma Houck & James Franke (University of Chicago)
-**Purpose**: Train computationally cheap neural networks to post-process weather forecast errors, improving regional forecast skill for local applications.
+**Purpose**: Train computationally cheap neural networks to post-process weather forecast errors, improving regional forecast skill for local applications, with a focus on the global inequality in forecast quality (rich-country vs. low/middle-income-country skill).
 
 ---
 
@@ -10,11 +10,17 @@
 
 The core idea: train lightweight neural networks (MLP or U-Net) to predict the **error** in existing global weather forecasts (Pangu-Weather, ECMWF IFS) and subtract that error. This is applied independently to 6×6 degree regional patches across global land surface.
 
-Key findings in the paper:
+Key findings in the main paper (verified against ERA5):
 - Mean RMSE improvement of ~10% for 2m temperature, ~14% for 10m wind speed
 - Improvement is larger near the equator and in high-topography areas
 - The simple MLP is as good as the U-Net and trains ~25× faster
 - Adding more input variables or larger training domains does not improve accuracy
+
+**Referee-driven follow-up (`station_finetuning/`)**: reviewers objected that ERA5 is itself a model product that is weakest exactly where the paper claims the largest gains (data-sparse tropics/LMIC regions). A whole new module verifies against real surface station observations (ISD-Lite) instead and reframes part of the paper's argument. Headline results:
+- ERA5 verification understates the rich/poor forecast-skill gap by ~3x
+- Post-processing trained against **ERA5** adds no real predictive information — it's pure calibration/damping
+- Post-processing trained against **station observations** does add information, closing 33–45% of the temperature income gap
+- See [`station_finetuning/README.md`](station_finetuning/README.md) for the full write-up (metrics, findings, pipeline, caveats) — treat that file as the source of truth for this module rather than duplicating it here.
 
 ---
 
@@ -22,10 +28,12 @@ Key findings in the paper:
 
 ```
 ai_weather_ag/
-├── finetuning/                              # PRIMARY MODULE
+├── finetuning/                              # PRIMARY MODULE — core training/eval pipeline
 │   ├── post_process.py                          # Main training entry point
 │   ├── prepare_forecasts_and_targets.py     # Data loading (load_forecasts)
-│   ├── figures_finetuning.py                # All paper figure generation
+│   ├── figures_finetuning.py                # All paper figure-generation FUNCTIONS
+│   ├── erl_figures.py                       # Single script that renders every ERL paper figure
+│   │                                         #   (main text + appendix); calls into figures_finetuning.py
 │   ├── process_forecasts.py                 # Compute statistics across output files
 │   ├── custom_loss_fns.py                   # Alternative loss functions
 │   ├── hyperparam_tuning.py                 # Bayesian hyperparameter search
@@ -39,10 +47,31 @@ ai_weather_ag/
 │   ├── run_arch_experiments_eval.py         # Python: run arch experiments on 5% eval cell sample
 │   ├── run_improvement_regression.py        # OLS regression of improvement on geographic features
 │   │
-│   ├── plot_maps_and_binscatters.py         # Script → paper Figs 1–3
-│   ├── plot_arch_experiment_results.py      # Script → paper Fig 4
-│   ├── plot_region_size_results.py          # Script → paper Fig 5
+│   ├── plot_maps_and_binscatters.py         # Script → paper Figs 1–3 (legacy; superseded by erl_figures.py)
+│   ├── plot_arch_experiment_results.py      # Script → paper Fig 4 (legacy; superseded by erl_figures.py)
+│   ├── plot_region_size_results.py          # Script → paper Fig 5 (legacy; superseded by erl_figures.py)
 │   └── plot_custom_loss.py                  # Script → custom loss evaluation figures
+│
+├── station_finetuning/                      # SECONDARY MODULE — referee-response station-level analysis
+│   ├── README.md                                # Full write-up: motivation, metrics, findings, pipeline, caveats
+│   ├── prepare_station_dataset.py           # Step 1: select stations, download ISD-Lite, extract forecast/ERA5/climatology
+│   ├── forecast_features.py                 # Pangu neighbourhoods, ERA5 values, climatology, grid elevation
+│   ├── station_observations.py              # ISD station discovery, download, 00 UTC parsing
+│   ├── station_sampling.py                  # Continent / income-group classification and balanced sampling
+│   ├── select_station_sample.py             # Global stage: screens coverage, writes the sample manifest
+│   ├── train_station_models.py              # Step 2: per-station training, reference baselines, evaluation
+│   ├── verification.py                      # ACC / information-error / noise-error decomposition; income-gap summary
+│   ├── station_figures.py                   # Step 3: the four station-analysis paper figures (+ wind / IFS appendix)
+│   ├── run_station_sample.sh                # Laptop driver: balanced global sample, one continent at a time
+│   ├── run_station_experiments.sh           # SLURM driver for the full global run
+│   └── configs/                             # study_regions.json, tuned_specifications.json
+│
+├── science_policy_figures.py                # Reuses paper figure code to compare raw Pangu vs. IFS accuracy
+├── heat_wave/                                # AIFS heat-wave post-processing (uses finetuning's importable API)
+├── aurora/                                   # Scripts to download/prepare Aurora model forecasts
+├── neuralGCM_retraining/                     # NeuralGCM decoder retraining experiments
+├── gee_gencast/, run_ECMWF_forecasts/, downloading_data/, run_weatherbench2/  # Data acquisition/exploration, not part of core pipeline
+├── slides/, reports/                         # Talk slides and written check-ins (LaTeX/Typst), not code
 │
 ├── helper_funcs.py                          # setup_directories(), generate_output_path(),
 │                                            #   load_all_continent_patches(), sample_continent_patches()
@@ -249,6 +278,45 @@ For bootstrap regions (climate/topographic zones): aggregates across bootstrap s
 
 ---
 
+## Station-Level Post-Processing (`station_finetuning/`)
+
+Standalone module, separate data pipeline from `finetuning/`. Trains the same kind of post-processing models but verifies against real ISD-Lite surface station observations instead of ERA5, to test whether ERA5-based verification/training understates forecast inequality between high-income and low/middle-income (LMIC) regions. **[`station_finetuning/README.md`](station_finetuning/README.md) is the authoritative doc** — full findings, metrics rationale (RMSE = bias² + information error² + noise error², per Bonavita & Geer 2026), pipeline details, scaling notes, and method caveats live there. Keep that README up to date as the primary source; this section is only a pointer plus the essentials an agent needs before touching the code.
+
+**Pipeline** (three steps, run from repo root):
+```bash
+# 1. Select stations, download ISD-Lite, extract forecast/ERA5/climatology
+uv run python station_finetuning/prepare_station_dataset.py \
+    --regions_file station_finetuning/configs/study_regions.json \
+    --model_name pangu --output_prefix station_dataset
+
+# 2. Train every method/station, score on the test year
+uv run python station_finetuning/train_station_models.py \
+    --dataset <processed>/station_finetuning/station_dataset.npz \
+    --station_metadata <processed>/station_finetuning/station_dataset_stations.csv \
+    --specifications station_finetuning/configs/tuned_specifications.json \
+    --output <processed>/station_finetuning/station_results.csv
+
+# 3. Paper figures (reads the sampled run's station_results_sample.csv)
+uv run python station_finetuning/station_figures.py
+```
+
+For a laptop-feasible balanced global sample (1,000 stations per income group, one continent at a time, to keep peak disk to ~1 GB instead of ~15 GB):
+```bash
+bash station_finetuning/run_station_sample.sh select    # once, globally
+bash station_finetuning/run_station_sample.sh all       # each continent in turn
+bash station_finetuning/run_station_sample.sh combine
+```
+For the full SLURM-sharded global run: `sbatch station_finetuning/run_station_experiments.sh prepare|train`, then `bash station_finetuning/run_station_experiments.sh combine`.
+
+**Key conventions to preserve when editing this module** (see README for the "why"):
+- Everything verifies at **00 UTC only** — restricts the usable sample to near-hourly (mostly airport) reporters
+- Station↔grid matching goes through `forecast_features.snap_to_grid_cell` (nearest neighbor + dry adiabatic lapse-rate elevation correction) — never index the grid directly from a station lat/lon
+- The neighbourhood array (`<prefix>_neighbourhoods.npy`) is station-major and memory-mapped; it must stay paired with its `.npz`/`_stations.csv` from the same `prepare_station_dataset.py` run — a mismatch raises rather than silently misaligning
+- `train_station_models.py` fits every spec against **both** ERA5 and station targets by default, to preserve the controlled ERA5-vs-station contrast
+- Validation splits are whole weeks, never random days (weather autocorrelation would leak)
+
+---
+
 ## Output File Naming Convention
 
 Outputs are written to `{output_dir}/{model_name}/{region}/` with filename:
@@ -371,11 +439,11 @@ python3 finetuning/run_improvement_regression.py
 
 ### Regenerate paper figures
 ```bash
-python3 finetuning/plot_maps_and_binscatters.py   # Figs 1, 2, 3
-python3 finetuning/plot_arch_experiment_results.py # Fig 4
-python3 finetuning/plot_region_size_results.py     # Fig 5
-python3 finetuning/plot_custom_loss.py             # Custom loss evaluation figures
+uv run python finetuning/erl_figures.py            # Renders every ERL paper figure (main text + appendix)
+                                                    # in one run; writes to {dirs['root']}/erl_figures/
+python3 finetuning/plot_custom_loss.py             # Custom loss evaluation figures (not covered by erl_figures.py)
 ```
+`plot_maps_and_binscatters.py`, `plot_arch_experiment_results.py`, and `plot_region_size_results.py` are the older per-figure scripts `erl_figures.py` now supersedes; they still work (same underlying `figures_finetuning.py` functions) but are no longer the primary way figures get regenerated.
 
 ### Run hyperparameter tuning
 ```bash
@@ -397,3 +465,6 @@ python3 finetuning/hyperparam_tuning.py \
 - **SDOR data** (standard deviation of orography from ERA5) must be loaded separately before calling `lead_time_compare_binscatter` with `x_metric="sdor"`
 - **Paper uses 6×6 degree patches globally** — all continent-based training runs use `--subregion 6x6`
 - **Continent patch sampling**: `helper_funcs.sample_continent_patches()` samples a reproducible fraction of patches from continent zarr outputs; `split='hyperopt'` and `split='eval'` produce disjoint subsets so hyperopt and arch-experiment evaluation don't overlap
+- **`station_finetuning/` is a separate module and pipeline from `finetuning/`** — it verifies against ISD-Lite station observations rather than ERA5, and its own README is the source of truth (see the dedicated section above). Don't assume `finetuning/`'s ERA5-based conventions (e.g. output zarr naming, `REGION_CENTERS`) apply there.
+- **`finetuning/erl_figures.py` is now the primary figure-generation entry point** for the paper (imports and calls functions from `figures_finetuning.py`); the individual `plot_*.py` scripts are legacy and mostly superseded
+- **`heat_wave/`, `aurora/`, `neuralGCM_retraining/`, `gee_gencast/`, `science_policy_figures.py`** are adjacent/exploratory work that reuse pieces of `finetuning/` (e.g. `heat_wave/run_heatwave_experiment.py` uses the `PostProcessConfig` + `post_process_forecasts` importable API) but are not part of the core paper pipeline — check the header docstring of a given script before assuming it follows `finetuning/`'s conventions

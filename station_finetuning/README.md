@@ -190,7 +190,7 @@ What the search taught us:
 ## Pipeline
 
 ```bash
-# 1. Select stations, download ISD-Lite, extract forecast/ERA5/climatology,
+# 1. Select stations, download HadISD, extract forecast/ERA5/climatology,
 #    and attach each station's World Bank income group.
 uv run python station_finetuning/prepare_station_dataset.py \
     --regions_file station_finetuning/configs/study_regions.json \
@@ -203,14 +203,27 @@ uv run python station_finetuning/train_station_models.py \
     --station_metadata <processed>/station_finetuning/station_dataset_stations.csv \
     --specifications station_finetuning/configs/tuned_specifications.json \
     --output    <processed>/station_finetuning/station_results.csv
+
+# 3. Draw the paper figures from the sampled run (run_station_sample.sh).
+uv run python station_finetuning/station_figures.py
 ```
+
+Step 1 writes three files: `<prefix>.npz` (the small arrays),
+`<prefix>_neighbourhoods.npy` (the forecast windows, memory-mapped by step 2)
+and `<prefix>_stations.csv` (the metadata the figures and the income-gap
+summary read).
 
 Step 2 writes one row per station, variable, method and lead time. Feed that csv
 to `verification.summarise_income_gap` to get the gap table in Finding 3.
 
 | File | Purpose |
 |---|---|
-| `station_observations.py` | ISD station discovery, download, 00 UTC parsing |
+| `station_observations.py` | HadISD station discovery, download, 00 UTC parsing |
+| `station_figures.py` | The four paper figures: ACC map + station-verified income gap (one per variable), ACC-change map (one per variable), gap for raw vs ERA5-trained vs station-trained, RMSE decomposition |
+| `station_sampling.py` | Continent / income classification and balanced sampling |
+| `select_station_sample.py` | Global stage: screens coverage, writes the sample manifest |
+| `run_station_sample.sh` | Laptop driver: one continent at a time, frees disk between |
+| `run_station_experiments.sh` | SLURM driver for the full global run |
 | `forecast_features.py` | Pangu neighbourhoods, ERA5 values, climatology, grid elevation |
 | `verification.py` | ACC / information error / noise error decomposition; income-gap summary |
 | `train_station_models.py` | Per-station training, reference baselines, evaluation |
@@ -226,12 +239,174 @@ A specification may carry a `variables` list to restrict it to one variable,
 which is how the two different tuned architectures are bound to temperature and
 wind in `configs/tuned_specifications.json`. Omitting the field runs it on both.
 
-The station axis of the npz is positional, so the metadata csv must come from
-the same `prepare_station_dataset.py` run. The identifiers are stored in the
-npz and checked on load; a mismatch raises rather than silently pairing one
-station's forecast with another's observations.
+The station axis is positional, so the metadata csv must come from the same
+`prepare_station_dataset.py` run. The identifiers are stored in the npz and
+checked on load; a mismatch raises rather than silently pairing one station's
+forecast with another's observations. The neighbourhood array is station-major
+and lives in a `.npy` beside the npz rather than inside it, so training can
+memory-map it and read one station at a time; a dataset built before that
+change has to be rebuilt.
 
 ---
+
+## Station data: HadISD
+
+Observations come from **HadISD v3.4.3.2025f** (Met Office Hadley Centre; Dunn
+et al. 2012, 2016), a selected, quality-controlled subset of NOAA's ISD. It
+replaced raw ISD-Lite in October 2026 so the observations rest on a published,
+citable QC suite rather than our own filtering. Results quoted above this
+section were produced with ISD-Lite; the old manifest is kept as
+`station_sample_manifest_isd_lite.csv`.
+
+- Same `{usaf}-{wban}` identifiers as ISD, so everything downstream is keyed
+  unchanged. Names and countries are joined from `isd-history.csv`.
+- One netCDF per station (whole record, 2–5 MB compressed). On download each is
+  reduced to its 00 UTC temperature and wind speed, with QC-rejected values
+  (`-2e30`) set to NaN, and cached as `hadisd/{usaf}-{wban}.csv.gz`; the netCDF
+  is deleted. The netCDFs are opened one at a time — HDF5 is not thread-safe.
+- Not homogenised, and final: ISD stopped updating on 29 August 2025.
+- Measured in Africa against ISD-Lite at 00 UTC: temperature QC removes almost
+  nothing (values agree to 0.05 °C in 99.8% of shared observations); wind QC
+  removes >5% of observations at 46 of 289 well-covered stations. HadISD's
+  station selection is the real cost — 275 African stations clear the 70% bar,
+  versus 390 in ISD-Lite.
+
+**Regional boost.** On top of the 1,000-per-income-group balanced draw,
+`select_station_sample.py` takes every usable station in Africa and in South
+America outside Argentina (`sample_stratum == "regional_boost"`). The balanced
+draw alone left most of these out because Asia dominates the
+low-and-middle-income pool. Filter to `sample_stratum == "balanced"` for the
+like-for-like income comparison.
+
+## Scaling the station sample
+
+The 307-station result above came from a draw restricted to the study-region
+boxes. That restriction, not any quality filter, is what held the sample down.
+Measured directly — 800 stratified ISD-Lite station-years downloaded and scored
+with this module's own `load_station_observations`:
+
+| | Active 2018-2022 | Clear the 70% 00 UTC bar | Usable |
+|---|---|---|---|
+| Tropics (\|lat\| < 23.5) | 2,801 | 49.2% ±4.9% | ~1,380 |
+| Extratropics | 10,776 | 74.8% ±4.3% | ~8,055 |
+| **Global** | **13,577** | — | **~9,150** |
+
+Reweighted to the true population that is roughly 6,500 high-income and 2,650
+LMIC stations, of which about 1,170 are tropical LMIC.
+
+Relaxing the coverage bar is *not* the lever: dropping it from 70% to 50% adds
+only about 5 percentage points, because the distribution is bimodal — 28% of
+LMIC stations never report at 00 UTC at all, and most of the rest report
+reliably. Widening the draw is the lever.
+
+```bash
+# Global draw, ~9,000 stations
+uv run python station_finetuning/prepare_station_dataset.py \
+    --station_selection global --model_name pangu \
+    --parallel_downloads 32 --output_prefix station_dataset_global
+
+# Tropics only, which is what the referee comments actually ask about
+uv run python station_finetuning/prepare_station_dataset.py \
+    --station_selection global --latitude_band -23.5 23.5 \
+    --model_name pangu --output_prefix station_dataset_tropics
+```
+
+### The sampled run: 1,000 per income group, one continent at a time
+
+Taking every usable station is not necessary to measure the income gap, and
+15 GB of forecast neighbourhoods is awkward on a laptop. The default route is
+instead a balanced sample — an equal number of high-income and
+low-and-middle-income stations worldwide — built and trained one continent at a
+time.
+
+```bash
+bash station_finetuning/run_station_sample.sh select    # once, globally
+bash station_finetuning/run_station_sample.sh all       # each continent in turn
+bash station_finetuning/run_station_sample.sh combine
+```
+
+`select` is the only global stage. It classifies every active station by income
+group and continent, downloads HadISD for an oversampled pool, measures 00 UTC
+coverage over the training years, and writes a manifest naming the chosen
+stations. The quota has to be global — decided before any chunk is processed —
+or each chunk would fill a quota of its own and the worldwide totals would not
+hold. It reads no forecast data, and it screens on the training years only, so
+the test year is fetched later for the stations that actually make the cut.
+
+`all` then loops the chunks named in the manifest, and for each one prepares
+its slice, trains it, and **deletes that chunk's neighbourhood array** (via
+`train_station_models.py --drop_neighbourhoods`, so the pipeline owns the file's
+lifetime rather than the shell). That deletion is the reason for the split: peak
+disk is one chunk, not the whole sample. It is resumable — a chunk whose results
+csv exists is skipped — and `continent <name>` runs a single one. `KEEP_ARRAYS=1`
+keeps the arrays if you want to re-train against a different specification.
+
+Chunk names are read from the manifest rather than hardcoded. Usually that is
+the six continents; a handful of offshore stations that match no continent are
+routed to an `unassigned` chunk rather than dropped, since the income quota has
+already counted them.
+
+**The only quota is income group.** `--stations_per_income_group 1000` gives a
+2,000-station worldwide sample, 1,000 high income and 1,000 low and middle
+income. Continents are a processing unit, not a stratum: no quota is applied to
+them, so the chunks come out deliberately unequal. They could not be balanced
+anyway — ISD has no high-income stations in Africa at all, and only 70 in South
+America.
+
+| Continent | High income | Low and middle income |
+|---|---|---|
+| Africa | 0 | 1,070 |
+| Asia | 471 | 2,166 |
+| Europe | 3,473 | 181 |
+| North America | 3,768 | 229 |
+| Oceania | 726 | 64 |
+| South America | 70 | 940 |
+| **Total candidates** | **8,509** | **4,653** |
+
+### Will it run on a laptop?
+
+Yes. Measured on an M-series Mac against the real archives:
+
+| Stage | Cost |
+|---|---|
+| Forecast extraction, 5 years | **~1.5 min per continent** (~9 min for all six) |
+| ERA5 extraction, 5 years | ~12 s per continent |
+| HadISD download (`select`, one-off) | ~4,100 stations, ~0.3 MB cached each |
+| Training | ~12 s per station, so ~1–3 h per continent |
+| Peak disk | **~1 GB**, versus ~3 GB in one piece or 15 GB for the full global draw |
+
+Extraction cost barely moves with the continent split because it is set by
+reading the archive once per pass, not by the station count — which is also why
+splitting into six passes costs six reads of the archive rather than one. At
+~1.5 minutes a pass that is a fine trade for holding disk to a single continent;
+it would not be on a slower filesystem.
+
+Training dominates the wall clock and is the reason to go continent by
+continent: each one finishes in a sitting, and the results csvs accumulate.
+
+What this costs, measured rather than estimated:
+
+- **Archive reads: unchanged.** `extract_forecast_neighbourhoods` reads one
+  global slab per (valid time, lead, variable) and gathers every station from
+  it, so 400 stations and 9,000 stations read the same bytes.
+- **Training: ~76 core-hours** worst case for 9,150 stations (24 networks per
+  station, 150 epochs, early stopping disabled), under two hours on a 40-core
+  node. Stations are independent, so `run_station_experiments.sh` shards them
+  across a SLURM array via `--shard_index` / `--shard_count`; the array size
+  is the only knob.
+- **Storage: ~1.6 MB per station**, so ~15 GB for the global draw. The array is
+  written station-major straight into a memory-mapped `.npy`, so preparation
+  holds one year at a time and training pages in only the station it is
+  fitting. Peak resident memory stays in the low gigabytes at either scale.
+- **Downloads: ~46,000 files.** `list_available_station_years` reads NOAA's
+  per-year index once, so station-years that were never published are never
+  requested; without it most of the wall time goes to waiting on 404s.
+
+```bash
+sbatch station_finetuning/run_station_experiments.sh prepare
+sbatch station_finetuning/run_station_experiments.sh train
+bash   station_finetuning/run_station_experiments.sh combine
+```
 
 ## Method notes and caveats
 
@@ -239,14 +414,24 @@ station's forecast with another's observations.
   rate (0.0098 K/m) applied to temperature for the elevation difference between
   the grid cell mean and the station, following Trotta et al. (2025). This
   shifts the mean only, so it affects bias and RMSE but never ACC, IE or NE.
+  Every lookup (forecast, ERA5, elevation, climatology, gridded patches) goes
+  through `forecast_features.snap_to_grid_cell`, which rounds ties up and wraps
+  longitude at 360, so a station exactly between two cells is read at the same
+  cell in every archive whatever order it stores latitude in.
 - **Forecast arrays are indexed by valid time**, not initialisation time — the
   archive convention was verified directly against raw ERA5.
 - **Validation blocks are whole weeks.** Random daily splits leak, because
   weather is strongly autocorrelated day to day.
-- **Anomalies use a 4-year (2018–2021) ERA5 climatology** with a 31-day smoothing
-  window, applied to forecast and observation alike. Linsenmeier & Shrader use
-  30 years. A seasonally-varying ERA5-vs-station bias would leak into the
-  station anomaly; a constant one cancels, because anomalies are centred.
+- **Anomalies use a 30-year (1990–2019) ERA5 climatology**: WeatherBench2's
+  precomputed 00 UTC day-of-year climatology
+  (`era5-hourly-climatology/1990-2019_6h_1440x721.zarr`), read at each
+  station's nearest grid cell and applied to forecast and observation alike.
+  `prepare_station_dataset.py` caches its 00 UTC slice once to
+  `raw/era5_climatology_1990-2019_00utc.zarr` (~9 GB of reads). This follows
+  Linsenmeier & Shrader, with two differences: they use 1991–2020 and a 7-day
+  moving average, where WeatherBench2 uses a 61-day running window. A
+  seasonally-varying ERA5-vs-station bias would leak into the station anomaly;
+  a constant one cancels, because anomalies are centred.
 - **00 UTC only.** All forecasts verify at 00 UTC, so stations reporting only at
   03/12 UTC are unusable. This restricts the sample to near-hourly reporters,
   mostly airports — probably the best-maintained sites in each country, which

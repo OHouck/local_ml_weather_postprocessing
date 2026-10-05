@@ -364,7 +364,8 @@ def _load_country_geometries(dirs):
     Returns
     -------
     geopandas.GeoDataFrame
-        EPSG:4326 with columns ``['iso3', 'name', 'geometry']``. Disputed and
+        EPSG:4326 with columns ``['iso3', 'name', 'continent', 'geometry']``.
+        Disputed and
         indeterminate-sovereignty rows are removed so pixels there will fail
         the spatial join and be dropped from analysis.
     """
@@ -381,8 +382,12 @@ def _load_country_geometries(dirs):
 
     gdf = gpd.read_file(shp_path)
     gdf = gdf[~gdf["TYPE"].isin(["Disputed", "Indeterminate"])].copy()
-    gdf = gdf.rename(columns={"ADM0_A3": "iso3", "NAME": "name"})
-    return gdf[["iso3", "name", "geometry"]].reset_index(drop=True)
+    gdf = gdf.rename(columns={"ADM0_A3": "iso3", "NAME": "name",
+                              "CONTINENT": "continent"})
+    # ``continent`` is carried through so station_finetuning can tag points with
+    # it off the same polygons, without re-reading the shapefile and without a
+    # second spatial join.
+    return gdf[["iso3", "name", "continent", "geometry"]].reset_index(drop=True)
 
 
 def _load_income_geodataframe(dirs, fiscal_year=WB_FISCAL_YEAR):

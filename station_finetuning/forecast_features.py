@@ -10,14 +10,18 @@ Three things are pulled out of the global archives for each station:
    Training against ERA5 instead of station observations is the specification
    the main paper uses, and reproducing it here is what isolates the effect of
    the training target.
-3. A smoothed day-of-year climatology, needed to form the anomalies that
-   anomaly correlation is computed from.
+3. A 30-year (1990-2019) ERA5 day-of-year climatology at 00 UTC, needed to
+   form the anomalies that anomaly correlation is computed from. It is the
+   precomputed WeatherBench2 climatology, following Linsenmeier & Shrader's
+   use of a 30-year ERA5 normal at each station's nearest grid cell.
 
 Forecast arrays are indexed by VALID time, not initialisation time. A forecast
 at lead L valid at time T was initialised at T - L. This was verified against
 the raw archives: the ground-truth field stored beside a lead-24h forecast at
 time T matches ERA5 at T, not at T + 24h.
 """
+
+import os
 
 import numpy as np
 import pandas as pd
@@ -27,20 +31,102 @@ import zarr
 # Standard gravity, used to convert ERA5 surface geopotential to an elevation.
 STANDARD_GRAVITY = 9.80665
 
+# Every archive in this project, including the climatology and the ERA5 static
+# fields, shares this regular latitude/longitude grid.
+GRID_SPACING_DEGREES = 0.25
+
 # Half-width of the predictor window, in grid cells. 2 gives a 5x5 box, which at
 # the 0.25 degree archive resolution spans about 1.25 degrees.
 NEIGHBOURHOOD_HALF_WIDTH = 2
 
-# Width of the centred day-of-year smoothing window used for the climatology.
-CLIMATOLOGY_SMOOTHING_DAYS = 31
+# WeatherBench2's precomputed ERA5 climatology: 1990-2019, dimensions
+# hour (0/6/12/18) x dayofyear (1-366) on the 0.25 degree grid, smoothed by
+# WeatherBench2 with a 61-day running window.
+WEATHERBENCH_CLIMATOLOGY_URL = ("gs://weatherbench2/datasets/"
+                                "era5-hourly-climatology/1990-2019_6h_1440x721.zarr")
+# In the order of the variable axis of the station arrays. The climatology's
+# wind speed is the mean of speed, not the speed of the mean wind components.
+CLIMATOLOGY_VARIABLES = ["2m_temperature", "10m_wind_speed"]
+
+
+def neighbourhood_array_path(dataset_path):
+    """Return the .npy sidecar holding a dataset's forecast neighbourhoods.
+
+    The neighbourhood array is the only large piece of the dataset, so it lives
+    beside the npz rather than inside it: an npz member must be decompressed
+    whole, while a plain .npy can be memory-mapped and read one station at a
+    time. This module writes that file, so it owns the naming.
+
+    Inputs:
+        dataset_path (str): path to the npz written by
+            prepare_station_dataset.py.
+
+    Returns:
+        str: the sibling path ending '_neighbourhoods.npy'.
+    """
+    return dataset_path.replace(".npz", "") + "_neighbourhoods.npy"
+
+
+def load_neighbourhood_array(dataset_path):
+    """Memory-map a dataset's forecast neighbourhood array.
+
+    Inputs:
+        dataset_path (str): path to the npz written by
+            prepare_station_dataset.py.
+
+    Returns:
+        np.memmap: shape (n_stations, n_times, n_leads, n_variables, window,
+            window), read-only.
+
+    Raises:
+        FileNotFoundError: if the sidecar is missing, which is what an older
+            dataset looks like. Those stored the array inside the npz and in a
+            time-leading layout, so they cannot be read here and must be
+            rebuilt with prepare_station_dataset.py.
+    """
+    array_path = neighbourhood_array_path(dataset_path)
+    if not os.path.exists(array_path):
+        raise FileNotFoundError(
+            f"{array_path} not found. Datasets built before the station-axis "
+            f"change stored the neighbourhoods inside the npz in a different "
+            f"layout; rebuild with prepare_station_dataset.py")
+    return np.load(array_path, mmap_mode="r")
+
+
+def snap_to_grid_cell(station_latitudes, station_longitudes):
+    """Return the coordinates of each station's nearest grid cell.
+
+    Every lookup in the pipeline goes through this one rule, so the forecast,
+    ERA5, elevation and climatology are all read at the same cell. Resolving
+    the cell separately in each archive does not guarantee that: a station
+    exactly halfway between two cells is a tie, and argmin or xarray's
+    'nearest' break ties by array order, which differs between archives that
+    store latitude north-to-south and south-to-north. Here ties always round
+    up in coordinate value, and longitude wraps so 359.9 maps to 0.
+
+    Inputs:
+        station_latitudes (np.ndarray): station latitudes in degrees.
+        station_longitudes (np.ndarray): station longitudes in degrees, either
+            convention.
+
+    Returns:
+        tuple: (cell_latitudes, cell_longitudes) as float arrays, longitudes
+            in 0..360.
+    """
+    def round_half_up(values):
+        scaled = np.asarray(values, dtype=float) / GRID_SPACING_DEGREES
+        return np.floor(scaled + 0.5) * GRID_SPACING_DEGREES
+
+    return (round_half_up(station_latitudes),
+            round_half_up(station_longitudes) % 360.0)
 
 
 def resolve_nearest_grid_indices(archive_path, station_latitudes, station_longitudes):
-    """Map station coordinates to their nearest cell on an archive's grid.
+    """Map station coordinates to their cell on an archive's grid.
 
-    Every archive in this project shares the same 0.25 degree latitude/longitude
-    grid, but the lookup is done against the file actually being read so that a
-    differently gridded source would still resolve correctly.
+    Stations are first snapped to their cell with snap_to_grid_cell, so the
+    index found here points at the same cell in every archive whatever order
+    it stores its coordinates in.
 
     Inputs:
         archive_path (str): path to a zarr store holding 'latitude' and
@@ -57,24 +143,36 @@ def resolve_nearest_grid_indices(archive_path, station_latitudes, station_longit
     archive = zarr.open(archive_path, mode="r")
     latitude_grid = np.asarray(archive["latitude"][:])
     longitude_grid = np.asarray(archive["longitude"][:])
+    cell_latitudes, cell_longitudes = snap_to_grid_cell(station_latitudes,
+                                                        station_longitudes)
 
-    # argmin over the absolute difference is exact for a regular grid and avoids
-    # a per-station xarray .sel call, which is far slower for hundreds of points.
-    latitude_indices = np.array(
-        [np.abs(latitude_grid - value).argmin() for value in station_latitudes])
-    longitude_indices = np.array(
-        [np.abs(longitude_grid - value).argmin() for value in station_longitudes])
+    # The snapped coordinates sit exactly on the grid, so argmin finds them
+    # with no ties to break.
+    latitude_indices = np.abs(latitude_grid[None, :]
+                              - cell_latitudes[:, None]).argmin(axis=1)
+    longitude_indices = np.abs(longitude_grid[None, :]
+                               - cell_longitudes[:, None]).argmin(axis=1)
     return latitude_indices, longitude_indices, latitude_grid, longitude_grid
 
 
 def extract_forecast_neighbourhoods(forecast_zarr_template, years, lead_times_hours,
                                     variable_names, station_latitudes,
-                                    station_longitudes):
+                                    station_longitudes, output_path):
     """Pull a square neighbourhood of forecast values around each station.
 
     Reads one global slab per (valid time, lead time, variable) and gathers the
     window for every station from that slab, so each slab is decompressed once
-    rather than once per station.
+    rather than once per station. Cost is therefore set by the archive, not by
+    how many stations are requested: 400 stations and 9,000 stations read the
+    same bytes.
+
+    What does scale with the station count is the output, at about 1.6 MB per
+    station over a five-year study period. Two things keep that manageable. The
+    station axis leads, so each station's block is contiguous and
+    train_station_models.py can memory-map the file and touch only the station
+    it is fitting. And when output_path is given the array is written straight
+    to that memory-mapped file, so peak resident memory is one year's buffer
+    rather than the whole array plus a concatenated copy of it.
 
     Inputs:
         forecast_zarr_template (str): path template containing '{year}', e.g.
@@ -88,12 +186,14 @@ def extract_forecast_neighbourhoods(forecast_zarr_template, years, lead_times_ho
         station_latitudes (np.ndarray): station latitudes on the archive grid.
         station_longitudes (np.ndarray): station longitudes on the archive grid,
             in 0..360.
+        output_path (str): .npy file to write the array into as a memory map.
+            Use neighbourhood_array_path() to name it.
 
     Returns:
         tuple: (verification_times, neighbourhood_values) where
             verification_times is a pd.DatetimeIndex of 00 UTC valid times and
             neighbourhood_values is a float32 array of shape
-            (n_times, n_leads, n_variables, n_stations, window, window).
+            (n_stations, n_times, n_leads, n_variables, window, window).
     """
     window_size = 2 * NEIGHBOURHOOD_HALF_WIDTH + 1
 
@@ -111,9 +211,10 @@ def extract_forecast_neighbourhoods(forecast_zarr_template, years, lead_times_ho
                           0, len(latitude_grid) - 1)
     window_columns = (longitude_indices[:, None] + offsets[None, :]) % len(longitude_grid)
 
-    times_per_year, values_per_year = [], []
+    # First pass reads only the time and lead coordinates, which is cheap, so
+    # that the full output can be sized before any field data is touched.
+    year_plans, times_per_year = [], []
     for year in years:
-        archive = zarr.open(forecast_zarr_template.format(year=year), mode="r")
         # Open with xarray purely to CF-decode the time and lead coordinates;
         # reading the raw integers would misinterpret "hours since ..." as
         # nanoseconds.
@@ -124,12 +225,35 @@ def extract_forecast_neighbourhoods(forecast_zarr_template, years, lead_times_ho
             decoded.prediction_timedelta.values / np.timedelta64(1, "h")).astype(int)
         lead_positions = [int(np.where(archive_lead_hours == lead)[0][0])
                           for lead in lead_times_hours]
-        midnight_positions = np.where(valid_times.hour == 0)[0]
+        # Kept as plain ints to match lead_positions: zarr 3 routes a numpy
+        # integer alongside a list to basic indexing, which rejects the list.
+        midnight_positions = np.where(valid_times.hour == 0)[0].tolist()
+        year_plans.append((year, midnight_positions, lead_positions))
+        times_per_year.append(valid_times[midnight_positions])
 
-        year_values = np.full(
+    verification_times = pd.DatetimeIndex(
+        np.concatenate([times.values for times in times_per_year]))
+    output_shape = (len(station_latitudes), len(verification_times),
+                    len(lead_times_hours), len(variable_names),
+                    window_size, window_size)
+
+    neighbourhood_values = np.lib.format.open_memmap(
+        output_path, mode="w+", dtype=np.float32, shape=output_shape)
+
+    first_time_position = 0
+    for year, midnight_positions, lead_positions in year_plans:
+        archive = zarr.open(forecast_zarr_template.format(year=year), mode="r")
+
+        # Gather into a time-leading buffer for one year, then transpose it into
+        # the station-leading output in a single bulk write. Writing each slab
+        # straight to the output would scatter one small write per station
+        # across the whole file, which is far slower against a memory map.
+        # Every (time, lead, variable) cell is written by the loop below, so
+        # there is nothing to pre-fill; np.full would memset 3 GB per year.
+        year_values = np.empty(
             (len(midnight_positions), len(lead_times_hours), len(variable_names),
              len(station_latitudes), window_size, window_size),
-            np.nan, dtype=np.float32)
+            dtype=np.float32)
 
         for variable_position, variable_name in enumerate(variable_names):
             variable_array = archive[variable_name]
@@ -144,13 +268,14 @@ def extract_forecast_neighbourhoods(forecast_zarr_template, years, lead_times_ho
                     year_values[output_position, lead_position, variable_position] = (
                         global_slab[window_rows[:, :, None], window_columns[:, None, :]])
 
-        times_per_year.append(valid_times[midnight_positions])
-        values_per_year.append(year_values)
+        last_time_position = first_time_position + len(midnight_positions)
+        neighbourhood_values[:, first_time_position:last_time_position] = (
+            year_values.transpose(3, 0, 1, 2, 4, 5))
+        first_time_position = last_time_position
+        del year_values
         print(f"  extracted forecast neighbourhoods for {year}", flush=True)
 
-    verification_times = pd.DatetimeIndex(
-        np.concatenate([times.values for times in times_per_year]))
-    neighbourhood_values = np.concatenate(values_per_year, axis=0)
+    neighbourhood_values.flush()
     return verification_times, neighbourhood_values
 
 
@@ -158,9 +283,8 @@ def extract_era5_at_stations(era5_zarr_template, years, verification_times,
                              station_latitudes, station_longitudes):
     """Read ERA5 temperature and wind speed at each station's nearest grid cell.
 
-    ERA5 plays two roles here: it is the alternative training target (the one
-    the main paper uses) and it supplies the climatology used to form anomalies.
-    Wind speed is derived from the u and v components at native resolution.
+    ERA5 here is the alternative training target (the one the main paper
+    uses). Wind speed is derived from the u and v components at native resolution.
 
     Inputs:
         era5_zarr_template (str): path template containing '{year}'.
@@ -210,53 +334,71 @@ def extract_era5_at_stations(era5_zarr_template, years, verification_times,
     return era5_values
 
 
-def build_day_of_year_climatology(era5_values, verification_times, climatology_years):
-    """Build a smoothed day-of-year climatology at each station.
+def download_weatherbench_climatology(output_path):
+    """Cache the 00 UTC slice of the WeatherBench2 ERA5 climatology locally.
+
+    The remote store is chunked three hours by three days of the full globe, so
+    even one hour costs about 9 GB of reads. Saving just the 00 UTC fields of
+    the two variables (about 1.5 GB) once means every later station lookup,
+    for any station set, is local.
+
+    Inputs:
+        output_path (str): local zarr to write, e.g.
+            '<raw>/era5_climatology_1990-2019_00utc.zarr'. Left untouched if
+            it already exists.
+
+    Returns:
+        str: output_path.
+    """
+    if os.path.exists(output_path):
+        return output_path
+    print(f"downloading WeatherBench2 climatology to {output_path}", flush=True)
+    climatology = xr.open_zarr(WEATHERBENCH_CLIMATOLOGY_URL,
+                               storage_options={"token": "anon"})
+    # Hour 0 only: every verification time in this analysis is 00 UTC. The
+    # remote store's zarr-v2 chunking and compressor cannot be written by the
+    # local zarr-v3 writer, so the local store takes default encoding.
+    at_hour = climatology[CLIMATOLOGY_VARIABLES].sel(
+        hour=0, drop=True).drop_encoding()
+    # Write beside the target and rename at the end, so an interrupted
+    # download is never mistaken for a finished one by the check above.
+    # 61-day chunks just split the 366 days into six even blocks.
+    partial_path = f"{output_path}.partial"
+    at_hour.chunk({"dayofyear": 61}).to_zarr(partial_path, mode="w")
+    os.rename(partial_path, output_path)
+    return output_path
+
+
+def load_station_climatology(climatology_path, station_latitudes,
+                             station_longitudes):
+    """Read the day-of-year climatology at each station's grid cell.
 
     Anomaly correlation requires removing the seasonal cycle, otherwise stations
     with a large, trivially predictable annual swing score artificially well.
-    Following Linsenmeier & Shrader, the climatology comes from ERA5 at the
-    station's nearest grid cell and is applied to both forecast and observation.
+    Following Linsenmeier & Shrader, the climatology is a 30-year ERA5 normal
+    at the station's nearest grid cell, applied to both forecast and
+    observation. The cell comes from snap_to_grid_cell, the same rule every
+    other lookup uses.
 
     Inputs:
-        era5_values (np.ndarray): shape (n_times, 2, n_stations), as returned by
-            extract_era5_at_stations.
-        verification_times (pd.DatetimeIndex): times matching axis 0.
-        climatology_years (list[int]): years to average over. These should be
-            the training years only, so the test year does not inform the
-            climatology.
+        climatology_path (str): local zarr from download_weatherbench_climatology.
+        station_latitudes (np.ndarray): station latitudes in degrees.
+        station_longitudes (np.ndarray): station longitudes in degrees.
 
     Returns:
-        dict: maps variable position (0 for temperature, 1 for wind speed) to a
-            float array of shape (366, n_stations) giving the smoothed
-            climatological value for each day-of-year.
+        tuple: (temperature, wind_speed) climatologies, each a float array of
+            shape (366, n_stations); row d is day-of-year d + 1, matching the
+            0-based day-of-year index used elsewhere.
     """
-    in_climatology_period = np.isin(verification_times.year, climatology_years)
-    day_of_year_index = verification_times.dayofyear.values - 1
-    number_of_stations = era5_values.shape[2]
-
-    climatology_by_variable = {}
-    for variable_position in range(2):
-        # Raw per-day means first: with four years of data each day-of-year has
-        # only a handful of samples, hence the smoothing that follows.
-        daily_means = np.full((366, number_of_stations), np.nan)
-        for day in range(366):
-            matching_days = in_climatology_period & (day_of_year_index == day)
-            if matching_days.any():
-                daily_means[day] = np.nanmean(
-                    era5_values[matching_days, variable_position], axis=0)
-
-        # Smooth with a centred window that wraps around the year boundary, so
-        # late December and early January are treated as adjacent.
-        half_window = CLIMATOLOGY_SMOOTHING_DAYS // 2
-        wrapped = np.concatenate(
-            [daily_means[-half_window:], daily_means, daily_means[:half_window]], axis=0)
-        smoothing_kernel = np.ones(CLIMATOLOGY_SMOOTHING_DAYS) / CLIMATOLOGY_SMOOTHING_DAYS
-        climatology_by_variable[variable_position] = np.apply_along_axis(
-            lambda column: np.convolve(column, smoothing_kernel, mode="valid"),
-            0, wrapped)
-
-    return climatology_by_variable
+    cell_latitudes, cell_longitudes = snap_to_grid_cell(station_latitudes,
+                                                        station_longitudes)
+    at_stations = xr.open_zarr(climatology_path).sel(
+        latitude=xr.DataArray(cell_latitudes, dims="station"),
+        longitude=xr.DataArray(cell_longitudes, dims="station"),
+        method="nearest").load()
+    return tuple(at_stations[variable].transpose("dayofyear", "station")
+                 .values.astype(np.float64)
+                 for variable in CLIMATOLOGY_VARIABLES)
 
 
 def read_station_grid_elevation(era5_static_path, station_latitudes,
@@ -280,12 +422,14 @@ def read_station_grid_elevation(era5_static_path, station_latitudes,
     static_fields = xr.open_dataset(era5_static_path, engine="netcdf4")
     elevation_field = static_fields["z"].isel(valid_time=0) / STANDARD_GRAVITY
 
-    # Select all stations in one vectorised call. Looping with .sel per station
-    # costs hundreds of separate xarray lookups for no benefit.
-    latitude_selector = xr.DataArray(np.asarray(station_latitudes), dims="station")
-    longitude_selector = xr.DataArray(np.asarray(station_longitudes), dims="station")
+    # Select all stations in one vectorised call, at the same cells every other
+    # lookup uses. The snapped coordinates are exact grid points, so 'nearest'
+    # only absorbs floating-point differences in the stored coordinates.
+    cell_latitudes, cell_longitudes = snap_to_grid_cell(station_latitudes,
+                                                        station_longitudes)
     grid_elevations = elevation_field.sel(
-        latitude=latitude_selector, longitude=longitude_selector,
+        latitude=xr.DataArray(cell_latitudes, dims="station"),
+        longitude=xr.DataArray(cell_longitudes, dims="station"),
         method="nearest").values
 
     return np.asarray(grid_elevations, dtype=float)

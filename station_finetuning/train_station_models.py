@@ -11,7 +11,7 @@ The experiment that motivates the module is a single controlled contrast. Two
 networks are trained with identical architecture, identical inputs and identical
 training protocol; the only difference is what they are asked to predict:
 
-    'station' target - the error against real ISD station observations
+    'station' target - the error against real HadISD station observations
     'era5' target    - the error against ERA5, as in the main paper
 
 Three reference methods bracket the neural networks. A constant offset and a
@@ -25,6 +25,7 @@ into separate per-lead models was tested and performed worse, because each
 station has only around 1,450 usable days per lead.
 """
 
+import glob
 import json
 import os
 
@@ -33,8 +34,12 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
-from forecast_features import CLIMATOLOGY_SMOOTHING_DAYS
-from verification import decompose_forecast_error
+from forecast_features import (load_neighbourhood_array,
+                               neighbourhood_array_path)
+from station_observations import (MINIMUM_TRAINING_COVERAGE,
+                                  read_station_metadata)
+from verification import (DRY_ADIABATIC_LAPSE_RATE, MINIMUM_SAMPLES_TO_SCORE,
+                          decompose_forecast_error)
 
 RANDOM_SEED = 58
 
@@ -42,10 +47,9 @@ RANDOM_SEED = 58
 # and climatology arrays.
 VARIABLE_NAMES = {0: "2m_temperature", 1: "10m_wind_speed"}
 
-# Dry adiabatic lapse rate in K per metre, used to adjust a grid-cell forecast
-# to the station's own elevation before verifying temperature (Trotta et al.).
-# This shifts the mean only, so it changes bias and RMSE but never ACC.
-DRY_ADIABATIC_LAPSE_RATE = 0.0098
+# Width of the centred, year-wrapping window that smooths the day-of-year bias
+# of the 'seasonal_bias' reference method.
+SEASONAL_BIAS_SMOOTHING_DAYS = 31
 
 # Validation blocks are whole weeks. Random daily splits leak, because weather
 # is strongly autocorrelated from one day to the next.
@@ -62,11 +66,6 @@ MINIMUM_TEST_SAMPLES = 100
 MINIMUM_FITTING_SAMPLES = 200
 MINIMUM_VALIDATION_SAMPLES = 50
 MINIMUM_SAMPLES_PER_LEAD = 50
-MINIMUM_SAMPLES_TO_SCORE = 30
-
-# Stations reporting on fewer than this fraction of 00 UTC training days are
-# dropped. Shared with prepare_station_dataset.py, which reports the same bar.
-MINIMUM_TRAINING_COVERAGE = 0.70
 
 
 def build_training_and_validation_masks(verification_times, training_years):
@@ -115,9 +114,11 @@ def build_feature_matrix(neighbourhood_values, station_position, verification_ti
 
     Inputs:
         neighbourhood_values (np.ndarray): shape
-            (n_times, n_leads, n_variables, n_stations, window, window) from
+            (n_stations, n_times, n_leads, n_variables, window, window) from
             extract_forecast_neighbourhoods, with variables ordered
             [2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind].
+            Usually a memory map, in which case only this station's block is
+            read from disk.
         station_position (int): index of the station along the station axis.
         verification_times (pd.DatetimeIndex): times matching axis 0.
         lead_times_hours (list[int]): lead times, in the order stored on axis 1.
@@ -136,10 +137,11 @@ def build_feature_matrix(neighbourhood_values, station_position, verification_ti
     number_of_times = len(verification_times)
     centre_cell = neighbourhood_half_width
 
-    # Take this station's slice up front. Deriving wind speed from the full
-    # array would allocate hundreds of megabytes per call and then discard all
-    # but one station's worth of it.
-    station_window = neighbourhood_values[:, :, :, station_position]
+    # Take this station's slice up front, copying it out of the memory map so
+    # the arithmetic below runs on resident memory rather than paging the same
+    # block repeatedly. The station axis leads, so this is one contiguous read
+    # of roughly 1.6 MB regardless of how many stations the dataset holds.
+    station_window = np.array(neighbourhood_values[station_position])
 
     # Wind speed is derived at native resolution before any averaging, because
     # the speed of the mean wind is not the mean of the speeds.
@@ -350,13 +352,13 @@ def fit_reference_methods(raw_forecast, station_truth, day_of_year_index,
         error_by_day = pd.Series(error_by_day).interpolate(
             limit_direction="both").to_numpy()
 
-        # Smooth with the same wrapped window used for the climatology, so days
-        # either side of the new year are treated as adjacent.
-        half_window = CLIMATOLOGY_SMOOTHING_DAYS // 2
+        # Smooth with a window that wraps around the year, so days either side
+        # of the new year are treated as adjacent.
+        half_window = SEASONAL_BIAS_SMOOTHING_DAYS // 2
         wrapped = np.concatenate(
             [error_by_day[-half_window:], error_by_day, error_by_day[:half_window]])
-        smoothing_kernel = (np.ones(CLIMATOLOGY_SMOOTHING_DAYS)
-                            / CLIMATOLOGY_SMOOTHING_DAYS)
+        smoothing_kernel = (np.ones(SEASONAL_BIAS_SMOOTHING_DAYS)
+                            / SEASONAL_BIAS_SMOOTHING_DAYS)
         smoothed_by_day = np.convolve(wrapped, smoothing_kernel, mode="valid")
         corrected_by_method["seasonal_bias"][test_rows_at_lead] = (
             forecast_at_lead + smoothed_by_day[test_day_of_year[test_rows_at_lead]])
@@ -364,9 +366,35 @@ def fit_reference_methods(raw_forecast, station_truth, day_of_year_index,
     return corrected_by_method
 
 
+def combine_station_results(results_glob, output_path):
+    """Concatenate per-chunk results csvs into one table.
+
+    Inputs:
+        results_glob (str): glob matching the per-chunk csvs, e.g.
+            '<dir>/results_*.csv'.
+        output_path (str): csv to write the concatenation to.
+
+    Returns:
+        pd.DataFrame: the combined table. Empty chunk files are skipped, so a
+            chunk whose stations all failed the coverage bar does not break
+            the combine.
+    """
+    paths = sorted(glob.glob(results_glob))
+    frames = [read_station_metadata(path) for path in paths]
+    frames = [frame for frame in frames if not frame.empty]
+    combined = pd.concat(frames, ignore_index=True)
+    combined.to_csv(output_path, index=False)
+    print(f"combined {len(paths)} chunks -> {len(combined)} rows in "
+          f"{output_path}", flush=True)
+    print(combined.groupby(["variable", "method"]).size().to_string(), flush=True)
+    return combined
+
+
 def run_station_experiment(dataset_path, station_metadata_path, specification_path,
                            output_path, training_years, test_year,
-                           minimum_training_coverage=MINIMUM_TRAINING_COVERAGE):
+                           minimum_training_coverage=MINIMUM_TRAINING_COVERAGE,
+                           shard_index=0, shard_count=1,
+                           drop_neighbourhoods=False):
     """Train every method at every qualifying station and write per-station metrics.
 
     Inputs:
@@ -389,6 +417,17 @@ def run_station_experiment(dataset_path, station_metadata_path, specification_pa
             model selection.
         minimum_training_coverage (float): drop stations reporting on fewer than
             this fraction of training-period days.
+        shard_index (int): which shard of the qualifying stations to run,
+            from 0 to shard_count - 1. Splitting happens here rather than in
+            the caller because only this function knows how many stations
+            clear the coverage bar.
+        shard_count (int): how many shards the run is split into. Each shard
+            must write its own output_path; concatenate the csvs afterwards.
+        drop_neighbourhoods (bool): delete the dataset's neighbourhood array
+            once the results csv is written. It is scratch -- nothing reads it
+            after this -- and it is the only large file, so dropping it is how
+            a chunked run keeps peak disk to one chunk. Only safe when this
+            process is the whole run for that dataset, i.e. shard_count == 1.
 
     Returns:
         pd.DataFrame: the same table that is written to output_path.
@@ -398,9 +437,12 @@ def run_station_experiment(dataset_path, station_metadata_path, specification_pa
             axis of the dataset.
     """
     dataset = np.load(dataset_path, allow_pickle=True)
-    station_metadata = pd.read_csv(station_metadata_path)
+    # usaf and wban must stay strings: they are zero-padded identifiers, and
+    # pandas would read '010010' as the integer 10010, which then fails the
+    # alignment check below against the zero-padded ids stored in the npz.
+    station_metadata = read_station_metadata(station_metadata_path)
     verification_times = pd.DatetimeIndex(dataset["verification_times"])
-    neighbourhood_values = dataset["neighbourhood_values"]
+    neighbourhood_values = load_neighbourhood_array(dataset_path)
     era5_values = dataset["era5_values"]
     station_observations = dataset["station_observations"]
     climatology_by_variable = {0: dataset["temperature_climatology"],
@@ -436,8 +478,15 @@ def run_station_experiment(dataset_path, station_metadata_path, specification_pa
 
     qualifying_stations = station_metadata.index[
         station_metadata["training_coverage"] >= minimum_training_coverage].tolist()
-    print(f"training on {len(qualifying_stations)} stations "
-          f"(years {training_years}), testing on {test_year}", flush=True)
+
+    # Take every shard_count-th station rather than a contiguous block, so
+    # shards stay balanced even though neighbouring stations in the list share
+    # a region and so tend to have similar record lengths.
+    total_qualifying = len(qualifying_stations)
+    qualifying_stations = qualifying_stations[shard_index::shard_count]
+    print(f"training on {len(qualifying_stations)} of {total_qualifying} "
+          f"qualifying stations (years {training_years}), testing on {test_year}",
+          flush=True)
 
     result_rows = []
     for stations_done, station_position in enumerate(qualifying_stations):
@@ -568,6 +617,18 @@ def run_station_experiment(dataset_path, station_metadata_path, specification_pa
     results = pd.DataFrame(result_rows)
     results.to_csv(output_path, index=False)
     print(f"wrote {len(results)} rows to {output_path}", flush=True)
+
+    if drop_neighbourhoods:
+        if shard_count != 1:
+            raise ValueError(
+                "drop_neighbourhoods would delete the array other shards are "
+                f"still reading (shard_count={shard_count})")
+        # Resolved through the helper that named the file, so a change to the
+        # naming rule cannot leave this silently deleting nothing.
+        array_path = neighbourhood_array_path(dataset_path)
+        os.remove(array_path)
+        print(f"removed {array_path}", flush=True)
+
     return results
 
 
@@ -585,10 +646,21 @@ if __name__ == "__main__":
     parser.add_argument("--training_years", type=int, nargs="+",
                         default=[2018, 2019, 2020, 2021])
     parser.add_argument("--test_year", type=int, default=2022)
+    parser.add_argument("--shard_index", type=int, default=0,
+                        help="which shard of the qualifying stations to run")
+    parser.add_argument("--shard_count", type=int, default=1,
+                        help="how many shards the run is split into")
+    parser.add_argument("--drop_neighbourhoods", action="store_true",
+                        help="delete the dataset's neighbourhood array once "
+                             "results are written; it is scratch, and dropping "
+                             "it holds peak disk to one chunk")
     parsed_arguments = parser.parse_args()
 
     torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "8")))
     run_station_experiment(
         parsed_arguments.dataset, parsed_arguments.station_metadata,
         parsed_arguments.specifications, parsed_arguments.output,
-        parsed_arguments.training_years, parsed_arguments.test_year)
+        parsed_arguments.training_years, parsed_arguments.test_year,
+        shard_index=parsed_arguments.shard_index,
+        shard_count=parsed_arguments.shard_count,
+        drop_neighbourhoods=parsed_arguments.drop_neighbourhoods)

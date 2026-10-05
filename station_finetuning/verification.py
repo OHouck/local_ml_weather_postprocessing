@@ -9,8 +9,7 @@ The split matters because the three pieces respond to different interventions.
 Bias is removable by any constant offset correction. Noise error shrinks when a
 forecast is damped or smoothed, which lowers RMSE without the forecast actually
 becoming more skilful. Information error measures how well the forecast
-discriminates between outcomes, and is the piece that only a genuine gain in
-predictive information can reduce.
+discriminates between outcomes.
 
 Anomaly correlation (ACC) is reported alongside, because that is the quantity in
 which Linsenmeier & Shrader (2025) measure the rich/poor forecast quality gap.
@@ -18,6 +17,18 @@ which Linsenmeier & Shrader (2025) measure the rich/poor forecast quality gap.
 
 import numpy as np
 import pandas as pd
+
+# Dry adiabatic lapse rate in K per metre, used to adjust a grid-cell forecast
+# to the station's own elevation before verifying temperature (Trotta et al.).
+# This shifts the mean only, so it changes bias and RMSE but never ACC.
+DRY_ADIABATIC_LAPSE_RATE = 0.0098
+
+# A station-lead scored on fewer test days than this is left out.
+MINIMUM_SAMPLES_TO_SCORE = 30
+
+# Direction of each summary metric, so plots and gap summaries can sign a
+# difference as "worse" without hard-coding it per metric.
+HIGHER_IS_BETTER = {"acc": True, "rmse": False}
 
 
 def decompose_forecast_error(forecast_values, truth_values, climatology_values):
