@@ -1,0 +1,119 @@
+{
+  "_comment": "Best hyperparameters for each gridded model variant (common.model_name_suffix) and variable, written by gridded_post_processing/hyperparameter_search.py. Missing lead_time_embedding_dim means the default of 4.",
+  "mlp": {
+    "2m_temperature": {
+      "hidden_dim": 1024,
+      "num_layers": 2,
+      "dropout_rate": 0.2535898644789818,
+      "learning_rate": 0.0001663509276181593,
+      "weight_decay": 1.338384321718969e-05,
+      "batch_size": 64,
+      "lead_time_embedding_dim": 8,
+      "patience": 50,
+      "min_delta": 1.6076215952404196e-05
+    },
+    "10m_wind_speed": {
+      "hidden_dim": 1024,
+      "num_layers": 2,
+      "dropout_rate": 0.26950939764617043,
+      "learning_rate": 7.447809593019378e-05,
+      "weight_decay": 0.00015700304532036081,
+      "batch_size": 64,
+      "lead_time_embedding_dim": 4,
+      "patience": 100,
+      "min_delta": 0.00012747179342287939
+    }
+  },
+  "mlp_snapshot3": {
+    "2m_temperature": {
+      "hidden_dim": 512,
+      "num_layers": 2,
+      "dropout_rate": 0.15910959923813506,
+      "learning_rate": 0.0001743883352393501,
+      "weight_decay": 2.9786639350577936e-06,
+      "batch_size": 256,
+      "lead_time_embedding_dim": 16,
+      "snapshot_T0": 20,
+      "snapshot_T_mult": 2
+    },
+    "10m_wind_speed": {
+      "hidden_dim": 512,
+      "num_layers": 2,
+      "dropout_rate": 0.24050757320513474,
+      "learning_rate": 0.0002365290032177622,
+      "weight_decay": 0.00038082142557175415,
+      "batch_size": 256,
+      "lead_time_embedding_dim": 8,
+      "snapshot_T0": 30,
+      "snapshot_T_mult": 2
+    }
+  },
+  "mlp_blockk3_snapshot1": {
+    "2m_temperature": {
+      "hidden_dim": 256,
+      "num_layers": 2,
+      "dropout_rate": 0.17027886546136112,
+      "learning_rate": 0.0008054944940976897,
+      "weight_decay": 0.00036718599646249543,
+      "batch_size": 64,
+      "snapshot_T0": 7,
+      "snapshot_T_mult": 1
+    },
+    "10m_wind_speed": {
+      "hidden_dim": 512,
+      "num_layers": 3,
+      "dropout_rate": 0.10127893609067312,
+      "learning_rate": 0.0007520367895255945,
+      "weight_decay": 0.0001690673274861639,
+      "batch_size": 256,
+      "snapshot_T0": 10,
+      "snapshot_T_mult": 1
+    }
+  },
+  "mlp_snapshot3_perlt": {
+    "2m_temperature": {
+      "hidden_dim": 1024,
+      "num_layers": 2,
+      "dropout_rate": 0.1918962301492856,
+      "learning_rate": 4.35869433578362e-05,
+      "weight_decay": 0.00012211203021557642,
+      "batch_size": 256,
+      "lead_time_embedding_dim": 4,
+      "snapshot_T0": 30,
+      "snapshot_T_mult": 1
+    },
+    "10m_wind_speed": {
+      "hidden_dim": 1024,
+      "num_layers": 2,
+      "dropout_rate": 0.10005314065127442,
+      "learning_rate": 4.303871596395362e-05,
+      "weight_decay": 7.941899389442164e-06,
+      "batch_size": 64,
+      "lead_time_embedding_dim": 8,
+      "snapshot_T0": 30,
+      "snapshot_T_mult": 1
+    }
+  },
+  "unet": {
+    "2m_temperature": {
+      "hidden_dim": 128,
+      "dropout_rate": 0.1329230173128869,
+      "learning_rate": 0.0005685989225262378,
+      "weight_decay": 4.215738528093373e-05,
+      "batch_size": 256,
+      "lead_time_embedding_dim": 8,
+      "patience": 20,
+      "min_delta": 1.1329443983099423e-05
+    },
+    "10m_wind_speed": {
+      "hidden_dim": 64,
+      "dropout_rate": 0.1,
+      "learning_rate": 0.00033,
+      "weight_decay": 2.2e-06,
+      "batch_size": 128,
+      "lead_time_embedding_dim": 4,
+      "patience": 50,
+      "min_delta": 1e-05
+    }
+  }
+}

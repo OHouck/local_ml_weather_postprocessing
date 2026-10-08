@@ -6,3 +6,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+# macOS
+.DS_Store
+
+# Hyperparameter search trial histories (large; the best values are in tuned_hyperparameters.json)
+gridded_post_processing/hyperparameter_searches/

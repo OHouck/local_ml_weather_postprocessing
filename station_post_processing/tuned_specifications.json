@@ -1,0 +1,32 @@
+{
+  "2m_temperature": {
+    "hidden_units": 32,
+    "layers": 2,
+    "dropout": 0.2,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "seeds": [
+      58,
+      59,
+      60,
+      61,
+      62
+    ]
+  },
+  "10m_wind_speed": {
+    "hidden_units": 128,
+    "layers": 2,
+    "dropout": 0.2,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "seeds": [
+      58,
+      59,
+      60,
+      61,
+      62
+    ]
+  }
+}

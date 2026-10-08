@@ -1,470 +1,74 @@
 # CLAUDE.md — AI Weather Forecast Post-Processing
 
-**Project**: "Tailoring machine learning weather predictions for local impacts" (submitted to *Environmental Research Letters* — referred to internally as "the ERL paper")
+**Project**: "Tailoring machine learning weather predictions for local impacts" (submitted to *Environmental Research Letters* — "the ERL paper")
 **Authors**: Ozma Houck & James Franke (University of Chicago)
-**Purpose**: Train computationally cheap neural networks to post-process weather forecast errors, improving regional forecast skill for local applications, with a focus on the global inequality in forecast quality (rich-country vs. low/middle-income-country skill).
+**Purpose**: train computationally cheap neural networks to post-process weather forecast errors, improving regional forecast skill, with a focus on the global inequality in forecast quality (high-income vs. low/middle-income countries).
 
 ---
 
-## Project Summary
+## Project summary
 
-The core idea: train lightweight neural networks (MLP or U-Net) to predict the **error** in existing global weather forecasts (Pangu-Weather, ECMWF IFS) and subtract that error. This is applied independently to 6×6 degree regional patches across global land surface.
+Lightweight networks predict the **error** of a global forecast (Pangu-Weather, ECMWF IFS HRES) and add it back:
+```
+corrected = raw_forecast + model(forecast, lead_time, day_of_year)
+```
 
-Key findings in the main paper (verified against ERA5):
-- Mean RMSE improvement of ~10% for 2m temperature, ~14% for 10m wind speed
-- Improvement is larger near the equator and in high-topography areas
-- The simple MLP is as good as the U-Net and trains ~25× faster
-- Adding more input variables or larger training domains does not improve accuracy
-
-**Referee-driven follow-up (`station_finetuning/`)**: reviewers objected that ERA5 is itself a model product that is weakest exactly where the paper claims the largest gains (data-sparse tropics/LMIC regions). A whole new module verifies against real surface station observations (ISD-Lite) instead and reframes part of the paper's argument. Headline results:
-- ERA5 verification understates the rich/poor forecast-skill gap by ~3x
-- Post-processing trained against **ERA5** adds no real predictive information — it's pure calibration/damping
-- Post-processing trained against **station observations** does add information, closing 33–45% of the temperature income gap
-- See [`station_finetuning/README.md`](station_finetuning/README.md) for the full write-up (metrics, findings, pipeline, caveats) — treat that file as the source of truth for this module rather than duplicating it here.
+Two analyses:
+- **Gridded** (main paper): one network per 6x6 degree land patch, trained against ERA5 (Pangu) or the HRES t=0 analysis (IFS). Mean RMSE improvement ~10% (2m temperature), ~14% (10m wind); larger near the equator and in high topography; the simple MLP is as good as a U-Net.
+- **Station** (referee response): one network per HadISD station, trained against the station's observations. ERA5 verification understates the rich/poor skill gap ~3x; ERA5-trained post-processing is calibration only, while station-trained post-processing adds information. [`station_post_processing/README.md`](station_post_processing/README.md) is the source of truth for this analysis.
 
 ---
 
-## Codebase Structure
+## Layout and how to run
+
+`uv run python main.py` runs the nine sections in order; each section is one script with a `run()` function (comment lines out of `main()` to skip them, or run a script directly). See [`README.md`](README.md) for the table of sections, scripts and run times.
 
 ```
-ai_weather_ag/
-├── finetuning/                              # PRIMARY MODULE — core training/eval pipeline
-│   ├── post_process.py                          # Main training entry point
-│   ├── prepare_forecasts_and_targets.py     # Data loading (load_forecasts)
-│   ├── figures_finetuning.py                # All paper figure-generation FUNCTIONS
-│   ├── erl_figures.py                       # Single script that renders every ERL paper figure
-│   │                                         #   (main text + appendix); calls into figures_finetuning.py
-│   ├── process_forecasts.py                 # Compute statistics across output files
-│   ├── custom_loss_fns.py                   # Alternative loss functions
-│   ├── hyperparam_tuning.py                 # Bayesian hyperparameter search
-│   ├── hyperparam_tuning.sh                 # SLURM script for hyperopt
-│   ├── clean_and_sample_climate_zones.py    # Bootstrap zone sampling
-│   │
-│   ├── run_experiments.sh                   # SLURM: main global experiment runs (continents)
-│   ├── run_region_size_experiments.sh       # SLURM: region size ablation (Finland/Amazon)
-│   ├── run_custom_loss_experiments.sh       # SLURM: custom loss experiments (Ethiopia/India)
-│   ├── run_arch_experiments.sh              # SLURM: architecture experiment driver
-│   ├── run_arch_experiments_eval.py         # Python: run arch experiments on 5% eval cell sample
-│   ├── run_improvement_regression.py        # OLS regression of improvement on geographic features
-│   │
-│   ├── plot_maps_and_binscatters.py         # Script → paper Figs 1–3 (legacy; superseded by erl_figures.py)
-│   ├── plot_arch_experiment_results.py      # Script → paper Fig 4 (legacy; superseded by erl_figures.py)
-│   ├── plot_region_size_results.py          # Script → paper Fig 5 (legacy; superseded by erl_figures.py)
-│   └── plot_custom_loss.py                  # Script → custom loss evaluation figures
-│
-├── station_finetuning/                      # SECONDARY MODULE — referee-response station-level analysis
-│   ├── README.md                                # Full write-up: motivation, metrics, findings, pipeline, caveats
-│   ├── prepare_station_dataset.py           # Step 1: select stations, download ISD-Lite, extract forecast/ERA5/climatology
-│   ├── forecast_features.py                 # Pangu neighbourhoods, ERA5 values, climatology, grid elevation
-│   ├── station_observations.py              # ISD station discovery, download, 00 UTC parsing
-│   ├── station_sampling.py                  # Continent / income-group classification and balanced sampling
-│   ├── select_station_sample.py             # Global stage: screens coverage, writes the sample manifest
-│   ├── train_station_models.py              # Step 2: per-station training, reference baselines, evaluation
-│   ├── verification.py                      # ACC / information-error / noise-error decomposition; income-gap summary
-│   ├── station_figures.py                   # Step 3: the four station-analysis paper figures (+ wind / IFS appendix)
-│   ├── run_station_sample.sh                # Laptop driver: balanced global sample, one continent at a time
-│   ├── run_station_experiments.sh           # SLURM driver for the full global run
-│   └── configs/                             # study_regions.json, tuned_specifications.json
-│
-├── science_policy_figures.py                # Reuses paper figure code to compare raw Pangu vs. IFS accuracy
-├── heat_wave/                                # AIFS heat-wave post-processing (uses finetuning's importable API)
-├── aurora/                                   # Scripts to download/prepare Aurora model forecasts
-├── neuralGCM_retraining/                     # NeuralGCM decoder retraining experiments
-├── gee_gencast/, run_ECMWF_forecasts/, downloading_data/, run_weatherbench2/  # Data acquisition/exploration, not part of core pipeline
-├── slides/, reports/                         # Talk slides and written check-ins (LaTeX/Typst), not code
-│
-├── helper_funcs.py                          # setup_directories(), generate_output_path(),
-│                                            #   load_all_continent_patches(), sample_continent_patches()
-├── hyperopt_results_*/                      # Saved Bayesian hyperopt results (JSON)
-└── CLAUDE.md                                # This file
+main.py                     runs every section
+common.py                   setup_directories(), study design constants, gridded output naming,
+                            land patch lists (load_continent_patches, sample_continent_patches)
+income_groups.py            World Bank FY25 income groups via Natural Earth polygons
+data_preparation/           1 download_forecasts, create_land_patches
+                            2 download_reanalysis (ERA5, HRES t0, era5_static.nc via CDS)
+                            3 select_stations (HadISD manifest), prepare_station_data
+gridded_post_processing/    models.py (MultilayerPerceptron, UNet), training_data.py (load_patch_data),
+                            training.py (variants, week split, output dataset),
+                            tuned_hyperparameters.json
+                            4 hyperparameter_search, architecture_comparison
+                            5 run_post_processing (production: mlp_snapshot3, Pangu + IFS)
+station_post_processing/    station_training.py (features, network, error decomposition),
+                            tuned_specifications.json
+                            6 specification_search   7 run_station_post_processing
+figures/                    8 gridded_figures   9 station_figures  -> <root>/erc_figures/
 ```
+
+Python: always `uv run python ...`; add packages with `uv add`.
 
 ---
 
-## Environment Setup
+## Data
 
-Data root is determined by hostname in `helper_funcs.setup_directories()`:
-- **Mac (`oMac.local`)**: `/Users/ohouck/globus/forecast_data`
-- **Midway3 cluster**: `/project/jfranke/ozma/forecast_data`
+`common.setup_directories()` picks the data root by hostname (`oMac.local` → `/Users/ohouck/globus/forecast_data`, Midway3 → `/project/jfranke/ozma/forecast_data`). Keys: `raw`, `processed`, `gridded_output` (`processed/finetuning_output`), `station_output` (`processed/station_finetuning`), `figures` (`<root>/erc_figures`). Never hardcode paths.
 
-Adding a new machine requires editing `helper_funcs.py`.
+- `raw/{pangu,ifs}_{year}.zarr`: forecasts indexed by **valid time**, dims (valid_time, prediction_timedelta, latitude, longitude). Older archives also hold 12 UTC valid times and 36/132/228 h leads; the code only uses 00 UTC and 24/120/216 h.
+- `raw/{era5,hres_t0}_{year}.zarr`: gridded truth, dims (time, latitude, longitude).
+- `processed/{continent}_patches.npy`: 373 land patches, (n, 2, 24) lat/lon arrays; patch numbers are 1-based.
+- Gridded outputs: `finetuning_output/{model}/{continent}/train_{var}_test_{var}_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_{variant}_{continent}_bs{N}.zarr` (built by `common.gridded_output_path`), with `{var}_{original,corrected,mean_corrected,ground_truth}_lt{N}h`. Outputs from the current pipeline carry a `validation_split` attribute; older ones do not and are retrained by section 5.
 
-Directory layout under the data root:
-```
-forecast_data/
-├── raw/                    # Downloaded forecast zarrs (pangu/, ifs/, aifs/, era5/)
-├── processed/
-│   └── finetuning_output/  # Output zarrs, organized by model/region/
-└── figures/                # Saved figure files (figs/pangu/, figs/ifs/, etc.)
-```
+Train 2018–2021, test 2022, lead times 24/120/216 h, everything at 00 UTC.
 
 ---
 
-## Three Key Files
-
-### 1. `finetuning/post_process.py` — Training Script
-
-Entry point for training a post-processing model on a region.
-
-**Model classes defined here**:
-- `SimpleMLP` — flattens spatial patch, concatenates day-of-year sin/cos and learned lead-time embedding, passes through fully connected layers; supports `small_output_init`
-- `UNet` — encoder-decoder with skip connections; caps channels at 128; number of pooling levels auto-calculated from patch size
-- `PooledFiLMMLP` — global model trained across all patches simultaneously; uses FiLM conditioning on a 4-dim region descriptor (sin/cos lat/lon); designed for multi-patch pooled training experiments
-- `ClassifierMLP` — used only for classification-based loss experiments (e.g., heatwave duration)
-
-**Configuration object**:
-- `PostProcessConfig` — dataclass replacing the argparse `Namespace` in the core training path. All fields have defaults matching `parse_args()`. Accepted anywhere `args` was used. `PostProcessConfig.from_args(args)` builds a config from a CLI Namespace.
-
-**Key functions**:
-- `parse_args()` — defines all CLI flags (see below)
-- `get_region_grid(args)` — returns lat/lon arrays for named regions or global grids
-- `train_model(...)` — training loop with Adam optimizer, ReduceLROnPlateau scheduler, early stopping, AMP on CUDA
-- `train_model_cosine(...)` — cosine annealing training (used for snapshot ensembles)
-- `train_model_weighted(...)` — training with optional lead-time loss weights and C-Mixup augmentation
-- `train_swa_ensemble(...)` — stochastic weight averaging ensemble training
-- `apply_correction(...)` — inference: predicts error and adds to raw forecast; supports MC dropout
-- `build_output_dataset(...)` — builds the `xr.Dataset` with `{var}_{kind}_lt{N}h` variables (does not write to disk)
-- `write_output_zarr(ds_out, output_path)` — writes a built dataset to zarr with standard chunking/encoding
-- `save_output(...)` — thin wrapper over `build_output_dataset` + `write_output_zarr`; kept for backward compat
-- `load_optimal_hyperparameters(arch, training_vars, output_vars, alternate_loss_fn, use_snapshot, use_block_ltho, use_per_lt)` — reads best params from appropriate `hyperopt_results_*/optimization_results_{arch}.json`
-- `run_subregion_experiment(...)` — trains and evaluates a single patch; called by `run_arch_experiments_eval.py`
-
-**Importable public API** (for "bring your own forecast" use):
-- `post_process_forecasts(forecast_ds, ground_truth_ds, config, output_path=None, device=None, return_model=True)` — top-level entry point; takes xarray Datasets plus a `PostProcessConfig`, trains the model, optionally writes zarr, returns a `PostProcessResult`
-- `PostProcessResult` — dataclass holding `output_dataset`, `metrics` (pd.DataFrame), `training_time_minutes`, `model`, `stats_train`, `stats_out`, `pca_transformer`
-- `compute_test_metrics(output_ds, config)` — computes RMSE/improvement DataFrame from an output dataset using the same metric definitions as `process_forecasts.py`
-
-**The model predicts forecast error, not the weather value directly**:
-```
-corrected = raw_forecast + model(forecast_fields, lead_time, day_of_year)
-```
-
-**Named regions** with fixed center lat/lon (expanded by subregion size):
-```python
-REGION_CENTERS = {
-    'india': (22.0, 77.0),
-    'usa_south': (35.0, 260.0),
-    'amazon': (-5.0, 295.0),
-    'pakistan': (29.5, 65.0),
-    'ethiopia': (9.0, 39.0),
-    'corn_belt': (41.0, 270.0),
-    'finland': (65.0, 29.0),
-    ...
-}
-```
-
-**Special region keywords** (use full global grid):
-- `global`, climate zones (`tropical`, `arid`, `temperate`, `cold`, `polar`), topographic zones (`flat`, `hilly`, `mountainous`), continents (`africa`, `asia`, `europe`, `north_america`, `south_america`, `oceania`)
-
-**CLI flags**:
-```
---data_dir               Raw data directory
---output_dir             Where to write output zarrs (REQUIRED)
---model_name             pangu | ifs | aifs (REQUIRED)
---ground_truth_source    Alternate ground truth source (default: "")
---region                 Region name (default: india)
---subregion              Patch size, e.g. 6x6 (default: 2x2)
---lead_time_hours        List of lead times in hours, e.g. 24 120 216
---training_vars          Input variable(s), e.g. 2m_temperature
---output_vars            Variable(s) to correct, e.g. 2m_temperature
---train_start/end        Date range YYYY-MM-DD
---test_start/end         Date range YYYY-MM-DD
---nn_architecture        mlp | unet | gated_mlp (default: mlp)
---alternate_loss_fn      extreme_heat_loss | mortality_weighted_loss | quantile_loss |
-                         heatwave_loss | joint_temp_wind_loss
---bootstrap              N  (run N bootstrap samples of subregions)
---growing_season_only    Filter training to growing season only
---pca_components         N  (reduce input dim via PCA before training; 0 = disabled)
-
-# Ensemble methods
---ensemble               N  (train N seed-diverse MLPs, average predictions)
---snapshot_ensemble      N  (train N snapshot ensemble runs, recommended: 3)
---snapshot_epochs        Total epochs per snapshot run (default: 210)
---snapshot_T0            Cosine cycle period for snapshots (default: auto)
---snapshot_T_mult        Cosine annealing multiplier (default: 1)
---swa_ensemble           N  (stochastic weight averaging ensemble runs)
---swa_warmup_epochs      Warmup epochs before SWA (default: 150)
---swa_epochs             SWA averaging epochs (default: 60)
---swa_T0                 SWA cosine cycle period (default: 20)
---mc_dropout_samples     N  (MC dropout inference samples; 0 = disabled)
-
-# Block leave-time-holdout ensemble
---block_ensemble         Train separate model per held-out year block
---block_holdout          N  years held out per block (default: 3)
-
-# Per-lead-time training
---per_lead_time          Train separate model per lead time (works with snapshot and block ensembles)
-
-# Advanced
---lead_time_loss_weights  Per-lead-time loss weights (space-separated floats)
---cmixup_alpha           C-Mixup data augmentation alpha (0 = disabled)
---small_output_init      Initialize output layer with small weights
---seed                   Base random seed for all draws (default: 58); used as offset for all
-                         per-branch seeds so the full run is reproducible
---mlp_hidden_dim         (default: 1024)
---mlp_num_layers         (default: 2)
---mlp_dropout            (default: 0.244)
---unet_hidden_dim        (default: 64, max channels capped at 128)
---unet_dropout           (default: 0.1)
-```
-
-**Standard training periods by model**:
-- Pangu / IFS: train 2018–2021, test 2022
-- AIFS: train 2022–2023, test 2024
-
-### 2. `finetuning/figures_finetuning.py` — Figure Generation
-
-All paper figures come from functions in this file. The `plot_*.py` scripts call these functions.
-
-**Functions that produce paper figures**:
-
-| Function | Paper Figure | Description |
-|----------|-------------|-------------|
-| `map_global_improvements(pixel_level=True)` | Fig 1, Appendix maps | Global map of RMSE % improvement per pixel |
-| `lead_time_compare_binscatter()` | Figs 2, 3 | Binscatter of improvement vs equator distance or SDOR, by lead time |
-| `plot_rmse_improvement()` | Fig 4 | Bar chart comparing architectures/input configs |
-| `generate_subregion_comparison_plots()` | Fig 5 | RMSE improvement vs training domain size (Finland/Amazon) |
-| `model_compare_boxplot()` | Appendix Fig 6 | IFS vs Pangu improvement comparison boxplot |
-
-**Additional figure functions**:
-- `map_forecasts(...)` — maps of original vs corrected forecasts for a region; used for joint temp-wind model visualizations
-- `plot_improvement_by_weather_bin(...)` — improvement vs weather value bin (evaluates custom loss functions; called by `plot_custom_loss.py`)
-- `plot_arch_experiment_results(...)` — aggregated bar chart from eval-cell architecture experiments
-- `map_arch_exeriment_regions(...)` — map showing which patches were used in arch experiments
-- `plot_raw_forecast_values(...)` — raw forecast value distributions
-- `plot_error_cutoff(...)` — error frequency above cutoff threshold
-- `plot_scatter_forecast_improvement(...)` — scatter: improvement vs geographic features
-- `model_compare_binscatter(...)` — binscatter comparing IFS vs Pangu
-
-**Supporting functions**:
-- `load_region_data(dirs, model, variable, regions, ...)` — loads all matching zarr files for given model/arch/subregion config, returns dict keyed by lead time
-- `filter_patch_zarr_files(zone_dir, variable, ...)` — matches zarr files by filename pattern (dates, subregion, arch, loss fn)
-- `validate_non_overlapping_patches()` — used in pixel-level map plotting to ensure tiles don't overlap
-
-**Key dependencies**:
-- `binsreg` library for binscatter plots (Figures 2 and 3)
-- `cartopy` for map projections
-- SDOR (standard deviation of orography) data from ERA5 for Figure 3
-
-### 3. `finetuning/prepare_forecasts_and_targets.py` — Data Loading
-
-Loads and preprocesses forecast and ground-truth data into the numpy arrays consumed by the training core.
-
-**Public functions**:
-- `load_forecasts(data_dir, args, lat_vals, lon_vals, train=True, ...)` — opens zarr files, slices the requested region/time range, and returns a 13-tuple of numpy arrays: `(fc, fc_output, obs, lead_time_indices, day_of_year_features, time_values, lat_u, lon_u, n_lat, n_lon, n_training_vars, n_output_vars, training_mean_forecast_error)`
-- `prepare_arrays_from_datasets(forecast_ds, ground_truth_ds, config, train=True)` — BYO entry point; accepts xarray Datasets with dims `(time, prediction_timedelta, latitude, longitude)` and returns the same 13-tuple as `load_forecasts`
-
-**Internal helpers**:
-- `_arrays_from_inmemory_datasets(forecast_ds, obs_ds, config, time_values_np, lead_times_td)` — shared processing body called by both `load_forecasts` and `prepare_arrays_from_datasets`; single source of truth for wind-speed derivation, stacking/reshape, NaN removal, and mean forecast error
-- `_compute_time_selection(config, train)` — returns `(time_values_np, lead_times_td)` from config date ranges
-
-**xarray Dataset conventions** for `prepare_arrays_from_datasets`:
-- `forecast_ds`: dims `time`, `prediction_timedelta` (timedelta64 at requested lead times), `latitude`, `longitude`; variables named per `config.training_vars`; if `10m_wind_speed` is requested, `10m_u_component_of_wind` and `10m_v_component_of_wind` must be present
-- `ground_truth_ds`: dims `time`, `latitude`, `longitude`; same variable names and grid as `forecast_ds`
-
-### 4. `finetuning/process_forecasts.py` — Statistics Aggregation
-
-Reads output zarr files across all region/model/variable combinations and aggregates into a summary CSV. Used for structured comparison tables.
-
-**Main function**: `calculate_and_save_statistics(dirs, models, variable_configs, ...)` → returns `pd.DataFrame`
-
-Computes per-file: RMSE original, RMSE corrected, % improvement, extreme-heat RMSE, mean forecast values, error frequency above cutoff threshold.
-
-For bootstrap regions (climate/topographic zones): aggregates across bootstrap samples with 95% CIs via t-distribution.
-
-**Factored helper** (also used by the importable API):
-- `compute_metrics_for_output_dataset(ds, prediction_var, lead_time, bootstrap_idx=None)` — computes all per-lead-time metrics for one variable/lead-time combination; called by both `calculate_and_save_statistics` and `compute_test_metrics` in `post_process.py`
-- `ERROR_CUTOFFS` — module-level dict of per-variable error thresholds used in frequency-above-cutoff stats
-
----
-
-## Station-Level Post-Processing (`station_finetuning/`)
-
-Standalone module, separate data pipeline from `finetuning/`. Trains the same kind of post-processing models but verifies against real ISD-Lite surface station observations instead of ERA5, to test whether ERA5-based verification/training understates forecast inequality between high-income and low/middle-income (LMIC) regions. **[`station_finetuning/README.md`](station_finetuning/README.md) is the authoritative doc** — full findings, metrics rationale (RMSE = bias² + information error² + noise error², per Bonavita & Geer 2026), pipeline details, scaling notes, and method caveats live there. Keep that README up to date as the primary source; this section is only a pointer plus the essentials an agent needs before touching the code.
-
-**Pipeline** (three steps, run from repo root):
-```bash
-# 1. Select stations, download ISD-Lite, extract forecast/ERA5/climatology
-uv run python station_finetuning/prepare_station_dataset.py \
-    --regions_file station_finetuning/configs/study_regions.json \
-    --model_name pangu --output_prefix station_dataset
-
-# 2. Train every method/station, score on the test year
-uv run python station_finetuning/train_station_models.py \
-    --dataset <processed>/station_finetuning/station_dataset.npz \
-    --station_metadata <processed>/station_finetuning/station_dataset_stations.csv \
-    --specifications station_finetuning/configs/tuned_specifications.json \
-    --output <processed>/station_finetuning/station_results.csv
-
-# 3. Paper figures (reads the sampled run's station_results_sample.csv)
-uv run python station_finetuning/station_figures.py
-```
-
-For a laptop-feasible balanced global sample (1,000 stations per income group, one continent at a time, to keep peak disk to ~1 GB instead of ~15 GB):
-```bash
-bash station_finetuning/run_station_sample.sh select    # once, globally
-bash station_finetuning/run_station_sample.sh all       # each continent in turn
-bash station_finetuning/run_station_sample.sh combine
-```
-For the full SLURM-sharded global run: `sbatch station_finetuning/run_station_experiments.sh prepare|train`, then `bash station_finetuning/run_station_experiments.sh combine`.
-
-**Key conventions to preserve when editing this module** (see README for the "why"):
-- Everything verifies at **00 UTC only** — restricts the usable sample to near-hourly (mostly airport) reporters
-- Station↔grid matching goes through `forecast_features.snap_to_grid_cell` (nearest neighbor + dry adiabatic lapse-rate elevation correction) — never index the grid directly from a station lat/lon
-- The neighbourhood array (`<prefix>_neighbourhoods.npy`) is station-major and memory-mapped; it must stay paired with its `.npz`/`_stations.csv` from the same `prepare_station_dataset.py` run — a mismatch raises rather than silently misaligning
-- `train_station_models.py` fits every spec against **both** ERA5 and station targets by default, to preserve the controlled ERA5-vs-station contrast
-- Validation splits are whole weeks, never random days (weather autocorrelation would leak)
-
----
-
-## Output File Naming Convention
-
-Outputs are written to `{output_dir}/{model_name}/{region}/` with filename:
-```
-train_{training_vars}_test_{output_vars}_dim{subregion}_leadtime_{lead_times}h_{dates}_{arch}[_{loss_fn}][_{bootstrap_info}].zarr
-```
-
-Example:
-```
-pangu/india/train_2m_temperature_test_2m_temperature_dim6x6_leadtime_24_120_216h_train2018-01-01-2021-12-31_test2022-01-01-2022-12-31_mlp.zarr
-```
-
-`helper_funcs.generate_output_path(args)` generates this path. `filter_patch_zarr_files()` in `figures_finetuning.py` parses it back when loading results.
-
----
-
-## Data Variables
-
-**Primary variables for the paper**:
-- `2m_temperature` — 2-meter air temperature (data in K; custom loss functions convert to Celsius internally)
-- `10m_wind_speed` — 10-meter wind speed (m/s)
-
-**Additional input variables supported**:
-- `10m_u_component_of_wind`, `10m_v_component_of_wind`
-- `temperature_1000hPa`, `specific_humidity_1000hPa`, `geopotential_1000hPa`
-- Any variable with pattern `{variable}_{pressure}hPa` (parsed by `parse_atmospheric_variable()`)
-
-**Output zarr variable naming** (organized by lead time):
-```
-{var}_original_lt{N}h       (time, latitude, longitude)
-{var}_corrected_lt{N}h      (time, latitude, longitude)
-{var}_ground_truth_lt{N}h
-{var}_mean_corrected_lt{N}h  (mean-bias-corrected baseline)
-```
-
----
-
-## Hyperparameter Search
-
-Hyperparameters are tuned via Bayesian optimization in `hyperparam_tuning.py`, run on a random 10% sample of continent patches. Results saved to mode-specific directories:
-
-```
-hyperopt_results_temperature_mlp/         # Single MLP (temperature)
-hyperopt_results_wind_mlp/                # Single MLP (wind speed)
-hyperopt_results_temperature_unet/        # UNet (temperature)
-hyperopt_results_wind_speed_unet/         # UNet (wind speed)
-hyperopt_results_snapshot_temperature_mlp/  # Snapshot ensemble (temperature)
-hyperopt_results_snapshot_wind_mlp/         # Snapshot ensemble (wind speed)
-hyperopt_results_multivar_temperature_mlp/  # Multi-variable input
-hyperopt_results_multivar_temperature_unet/
-hyperopt_results_per_lt_temperature_mlp/    # Per-lead-time MLP (temperature)
-hyperopt_results_per_lt_wind_mlp/           # Per-lead-time MLP (wind speed)
-hyperopt_results_block_ltho_temperature_mlp/ # Block leave-time-holdout ensemble
-hyperopt_results_block_ltho_wind_mlp/
-hyperopt_results_joint_wind_temperature_24h_mlp/  # Joint temp+wind model
-```
-
-`post_process.py` loads the appropriate set automatically via `load_optimal_hyperparameters()` based on the architecture and training mode flags, unless architecture flags are passed explicitly on the CLI.
-
----
-
-## Loss Functions (`finetuning/custom_loss_fns.py`)
-
-| Name | Use Case |
-|------|----------|
-| MSE (default) | Standard mean squared error |
-| `extreme_heat_loss` | Penalizes errors on hot days more heavily (T>25°C: 6×, T>30°C: 11×) |
-| `mortality_weighted_loss` | Weights errors by mortality risk curve (Carleton et al. 2022) |
-| `quantile_loss` | Quantile regression |
-| `heatwave_loss` | Duration-weighted MSE based on consecutive days above threshold |
-| `joint_temp_wind_loss` | Jointly optimizes temperature and wind speed |
-
-Custom losses that operate on Celsius (not normalized) values use `is_normalized=True` during training and `is_normalized=False` for evaluation.
-
----
-
-## Common Workflows
-
-### Train a post-processing model
-```bash
-python3 finetuning/post_process.py \
-    --output_dir ~/data/fine_tuning_output \
-    --model_name pangu \
-    --region india \
-    --subregion 6x6 \
-    --training_vars 2m_temperature \
-    --output_vars 2m_temperature \
-    --lead_time_hours 24 120 216 \
-    --train_start 2018-01-01 --train_end 2021-12-31 \
-    --test_start 2022-01-01 --test_end 2022-12-31 \
-    --nn_architecture mlp \
-    --snapshot_ensemble 3 \
-    --per_lead_time
-```
-
-### Run global experiments (continent patches, IFS)
-```bash
-sbatch finetuning/run_experiments.sh
-```
-
-### Run architecture experiments
-```bash
-sbatch finetuning/run_arch_experiments.sh   # calls run_arch_experiments_eval.py
-```
-
-### Run custom loss experiments
-```bash
-sbatch finetuning/run_custom_loss_experiments.sh
-```
-
-### Run region size ablation
-```bash
-sbatch finetuning/run_region_size_experiments.sh
-```
-
-### Run improvement regression analysis
-```bash
-python3 finetuning/run_improvement_regression.py
-```
-
-### Regenerate paper figures
-```bash
-uv run python finetuning/erl_figures.py            # Renders every ERL paper figure (main text + appendix)
-                                                    # in one run; writes to {dirs['root']}/erl_figures/
-python3 finetuning/plot_custom_loss.py             # Custom loss evaluation figures (not covered by erl_figures.py)
-```
-`plot_maps_and_binscatters.py`, `plot_arch_experiment_results.py`, and `plot_region_size_results.py` are the older per-figure scripts `erl_figures.py` now supersedes; they still work (same underlying `figures_finetuning.py` functions) but are no longer the primary way figures get regenerated.
-
-### Run hyperparameter tuning
-```bash
-python3 finetuning/hyperparam_tuning.py \
-    --model_name pangu --region india --subregion 6x6 \
-    --training_vars 2m_temperature --output_vars 2m_temperature \
-    --nn_architecture mlp --max_evals 100
-```
-
----
-
-## Important Notes
-
-- **Don't hardcode data paths** — always use `setup_directories()` from `helper_funcs.py`
-- **Adding a new machine**: edit the hostname check in `helper_funcs.setup_directories()`
-- **MLP with snapshot ensemble + per_lead_time is the recommended approach**: `--snapshot_ensemble 3 --per_lead_time` trains separate models per lead time with 3-run snapshot ensembles. Single MLP trains ~25× faster than U-Net with equivalent accuracy on 6×6 patches
-- **Extra input variables hurt or are neutral**: paper shows single-variable input is best for correcting 2m_temperature
-- **Bootstrap regions**: climate/topographic zones use `--bootstrap N`; filenames contain `bs*` and `filter_patch_zarr_files` matches on that pattern
-- **SDOR data** (standard deviation of orography from ERA5) must be loaded separately before calling `lead_time_compare_binscatter` with `x_metric="sdor"`
-- **Paper uses 6×6 degree patches globally** — all continent-based training runs use `--subregion 6x6`
-- **Continent patch sampling**: `helper_funcs.sample_continent_patches()` samples a reproducible fraction of patches from continent zarr outputs; `split='hyperopt'` and `split='eval'` produce disjoint subsets so hyperopt and arch-experiment evaluation don't overlap
-- **`station_finetuning/` is a separate module and pipeline from `finetuning/`** — it verifies against ISD-Lite station observations rather than ERA5, and its own README is the source of truth (see the dedicated section above). Don't assume `finetuning/`'s ERA5-based conventions (e.g. output zarr naming, `REGION_CENTERS`) apply there.
-- **`finetuning/erl_figures.py` is now the primary figure-generation entry point** for the paper (imports and calls functions from `figures_finetuning.py`); the individual `plot_*.py` scripts are legacy and mostly superseded
-- **`heat_wave/`, `aurora/`, `neuralGCM_retraining/`, `gee_gencast/`, `science_policy_figures.py`** are adjacent/exploratory work that reuse pieces of `finetuning/` (e.g. `heat_wave/run_heatwave_experiment.py` uses the `PostProcessConfig` + `post_process_forecasts` importable API) but are not part of the core paper pipeline — check the header docstring of a given script before assuming it follows `finetuning/`'s conventions
+## Conventions to preserve
+
+- **Validation is never random days.** Gridded models hold out 20% of whole weeks of valid days (`training.split_training_and_validation_by_week`); block LTHO holds out whole years; station models hold out whole weeks (`station_training.validation_week_blocks`).
+- **Model variants** are the keys of `common.MODEL_VARIANTS` (which also name the output files): `mlp`, `unet`, `mlp_snapshot3` (production, `common.PRODUCTION_MODEL_SUFFIX`), `mlp_snapshot3_perlt`, `mlp_blockk3_snapshot1`. Their hyperparameters live in `gridded_post_processing/tuned_hyperparameters.json`; IFS uses the Pangu-tuned values.
+- **Study design constants** (years, lead times, variables, coverage bar, neighbourhood width) live only in `common.py`; import them rather than redefining.
+- The architecture-comparison evaluation patches are `sample_continent_patches(fraction=0.05, seed=PATCH_SAMPLE_SEED, split="eval")`; they share files with the production run for `mlp_snapshot3`. Note they are a subset of the hyperparameter-search sample (fraction 0.25), because the two splits are sized from different fractions.
+- Station↔grid matching always goes through `prepare_station_data.snap_to_grid_cell` (nearest cell, ties round up). Temperature is moved to station height with the dry adiabatic lapse rate (raw forecast only).
+- The station neighbourhood `.npy` must stay paired with its `.npz`/`station_dataset_stations.csv`; the station IDs are checked on load.
+- Station networks train with mean squared error loss; each station trains a station-target and an ERA5-target network with the same specification (the controlled contrast).
+
+## Code style for this repo
+
+Human-readable over clever: long descriptive names, no abbreviations, inline comments describing each block, a function only for snippets over ~10 lines, a header docstring in every script and a docstring (what / inputs / outputs) on every function. Scripts are self-contained; shared code lives in `common.py`, `income_groups.py`, `gridded_post_processing/training*.py` and `station_post_processing/station_training.py`.
